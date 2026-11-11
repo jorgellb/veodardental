@@ -13,6 +13,7 @@ use crate::model::Db;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -128,7 +129,42 @@ fn id_of(v: &Value) -> Option<String> {
 }
 
 fn keyed(arr: &[Value]) -> bool {
-    arr.iter().all(|v| id_of(v).is_some())
+    arr.iter().all(|v| v.as_object().is_some_and(|o| o.contains_key("id")))
+}
+
+/// Registros por su identificador (si se repite, vale el primero).
+fn index(arr: &[Value]) -> HashMap<String, &Value> {
+    let mut m = HashMap::with_capacity(arr.len());
+    for v in arr {
+        if let Some(id) = id_of(v) {
+            m.entry(id).or_insert(v);
+        }
+    }
+    m
+}
+
+/// Listas a las que solo se añade (registros de accesos, de auditoría, de
+/// programas abiertos y de WhatsApp ya leídos), con su tamaño máximo. Al
+/// combinar se juntan las entradas nuevas de los dos puestos, ninguno puede
+/// borrar las del otro y se quitan las más antiguas si pasan del máximo.
+const APPEND_ONLY: [(&str, usize); 4] = [("access_log", 2000), ("audit_log", 5000), ("launches", 300), ("wa_seen", 3000)];
+
+fn merge_append(base: Option<&Value>, ours: &[Value], theirs: &[Value], cap: usize) -> Value {
+    let mut seen: HashSet<String> = base.and_then(|b| b.as_array()).into_iter().flatten().chain(theirs).map(|v| v.to_string()).collect();
+    let mut out = theirs.to_vec();
+    for v in ours {
+        if seen.insert(v.to_string()) {
+            out.push(v.clone());
+        }
+    }
+    // los registros con hora quedan en orden (la hora se guarda como texto ISO)
+    if out.iter().all(|v| v.get("when").is_some_and(|w| w.is_string())) {
+        out.sort_by(|a, b| a["when"].as_str().cmp(&b["when"].as_str()));
+    }
+    if out.len() > cap {
+        out.drain(..out.len() - cap);
+    }
+    Value::Array(out)
 }
 
 /// Combinación a tres bandas: `base` es lo que este puesto leyó, `ours` lo que
@@ -152,7 +188,13 @@ pub fn merge(base: Option<&Value>, ours: &Value, theirs: &Value, conflicts: &mut
             for (k, tv) in t {
                 match o.get(k) {
                     Some(ov) => {
-                        out.insert(k.clone(), merge(b.and_then(|b| b.get(k)), ov, tv, conflicts));
+                        let bk = b.and_then(|b| b.get(k));
+                        let append = APPEND_ONLY.iter().find(|(name, _)| name == k).map(|(_, cap)| *cap);
+                        let m = match (append, ov, tv) {
+                            (Some(cap), Value::Array(oa), Value::Array(ta)) => merge_append(bk, oa, ta, cap),
+                            _ => merge(bk, ov, tv, conflicts),
+                        };
+                        out.insert(k.clone(), m);
                     }
                     None => {
                         out.insert(k.clone(), tv.clone());
@@ -167,17 +209,18 @@ pub fn merge(base: Option<&Value>, ours: &Value, theirs: &Value, conflicts: &mut
             Value::Object(out)
         }
         (Value::Array(o), Value::Array(t)) if keyed(o) && keyed(t) => {
-            let b: Vec<Value> = base.and_then(|b| b.as_array()).cloned().unwrap_or_default();
-            let find = |arr: &[Value], id: &str| arr.iter().find(|v| id_of(v).as_deref() == Some(id)).cloned();
-            let mut out = vec![];
+            // índices por identificador: combinar es lineal aunque haya miles de registros
+            let b = base.and_then(|b| b.as_array()).map(|a| index(a)).unwrap_or_default();
+            let (oi, ti) = (index(o), index(t));
+            let mut out = Vec::with_capacity(t.len().max(o.len()));
             for tv in t {
-                let id = id_of(tv).unwrap();
-                let bv = find(&b, &id);
-                match find(o, &id) {
-                    Some(ov) => out.push(merge(bv.as_ref(), &ov, tv, conflicts)),
+                let Some(id) = id_of(tv) else { continue };
+                let bv = b.get(&id).copied();
+                match oi.get(&id) {
+                    Some(ov) => out.push(merge(bv, ov, tv, conflicts)),
                     None => match bv {
                         // este puesto lo borró y el otro no lo tocó: queda borrado
-                        Some(bv) if &bv == tv => {}
+                        Some(bv) if bv == tv => {}
                         // este puesto lo borró pero el otro lo cambió: se conserva
                         Some(_) => {
                             *conflicts += 1;
@@ -189,12 +232,12 @@ pub fn merge(base: Option<&Value>, ours: &Value, theirs: &Value, conflicts: &mut
                 }
             }
             for ov in o {
-                let id = id_of(ov).unwrap();
-                if find(t, &id).is_some() {
+                let Some(id) = id_of(ov) else { continue };
+                if ti.contains_key(&id) {
                     continue;
                 }
-                match find(&b, &id) {
-                    Some(bv) if &bv == ov => {}
+                match b.get(&id) {
+                    Some(bv) if *bv == ov => {}
                     Some(_) => {
                         *conflicts += 1;
                         out.push(ov.clone());
@@ -260,7 +303,7 @@ pub fn save_synced(db: &mut Db, base: &mut Value, path: &Path) -> Result<Synced,
         }
     };
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(&ours).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, serde_json::to_string(&ours).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     *base = ours;
     Ok(outcome)
@@ -294,7 +337,7 @@ pub fn prepare_folder(db: &Db, dir: &Path) -> Result<bool, String> {
         serde_json::from_str::<Db>(&std::fs::read_to_string(&file).map_err(|e| e.to_string())?).map_err(|e| format!("Ya hay un fichero de datos en la carpeta pero no se puede leer: {e}"))?;
         return Ok(false);
     }
-    std::fs::write(&file, serde_json::to_string_pretty(db).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::write(&file, serde_json::to_string(db).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -319,6 +362,50 @@ mod tests {
         assert_eq!(ps[0], json!({"id": 1, "name": "Ana María", "phone": "111"}));
         assert!(ps.iter().any(|p| p["name"] == "Pablo") && ps.iter().any(|p| p["name"] == "Eva"));
         assert!(!ps.iter().any(|p| p["name"] == "Luis"));
+    }
+
+    #[test]
+    fn logs_from_both_stations_are_kept() {
+        let e = |t: &str, ev: &str| json!({"when": format!("2026-11-11T{t}"), "user": "Ana", "event": ev, "ok": true});
+        let base = json!({"access_log": [e("09:00:00", "Entrada")], "wa_seen": ["m1"]});
+        // cada puesto anota lo suyo a la vez
+        let ours = json!({"access_log": [e("09:00:00", "Entrada"), e("09:05:00", "Bloqueo A")], "wa_seen": ["m1", "m2"]});
+        let theirs = json!({"access_log": [e("09:00:00", "Entrada"), e("09:03:00", "Entrada B"), e("09:07:00", "Salida B")], "wa_seen": ["m1", "m3"]});
+        let mut c = 0;
+        let m = merge(Some(&base), &ours, &theirs, &mut c);
+        let evs: Vec<&str> = m["access_log"].as_array().unwrap().iter().map(|x| x["event"].as_str().unwrap()).collect();
+        assert_eq!(evs, ["Entrada", "Entrada B", "Bloqueo A", "Salida B"], "todas, por orden de hora");
+        assert_eq!(m["wa_seen"], json!(["m1", "m3", "m2"]));
+        assert_eq!(c, 0, "no es un choque");
+        // un puesto no puede borrar entradas del registro
+        let ours = json!({"access_log": [], "wa_seen": ["m1"]});
+        let m = merge(Some(&base), &ours, &theirs, &mut c);
+        assert_eq!(m["access_log"].as_array().unwrap().len(), 3);
+        // y el registro no pasa de su tamaño máximo (se quitan las más antiguas)
+        let many: Vec<Value> = (0..2100).map(|i| json!({"when": format!("2026-11-11T10:{:02}:{:02}", i / 60 % 60, i % 60), "user": "x", "event": format!("e{i}"), "ok": false})).collect();
+        let m = merge(Some(&json!({"access_log": []})), &json!({"access_log": many}), &json!({"access_log": [e("09:00:00", "Entrada")]}), &mut c);
+        let log = m["access_log"].as_array().unwrap();
+        assert_eq!(log.len(), 2000);
+        assert_eq!(log.last().unwrap()["event"], "e2099");
+    }
+
+    #[test]
+    fn merging_big_clinics_is_fast() {
+        // una clínica grande: 20 000 registros por lista, cambios en los dos lados
+        let rec = |i: u32, v: &str| json!({"id": i, "patient_id": i % 500, "text": format!("entrada {i} {v}"), "price": 35.0});
+        let list = |f: &dyn Fn(u32) -> Value| Value::Array((1..=20_000).map(f).collect());
+        let base = json!({"entries": list(&|i| rec(i, "")), "payments": list(&|i| rec(i, ""))});
+        let ours = json!({"entries": list(&|i| rec(i, if i == 7 { "nuestro" } else { "" })), "payments": list(&|i| rec(i, ""))});
+        let theirs = json!({"entries": list(&|i| rec(i, if i == 19_000 { "suyo" } else { "" })), "payments": list(&|i| rec(i, if i == 3 { "suyo" } else { "" }))});
+        let t = std::time::Instant::now();
+        let mut c = 0;
+        let m = merge(Some(&base), &ours, &theirs, &mut c);
+        let took = t.elapsed();
+        assert_eq!(m["entries"][6]["text"], "entrada 7 nuestro");
+        assert_eq!(m["entries"][18_999]["text"], "entrada 19000 suyo");
+        assert_eq!(m["payments"][2]["text"], "entrada 3 suyo");
+        assert_eq!(c, 0);
+        assert!(took < std::time::Duration::from_secs(3), "combinar ha tardado {took:?}");
     }
 
     #[test]
