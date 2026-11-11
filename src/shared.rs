@@ -30,6 +30,9 @@ pub struct Station {
     /// Número de puesto (1-15), distinto en cada ordenador.
     pub number: u32,
     pub name: String,
+    /// Clave pública del servidor (hexadecimal), apuntada al conectar la
+    /// primera vez: después el puesto no acepta otro servidor.
+    pub server_pin: String,
 }
 
 /// Puesto visto por última vez (se guarda en los datos compartidos).

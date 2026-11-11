@@ -50,17 +50,19 @@ aplicación gráfica (X11/Wayland y OpenGL).
 Un ordenador hace de servidor (`--servidor` o Configuración › Puestos) y los
 demás se conectan con su dirección y la clave de la clínica.
 
-- **Todo va cifrado (TLS 1.3).** El certificado del servidor sale de la clave
-  de la clínica: cada puesto sabe de antemano cuál es el servidor bueno, así
-  que nadie en la red puede leer los datos ni hacerse pasar por él, y no hay
-  certificados que instalar. Si la clave de un puesto está mal, no conecta.
+- **Todo va cifrado (TLS 1.3).** El servidor tiene su propia identidad, creada
+  al azar, que no sale de él; cada puesto apunta su huella al conectarse la
+  primera vez y después no acepta otro servidor. Así nadie en la red, ni quien
+  sepa la clave de la clínica, puede leer los datos ni hacerse pasar por el
+  servidor. La huella se ve en el servidor (Configuración › Puestos y al
+  arrancar `--servidor`); si cambia, el puesto la enseña para compararla.
 - **Sin entrar no hay datos.** Antes de entrar, el puesto solo sabe el nombre
   de la clínica y sus usuarios. Al entrar (contraseña y, si lo tiene, código
   del móvil) el servidor comprueba el acceso y da al puesto una sesión.
 - **Las contraseñas no salen del servidor.** Los puestos no reciben las
   huellas de las contraseñas ni las claves del código del móvil; los fallos de
   acceso y los bloqueos los lleva el servidor. Solo Dirección puede cambiar
-  los usuarios.
+  los usuarios y activar o quitar el código del móvil.
 - **Los registros solo crecen**: ningún puesto puede borrar entradas del
   registro de accesos ni de la auditoría.
 - Contraseñas con PBKDF2-HMAC-SHA256 (600 000 vueltas) y sal aleatoria; las
@@ -73,6 +75,10 @@ revés), y el programa lo dice con un aviso.
 
 Con carpeta compartida (sin servidor), cada puesto lee el fichero entero,
 contraseñas incluidas: para varios puestos se recomienda el servidor.
+
+La puesta en marcha comprueba si el disco está cifrado (BitLocker, FileVault o
+LUKS): los datos de salud, las copias y las claves de los servicios (correo,
+WhatsApp, IA) están en él, y es lo único que los protege si roban el ordenador.
 
 ## Importar desde otros programas
 

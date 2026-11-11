@@ -8,10 +8,12 @@
 //! segundos.
 //!
 //! Seguridad:
-//! - Todo va cifrado con TLS 1.3. La clave del certificado del servidor sale
-//!   de la clave de la clínica, así que cada puesto sabe de antemano qué
-//!   servidor es el bueno: nadie en la red puede leer los datos ni hacerse
-//!   pasar por el servidor, y no hay que instalar ni confirmar certificados.
+//! - Todo va cifrado con TLS 1.3. El servidor tiene su propia identidad (una
+//!   clave Ed25519 creada al azar que no sale de él). Cada puesto apunta su
+//!   huella al darse de alta y después no acepta otro servidor: nadie en la
+//!   red, ni siquiera quien sepa la clave de la clínica, puede leer los datos
+//!   ni hacerse pasar por el servidor. Si la huella cambia (servidor
+//!   reinstalado), el puesto la enseña para compararla con la del servidor.
 //! - Para ver o guardar datos hace falta, además de la clave de la clínica,
 //!   haber entrado con un usuario (contraseña y, si lo tiene, el código del
 //!   móvil). El servidor comprueba el acceso y da una sesión al puesto.
@@ -45,7 +47,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_PORT: u16 = 8899;
@@ -63,6 +65,8 @@ const OLD_STATION: &str = "Este puesto tiene una versión anterior de VeodarDent
 const OLD_SERVER: &str = "El servidor de la clínica tiene una versión anterior de VeodarDental: actualice el programa en el ordenador servidor.";
 const WRONG_KEY: &str = "La clave de la clínica no es correcta.";
 const NO_CONNECTION: &str = "No hay conexión con el servidor de la clínica.";
+/// El servidor no es el que el puesto conocía (otra clave pública).
+pub const SERVER_CHANGED: &str = "El servidor de la clínica no es el de siempre: su huella ha cambiado. Si se ha reinstalado o cambiado el servidor, compruebe que la huella nueva es la que muestra el servidor; si no, avise al responsable: alguien podría estar haciéndose pasar por él.";
 /// Una sesión sin usar durante este tiempo caduca.
 const SESSION_IDLE_HOURS: i64 = 24;
 
@@ -70,6 +74,21 @@ const SESSION_IDLE_HOURS: i64 = 24;
 pub struct ServerConfig {
     pub port: u16,
     pub key: String,
+    /// Identidad del servidor para el cifrado (clave Ed25519 en PKCS#8, en
+    /// hexadecimal). No sale de este ordenador.
+    #[serde(default)]
+    pub tls_key: String,
+}
+
+impl ServerConfig {
+    fn identity(&self) -> Option<Vec<u8>> {
+        unhex(&self.tls_key).filter(|k| !identity_pin(k).is_empty())
+    }
+
+    /// Clave pública del servidor (la que guardan los puestos).
+    pub fn pin(&self) -> String {
+        self.identity().map(|k| identity_pin(&k)).unwrap_or_default()
+    }
 }
 
 fn config_path() -> PathBuf {
@@ -97,21 +116,38 @@ pub fn server_config() -> ServerConfig {
         .ok()
         .and_then(|t| serde_json::from_str::<ServerConfig>(&t).ok())
         .filter(|c| !c.key.is_empty())
-        .unwrap_or(ServerConfig { port: DEFAULT_PORT, key: String::new() })
+        .unwrap_or(ServerConfig { port: DEFAULT_PORT, key: String::new(), tls_key: String::new() })
 }
 
 /// Configuración del servidor; la crea (con clave nueva) la primera vez.
-pub fn ensure_server_config() -> ServerConfig {
-    let c = server_config();
-    if !c.key.is_empty() {
-        return c;
+/// Configuración del servidor; la crea (con clave e identidad nuevas) la
+/// primera vez, y añade la identidad a la de una versión anterior.
+pub fn ensure_server_config() -> Result<ServerConfig, String> {
+    let mut c = server_config();
+    if !c.key.is_empty() && c.identity().is_some() {
+        return Ok(c);
     }
-    let c = ServerConfig { port: DEFAULT_PORT, key: new_key() };
+    if c.key.is_empty() {
+        c = ServerConfig { port: DEFAULT_PORT, key: new_key(), tls_key: String::new() };
+    }
+    c.tls_key = hex(&new_identity()?);
     if let Some(d) = config_path().parent() {
-        let _ = std::fs::create_dir_all(d);
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    let _ = std::fs::write(config_path(), serde_json::to_string_pretty(&c).unwrap_or_default());
-    c
+    write_private(&config_path(), &serde_json::to_string_pretty(&c).map_err(|e| e.to_string())?)?;
+    Ok(c)
+}
+
+/// Escribe un fichero que solo puede leer el usuario de este ordenador
+/// (lleva la clave de la clínica y la del servidor).
+fn write_private(path: &std::path::Path, text: &str) -> Result<(), String> {
+    std::fs::write(path, text).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Dirección de este ordenador en la red local (para decírsela a los puestos).
@@ -127,46 +163,47 @@ fn rev_of(v: &Value) -> u64 {
 
 // ───────────────────────── cifrado (TLS) ─────────────────────────
 
-const TLS_SALT: &[u8] = b"VeodarDental servidor de datos TLS v1";
-/// Vueltas de PBKDF2 para sacar la clave del certificado de la clave de la
-/// clínica: quien vea el certificado no puede adivinar la clave probando.
-const TLS_ROUNDS: u32 = if cfg!(test) { 1_000 } else { 100_000 };
-
-/// Semilla Ed25519 de la clave de la clínica (se calcula una vez por clave).
-fn tls_seed(key: &str) -> [u8; 32] {
-    static CACHE: OnceLock<Mutex<HashMap<String, [u8; 32]>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(Default::default);
-    if let Some(s) = cache.lock().ok().and_then(|c| c.get(key).copied()) {
-        return s;
-    }
-    let mut seed = [0u8; 32];
-    let rounds = std::num::NonZeroU32::new(TLS_ROUNDS).unwrap_or(std::num::NonZeroU32::MIN);
-    ring::pbkdf2::derive(ring::pbkdf2::PBKDF2_HMAC_SHA256, rounds, TLS_SALT, key.as_bytes(), &mut seed);
-    if let Ok(mut c) = cache.lock() {
-        c.insert(key.to_string(), seed);
-    }
-    seed
+/// Identidad nueva del servidor: clave Ed25519 al azar (PKCS#8). Se guarda solo
+/// en el servidor; los puestos guardan su clave pública la primera vez que
+/// conectan y después no aceptan otra.
+pub fn new_identity() -> Result<Vec<u8>, String> {
+    ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new()).map(|d| d.as_ref().to_vec()).map_err(|_| "No se pudo crear la clave del servidor.".to_string())
 }
 
-/// Clave privada Ed25519 en PKCS#8 v1 (RFC 8410): cabecera fija y la semilla.
-fn ed25519_pkcs8(seed: &[u8; 32]) -> Vec<u8> {
-    let mut v = vec![0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
-    v.extend_from_slice(seed);
-    v
-}
-
-/// Clave pública que debe tener el servidor de una clave de la clínica.
-pub fn tls_public_key(key: &str) -> Vec<u8> {
+/// Clave pública (en hexadecimal) de una identidad del servidor.
+pub fn identity_pin(pkcs8: &[u8]) -> String {
     use ring::signature::KeyPair;
-    ring::signature::Ed25519KeyPair::from_seed_unchecked(&tls_seed(key)).map(|k| k.public_key().as_ref().to_vec()).unwrap_or_default()
+    ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8).map(|k| hex(k.public_key().as_ref())).unwrap_or_default()
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    let s = s.trim();
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+}
+
+/// Huella para comparar a simple vista (la del servidor y la que guardó el
+/// puesto): 16 cifras hexadecimales de la SHA-256 de la clave pública.
+pub fn fingerprint(pin: &str) -> String {
+    if pin.trim().is_empty() {
+        return String::new();
+    }
+    let h = sha256_hex(pin.trim());
+    h.chars().take(16).collect::<Vec<_>>().chunks(4).map(|c| c.iter().collect::<String>().to_uppercase()).collect::<Vec<_>>().join(" ")
 }
 
 fn provider() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
-fn server_tls(key: &str) -> Result<Arc<rustls::ServerConfig>, String> {
-    let der = rustls::pki_types::PrivatePkcs8KeyDer::from(ed25519_pkcs8(&tls_seed(key)));
+fn server_tls(identity: &[u8]) -> Result<Arc<rustls::ServerConfig>, String> {
+    let der = rustls::pki_types::PrivatePkcs8KeyDer::from(identity.to_vec());
     let kp = rcgen::KeyPair::from_pkcs8_der_and_sign_algo(&der, &rcgen::PKCS_ED25519).map_err(|e| e.to_string())?;
     let mut params = rcgen::CertificateParams::new(vec!["veodardental".to_string()]).map_err(|e| e.to_string())?;
     params.distinguished_name.push(rcgen::DnType::CommonName, "Servidor de datos de VeodarDental");
@@ -180,22 +217,24 @@ fn server_tls(key: &str) -> Result<Arc<rustls::ServerConfig>, String> {
     Ok(Arc::new(cfg))
 }
 
-/// Señal (en el error de TLS) de que el servidor no tiene la clave de la clínica.
-const KEY_MISMATCH: &str = "VEODAR: certificado de otra clave";
+/// Señal (en el error de TLS) de que el servidor no es el que el puesto conocía.
+const PIN_MISMATCH: &str = "VEODAR: servidor distinto del conocido";
 
-/// El puesto solo acepta el servidor cuya clave pública sale de la clave de la clínica.
-struct ClinicKeyVerifier {
-    expected: Vec<u8>,
+/// El puesto solo acepta el servidor cuya clave pública guardó la primera vez
+/// (si aún no la conoce, la acepta y la apunta).
+struct PinnedServer {
+    pin: Vec<u8>,
+    seen: Arc<Mutex<Vec<u8>>>,
     algs: rustls::crypto::WebPkiSupportedAlgorithms,
 }
 
-impl std::fmt::Debug for ClinicKeyVerifier {
+impl std::fmt::Debug for PinnedServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ClinicKeyVerifier")
+        f.write_str("PinnedServer")
     }
 }
 
-impl rustls::client::danger::ServerCertVerifier for ClinicKeyVerifier {
+impl rustls::client::danger::ServerCertVerifier for PinnedServer {
     fn verify_server_cert(
         &self,
         end_entity: &rustls::pki_types::CertificateDer<'_>,
@@ -204,10 +243,13 @@ impl rustls::client::danger::ServerCertVerifier for ClinicKeyVerifier {
         _ocsp: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        let mismatch = || rustls::Error::General(KEY_MISMATCH.into());
+        let mismatch = || rustls::Error::General(PIN_MISMATCH.into());
         let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref()).map_err(|_| mismatch())?;
         let public = cert.public_key().subject_public_key.data.as_ref();
-        if !self.expected.is_empty() && ct_eq(public, &self.expected) {
+        if let Ok(mut s) = self.seen.lock() {
+            *s = public.to_vec();
+        }
+        if self.pin.is_empty() || ct_eq(public, &self.pin) {
             Ok(rustls::client::danger::ServerCertVerified::assertion())
         } else {
             Err(mismatch())
@@ -227,9 +269,9 @@ impl rustls::client::danger::ServerCertVerifier for ClinicKeyVerifier {
     }
 }
 
-fn client_tls(key: &str) -> Result<Arc<rustls::ClientConfig>, String> {
+fn client_tls(pin: Vec<u8>, seen: Arc<Mutex<Vec<u8>>>) -> Result<Arc<rustls::ClientConfig>, String> {
     let p = provider();
-    let verifier = ClinicKeyVerifier { expected: tls_public_key(key), algs: p.signature_verification_algorithms };
+    let verifier = PinnedServer { pin, seen, algs: p.signature_verification_algorithms };
     let cfg = rustls::ClientConfig::builder_with_provider(p)
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(|e| e.to_string())?
@@ -284,8 +326,9 @@ fn read_line(r: &mut impl BufRead, buf: &mut Vec<u8>) -> Result<usize, Response>
     Ok(n)
 }
 
-/// Lee una petición; `None` si la conexión se cierra sin mandar nada.
-fn read_request(r: &mut impl BufRead, peer: IpAddr, max_body: usize) -> Result<Option<Request>, Response> {
+/// Lee la línea de la petición y las cabeceras (el cuerpo, aparte y solo si
+/// trae la clave de la clínica); `None` si la conexión se cierra sin mandar nada.
+fn read_head(r: &mut impl BufRead, peer: IpAddr) -> Result<Option<Request>, Response> {
     let mut line = Vec::new();
     if read_line(r, &mut line)? == 0 {
         return Ok(None);
@@ -314,16 +357,35 @@ fn read_request(r: &mut impl BufRead, peer: IpAddr, max_body: usize) -> Result<O
     if req.header("Transfer-Encoding").is_some() {
         return Err(error(501, "Envío por partes no admitido."));
     }
-    let len: usize = match req.header("Content-Length") {
-        Some(v) => v.parse().map_err(|_| error(400, "Longitud no válida."))?,
-        None => 0,
-    };
+    Ok(Some(req))
+}
+
+/// Longitud del cuerpo que anuncia la petición.
+fn body_len(req: &Request) -> Result<usize, Response> {
+    match req.header("Content-Length") {
+        Some(v) => v.parse().map_err(|_| error(400, "Longitud no válida.")),
+        None => Ok(0),
+    }
+}
+
+/// Lee el cuerpo poco a poco (sin reservar de golpe lo que diga la petición).
+fn read_body(r: &mut impl BufRead, req: &mut Request, max_body: usize) -> Result<(), Response> {
+    let len = body_len(req)?;
     if len > max_body {
         return Err(error(413, "Los datos enviados son demasiado grandes."));
     }
-    let mut body = vec![0u8; len];
-    r.read_exact(&mut body).map_err(|_| error(400, "Petición incompleta."))?;
-    Ok(Some(Request { body, ..req }))
+    let mut body = Vec::with_capacity(len.min(1 << 20));
+    r.by_ref().take(len as u64).read_to_end(&mut body).map_err(|_| error(400, "Petición incompleta."))?;
+    if body.len() != len {
+        return Err(error(400, "Petición incompleta."));
+    }
+    req.body = body;
+    Ok(())
+}
+
+/// ¿Trae la clave de la clínica? Sin ella no se lee el cuerpo de la petición.
+fn has_key(req: &Request, key: &str) -> bool {
+    req.header("X-Clave").is_some_and(|k| ct_eq(k.trim().as_bytes(), key.as_bytes()))
 }
 
 fn write_response(w: &mut impl Write, resp: &Response) -> std::io::Result<()> {
@@ -351,7 +413,7 @@ struct Job {
 }
 
 /// Atiende una conexión: cifrado, lectura de la petición y respuesta del servidor.
-fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, jobs: mpsc::Sender<Job>) {
+fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: mpsc::Sender<Job>) {
     let _ = tcp.set_read_timeout(Some(Duration::from_secs(60)));
     let _ = tcp.set_write_timeout(Some(Duration::from_secs(120)));
     let Ok(peer) = tcp.peer_addr().map(|a| a.ip()) else { return };
@@ -362,13 +424,24 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, jobs: mpsc::Sende
     // Un saludo TLS empieza por 0x16. Si no, es un puesto con una versión
     // anterior (HTTP sin cifrar): se lee su petición y se le explica qué pasa.
     if first[0] != 0x16 {
-        let _ = read_request(&mut BufReader::new(&tcp), peer, MAX_BODY);
+        // un cuerpo pequeño se lee para que la respuesta le llegue bien; uno grande, no
+        let mut r = BufReader::new(&tcp);
+        if let Ok(Some(mut req)) = read_head(&mut r, peer) {
+            let _ = read_body(&mut r, &mut req, 64 * 1024);
+        }
         let _ = write_response(&mut &tcp, &error(426, OLD_STATION));
         return;
     }
     let Ok(conn) = rustls::ServerConnection::new(tls) else { return };
     let mut s = rustls::StreamOwned::new(conn, tcp);
-    let read = read_request(&mut BufReader::new(&mut s), peer, MAX_BODY);
+    let read = {
+        let mut r = BufReader::new(&mut s);
+        match read_head(&mut r, peer) {
+            // sin la clave no se lee el cuerpo: el servidor contesta (y apunta el intento)
+            Ok(Some(mut req)) if has_key(&req, key) => read_body(&mut r, &mut req, MAX_BODY).map(|_| Some(req)),
+            other => other,
+        }
+    };
     let resp = match read {
         Ok(None) => return,
         Err(r) => r,
@@ -780,8 +853,10 @@ impl State {
 
     fn totp(&mut self, req: &Request, me: u32) -> Response {
         let Ok(b) = serde_json::from_slice::<TotpBody>(&req.body) else { return error(400, "Petición no válida.") };
-        if b.usuario != me && !self.is_admin(me) {
-            return error(403, "Solo Dirección puede cambiar el código del móvil de otro usuario.");
+        // como en la pantalla (Configuración › Usuarios): solo Dirección. Así nadie
+        // con la sesión de otro puede quitarle o cambiarle el código del móvil.
+        if !self.is_admin(me) {
+            return error(403, "Solo Dirección puede activar o quitar el código del móvil.");
         }
         let by = self.user(me).map(|u| u.name).unwrap_or_default();
         let unix = crate::totp::unix_now();
@@ -806,7 +881,7 @@ impl State {
         if hits(&mut self.key_fails, req.peer, window, false) >= 20 {
             return (error(429, "Demasiados intentos con una clave incorrecta desde este ordenador: espere unos minutos."), false);
         }
-        if !req.header("X-Clave").is_some_and(|k| ct_eq(k.trim().as_bytes(), key.as_bytes())) {
+        if !has_key(req, key) {
             hits(&mut self.key_fails, req.peer, window, true);
             return (error(401, WRONG_KEY), false);
         }
@@ -848,8 +923,8 @@ impl State {
 }
 
 /// Atiende peticiones hasta recibir /parar desde el propio ordenador.
-pub fn serve(listener: TcpListener, path: PathBuf, key: String, initial: Value) {
-    let tls = match server_tls(&key) {
+pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8>, initial: Value) {
+    let tls = match server_tls(&identity) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("No se pudo preparar el cifrado del servidor: {e}");
@@ -862,6 +937,7 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, initial: Value) 
     {
         let stop = stop.clone();
         let active = Arc::new(AtomicUsize::new(0));
+        let key_for_conns = Arc::new(key.clone());
         std::thread::spawn(move || {
             for tcp in listener.incoming() {
                 if stop.load(Ordering::SeqCst) {
@@ -873,9 +949,9 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, initial: Value) 
                     continue;
                 }
                 active.fetch_add(1, Ordering::SeqCst);
-                let (tls, tx, active) = (tls.clone(), jobs_tx.clone(), active.clone());
+                let (tls, tx, active, key) = (tls.clone(), jobs_tx.clone(), active.clone(), key_for_conns.clone());
                 std::thread::spawn(move || {
-                    handle_conn(tcp, tls, tx);
+                    handle_conn(tcp, tls, &key, tx);
                     active.fetch_sub(1, Ordering::SeqCst);
                 });
             }
@@ -898,7 +974,8 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, initial: Value) 
 
 /// Arranca el servidor en este ordenador (modo `--servidor`).
 pub fn run() -> Result<(), String> {
-    let cfg = ensure_server_config();
+    let cfg = ensure_server_config()?;
+    let identity = cfg.identity().ok_or("La identidad del servidor está dañada: borre servidor.json y vuelva a conectar los puestos.")?;
     let (db, err) = Db::load_or_sample();
     if let Some(e) = err {
         return Err(e);
@@ -909,13 +986,14 @@ pub fn run() -> Result<(), String> {
     println!("  Datos: {}", path.display());
     println!("  Dirección para los puestos: {}:{}", local_ip().unwrap_or_else(|| "IP-de-este-ordenador".into()), cfg.port);
     println!("  Clave de la clínica: {}", cfg.key);
+    println!("  Huella del servidor: {} (la misma que ven los puestos)", fingerprint(&cfg.pin()));
     match crate::disco::check_now() {
         crate::disco::Disk::Plain(why) => println!("  ⚠ {why} Los datos de salud de los pacientes están en este disco."),
         crate::disco::Disk::Unknown(why) => println!("  ⚠ Cifrado del disco: {why}"),
         _ => {}
     }
     let initial = serde_json::to_value(&db).map_err(|e| e.to_string())?;
-    serve(listener, path, cfg.key, initial);
+    serve(listener, path, cfg.key, identity, initial);
     Ok(())
 }
 
@@ -925,7 +1003,12 @@ pub fn local_server_running() -> bool {
     if cfg.key.is_empty() {
         return false;
     }
-    Remote::new(&format!("127.0.0.1:{}", cfg.port), &cfg.key, 0).access().is_ok()
+    local_remote(&cfg).access().is_ok()
+}
+
+/// Conexión con el servidor de este mismo ordenador (con su huella).
+pub fn local_remote(cfg: &ServerConfig) -> Remote {
+    Remote::with_pin(&format!("127.0.0.1:{}", cfg.port), &cfg.key, 0, &cfg.pin())
 }
 
 /// Lanza el servidor como proceso aparte (sigue funcionando aunque se cierre la ventana).
@@ -943,6 +1026,9 @@ pub struct Remote {
     pub station: u32,
     /// Sesión dada por el servidor al entrar (vacía hasta entonces).
     pub session: String,
+    /// Clave pública del servidor que ha visto esta conexión (hexadecimal se
+    /// saca con [`Remote::server_pin`]).
+    seen: Arc<Mutex<Vec<u8>>>,
     agent: ureq::Agent,
 }
 
@@ -984,8 +1070,8 @@ fn err_text(e: ureq::Error) -> String {
         }
         ureq::Error::Transport(t) => {
             let all = error_chain(&t);
-            if all.contains(KEY_MISMATCH) {
-                WRONG_KEY.into()
+            if all.contains(PIN_MISMATCH) {
+                SERVER_CHANGED.into()
             } else if all.contains("InvalidContentType") || all.contains("corrupt message") {
                 // respuesta sin cifrar: un servidor con una versión anterior
                 OLD_SERVER.into()
@@ -1023,18 +1109,42 @@ fn parse(text: &str) -> Result<Value, String> {
 }
 
 impl Remote {
+    /// Conexión con un servidor que el puesto aún no conoce: acepta su clave
+    /// pública y la apunta (al dar de alta el puesto).
     pub fn new(addr: &str, key: &str, station: u32) -> Self {
+        Self::with_pin(addr, key, station, "")
+    }
+
+    /// Conexión que solo acepta el servidor con esa clave pública (la que
+    /// guardó el puesto al darse de alta); vacía, como [`Remote::new`].
+    pub fn with_pin(addr: &str, key: &str, station: u32, pin: &str) -> Self {
         let addr = addr.trim().trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/');
         let addr = if addr.contains(':') { addr.to_string() } else { format!("{addr}:{DEFAULT_PORT}") };
         let key = key.trim().to_string();
+        let seen = Arc::new(Mutex::new(Vec::new()));
         // por lectura y escritura (no en total): enviar los datos de una clínica grande puede tardar
         let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(3)).timeout_read(Duration::from_secs(READ_TIMEOUT)).timeout_write(Duration::from_secs(60));
         // si el cifrado no se pudiera preparar, el agente normal no aceptaría
         // el certificado del servidor: no conecta, pero nunca va sin cifrar
-        if let Ok(tls) = client_tls(&key) {
+        if let Ok(tls) = client_tls(unhex(pin).unwrap_or_default(), seen.clone()) {
             b = b.tls_config(tls);
         }
-        Remote { base: format!("https://{addr}"), key, station, session: String::new(), agent: b.build() }
+        Remote { base: format!("https://{addr}"), key, station, session: String::new(), seen, agent: b.build() }
+    }
+
+    /// Clave pública (hexadecimal) del servidor con el que ha hablado esta
+    /// conexión; vacía si aún no ha conectado.
+    pub fn server_pin(&self) -> String {
+        self.seen.lock().map(|s| hex(&s)).unwrap_or_default()
+    }
+
+    /// Dirección del servidor (sin «https://»).
+    pub fn address(&self) -> &str {
+        self.base.trim_start_matches("https://")
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
     }
 
     fn request(&self, method: &str, path: &str) -> ureq::Request {
@@ -1173,7 +1283,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let initial = serde_json::to_value(Db::sample(today)).unwrap();
         let (p2, k2) = (path.clone(), key.to_string());
-        let h = std::thread::spawn(move || serve(listener, p2, k2, initial));
+        let identity = new_identity().unwrap();
+        let h = std::thread::spawn(move || serve(listener, p2, k2, identity, initial));
         (format!("127.0.0.1:{port}"), path, h)
     }
 
@@ -1191,7 +1302,7 @@ mod tests {
     fn server_with_two_clients() {
         let (addr, path, h) = start("CLAVE");
 
-        // clave incorrecta: el certificado no corresponde y no se manda nada
+        // clave incorrecta
         assert_eq!(Remote::new(&addr, "MAL", 0).access().unwrap_err(), WRONG_KEY);
 
         let mut ra = Remote::new(&addr, "CLAVE", 0);
@@ -1302,7 +1413,11 @@ mod tests {
         let secret = crate::totp::base32_encode(b"12345678901234567890");
         let now = crate::totp::unix_now();
         let code = |t: u64| format!("{:06}", crate::totp::code_at(&secret, t).unwrap());
+        // solo Dirección lo activa o lo quita (ni para sí mismo, con la sesión de otro)
+        let doc = signed_in(&addr, "CLAVE3", "Gabinete 2", 4, "0000");
+        assert!(doc.totp_on(4, &secret, &code(now)).unwrap_err().contains("Dirección"));
         dir.totp_on(3, &secret, &code(now)).unwrap();
+        assert!(doc.totp_off(3).unwrap_err().contains("Dirección"));
         let disk: Db = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(disk.user(3).unwrap().totp_secret, secret);
         let (d, _) = dir.load().unwrap();
@@ -1361,18 +1476,51 @@ mod tests {
     }
 
     #[test]
+    fn stations_only_accept_the_server_they_know() {
+        let (addr, path, h) = start("CLAVE5");
+        // al darse de alta, el puesto apunta la huella del servidor
+        let mut first = Remote::new(&addr, "CLAVE5", 0);
+        connect(&mut first, "Recepción", 1).unwrap();
+        let pin = first.server_pin();
+        assert_eq!(pin.len(), 64);
+        // con esa huella conecta; con otra (otro servidor, o alguien haciéndose pasar por él), no
+        assert!(Remote::with_pin(&addr, "CLAVE5", 0, &pin).access().is_ok());
+        let other = identity_pin(&new_identity().unwrap());
+        let fake = Remote::with_pin(&addr, "CLAVE5", 0, &other);
+        assert_eq!(fake.access().unwrap_err(), SERVER_CHANGED);
+        assert_eq!(fake.server_pin(), pin, "enseña la huella nueva para compararla");
+        assert_eq!(fingerprint(&pin).len(), 19);
+        // cada servidor tiene su propia identidad, aunque tenga la misma clave de la clínica
+        assert_ne!(identity_pin(&new_identity().unwrap()), identity_pin(&new_identity().unwrap()));
+        first.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn requests_are_limited() {
         let peer = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let raw = |s: &str| std::io::Cursor::new(s.as_bytes().to_vec());
+        let read = |s: &str| -> Result<Request, Response> {
+            let mut r = raw(s);
+            let mut req = read_head(&mut r, peer)?.unwrap();
+            read_body(&mut r, &mut req, MAX_BODY)?;
+            Ok(req)
+        };
         let big = format!("POST /guardar HTTP/1.1\r\nContent-Length: {}\r\n\r\n", MAX_BODY + 1);
-        assert_eq!(read_request(&mut raw(&big), peer, MAX_BODY).err().unwrap().code, 413);
+        assert_eq!(read(&big).err().unwrap().code, 413);
         let long = format!("GET /{} HTTP/1.1\r\n\r\n", "a".repeat(9000));
-        assert_eq!(read_request(&mut raw(&long), peer, MAX_BODY).err().unwrap().code, 431);
+        assert_eq!(read(&long).err().unwrap().code, 431);
         let chunked = "POST /guardar HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
-        assert_eq!(read_request(&mut raw(chunked), peer, MAX_BODY).err().unwrap().code, 501);
+        assert_eq!(read(chunked).err().unwrap().code, 501);
+        let short = "POST /guardar HTTP/1.1\r\nContent-Length: 10\r\n\r\n{}";
+        assert_eq!(read(short).err().unwrap().code, 400);
         let ok = "POST /guardar?base=7 HTTP/1.1\r\nx-clave: K\r\nContent-Length: 2\r\n\r\n{}";
-        let r = read_request(&mut raw(ok), peer, MAX_BODY).unwrap().unwrap();
+        let r = read(ok).unwrap();
         assert_eq!((r.method.as_str(), r.path.as_str(), r.param("base"), r.header("X-Clave"), r.body.as_slice()), ("POST", "/guardar", Some("7"), Some("K"), &b"{}"[..]));
+        // sin la clave de la clínica no se lee el cuerpo (se mire lo que se mire lo que anuncie)
+        assert!(has_key(&r, "K"));
+        assert!(!has_key(&r, "OTRA") && !has_key(&Request { headers: vec![], ..read(ok).unwrap() }, "K"));
 
         // claves aleatorias y, con una clave mal 20 veces, el ordenador espera
         assert_ne!(new_key(), new_key());

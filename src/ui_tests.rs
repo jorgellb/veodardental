@@ -1723,7 +1723,8 @@ fn station_signs_in_through_the_server() {
     let addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
     let initial = serde_json::to_value(crate::model::Db::sample(crate::model::today())).unwrap();
     let p2 = path.clone();
-    let server = std::thread::spawn(move || serve(listener, p2, "CLAVE_UI".into(), initial));
+    let identity = crate::server::new_identity().unwrap();
+    let server = std::thread::spawn(move || serve(listener, p2, "CLAVE_UI".into(), identity, initial));
 
     let mut h = harness();
     h.state_mut().connect_to(Remote::new(&addr, "CLAVE_UI", 0)).unwrap();

@@ -69,9 +69,15 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                         ui.ctx().copy_text(cfg.key.clone());
                     }
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Huella del servidor:");
+                    ui.label(RichText::new(server::fingerprint(&cfg.pin())).monospace());
+                })
+                .response
+                .on_hover_text("Al conectar un puesto, compruebe que ve esta misma huella: así sabe que habla con este servidor.");
                 muted(ui, "Este ordenador debe estar encendido, con VeodarDental abierto, mientras se trabaje en los demás puestos.");
                 if ui.button("Detener el servidor").clicked() {
-                    let _ = Remote::new(&format!("127.0.0.1:{}", cfg.port), &cfg.key, 0).stop();
+                    let _ = server::local_remote(&cfg).stop();
                     app.tools.puesto.server_up = None;
                     app.notify("Servidor detenido. Los puestos no podrán guardar hasta que vuelva a arrancarse.");
                 }
@@ -82,10 +88,9 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                     if remote_mode() && !server::is_local(&station().server) {
                         app.warn("Este puesto está conectado a otro servidor: desconéctelo primero.");
                     } else {
-                        let cfg = server::ensure_server_config();
-                        match server::spawn_local_server() {
-                            Ok(()) => {
-                                let st = Station { server: format!("127.0.0.1:{}", cfg.port), key: cfg.key.clone(), data_dir: String::new(), number: 0, name: app.tools.puesto.st.name.clone() };
+                        match server::ensure_server_config().and_then(|cfg| server::spawn_local_server().map(|_| cfg)) {
+                            Ok(cfg) => {
+                                let st = Station { server: format!("127.0.0.1:{}", cfg.port), key: cfg.key.clone(), data_dir: String::new(), number: 0, name: app.tools.puesto.st.name.clone(), server_pin: cfg.pin() };
                                 match save_station(&st) {
                                     Ok(()) => {
                                         app.db.audit("Servidor de datos activado", &addr);
@@ -123,9 +128,10 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                         let r = Remote::new(&form.server, &form.key, 0);
                         match r.register(form.name.trim()) {
                             Ok(n) => {
-                                let st = Station { data_dir: String::new(), number: n, ..form.clone() };
+                                let st = Station { data_dir: String::new(), number: n, server_pin: r.server_pin(), ..form.clone() };
+                                let print = server::fingerprint(&st.server_pin);
                                 match save_station(&st) {
-                                    Ok(()) => app.notify(format!("Conexión correcta: este ordenador será el puesto {n}. Cierre y vuelva a abrir VeodarDental para trabajar con los datos del servidor.")),
+                                    Ok(()) => app.notify(format!("Conexión correcta: este ordenador será el puesto {n}. Huella del servidor: {print} (debe ser la misma que muestra el servidor). Cierre y vuelva a abrir VeodarDental para trabajar con los datos del servidor.")),
                                     Err(e) => app.warn(format!("No se pudo guardar el ajuste: {e}")),
                                 }
                             }
@@ -134,7 +140,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 if (remote_mode() || shared()) && ui.button("Desconectar (datos solo en este ordenador)").clicked() {
-                    let st = Station { server: String::new(), key: String::new(), data_dir: String::new(), ..station().clone() };
+                    let st = Station { server: String::new(), key: String::new(), data_dir: String::new(), server_pin: String::new(), ..station().clone() };
                     match save_station(&st) {
                         Ok(()) => app.notify("Al reiniciar, este puesto usará sus datos locales."),
                         Err(e) => app.warn(format!("No se pudo guardar el ajuste: {e}")),
@@ -167,7 +173,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 } else {
                     match prepare_folder(&app.db, &dir) {
                         Ok(copied) => {
-                            let st = Station { server: String::new(), key: String::new(), ..form.clone() };
+                            let st = Station { server: String::new(), key: String::new(), server_pin: String::new(), ..form.clone() };
                             match save_station(&st) {
                                 Ok(()) => {
                                     app.db.audit("Puesto configurado en carpeta compartida", &st.data_dir);
@@ -198,10 +204,22 @@ pub fn offline_screen(app: &mut App, ui: &mut Ui) {
             ui.add_space(6.0);
             muted(ui, format!("Servidor: {}", station().server));
             muted(ui, "Compruebe que el ordenador servidor está encendido, con VeodarDental abierto, y que este ordenador está en la misma red. Para no perder datos, este puesto no deja trabajar sin conexión.");
+            // el servidor tiene otra huella: se enseña para compararla con la que muestra el servidor
+            let changed = msg == server::SERVER_CHANGED;
+            let seen = app.remote.as_ref().map(|r| r.server_pin()).unwrap_or_default();
+            if changed && !seen.is_empty() {
+                ui.add_space(6.0);
+                ui.label(RichText::new(format!("Huella que conocía este puesto: {}", server::fingerprint(&station().server_pin))).monospace());
+                ui.label(RichText::new(format!("Huella del servidor ahora:      {}", server::fingerprint(&seen))).monospace().color(WARN));
+                muted(ui, "En el ordenador servidor, la huella aparece en Configuración › Puestos (o al arrancarlo). Si coincide con la de ahora, puede confiar en él.");
+            }
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 if primary(ui, "Reintentar").clicked() {
                     app.reconnect();
+                }
+                if changed && !seen.is_empty() && ui.button("La huella coincide: confiar en este servidor").clicked() {
+                    app.trust_server(&seen);
                 }
             });
         });

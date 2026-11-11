@@ -212,11 +212,16 @@ impl App {
             if local && !crate::server::local_server_running() {
                 let _ = crate::server::spawn_local_server();
             }
-            let mut r = crate::server::Remote::new(&st.server, &st.key, 0);
+            // solo acepta el servidor cuya huella apuntó al darse de alta
+            let mut r = crate::server::Remote::with_pin(&st.server, &st.key, 0, &st.server_pin);
             // hasta que alguien entre, el puesto no tiene los datos (ni los de este ordenador)
             persist = false;
             match crate::server::connect(&mut r, &crate::shared::machine_name(), if local { 20 } else { 1 }) {
                 Ok(info) => {
+                    // puesto dado de alta con una versión anterior: apunta ahora la huella
+                    if st.server_pin.is_empty() {
+                        let _ = crate::shared::save_station(&crate::shared::Station { server_pin: r.server_pin(), ..st.clone() });
+                    }
                     db = login_shell(&info, &db.config.current_user, today());
                     db.station = r.station;
                     base = serde_json::Value::Null;
@@ -660,6 +665,19 @@ impl App {
             }
             Err(e) => self.offline = Some(e),
         }
+    }
+
+    /// El servidor tiene otra huella y quien está en el puesto ha comprobado
+    /// que es la que muestra el servidor: se apunta la nueva y se reconecta.
+    pub fn trust_server(&mut self, pin: &str) {
+        let Some(old) = self.remote.clone() else { return };
+        let st = crate::shared::Station { server_pin: pin.to_string(), ..crate::shared::station().clone() };
+        if let Err(e) = crate::shared::save_station(&st) {
+            self.warn(format!("No se pudo guardar el ajuste: {e}"));
+            return;
+        }
+        self.remote = Some(crate::server::Remote::with_pin(old.address(), old.key(), 0, pin));
+        self.reconnect();
     }
 
     /// Para las pruebas: conecta este puesto con un servidor (queda en la
