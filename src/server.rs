@@ -1089,6 +1089,8 @@ pub struct Remote {
     /// que sabe la clave de la clínica) y la que ha visto al conectar.
     pin: Arc<Mutex<Vec<u8>>>,
     seen: Arc<Mutex<Vec<u8>>>,
+    /// Una sola prueba a la vez.
+    verifying: Arc<Mutex<()>>,
     agent: ureq::Agent,
 }
 
@@ -1191,7 +1193,7 @@ impl Remote {
         if let Ok(tls) = client_tls(pin.clone(), seen.clone()) {
             b = b.tls_config(tls);
         }
-        Remote { base: format!("https://{addr}"), key, station, session: String::new(), pin, seen, agent: b.build() }
+        Remote { base: format!("https://{addr}"), key, station, session: String::new(), pin, seen, verifying: Arc::new(Mutex::new(())), agent: b.build() }
     }
 
     /// Clave pública (hexadecimal) del servidor que ha visto esta conexión, aunque
@@ -1208,18 +1210,36 @@ impl Remote {
 
     /// Antes de mandarle nada a un servidor cuya huella aún no se conoce, este
     /// tiene que firmar un reto al azar con la clave de la clínica.
+    ///
+    /// La prueba va por una conexión aparte, de un solo uso (sin guardarla para
+    /// reutilizarla), y la firma se comprueba con la clave pública de esa misma
+    /// conexión. La conexión de trabajo no se abre hasta tener la huella
+    /// comprobada, así que nunca habla con un servidor sin comprobar.
     fn verify_server(&self) -> Result<(), String> {
+        let _one_at_a_time = self.verifying.lock().unwrap_or_else(|e| e.into_inner());
         if self.pin.lock().map(|p| !p.is_empty()).unwrap_or(false) {
             return Ok(());
         }
         use ring::rand::SecureRandom;
         let mut challenge = [0u8; 16];
         ring::rand::SystemRandom::new().fill(&mut challenge).map_err(|_| "El sistema no ha dado números aleatorios.".to_string())?;
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let tls = client_tls(Arc::new(Mutex::new(Vec::new())), seen.clone())?;
+        let probe = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(3))
+            .timeout_read(Duration::from_secs(READ_TIMEOUT))
+            .max_idle_connections(0)
+            .tls_config(tls)
+            .build();
         // sin la clave de la clínica ni la sesión
-        let resp = self.agent.get(&format!("{}/prueba?reto={}", self.base, hex(&challenge))).call().map_err(err_text)?;
-        let v = parse(&read_all(resp)?)?;
-        let tag = v["prueba"].as_str().and_then(unhex).ok_or(WRONG_KEY)?;
-        let public = self.seen.lock().map(|s| s.clone()).unwrap_or_default();
+        let answer = probe.get(&format!("{}/prueba?reto={}", self.base, hex(&challenge))).call().map_err(err_text).and_then(read_all);
+        drop(probe);
+        let public = seen.lock().map(|s| s.clone()).unwrap_or_default();
+        // para enseñar la huella que se ha visto, aunque no se acepte
+        if let Ok(mut s) = self.seen.lock() {
+            s.clone_from(&public);
+        }
+        let tag = parse(&answer?)?["prueba"].as_str().and_then(unhex).ok_or(WRONG_KEY)?;
         if public.is_empty() || ring::hmac::verify(&proof_key(&self.key), &proof_message(&challenge, &public), &tag).is_err() {
             return Err(WRONG_KEY.into());
         }
@@ -1612,6 +1632,42 @@ mod tests {
         first.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn nothing_secret_goes_to_an_unproven_server() {
+        // servidor falso: contesta a todo con una prueba mala y apunta lo que recibe
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let tls = server_tls(&new_identity().unwrap()).unwrap();
+        let got: Arc<Mutex<Vec<(String, bool)>>> = Arc::default();
+        let log = got.clone();
+        std::thread::spawn(move || {
+            for tcp in listener.incoming().flatten() {
+                let Ok(conn) = rustls::ServerConnection::new(tls.clone()) else { continue };
+                let mut s = rustls::StreamOwned::new(conn, tcp);
+                let head = read_head(&mut BufReader::new(&mut s), IpAddr::V4(Ipv4Addr::LOCALHOST));
+                if let Ok(Some(req)) = head {
+                    log.lock().unwrap().push((req.path.clone(), req.header("X-Clave").is_some() || req.header("X-Sesion").is_some()));
+                }
+                let body = format!("{{\"prueba\": \"{}\"}}", "0".repeat(64));
+                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{body}", body.len());
+                let _ = s.flush();
+                // la conexión se queda abierta, por si el puesto la reutilizara para lo demás
+                let log = log.clone();
+                std::thread::spawn(move || {
+                    if let Ok(Some(req)) = read_head(&mut BufReader::new(&mut s), IpAddr::V4(Ipv4Addr::LOCALHOST)) {
+                        log.lock().unwrap().push((req.path.clone(), req.header("X-Clave").is_some() || req.header("X-Sesion").is_some()));
+                    }
+                });
+            }
+        });
+        let mut r = Remote::new(&addr, "CLAVE6", 0);
+        assert_eq!(connect(&mut r, "Recepción", 1).unwrap_err(), WRONG_KEY);
+        assert!(r.access().is_err() && r.login(1, "0000").is_err());
+        assert!(r.pinned().is_empty());
+        let got = got.lock().unwrap().clone();
+        assert!(!got.is_empty() && got.iter().all(|(path, secret)| path == "/prueba" && !secret), "{got:?}");
     }
 
     #[test]
