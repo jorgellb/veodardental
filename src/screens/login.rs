@@ -436,8 +436,10 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                     });
                 });
                 ui.horizontal(|ui| {
-                    if Some(u.id) != me {
-                        ui.checkbox(&mut u.active, "Activo");
+                    if Some(u.id) != me && ui.checkbox(&mut u.active, "Activo").changed() && u.active {
+                        // al reactivarlo, sus fallos anteriores ya no cuentan
+                        u.failed_logins = 0;
+                        u.last_failed = None;
                     }
                     ui.add_sized([160.0, 34.0], egui::TextEdit::singleline(&mut app.login.reset_pin).password(true).hint_text("Nueva contraseña"));
                     if ui.button("Asignar contraseña").clicked() {

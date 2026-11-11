@@ -68,6 +68,11 @@ pub struct User {
     /// Último paso de tiempo aceptado (un código no sirve dos veces).
     #[serde(default)]
     pub totp_last: u64,
+    /// Fallos seguidos (contraseña o código) desde su última entrada correcta.
+    #[serde(default)]
+    pub failed_logins: u32,
+    #[serde(default)]
+    pub last_failed: Option<NaiveDateTime>,
 }
 
 /// Cómo ha ido la contraseña.
@@ -87,12 +92,29 @@ pub struct AccessLog {
     pub ok: bool,
 }
 
+/// Fallos seguidos que bloquean al usuario (o hacen esperar a Dirección).
+pub const MAX_FAILS: u32 = 5;
+/// Longitud mínima de las contraseñas nuevas.
+pub const MIN_PIN_LEN: usize = 6;
+/// Vueltas de PBKDF2-HMAC-SHA256 (recomendación de OWASP). En las pruebas,
+/// pocas, para que no tarden.
+const PIN_ITERATIONS: u32 = if cfg!(test) { 1_000 } else { 600_000 };
+
+/// Sal aleatoria de 128 bits en hexadecimal.
 fn make_salt(seed: u32) -> String {
-    let t = now().and_utc().timestamp_nanos_opt().unwrap_or(0) as u64 ^ (seed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    format!("{t:016x}")
+    use ring::rand::SecureRandom;
+    let mut b = [0u8; 16];
+    if ring::rand::SystemRandom::new().fill(&mut b).is_err() {
+        // sin generador del sistema (no debería pasar): hora en nanosegundos mezclada
+        let t = now().and_utc().timestamp_nanos_opt().unwrap_or(0) as u128 ^ (seed as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15_F39C_C060_5CED_C834);
+        b = t.to_le_bytes();
+    }
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-pub fn hash_pin(salt: &str, pin: &str) -> String {
+/// Formato anterior (SHA-256 repetido): solo para comprobar contraseñas
+/// guardadas por versiones antiguas, que pasan al formato nuevo al entrar.
+fn legacy_hash(salt: &str, pin: &str) -> String {
     let mut h = sha256_hex(&format!("{salt}:{pin}"));
     for _ in 0..2000 {
         h = sha256_hex(&format!("{salt}{h}"));
@@ -100,19 +122,83 @@ pub fn hash_pin(salt: &str, pin: &str) -> String {
     h
 }
 
-pub fn new_user(id: u32, name: &str, profile: Profile, doctor_id: Option<u32>, pin: &str) -> User {
-    let salt = make_salt(id);
-    User { id, name: name.into(), profile, doctor_id, pin_hash: hash_pin(&salt, pin), salt, must_change: true, active: true, totp_secret: String::new(), totp_last: 0 }
+/// Huella de la contraseña: `pbkdf2$vueltas$clave` (PBKDF2-HMAC-SHA256, 32 bytes).
+pub fn hash_pin(salt: &str, pin: &str) -> String {
+    format!("pbkdf2${PIN_ITERATIONS}${}", pbkdf2_hex(salt, pin, PIN_ITERATIONS))
 }
 
+fn pbkdf2_hex(salt: &str, pin: &str, iterations: u32) -> String {
+    let mut out = [0u8; 32];
+    let n = std::num::NonZeroU32::new(iterations.max(1)).unwrap_or(std::num::NonZeroU32::MIN);
+    ring::pbkdf2::derive(ring::pbkdf2::PBKDF2_HMAC_SHA256, n, salt.as_bytes(), pin.as_bytes(), &mut out);
+    out.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// Comparación en tiempo constante (no revela cuántos caracteres coinciden).
+pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// ¿Es `pin` la contraseña de `u`? Admite el formato nuevo y el anterior.
+pub fn pin_matches(u: &User, pin: &str) -> bool {
+    match u.pin_hash.strip_prefix("pbkdf2$").and_then(|r| r.split_once('$')) {
+        Some((iters, hash)) => iters.parse::<u32>().is_ok_and(|n| ct_eq(pbkdf2_hex(&u.salt, pin, n).as_bytes(), hash.as_bytes())),
+        None => ct_eq(legacy_hash(&u.salt, pin).as_bytes(), u.pin_hash.as_bytes()),
+    }
+}
+
+/// ¿La contraseña está guardada en un formato antiguo o con menos vueltas?
+fn needs_rehash(u: &User) -> bool {
+    u.pin_hash.strip_prefix("pbkdf2$").and_then(|r| r.split_once('$')).and_then(|(n, _)| n.parse::<u32>().ok()).is_none_or(|n| n < PIN_ITERATIONS)
+}
+
+/// ¿Sirve como contraseña nueva? Al menos 6 caracteres y que no sea evidente
+/// (todo el mismo carácter, o cifras seguidas como 123456 o 654321).
+pub fn check_new_pin(pin: &str) -> Result<(), String> {
+    let c: Vec<char> = pin.chars().collect();
+    if c.len() < MIN_PIN_LEN {
+        return Err(format!("La contraseña debe tener al menos {MIN_PIN_LEN} caracteres."));
+    }
+    let same = c.iter().all(|x| *x == c[0]);
+    let digits: Option<Vec<i32>> = c.iter().map(|x| x.to_digit(10).map(|d| d as i32)).collect();
+    let run = digits.is_some_and(|d| d.windows(2).all(|w| w[1] - w[0] == 1) || d.windows(2).all(|w| w[0] - w[1] == 1));
+    if same || run {
+        return Err("Elija una contraseña menos evidente.".into());
+    }
+    Ok(())
+}
+
+pub fn new_user(id: u32, name: &str, profile: Profile, doctor_id: Option<u32>, pin: &str) -> User {
+    let salt = make_salt(id);
+    User {
+        id,
+        name: name.into(),
+        profile,
+        doctor_id,
+        pin_hash: hash_pin(&salt, pin),
+        salt,
+        must_change: true,
+        active: true,
+        totp_secret: String::new(),
+        totp_last: 0,
+        failed_logins: 0,
+        last_failed: None,
+    }
+}
+
+/// Usuarios de una clínica nueva, todos con la contraseña inicial 0000 (que
+/// deben cambiar al entrar). Como esa contraseña la sabe todo el mundo, la
+/// huella se calcula una sola vez para no hacer esperar al arrancar.
 pub fn default_users() -> Vec<User> {
-    vec![
-        new_user(1, "Dirección", Profile::Direccion, None, "0000"),
-        new_user(2, "Recepción", Profile::Recepcion, None, "0000"),
-        new_user(3, "Dra. Ruiz", Profile::Doctor, Some(1), "0000"),
-        new_user(4, "Dr. Navarro", Profile::Doctor, Some(2), "0000"),
-        new_user(5, "Hig. Campos", Profile::Higienista, Some(4), "0000"),
-    ]
+    let first = new_user(1, "Dirección", Profile::Direccion, None, "0000");
+    let like = |id: u32, name: &str, profile: Profile, doctor_id: Option<u32>| User { id, name: name.into(), profile, doctor_id, ..first.clone() };
+    let rest = [
+        like(2, "Recepción", Profile::Recepcion, None),
+        like(3, "Dra. Ruiz", Profile::Doctor, Some(1)),
+        like(4, "Dr. Navarro", Profile::Doctor, Some(2)),
+        like(5, "Hig. Campos", Profile::Higienista, Some(4)),
+    ];
+    std::iter::once(first.clone()).chain(rest).collect()
 }
 
 impl Db {
@@ -127,31 +213,59 @@ impl Db {
         }
     }
 
-    /// Fallos seguidos (contraseña o código) del usuario, del más reciente al más antiguo.
-    fn fail_streak(&self, name: &str) -> Vec<chrono::NaiveDateTime> {
-        self.access_log.iter().rev().take_while(|l| l.user == name && !l.ok).map(|l| l.when).collect()
-    }
-
     /// Dirección no se bloquea nunca (se quedaría la clínica sin poder entrar),
-    /// pero tras 5 fallos seguidos tiene que esperar 5 minutos.
-    fn admin_must_wait(&self, u: &User) -> bool {
-        u.profile == Profile::Direccion && self.fail_streak(&u.name).get(4).is_some_and(|t| now() - *t < chrono::Duration::minutes(5))
+    /// pero tras 5 fallos seguidos tiene que esperar: 5 minutos, y el doble
+    /// con cada nueva tanda de 5 fallos (hasta 4 horas). Devuelve los minutos.
+    fn admin_wait_minutes(u: &User) -> Option<i64> {
+        if u.profile != Profile::Direccion || u.failed_logins < MAX_FAILS {
+            return None;
+        }
+        let rounds = (u.failed_logins - MAX_FAILS) / MAX_FAILS;
+        let minutes = (5i64 << rounds.min(6)).min(240);
+        let last = u.last_failed?;
+        (now() - last < chrono::Duration::minutes(minutes)).then_some(minutes)
     }
 
-    /// Un fallo más: tras 5 seguidos el usuario queda bloqueado (Dirección solo espera).
+    fn wait_msg(minutes: i64) -> String {
+        format!("Demasiados intentos fallidos: espere {minutes} minutos y vuelva a probar.")
+    }
+
+    /// Un fallo más del usuario: tras 5 seguidos queda bloqueado (Dirección solo espera).
     fn fail(&mut self, u: &User, event: &str, msg: &str) -> Result<LoginStep, String> {
         self.log_access(&u.name, event, false);
-        if self.fail_streak(&u.name).len() >= 5 {
-            if u.profile == Profile::Direccion {
-                return Err("Demasiados intentos fallidos: espere 5 minutos y vuelva a probar.".into());
-            }
-            if let Some(x) = self.users.iter_mut().find(|x| x.id == u.id) {
-                x.active = false;
-            }
-            self.log_access(&u.name, "Usuario bloqueado por 5 intentos fallidos", false);
-            return Err("Demasiados intentos: el usuario ha quedado bloqueado.".into());
+        let Some(x) = self.users.iter_mut().find(|x| x.id == u.id) else { return Err(msg.into()) };
+        x.failed_logins = x.failed_logins.saturating_add(1);
+        x.last_failed = Some(now());
+        if x.failed_logins < MAX_FAILS {
+            return Err(msg.into());
         }
-        Err(msg.into())
+        if x.profile == Profile::Direccion {
+            let minutes = Self::admin_wait_minutes(x).unwrap_or(5);
+            return Err(Self::wait_msg(minutes));
+        }
+        x.active = false;
+        self.log_access(&u.name, "Usuario bloqueado por 5 intentos fallidos", false);
+        Err("Demasiados intentos: el usuario ha quedado bloqueado.".into())
+    }
+
+    /// Entrada correcta: los fallos vuelven a cero.
+    fn succeed(&mut self, id: u32, event: &str) {
+        let Some(x) = self.users.iter_mut().find(|x| x.id == id) else { return };
+        x.failed_logins = 0;
+        x.last_failed = None;
+        let name = x.name.clone();
+        self.config.current_user = name.clone();
+        self.log_access(&name, event, true);
+    }
+
+    /// Pasa la contraseña al formato actual (tras comprobar que es correcta).
+    fn upgrade_hash(&mut self, id: u32, pin: &str) {
+        if let Some(x) = self.users.iter_mut().find(|x| x.id == id)
+            && needs_rehash(x)
+        {
+            x.salt = make_salt(id);
+            x.pin_hash = hash_pin(&x.salt, pin);
+        }
     }
 
     /// Comprueba el PIN. Si el usuario tiene el código del móvil activado,
@@ -164,18 +278,18 @@ impl Db {
             self.log_access(&u.name, "Acceso denegado (usuario bloqueado)", false);
             return Err("Usuario bloqueado. Pida a Dirección que lo reactive.".into());
         }
-        if self.admin_must_wait(&u) {
-            return Err("Demasiados intentos fallidos: espere 5 minutos y vuelva a probar.".into());
+        if let Some(m) = Self::admin_wait_minutes(&u) {
+            return Err(Self::wait_msg(m));
         }
-        if hash_pin(&u.salt, pin) != u.pin_hash {
+        if !pin_matches(&u, pin) {
             return self.fail(&u, "Contraseña incorrecta", "Contraseña incorrecta.");
         }
+        self.upgrade_hash(id, pin);
         if !u.totp_secret.is_empty() {
             // no se anota nada: los fallos del código siguen contando seguidos
             return Ok(LoginStep::NeedCode);
         }
-        self.config.current_user = u.name.clone();
-        self.log_access(&u.name, "Entrada", true);
+        self.succeed(id, "Entrada");
         Ok(LoginStep::Done)
     }
 
@@ -186,16 +300,15 @@ impl Db {
             self.log_access(&u.name, "Acceso denegado (usuario bloqueado)", false);
             return Err("Usuario bloqueado. Pida a Dirección que lo reactive.".into());
         }
-        if self.admin_must_wait(&u) {
-            return Err("Demasiados intentos fallidos: espere 5 minutos y vuelva a probar.".into());
+        if let Some(m) = Self::admin_wait_minutes(&u) {
+            return Err(Self::wait_msg(m));
         }
         match crate::totp::verify(&u.totp_secret, code, unix, u.totp_last) {
             Some(step) => {
                 if let Some(x) = self.users.iter_mut().find(|x| x.id == id) {
                     x.totp_last = step;
                 }
-                self.config.current_user = u.name.clone();
-                self.log_access(&u.name, "Entrada con el código del móvil", true);
+                self.succeed(id, "Entrada con el código del móvil");
                 Ok(())
             }
             None => self.fail(&u, "Código del móvil incorrecto", "El código no es correcto o ya se ha usado: escriba el que muestra ahora la app.").map(|_| ()),
@@ -237,25 +350,24 @@ impl Db {
 
     pub fn change_pin(&mut self, id: u32, old: &str, new: &str) -> Result<(), String> {
         let u = self.user(id).cloned().ok_or("Usuario no encontrado")?;
-        if hash_pin(&u.salt, old) != u.pin_hash {
+        if !pin_matches(&u, old) {
             return Err("La contraseña actual no es correcta.".into());
         }
         self.set_pin(id, new)
     }
 
+    /// Pone contraseña nueva; el usuario queda activo y sin fallos pendientes.
     pub fn set_pin(&mut self, id: u32, new: &str) -> Result<(), String> {
-        if new.chars().count() < 4 {
-            return Err("La contraseña debe tener al menos 4 caracteres.".into());
-        }
-        if new == "0000" || new == "1234" {
-            return Err("Elija una contraseña menos evidente.".into());
-        }
+        check_new_pin(new)?;
         let salt = make_salt(id);
         let name = {
             let u = self.users.iter_mut().find(|u| u.id == id).ok_or("Usuario no encontrado")?;
             u.pin_hash = hash_pin(&salt, new);
             u.salt = salt;
             u.must_change = false;
+            u.active = true;
+            u.failed_logins = 0;
+            u.last_failed = None;
             u.name.clone()
         };
         self.log_access(&name, "Cambio de contraseña", true);
@@ -327,8 +439,93 @@ mod tests {
         }
         assert!(!d.user(5).unwrap().active);
         assert!(d.set_pin(3, "12").is_err());
-        d.set_pin(3, "7391").unwrap();
-        assert!(d.login(3, "7391").is_ok());
+        assert!(d.set_pin(3, "7391").is_err(), "las contraseñas nuevas deben tener al menos 6 caracteres");
+        assert!(d.set_pin(3, "000000").is_err(), "una contraseña evidente no sirve");
+        d.set_pin(3, "739154").unwrap();
+        assert!(d.login(3, "739154").is_ok());
         assert!(!d.user(3).unwrap().must_change);
+        assert!(d.user(3).unwrap().pin_hash.starts_with("pbkdf2$"));
+    }
+
+    #[test]
+    fn alternating_users_does_not_reset_the_lockout() {
+        let mut d = db();
+        // intentos alternos contra dos usuarios: cada uno lleva su propia cuenta
+        for _ in 0..5 {
+            let _ = d.login(5, "1111");
+            let _ = d.login(4, "1111");
+        }
+        assert!(!d.user(5).unwrap().active, "la higienista debe quedar bloqueada");
+        assert!(!d.user(4).unwrap().active, "el doctor debe quedar bloqueado");
+        // la entrada correcta de otro usuario tampoco borra los fallos
+        let mut d = db();
+        for _ in 0..4 {
+            let _ = d.login(5, "1111");
+            assert!(d.login(2, "0000").is_ok());
+        }
+        let _ = d.login(5, "1111");
+        assert!(!d.user(5).unwrap().active);
+        // cambiar el nombre del usuario no borra los fallos
+        let mut d = db();
+        for _ in 0..4 {
+            let _ = d.login(5, "1111");
+        }
+        d.users.iter_mut().find(|u| u.id == 5).unwrap().name = "Otro nombre".into();
+        let _ = d.login(5, "1111");
+        assert!(!d.user(5).unwrap().active);
+        // al asignarle contraseña nueva vuelve a estar activo y sin fallos
+        d.set_pin(5, "582941").unwrap();
+        assert!(d.user(5).unwrap().active);
+        assert_eq!(d.user(5).unwrap().failed_logins, 0);
+    }
+
+    #[test]
+    fn own_successful_login_resets_the_count() {
+        let mut d = db();
+        for _ in 0..4 {
+            let _ = d.login(5, "1111");
+        }
+        assert!(d.login(5, "0000").is_ok());
+        for _ in 0..4 {
+            let _ = d.login(5, "1111");
+        }
+        assert!(d.user(5).unwrap().active, "tras entrar bien, la cuenta empieza de cero");
+    }
+
+    #[test]
+    fn director_wait_grows_with_more_failures() {
+        let mut d = db();
+        for _ in 0..5 {
+            let _ = d.login(1, "9999");
+        }
+        assert!(d.login(1, "0000").unwrap_err().contains("espere 5 minutos"));
+        // pasada la espera, otra tanda de 5 fallos: la espera se dobla
+        d.users.iter_mut().find(|u| u.id == 1).unwrap().failed_logins = 10;
+        assert!(d.login(1, "0000").unwrap_err().contains("espere 10 minutos"));
+        assert!(d.user(1).unwrap().active, "Dirección nunca se bloquea");
+    }
+
+    #[test]
+    fn old_hashes_still_work_and_are_upgraded() {
+        let mut d = db();
+        // usuario con el formato anterior (SHA-256 repetido)
+        let u = d.users.iter_mut().find(|u| u.id == 2).unwrap();
+        u.salt = "00112233aabbccdd".into();
+        u.pin_hash = legacy_hash(&u.salt, "4321");
+        assert!(d.login(2, "1111").is_err());
+        assert!(d.login(2, "4321").is_ok());
+        let u = d.user(2).unwrap();
+        assert!(u.pin_hash.starts_with("pbkdf2$"), "al entrar se pasa al formato nuevo");
+        assert_ne!(u.salt, "00112233aabbccdd", "con sal nueva");
+        assert!(d.login(2, "4321").is_ok(), "y la misma contraseña sigue sirviendo");
+    }
+
+    #[test]
+    fn salts_are_random() {
+        let a = new_user(1, "A", Profile::Recepcion, None, "0000");
+        let b = new_user(1, "A", Profile::Recepcion, None, "0000");
+        assert_ne!(a.salt, b.salt);
+        assert_ne!(a.pin_hash, b.pin_hash);
+        assert_eq!(a.salt.len(), 32);
     }
 }

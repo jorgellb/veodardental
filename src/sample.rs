@@ -730,6 +730,34 @@ mod tests {
     }
 
     #[test]
+    fn patient_data_cannot_inject_program_options() {
+        let mut db = Db::sample(d());
+        // nombre escrito por alguien en la cita online, con opciones y rutas
+        let p = db.patient_mut(100).unwrap();
+        p.first_name = "Ana\" -P\\otro /DELETE".into();
+        p.last_name = "García\r\nNumPac=999 --abrir C:\\x.dcm".into();
+        p.nif = "12345678Z \"/x".into();
+        let args = db.expand_args("-P\\GESDEN\\[NUMPAC] -N[NOMPAC] [APELPAC] [NIF]", 100);
+        assert_eq!(args, "-P\\GESDEN\\1001 -NAna P otro DELETE García NumPac 999 abrir C x.dcm 12345678Z x");
+        // ninguna palabra que venga del paciente empieza como una opción
+        for w in args.split_whitespace().skip(1) {
+            assert!(!w.starts_with('-') || w.starts_with("-NAna"), "opción colada: {w}");
+            assert!(!w.contains(['/', '\\', '"', ':']), "carácter peligroso en {w}");
+        }
+        // los nombres normales no cambian: guiones dentro, apóstrofos, acentos
+        let p = db.patient_mut(100).unwrap();
+        p.first_name = "María-José".into();
+        p.last_name = "O'Neill Núñez".into();
+        assert_eq!(db.expand_args("[NOMPAC] [APELPAC]", 100), "María-José O'Neill Núñez");
+        // el fichero puente no admite líneas nuevas metidas en un dato
+        let p = db.patient_mut(100).unwrap();
+        p.address = "C/ Mayor 3\r\nNumPac=999".into();
+        let ini = db.bridge_ini(100);
+        assert_eq!(ini.matches("NumPac=").count(), 1, "{ini}");
+        assert!(ini.contains("Direccion=C/ MAYOR 3 NUMPAC=999\r\n"));
+    }
+
+    #[test]
     fn perio_stats() {
         let db = Db::sample(d());
         let charts = db.patient_perio(108);

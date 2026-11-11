@@ -869,6 +869,22 @@ pub fn default_connectors() -> Vec<Connector> {
     ]
 }
 
+/// Texto del paciente para la línea de órdenes de un programa externo: solo
+/// letras, cifras, espacios y los signos de un nombre (punto, coma, apóstrofo,
+/// guion dentro de la palabra, º, ª, paréntesis). Sin comillas, barras ni dos
+/// puntos, y ninguna palabra empieza por guion: un dato no puede añadir
+/// opciones ni rutas al programa.
+pub fn arg_safe(s: &str) -> String {
+    let kept: String = s.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '.' | ',' | '\'' | '-' | 'º' | 'ª' | '(' | ')') { c } else { ' ' }).collect();
+    kept.split_whitespace().map(|w| w.trim_start_matches(['-', '.', ',', '\''])).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+/// Texto para una línea del fichero puente: sin saltos de línea ni otros
+/// caracteres de control.
+pub fn ini_safe(s: &str) -> String {
+    s.split(char::is_control).filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
 impl Db {
     /// Carpeta de imágenes del paciente (como IMG/PACIENTES del original).
     pub fn patient_image_dir(&self, pid: u32) -> PathBuf {
@@ -876,35 +892,38 @@ impl Db {
         dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("imagenes").join(n.to_string())
     }
 
-    /// Sustituye los comodines del enlace por los datos del paciente.
+    /// Sustituye los comodines del enlace por los datos del paciente. Los
+    /// textos del paciente (que pueden venir de la cita online) se limpian con
+    /// [`arg_safe`] para que no puedan añadir opciones ni rutas al programa.
     pub fn expand_args(&self, template: &str, pid: u32) -> String {
         let p = self.patient(pid).cloned().unwrap_or_default();
         template
             .replace("[IDPAC]", &p.id.to_string())
             .replace("[NUMPAC]", &p.history_no.to_string())
-            .replace("[NOMPAC]", &p.first_name)
-            .replace("[APELPAC]", &p.last_name)
-            .replace("[NIF]", &p.nif)
+            .replace("[NOMPAC]", &arg_safe(&p.first_name))
+            .replace("[APELPAC]", &arg_safe(&p.last_name))
+            .replace("[NIF]", &arg_safe(&p.nif))
             .replace("[FECNAC]", &p.birth.map(|d| d.format("%d/%m/%Y").to_string()).unwrap_or_default())
             .replace("[SEXO]", if p.sex == "F" { "M" } else { "H" })
             .replace("[CARPETA]", &self.patient_image_dir(pid).display().to_string())
     }
 
     /// Contenido del fichero puente IMCONECT.ini (mismo formato que el original).
+    /// Ningún dato puede llevar saltos de línea (añadirían claves al fichero).
     pub fn bridge_ini(&self, pid: u32) -> String {
         let p = self.patient(pid).cloned().unwrap_or_default();
         format!(
             "[DATOS FILIACION]\r\nIdPac={}\r\nNumPac={}\r\nNombre={}\r\nApellidos={}\r\nDireccion={}\r\nPoblacion={}\r\nCP={}\r\nProvincia={}\r\nTelPrivado={}\r\nTelTrabajo={}\r\nFecNacim={}\r\nSexo={}\r\n",
             p.id,
             p.history_no,
-            p.first_name.to_uppercase(),
-            p.last_name.to_uppercase(),
-            p.address.to_uppercase(),
-            p.city.to_uppercase(),
-            p.zip,
-            p.province.to_uppercase(),
-            p.mobile,
-            p.phone,
+            ini_safe(&p.first_name).to_uppercase(),
+            ini_safe(&p.last_name).to_uppercase(),
+            ini_safe(&p.address).to_uppercase(),
+            ini_safe(&p.city).to_uppercase(),
+            ini_safe(&p.zip),
+            ini_safe(&p.province).to_uppercase(),
+            ini_safe(&p.mobile),
+            ini_safe(&p.phone),
             p.birth.map(|d| format!("{}/{}/{}", d.day(), d.month(), d.year())).unwrap_or_default(),
             if p.sex == "F" { "M" } else { "H" },
         )

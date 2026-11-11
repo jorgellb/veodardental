@@ -73,14 +73,23 @@ fn config(src: &SqlSource) -> Result<(Config, bool), String> {
     }
     c.application_name("VeodarDental (importación, solo lectura)");
     c.authentication(if src.windows_auth { windows_auth(src)? } else { AuthMethod::sql_server(src.user.trim(), &src.password) });
-    c.encryption(match src.encrypt {
-        0 => EncryptionLevel::NotSupported,
-        2 => EncryptionLevel::Required,
-        _ => EncryptionLevel::Off,
-    });
-    // los servidores de las clínicas suelen tener un certificado propio
+    c.encryption(encryption_level(src.encrypt));
+    // SQL Server crea un certificado propio al instalarse (sin entidad que lo
+    // firme) y así están casi todos los de las clínicas: si se exigiera uno
+    // firmado no se podría importar de ninguno. La conexión es de solo lectura,
+    // en la red de la clínica y para una importación puntual.
     c.trust_cert();
     Ok((c, named))
+}
+
+/// Opción de cifrado de la pantalla → nivel de tiberius. «Si el servidor lo
+/// admite» cifra toda la sesión (no solo el inicio de sesión, que es `Off`).
+fn encryption_level(option: u8) -> EncryptionLevel {
+    match option {
+        0 => EncryptionLevel::NotSupported,
+        2 => EncryptionLevel::Required,
+        _ => EncryptionLevel::On,
+    }
 }
 
 /// Usuario de Windows: el indicado (DOMINIO\usuario) o, si se deja vacío, el
@@ -287,6 +296,13 @@ pub fn gesden_patients(src: &SqlSource, cat: Option<&GCatalogo>) -> Result<Sheet
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_option_encrypts_the_whole_session() {
+        assert!(matches!(encryption_level(SqlSource::default().encrypt), EncryptionLevel::On));
+        assert!(matches!(encryption_level(2), EncryptionLevel::Required));
+        assert!(matches!(encryption_level(0), EncryptionLevel::NotSupported));
+    }
 
     #[test]
     fn server_names() {
