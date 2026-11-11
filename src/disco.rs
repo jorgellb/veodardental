@@ -65,6 +65,7 @@ fn data_dir() -> PathBuf {
 }
 
 /// La carpeta o la primera de sus carpetas superiores que exista.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn existing(dir: &Path) -> PathBuf {
     dir.ancestors().find(|a| a.exists()).map(Path::to_path_buf).unwrap_or_else(|| dir.to_path_buf())
 }
