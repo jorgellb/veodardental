@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Documento para firmar · {{CLINICA}}</title>
+<style>
+:root{--ac:#0d9488;--acd:#0f766e;--acs:#e6f6f4;--tx:#1e293b;--hd:#0b1324;--mu:#64748b;--bd:#e2e8f0;--bg:#f4f7fb;--ok:#16a34a;--oks:#e8f7ee;--er:#dc2626;--ers:#fdecec;--wa:#b45309;--was:#fff6e6}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tx);background:radial-gradient(1200px 500px at 50% -200px,#d9f2ee 0,var(--bg) 60%) fixed;min-height:100vh}
+.wrap{max-width:720px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--ac),#14b8a6);display:grid;place-items:center;box-shadow:0 6px 18px rgba(13,148,136,.28)}
+.logo svg{width:28px;height:28px}
+h1{font-size:22px;margin:0;color:var(--hd)} .sub{color:var(--mu);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(15,23,42,.06);margin-bottom:14px}
+h2{font-size:18px;margin:0 0 4px;color:var(--hd)} h3{font-size:15px;margin:0 0 10px;color:var(--hd)}
+.hint{color:var(--mu);font-size:14px;margin:0 0 12px;line-height:1.5}
+.paper{background:#fffdf8;border:1px solid #efe8da;border-radius:14px;padding:18px 18px;margin-top:12px}
+.paper .tt{font-size:15px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--hd);margin-bottom:10px}
+.paper .tx{white-space:pre-wrap;font-size:15.5px;line-height:1.65;color:#2b2f36}
+.pill{display:inline-block;border-radius:999px;padding:4px 11px;font-size:13px;font-weight:600;white-space:nowrap}
+.p-ok{background:var(--oks);color:var(--ok)} .p-wa{background:var(--was);color:var(--wa)} .p-mu{background:#eef2f6;color:var(--mu)}
+input[type=text],textarea{width:100%;border:1px solid var(--bd);border-radius:12px;padding:11px 13px;font:inherit;font-size:15px;color:var(--tx);background:#fff}
+input:focus,textarea:focus{outline:2px solid #99e2d8;border-color:var(--ac)}
+.row{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+label.f{display:block;font-size:13px;color:var(--mu);margin:12px 0 5px;font-weight:500}
+.pad{position:relative;border:2px dashed #cbd5e1;border-radius:14px;background:#fff;touch-action:none;height:170px}
+.pad canvas{width:100%;height:100%;display:block;border-radius:12px}
+.pad .ph{position:absolute;inset:0;display:grid;place-items:center;color:#94a3b8;font-size:14px;pointer-events:none}
+.pad .ln{position:absolute;left:18px;right:18px;bottom:34px;border-bottom:1px solid #e2e8f0;pointer-events:none}
+.clear{background:none;border:none;color:var(--acd);font-weight:600;font-size:13px;padding:6px 0;cursor:pointer}
+.check{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:14px;line-height:1.45}
+.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--ac);flex:none}
+button{font:inherit;cursor:pointer}
+.main{width:100%;margin-top:16px;background:var(--ac);border:1px solid var(--acd);color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600;box-shadow:0 6px 16px rgba(13,148,136,.25)}
+.main:disabled{opacity:.6;cursor:default}
+.alt{display:flex;gap:10px;margin-top:12px}
+.btn{flex:1;border:1px solid var(--bd);background:#fff;border-radius:12px;padding:11px;font-size:14px;font-weight:600;color:var(--hd)}
+.msg{border-radius:14px;padding:12px 14px;font-size:14px;margin-top:12px;line-height:1.45}
+.m-ok{background:var(--oks);color:#166534} .m-er{background:var(--ers);color:#991b1b} .m-in{background:#f1f5f9;color:var(--tx)}
+.legal{font-size:12px;color:var(--mu);line-height:1.5;margin-top:12px}
+footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-height:1.6}
+@media (max-width:520px){.row{grid-template-columns:1fr}.card{padding:18px}.paper{padding:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.5 1 6.5 2.5 6.5S9 17 10 15.5c.6-.9 1.2-1.5 2-1.5s1.4.6 2 1.5c1 1.5 1 5.5 2.5 5.5S18.5 17 19 14.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+    <div><h1 id="clinic">{{CLINICA}}</h1><div class="sub">Documento para firmar</div></div>
+  </header>
+  <div id="main"><div class="card"><p class="hint">Cargando…</p></div></div>
+  <footer id="foot"></footer>
+</div>
+<script>
+(function(){
+  var token=location.pathname.split('/').filter(Boolean).pop()||'';
+  var base='../api/documento/'+encodeURIComponent(token);
+  var D=null, main=document.getElementById('main');
+  function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==='text')e.textContent=attrs[k];else if(k==='cls')e.className=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});return e;}
+  function clear(n){while(n.firstChild)n.removeChild(n.firstChild);}
+  function api(path,body){var o=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};return fetch(base+path,o).then(function(r){return r.json().then(function(j){j._code=r.status;return j;});});}
+  function msg(box,ok,t){clear(box);box.appendChild(el('div',{cls:'msg '+(ok?'m-ok':'m-er'),text:t}));}
+
+  function load(){
+    api('').then(function(d){
+      if(!d.ok){clear(main);main.appendChild(el('div',{cls:'card'},[el('h2',{text:'Enlace no disponible'}),el('p',{cls:'hint',text:d.error})]));return;}
+      D=d;document.getElementById('clinic').textContent=d.clinica;document.title=d.titulo+' · '+d.clinica;
+      document.getElementById('foot').textContent=[d.direccion,d.telefono?'Tel. '+d.telefono:''].filter(Boolean).join(' · ');
+      render();
+    }).catch(function(){clear(main);main.appendChild(el('div',{cls:'card'},[el('p',{cls:'hint',text:'No se ha podido cargar. Inténtelo de nuevo en unos minutos.'})]));});
+  }
+
+  function render(){
+    clear(main);var d=D;
+    var st={pendiente:['Pendiente de firmar','p-wa'],firmado:['Firmado','p-ok'],en_clinica:['Se firmará en la clínica','p-mu']}[d.estado]||['',''];
+    var c=el('div',{cls:'card'});
+    c.appendChild(el('div',{style:'display:flex;justify-content:space-between;gap:10px;align-items:flex-start'},[el('div',{},[el('h2',{text:(d.nombre?'Hola, '+d.nombre+'. ':'')+'Lea este documento con calma'}),el('p',{cls:'hint',text:d.categoria+' · '+d.fecha+(d.profesional?' · '+d.profesional:'')})]),el('span',{cls:'pill '+st[1],text:st[0]})]));
+    c.appendChild(el('div',{cls:'paper'},[el('div',{cls:'tt',text:d.titulo}),el('div',{cls:'tx',text:d.texto})]));
+    main.appendChild(c);
+    if(d.estado==='pendiente')sign();
+    else if(d.estado==='firmado')main.appendChild(el('div',{cls:'card'},[el('h3',{text:'Documento firmado'}),el('div',{cls:'msg m-ok',text:'Firmado'+(d.firmado_por?' por '+d.firmado_por:'')+(d.firmado_el?' el '+d.firmado_el:'')+'. ¡Gracias! Le enviaremos una copia firmada por correo.'})]));
+    else main.appendChild(el('div',{cls:'card'},[el('p',{cls:'hint',style:'margin:0',text:'Lo firmará en la clínica, donde podrá resolver sus dudas con el profesional. Si cambia de idea, llámenos al '+d.telefono+'.'})]));
+  }
+
+  function sign(){
+    var d=D,c=el('div',{cls:'card'});
+    c.appendChild(el('h3',{text:'Firma'}));
+    c.appendChild(el('p',{cls:'hint',text:'Si tiene alguna duda, pregúntenos antes de firmar con el botón «Tengo una pregunta». Si firma en nombre del paciente (padre, madre, tutor), escriba su propio nombre.'}));
+    var name=el('input',{type:'text',placeholder:'Nombre y apellidos de quien firma',autocomplete:'name'}), nif=el('input',{type:'text',placeholder:'NIF (opcional)'});
+    c.appendChild(el('div',{cls:'row'},[name,nif]));
+    var cv=el('canvas'),ph=el('div',{cls:'ph',text:'Firme aquí con el dedo o el ratón'}),pad=el('div',{cls:'pad'},[el('div',{cls:'ln'}),cv,ph]);
+    c.appendChild(el('label',{cls:'f',text:'Su firma'}));c.appendChild(pad);
+    var strokes=[],cur=null,ctx=null;
+    function size(){var r=pad.getBoundingClientRect(),dp=window.devicePixelRatio||1;cv.width=r.width*dp;cv.height=r.height*dp;ctx=cv.getContext('2d');ctx.scale(dp,dp);ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#14286e';redraw();}
+    function redraw(){if(!ctx)return;var r=pad.getBoundingClientRect();ctx.clearRect(0,0,r.width,r.height);strokes.forEach(function(s){ctx.beginPath();s.forEach(function(q,i){var x=q[0]*r.width,y=q[1]*r.height;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();});ph.style.display=strokes.length?'none':'grid';}
+    function pt(e){var r=pad.getBoundingClientRect();return [Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))];}
+    cv.addEventListener('pointerdown',function(e){e.preventDefault();cv.setPointerCapture(e.pointerId);cur=[pt(e)];strokes.push(cur);redraw();});
+    cv.addEventListener('pointermove',function(e){if(!cur)return;e.preventDefault();var q=pt(e),l=cur[cur.length-1];if(Math.abs(q[0]-l[0])+Math.abs(q[1]-l[1])>0.004){cur.push(q);redraw();}});
+    ['pointerup','pointercancel','pointerleave'].forEach(function(ev){cv.addEventListener(ev,function(){cur=null;});});
+    c.appendChild(el('button',{cls:'clear',type:'button',text:'Borrar la firma',onclick:function(){strokes=[];redraw();}}));
+    var ok=el('input',{type:'checkbox'});
+    c.appendChild(el('label',{cls:'check'},[ok,'He leído y entendido este documento, he podido preguntar mis dudas y lo firmo voluntariamente.']));
+    var res=el('div'),send=el('button',{cls:'main',text:'Firmar el documento'});
+    send.addEventListener('click',function(){
+      if(name.value.trim().length<3){msg(res,false,'Escriba el nombre y apellidos de quien firma.');return;}
+      var pts=strokes.reduce(function(a,s){return a+s.length;},0);
+      if(pts<10){msg(res,false,'Firme en el recuadro, por favor.');return;}
+      if(!ok.checked){msg(res,false,'Marque la casilla para firmar el documento.');return;}
+      send.disabled=true;send.textContent='Enviando…';
+      api('/firmar',{nombre:name.value,nif:nif.value,firma:strokes,huella:d.huella,acepta:true}).then(function(r){
+        if(r.ok){D.estado='firmado';D.firmado_por=name.value.trim();render();window.scrollTo(0,0);}
+        else{send.disabled=false;send.textContent='Firmar el documento';msg(res,false,r.error);}
+      }).catch(function(){send.disabled=false;send.textContent='Firmar el documento';msg(res,false,'No se ha podido enviar. Compruebe la conexión.');});
+    });
+    c.appendChild(res);c.appendChild(send);
+    var more=el('div');
+    c.appendChild(el('div',{cls:'alt'},[el('button',{cls:'btn',text:'Tengo una pregunta',onclick:function(){ask(more,'consulta');}}),el('button',{cls:'btn',text:'Prefiero firmarlo en la clínica',onclick:function(){ask(more,'en-clinica');}})]));
+    c.appendChild(more);
+    c.appendChild(el('p',{cls:'legal',text:'Firma electrónica: se guardan su trazo, el nombre que escribe, la fecha y hora, la dirección de conexión y una huella del documento tal como lo lee. Recibirá una copia firmada. Puede revocar un consentimiento en cualquier momento comunicándolo a la clínica.'}));
+    main.appendChild(c);
+    setTimeout(size,0);window.addEventListener('resize',size);
+  }
+
+  function ask(box,kind){
+    clear(box);
+    var t=el('textarea',{rows:'3',placeholder:kind==='consulta'?'Escriba su pregunta para el profesional':'¿Quiere comentarnos algo? (opcional)'});
+    var go=el('button',{cls:'btn',style:'margin-top:8px;width:100%',text:kind==='consulta'?'Enviar la pregunta':'Lo firmaré en la clínica'});
+    go.addEventListener('click',function(){
+      if(kind==='consulta'&&!t.value.trim())return;
+      go.disabled=true;
+      api('/'+kind,{texto:t.value}).then(function(r){
+        if(!r.ok){go.disabled=false;msg(box,false,r.error);return;}
+        if(kind==='en-clinica'){D.estado='en_clinica';render();main.lastChild.appendChild(el('div',{cls:'msg m-in',text:r.mensaje}));}
+        else msg(box,true,r.mensaje);
+      });
+    });
+    box.appendChild(el('div',{style:'margin-top:12px'},[t,go]));
+  }
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Hueco libre · {{CLINICA}}</title>
+<style>
+:root{--ac:#0d9488;--acd:#0f766e;--acs:#e6f6f4;--tx:#1e293b;--hd:#0b1324;--mu:#64748b;--bd:#e2e8f0;--bg:#f4f7fb;--ok:#16a34a;--oks:#e8f7ee;--er:#dc2626;--ers:#fdecec;--wa:#b45309;--was:#fff6e6}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tx);background:radial-gradient(1200px 500px at 50% -200px,#d9f2ee 0,var(--bg) 60%) fixed;min-height:100vh}
+.wrap{max-width:560px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--ac),#14b8a6);display:grid;place-items:center;box-shadow:0 6px 18px rgba(13,148,136,.28)}
+.logo svg{width:28px;height:28px}
+h1{font-size:22px;margin:0;color:var(--hd)} .sub{color:var(--mu);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(15,23,42,.06);margin-bottom:14px}
+h2{font-size:19px;margin:0 0 6px;color:var(--hd)}
+.hint{color:var(--mu);font-size:14px;margin:0 0 12px;line-height:1.5}
+.slot{display:flex;gap:16px;align-items:center;background:var(--acs);border-radius:16px;padding:16px;margin:14px 0}
+.cal{width:70px;border-radius:14px;overflow:hidden;background:#fff;border:1px solid #cfeee9;text-align:center;flex:none}
+.cal b{display:block;background:var(--ac);color:#fff;font-size:12px;padding:3px 0;text-transform:uppercase;letter-spacing:.05em}
+.cal span{display:block;font-size:27px;font-weight:700;color:var(--hd);padding:5px 0 7px}
+.big{font-size:20px;font-weight:700;color:var(--hd)} .det{color:var(--acd);font-size:14px;margin-top:3px}
+button{font:inherit;cursor:pointer}
+.main{width:100%;background:var(--ac);border:1px solid var(--acd);color:#fff;border-radius:14px;padding:15px;font-size:17px;font-weight:700;box-shadow:0 6px 16px rgba(13,148,136,.25)}
+.main:disabled{opacity:.6;cursor:default}
+.alt{width:100%;margin-top:10px;border:1px solid var(--bd);background:#fff;border-radius:12px;padding:12px;font-size:14px;font-weight:600;color:var(--mu)}
+.msg{border-radius:14px;padding:13px 15px;font-size:15px;margin-top:12px;line-height:1.5}
+.m-ok{background:var(--oks);color:#166534} .m-er{background:var(--ers);color:#991b1b} .m-in{background:#f1f5f9;color:var(--tx)}
+a.cal-link{display:inline-block;margin-top:12px;color:var(--acd);font-weight:600;font-size:14px;text-decoration:none}
+.note{font-size:12.5px;color:var(--mu);margin-top:12px;line-height:1.5}
+footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.5 1 6.5 2.5 6.5S9 17 10 15.5c.6-.9 1.2-1.5 2-1.5s1.4.6 2 1.5c1 1.5 1 5.5 2.5 5.5S18.5 17 19 14.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+    <div><h1 id="clinic">{{CLINICA}}</h1><div class="sub">Hueco libre para usted</div></div>
+  </header>
+  <div id="main"><div class="card"><p class="hint">Cargando…</p></div></div>
+  <footer id="foot"></footer>
+</div>
+<script>
+(function(){
+  var token=location.pathname.split('/').filter(Boolean).pop()||'';
+  var base='../api/hueco/'+encodeURIComponent(token);
+  var O=null, main=document.getElementById('main');
+  function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==='text')e.textContent=attrs[k];else if(k==='cls')e.className=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});return e;}
+  function clear(n){while(n.firstChild)n.removeChild(n.firstChild);}
+  function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+  function api(path,body){var o=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};return fetch(base+path,o).then(function(r){return r.json().then(function(j){j._code=r.status;return j;});});}
+
+  function load(){
+    api('').then(function(o){
+      if(!o.ok){clear(main);main.appendChild(el('div',{cls:'card'},[el('h2',{text:'Enlace no disponible'}),el('p',{cls:'hint',text:o.error})]));return;}
+      O=o;document.getElementById('clinic').textContent=o.clinica;document.title='Hueco libre · '+o.clinica;
+      document.getElementById('foot').textContent=[o.direccion,o.telefono?'Tel. '+o.telefono:''].filter(Boolean).join(' · ');
+      render();
+    }).catch(function(){clear(main);main.appendChild(el('div',{cls:'card'},[el('p',{cls:'hint',text:'No se ha podido cargar. Inténtelo de nuevo en unos minutos.'})]));});
+  }
+
+  function slot(){
+    var o=O, parts=o.etiqueta.split(' '), day=parts[1]||'', month=(parts[3]||'').slice(0,3);
+    return el('div',{cls:'slot'},[el('div',{cls:'cal'},[el('b',{text:month}),el('span',{text:day})]),el('div',{},[el('div',{cls:'big',text:cap(o.etiqueta)+' · '+o.hora}),el('div',{cls:'det',text:'Con '+o.profesional+' · '+o.minutos+' min'})])]);
+  }
+
+  function render(){
+    clear(main);var o=O,c=el('div',{cls:'card'});
+    if(o.estado==='abierta'){
+      c.appendChild(el('h2',{text:(o.nombre?'Hola, '+o.nombre+'. ':'')+'Se ha quedado libre un hueco'}));
+      c.appendChild(el('p',{cls:'hint',text:'Está en nuestra lista de espera y le avisamos por si le viene bien. Se lo queda el primero que lo pida.'}));
+      c.appendChild(slot());
+      var box=el('div'),go=el('button',{cls:'main',text:'Sí, lo quiero'});
+      go.addEventListener('click',function(){go.disabled=true;go.textContent='Reservando…';
+        api('/reservar',{}).then(function(r){
+          if(r.ok){O.estado='suya';render();main.firstChild.appendChild(el('div',{cls:'msg m-ok',text:r.mensaje}));}
+          else{O.estado='ocupada';render();}
+        }).catch(function(){go.disabled=false;go.textContent='Sí, lo quiero';box.appendChild(el('div',{cls:'msg m-er',text:'No se ha podido enviar. Compruebe la conexión e inténtelo de nuevo.'}));});
+      });
+      c.appendChild(go);
+      c.appendChild(el('button',{cls:'alt',text:'No me viene bien',onclick:function(){api('/no-me-viene-bien',{}).then(function(r){clear(main);main.appendChild(el('div',{cls:'card'},[el('div',{cls:'msg m-in',text:r.mensaje||'De acuerdo.'})]));});}}));
+      c.appendChild(box);
+      c.appendChild(el('p',{cls:'note',text:'Si lo reserva, su cita queda confirmada y sale de la lista de espera. Si no puede venir, avísenos'+(o.telefono?' al '+o.telefono:'')+'.'}));
+    } else if(o.estado==='suya'){
+      c.appendChild(el('h2',{text:'¡El hueco es suyo!'}));
+      c.appendChild(slot());
+      c.appendChild(el('p',{cls:'hint',text:'Su cita queda confirmada. Si no puede venir, avísenos'+(o.telefono?' al '+o.telefono:'')+'.'}));
+      c.appendChild(el('a',{cls:'cal-link',href:base+'/cita.ics',text:'📅 Añadir a mi calendario'}));
+    } else if(o.estado==='ocupada'){
+      c.appendChild(el('h2',{text:'Este hueco ya se ha ocupado'}));
+      c.appendChild(el('p',{cls:'hint',text:'Lo sentimos: otro paciente lo pidió antes. Sigue en nuestra lista de espera y le avisaremos del próximo hueco.'}));
+    } else {
+      c.appendChild(el('h2',{text:'Este hueco ya no está disponible'}));
+      c.appendChild(el('p',{cls:'hint',text:'Sigue en nuestra lista de espera y le avisaremos del próximo hueco. Si lo prefiere, llámenos'+(o.telefono?' al '+o.telefono:'')+'.'}));
+    }
+    main.appendChild(c);
+  }
+  load();
+})();
+</script>
+</body>
+</html>

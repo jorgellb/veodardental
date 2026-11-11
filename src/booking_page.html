@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Pedir cita · {{CLINICA}}</title>
+<style>
+:root{--ac:#0d9488;--acd:#0f766e;--acs:#e6f6f4;--tx:#1e293b;--hd:#0b1324;--mu:#64748b;--bd:#e2e8f0;--bg:#f4f7fb;--ok:#16a34a;--er:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tx);background:radial-gradient(1200px 500px at 50% -200px,#d9f2ee 0,var(--bg) 60%) fixed;min-height:100vh}
+.wrap{max-width:720px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--ac),#14b8a6);display:grid;place-items:center;box-shadow:0 6px 18px rgba(13,148,136,.28)}
+.logo svg{width:28px;height:28px}
+h1{font-size:22px;margin:0;color:var(--hd);letter-spacing:-.01em}
+.sub{color:var(--mu);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:24px;box-shadow:0 10px 30px rgba(15,23,42,.06)}
+.steps{display:flex;gap:8px;margin-bottom:20px}
+.step{flex:1;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mu);font-weight:500}
+.step b{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#eef2f6;color:var(--mu);font-size:13px;flex:none}
+.step.on{color:var(--hd)} .step.on b{background:var(--ac);color:#fff} .step.done b{background:var(--acs);color:var(--acd)}
+.step i{flex:1;height:2px;background:var(--bd);border-radius:2px}
+h2{font-size:17px;margin:0 0 4px;color:var(--hd)}
+.hint{color:var(--mu);font-size:14px;margin:0 0 16px;line-height:1.5}
+.reasons{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+button{font:inherit;cursor:pointer}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;border:1px solid var(--bd);background:#fff;border-radius:14px;padding:14px 16px;color:var(--tx);font-weight:600;font-size:15px;transition:.15s}
+.opt span{color:var(--mu);font-weight:500;font-size:13px;white-space:nowrap}
+.opt:hover{border-color:var(--ac);background:var(--acs)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 18px}
+.chip{border:1px solid var(--bd);background:#fff;border-radius:999px;padding:8px 14px;font-size:14px;color:var(--tx)}
+.chip small{color:var(--mu);margin-left:4px}
+.chip.on{background:var(--ac);border-color:var(--ac);color:#fff} .chip.on small{color:#d1fae5}
+.days{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px}
+.day{flex:none;min-width:82px;border:1px solid var(--bd);background:#fff;border-radius:14px;padding:10px 8px;text-align:center;font-size:13px;color:var(--mu)}
+.day strong{display:block;font-size:18px;color:var(--hd);margin-top:2px}
+.day.on{border-color:var(--ac);background:var(--acs);color:var(--acd)} .day.on strong{color:var(--acd)}
+.more{border:1px dashed var(--bd);background:transparent;color:var(--acd);min-width:82px;border-radius:14px;font-size:13px;font-weight:600}
+.part{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin:12px 0 8px;font-weight:600}
+.times{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}
+.time{border:1px solid var(--bd);background:#fff;border-radius:10px;padding:9px 0;font-size:15px;font-weight:600;color:var(--hd)}
+.time:hover{border-color:var(--ac);background:var(--acs)}
+.summary{display:flex;gap:12px;align-items:center;background:var(--acs);border-radius:14px;padding:14px 16px;margin-bottom:18px;color:var(--acd)}
+.summary div{flex:1} .summary b{display:block;color:var(--hd);font-size:15px} .summary small{font-size:13px}
+.link{background:none;border:none;color:var(--acd);font-weight:600;font-size:14px;padding:0}
+label{display:block;font-size:13px;color:var(--mu);margin:12px 0 5px;font-weight:500}
+input[type=text],input[type=tel],input[type=email],textarea{width:100%;border:1px solid var(--bd);border-radius:12px;padding:11px 13px;font:inherit;font-size:15px;color:var(--tx);background:#fff}
+input:focus,textarea:focus{outline:2px solid #99e2d8;border-color:var(--ac)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.check{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:14px;color:var(--tx);line-height:1.45}
+.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--ac);flex:none}
+.trap{position:absolute;left:-5000px;width:1px;height:1px;overflow:hidden}
+.main{width:100%;margin-top:20px;background:var(--ac);border:1px solid var(--acd);color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600;box-shadow:0 6px 16px rgba(13,148,136,.25)}
+.main:disabled{opacity:.6;cursor:default}
+.err{color:var(--er);font-size:14px;margin-top:12px;min-height:1px}
+.done{text-align:center;padding:16px 4px}
+.tick{width:64px;height:64px;border-radius:50%;background:var(--acs);display:grid;place-items:center;margin:0 auto 14px}
+.legal{font-size:12px;color:var(--mu);line-height:1.5;margin-top:14px}
+.empty{color:var(--mu);font-size:14px;padding:18px;text-align:center;border:1px dashed var(--bd);border-radius:14px}
+footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-height:1.6}
+@media (max-width:540px){.row{grid-template-columns:1fr}.step span{display:none}.card{padding:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.5 1 6.5 2.5 6.5S9 17 10 15.5c.6-.9 1.2-1.5 2-1.5s1.4.6 2 1.5c1 1.5 1 5.5 2.5 5.5S18.5 17 19 14.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+    <div><h1 id="clinic">{{CLINICA}}</h1><div class="sub">Pedir cita por internet</div></div>
+  </header>
+  <div class="card">
+    <div class="steps" id="steps">
+      <div class="step on" data-s="1"><b>1</b><span>Motivo</span><i></i></div>
+      <div class="step" data-s="2"><b>2</b><span>Día y hora</span><i></i></div>
+      <div class="step" data-s="3"><b>3</b><span>Sus datos</span></div>
+    </div>
+    <div id="view"><p class="hint">Cargando…</p></div>
+  </div>
+  <footer id="foot"></footer>
+</div>
+<script>
+(function(){
+  var D=null, S={motivo:null,prof:0,desde:null,primero:null,dias:[],dia:0,hora:null,asignado:null};
+  var view=document.getElementById('view');
+  function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==='text')e.textContent=attrs[k];else if(k==='cls')e.className=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});return e;}
+  function clear(){while(view.firstChild)view.removeChild(view.firstChild);}
+  function steps(n){document.querySelectorAll('.step').forEach(function(s){var k=+s.getAttribute('data-s');s.className='step'+(k===n?' on':'')+(k<n?' done':'');});}
+  function profName(id){for(var i=0;i<D.profesionales.length;i++)if(D.profesionales[i].id===id)return D.profesionales[i].nombre;return '';}
+  function api(path,opts){return fetch(path,opts).then(function(r){return r.json().then(function(j){j._code=r.status;return j;});});}
+  function closed(text){clear();view.appendChild(el('div',{cls:'empty',text:text}));}
+
+  function start(){
+    api('api/datos').then(function(d){
+      D=d; document.getElementById('clinic').textContent=d.clinica; document.title='Pedir cita · '+d.clinica;
+      var f=document.getElementById('foot'); f.textContent=[d.direccion,d.telefono?('Tel. '+d.telefono):''].filter(Boolean).join(' · ');
+      if(!d.abierta||!d.motivos.length){closed('En este momento no se pueden pedir citas por internet.'+(d.telefono?' Llámenos al '+d.telefono+'.':''));return;}
+      motivos();
+    }).catch(function(){closed('No se ha podido cargar la página. Inténtelo de nuevo en unos minutos.');});
+  }
+
+  function motivos(){
+    steps(1); clear();
+    view.appendChild(el('h2',{text:'¿Por qué quiere venir?'}));
+    view.appendChild(el('p',{cls:'hint',text:D.intro}));
+    var g=el('div',{cls:'reasons'});
+    D.motivos.forEach(function(m){g.appendChild(el('button',{cls:'opt',onclick:function(){S.motivo=m.id;S.prof=0;S.desde=null;S.primero=null;huecos();}},[m.nombre,el('span',{text:m.minutos+' min'})]));});
+    view.appendChild(g);
+  }
+
+  function huecos(){
+    steps(2); clear();
+    var m=D.motivos[S.motivo];
+    var back=el('button',{cls:'link',text:'‹ Cambiar el motivo',onclick:motivos});
+    view.appendChild(el('h2',{text:m.nombre}));
+    view.appendChild(el('p',{cls:'hint'},['Elija el profesional (o el primer hueco libre) y la hora. ',back]));
+    var chips=el('div',{cls:'chips'});
+    chips.appendChild(el('button',{cls:'chip'+(S.prof===0?' on':''),text:'Primer hueco libre',onclick:function(){S.prof=0;S.desde=null;S.primero=null;huecos();}}));
+    m.profesionales.forEach(function(id){var p=D.profesionales.filter(function(x){return x.id===id;})[0];if(!p)return;
+      chips.appendChild(el('button',{cls:'chip'+(S.prof===id?' on':''),onclick:function(){S.prof=id;S.desde=null;S.primero=null;huecos();}},[p.nombre,el('small',{text:p.especialidad})]));});
+    view.appendChild(chips);
+    var box=el('div',{},[el('p',{cls:'hint',text:'Buscando horas libres…'})]); view.appendChild(box);
+    var q='api/huecos?motivo='+S.motivo+'&profesional='+S.prof+(S.desde?'&desde='+S.desde:'');
+    api(q).then(function(r){
+      while(box.firstChild)box.removeChild(box.firstChild);
+      S.dias=r.dias||[]; S.dia=0; if(!S.primero&&S.dias.length)S.primero=S.dias[0].fecha;
+      if(!S.dias.length){box.appendChild(el('div',{cls:'empty',text:'No quedan horas libres para este motivo en los próximos '+D.dias+' días.'+(D.telefono?' Llámenos al '+D.telefono+' y le buscamos un hueco.':'')}));return;}
+      var days=el('div',{cls:'days'}), times=el('div');
+      if(S.desde&&S.desde!==S.primero)days.appendChild(el('button',{cls:'more',text:'‹ Antes',onclick:function(){S.desde=null;huecos();}}));
+      S.dias.forEach(function(d,i){var b=el('button',{cls:'day'+(i===0?' on':''),onclick:function(){S.dia=i;days.querySelectorAll('.day').forEach(function(x,k){x.className='day'+(k===i?' on':'');});horas(times);}},[d.corta.slice(0,3),el('strong',{text:d.corta.slice(4)})]);days.appendChild(b);});
+      if(r.siguiente)days.appendChild(el('button',{cls:'more',text:'Más días ›',onclick:function(){S.desde=r.siguiente;huecos();}}));
+      box.appendChild(days); box.appendChild(times); horas(times);
+    }).catch(function(){box.textContent='No se han podido cargar las horas. Inténtelo de nuevo.';});
+  }
+
+  function horas(times){
+    while(times.firstChild)times.removeChild(times.firstChild);
+    var d=S.dias[S.dia]; times.appendChild(el('p',{cls:'hint',text:d.etiqueta.charAt(0).toUpperCase()+d.etiqueta.slice(1)}));
+    [['Mañana',function(h){return h<'14:00';}],['Tarde',function(h){return h>='14:00';}]].forEach(function(p){
+      var hs=d.horas.filter(function(h){return p[1](h.hora);}); if(!hs.length)return;
+      times.appendChild(el('div',{cls:'part',text:p[0]}));
+      var g=el('div',{cls:'times'});
+      hs.forEach(function(h){g.appendChild(el('button',{cls:'time',text:h.hora,onclick:function(){S.hora=h.hora;S.asignado=h.profesional;datos(d);}}));});
+      times.appendChild(g);
+    });
+  }
+
+  function datos(d){
+    steps(3); clear();
+    var m=D.motivos[S.motivo];
+    view.appendChild(el('div',{cls:'summary'},[el('div',{},[el('b',{text:d.etiqueta.charAt(0).toUpperCase()+d.etiqueta.slice(1)+' · '+S.hora}),el('small',{text:m.nombre+' · '+profName(S.asignado)})]),el('button',{cls:'link',text:'Cambiar',onclick:huecos})]));
+    view.appendChild(el('h2',{text:'Sus datos'}));
+    var f=el('form',{novalidate:'novalidate'});
+    function field(lbl,type,name,ph,req){var i=el(type==='area'?'textarea':'input',{name:name,placeholder:ph||'',autocomplete:name==='nombre'?'name':(name==='telefono'?'tel':(name==='email'?'email':'off'))});if(type!=='area')i.setAttribute('type',type);else i.setAttribute('rows','3');if(req)i.setAttribute('required','required');return [el('label',{text:lbl}),i];}
+    var n=field('Nombre y apellidos','text','nombre','',true), t=field('Teléfono','tel','telefono','600 000 000',true), e=field('Correo electrónico (para recibir la confirmación)','email','email','opcional');
+    f.appendChild(n[0]);f.appendChild(n[1]);
+    f.appendChild(el('div',{cls:'row'},[el('div',{},t),el('div',{},e)]));
+    var c=field('Comentario para la clínica (opcional)','area','notas','Por ejemplo, si tiene dolor o alguna preferencia');f.appendChild(c[0]);f.appendChild(c[1]);
+    var first=el('input',{type:'checkbox',name:'primera'}); f.appendChild(el('label',{cls:'check'},[first,'Es mi primera visita a la clínica']));
+    var ok=el('input',{type:'checkbox',name:'acepta'}); f.appendChild(el('label',{cls:'check'},[ok,'Acepto que '+D.clinica+' use estos datos para gestionar mi cita.']));
+    var trap=el('input',{type:'text',name:'web',tabindex:'-1',autocomplete:'off'}); f.appendChild(el('div',{cls:'trap','aria-hidden':'true'},[trap]));
+    var err=el('div',{cls:'err',role:'alert'}); var send=el('button',{cls:'main',type:'submit',text:D.confirmacion_inmediata?'Reservar la cita':'Pedir la cita'});
+    f.appendChild(err); f.appendChild(send);
+    f.appendChild(el('p',{cls:'legal',text:'Responsable: '+D.clinica+'. Finalidad: gestionar su cita. Sus datos no se ceden a terceros. Puede ejercer sus derechos de acceso, rectificación y supresión dirigiéndose a la clínica'+(D.telefono?' (tel. '+D.telefono+')':'')+'.'}));
+    f.addEventListener('submit',function(ev){ev.preventDefault();err.textContent='';
+      var body={motivo:S.motivo,profesional:S.asignado,fecha:d.fecha,hora:S.hora,nombre:n[1].value,telefono:t[1].value,email:e[1].value,notas:c[1].value,primera:first.checked,acepta:ok.checked,web:trap.value};
+      if(!body.nombre.trim()){err.textContent='Escriba su nombre y apellidos.';return;}
+      if(body.telefono.replace(/\D/g,'').length<9){err.textContent='Escriba un teléfono de contacto.';return;}
+      if(!body.acepta){err.textContent='Para pedir la cita hay que aceptar el uso de sus datos.';return;}
+      send.disabled=true;send.textContent='Enviando…';
+      api('api/reservar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){
+        if(r.ok){fin(d,r);return;}
+        send.disabled=false;send.textContent='Pedir la cita';err.textContent=r.error||'No se ha podido enviar.';
+        if(r._code===409){var b=el('button',{cls:'link',text:' Ver otras horas ›',onclick:huecos});err.appendChild(b);}
+      }).catch(function(){send.disabled=false;send.textContent='Pedir la cita';err.textContent='No se ha podido enviar. Compruebe la conexión e inténtelo de nuevo.';});
+    });
+    view.appendChild(f); n[1].focus();
+  }
+
+  function fin(d,r){
+    document.getElementById('steps').style.display='none'; clear();
+    var m=D.motivos[S.motivo], conf=r.estado==='confirmada';
+    view.appendChild(el('div',{cls:'done'},[
+      el('div',{cls:'tick'}),
+      el('h2',{text:conf?'¡Cita reservada!':'¡Solicitud enviada!'}),
+      el('p',{cls:'hint',text:r.mensaje}),
+      el('div',{cls:'summary',style:'text-align:left;margin-top:16px'},[el('div',{},[el('b',{text:d.etiqueta.charAt(0).toUpperCase()+d.etiqueta.slice(1)+' · '+S.hora}),el('small',{text:m.nombre+' · '+profName(S.asignado)})])]),
+      el('p',{cls:'hint',text:'Si no puede venir o quiere cambiarla, llámenos'+(D.telefono?' al '+D.telefono:'')+'.'})
+    ]));
+    var t=view.querySelector('.tick'); t.innerHTML='<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  }
+  start();
+})();
+</script>
+</body>
+</html>

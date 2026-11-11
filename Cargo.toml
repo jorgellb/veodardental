@@ -1,0 +1,69 @@
+[package]
+name = "veodardental"
+version = "0.1.0"
+edition = "2024"
+description = "Gestión de clínicas dentales: pacientes, agenda, odontograma, presupuestos, cobros, facturas y receta electrónica"
+
+# Instaladores con cargo-packager (cargo install cargo-packager --locked):
+#   cargo packager --release           → los formatos del sistema en el que se ejecuta
+#   Windows: instalador .exe (NSIS) y .msi (WiX) · macOS: .app y .dmg · Linux: .deb, AppImage y pacman
+[package.metadata.packager]
+product-name = "VeodarDental"
+identifier = "es.veodardental.app"
+description = "Gestión de clínicas dentales"
+long-description = "Pacientes, agenda, odontograma y periodontograma, presupuestos, cobros y caja, facturas, mutuas y tarifas, comunicaciones, trabajo en red entre puestos, importación desde GESDEN y otros programas, y receta electrónica."
+publisher = "VeodarDental"
+authors = ["VeodarDental"]
+category = "Business"
+before-packaging-command = "cargo build --release"
+out-dir = "dist"
+icons = ["assets/iconos/icono-32.png", "assets/iconos/icono-128.png", "assets/iconos/icono-256.png", "assets/iconos/icono-512.png"]
+binaries = [{ path = "veodardental", main = true }]
+
+[package.metadata.packager.nsis]
+languages = ["Spanish", "English"]
+display-language-selector = false
+
+[package.metadata.packager.deb]
+package-name = "veodardental"
+depends = ["libxkbcommon0", "libgl1"]
+
+[package.metadata.packager.macos]
+minimum-system-version = "11.0"
+
+[dependencies]
+calamine = "0.38.0"
+chrono = { version = "0.4.45", features = ["clock", "serde"] }
+datamatrix = "0.3.3"
+p12-keystore = "0.4.1"
+ring = "0.17"
+x509-parser = "0.18"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tiberius = { version = "0.13", default-features = false, features = ["tds73", "rustls", "sql-browser-tokio", "chrono", "winauth"] }
+tokio = { version = "1", features = ["rt", "net", "time"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+dirs = "7.0.0"
+eframe = "0.37.0"
+egui = "0.37.0"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tiny_http = { version = "0.12", default-features = false }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+# VERI*FACTU: código QR de las facturas y conexión con la AEAT con el certificado de la clínica
+qrcode = { version = "0.14", default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
+# envío de correo (SMTP) con adjuntos: órdenes al laboratorio y comunicaciones
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "rustls", "ring", "webpki-roots"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["eframe"] }
+rcgen = "0.14"

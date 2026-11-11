@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Presupuesto · {{CLINICA}}</title>
+<style>
+:root{--ac:#0d9488;--acd:#0f766e;--acs:#e6f6f4;--tx:#1e293b;--hd:#0b1324;--mu:#64748b;--bd:#e2e8f0;--bg:#f4f7fb;--ok:#16a34a;--oks:#e8f7ee;--er:#dc2626;--ers:#fdecec;--wa:#b45309;--was:#fff6e6}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tx);background:radial-gradient(1200px 500px at 50% -200px,#d9f2ee 0,var(--bg) 60%) fixed;min-height:100vh}
+.wrap{max-width:680px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--ac),#14b8a6);display:grid;place-items:center;box-shadow:0 6px 18px rgba(13,148,136,.28)}
+.logo svg{width:28px;height:28px}
+h1{font-size:22px;margin:0;color:var(--hd)} .sub{color:var(--mu);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(15,23,42,.06);margin-bottom:14px}
+h2{font-size:18px;margin:0 0 4px;color:var(--hd)} h3{font-size:15px;margin:0 0 10px;color:var(--hd)}
+.hint{color:var(--mu);font-size:14px;margin:0 0 12px;line-height:1.5}
+.line{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid #eef2f6}
+.line:first-child{border-top:none}
+.line .t{font-size:15px;color:var(--tx);line-height:1.35} .line .d{font-size:13px;color:var(--mu);margin-top:2px}
+.line .a{font-weight:700;color:var(--hd);white-space:nowrap;font-size:15px}
+.total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--hd);margin-top:6px;padding-top:12px}
+.total b{font-size:24px;color:var(--hd)} .total span{font-size:14px;color:var(--mu);font-weight:600;letter-spacing:.04em}
+.notes{background:#f8fafc;border-radius:12px;padding:12px 14px;font-size:14px;color:var(--tx);margin-top:12px;white-space:pre-wrap}
+.pill{display:inline-block;border-radius:999px;padding:4px 11px;font-size:13px;font-weight:600;white-space:nowrap}
+.p-ok{background:var(--oks);color:var(--ok)} .p-wa{background:var(--was);color:var(--wa)} .p-er{background:var(--ers);color:var(--er)} .p-mu{background:#eef2f6;color:var(--mu)}
+.opt{display:flex;gap:12px;align-items:center;border:1px solid var(--bd);border-radius:14px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
+.opt input{accent-color:var(--ac);width:18px;height:18px;flex:none}
+.opt.on{border-color:var(--ac);background:var(--acs)}
+.opt b{display:block;font-size:15px;color:var(--hd)} .opt small{color:var(--mu);font-size:13px}
+label.f{display:block;font-size:13px;color:var(--mu);margin:12px 0 5px;font-weight:500}
+input[type=text],textarea{width:100%;border:1px solid var(--bd);border-radius:12px;padding:11px 13px;font:inherit;font-size:15px;color:var(--tx);background:#fff}
+input:focus,textarea:focus{outline:2px solid #99e2d8;border-color:var(--ac)}
+.row{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.pad{position:relative;border:2px dashed #cbd5e1;border-radius:14px;background:#fff;touch-action:none;height:170px}
+.pad canvas{width:100%;height:100%;display:block;border-radius:12px}
+.pad .ph{position:absolute;inset:0;display:grid;place-items:center;color:#94a3b8;font-size:14px;pointer-events:none}
+.pad .ln{position:absolute;left:18px;right:18px;bottom:34px;border-bottom:1px solid #e2e8f0;pointer-events:none}
+.clear{background:none;border:none;color:var(--acd);font-weight:600;font-size:13px;padding:6px 0;cursor:pointer}
+.check{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:14px;line-height:1.45}
+.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--ac);flex:none}
+button{font:inherit;cursor:pointer}
+.main{width:100%;margin-top:16px;background:var(--ac);border:1px solid var(--acd);color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600;box-shadow:0 6px 16px rgba(13,148,136,.25)}
+.main:disabled{opacity:.6;cursor:default}
+.alt{display:flex;gap:10px;margin-top:12px}
+.btn{flex:1;border:1px solid var(--bd);background:#fff;border-radius:12px;padding:11px;font-size:14px;font-weight:600;color:var(--hd)}
+.btn.red{color:var(--er)}
+.msg{border-radius:14px;padding:12px 14px;font-size:14px;margin-top:12px;line-height:1.45}
+.m-ok{background:var(--oks);color:#166534} .m-er{background:var(--ers);color:#991b1b} .m-in{background:#f1f5f9;color:var(--tx)}
+.legal{font-size:12px;color:var(--mu);line-height:1.5;margin-top:12px}
+footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-height:1.6}
+@media (max-width:520px){.row{grid-template-columns:1fr}.card{padding:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.5 1 6.5 2.5 6.5S9 17 10 15.5c.6-.9 1.2-1.5 2-1.5s1.4.6 2 1.5c1 1.5 1 5.5 2.5 5.5S18.5 17 19 14.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+    <div><h1 id="clinic">{{CLINICA}}</h1><div class="sub">Su presupuesto</div></div>
+  </header>
+  <div id="main"><div class="card"><p class="hint">Cargando…</p></div></div>
+  <footer id="foot"></footer>
+</div>
+<script>
+(function(){
+  var token=location.pathname.split('/').filter(Boolean).pop()||'';
+  var base='../api/presupuesto/'+encodeURIComponent(token);
+  var P=null, main=document.getElementById('main');
+  function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==='text')e.textContent=attrs[k];else if(k==='cls')e.className=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});return e;}
+  function clear(n){while(n.firstChild)n.removeChild(n.firstChild);}
+  function api(path,body){var o=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};return fetch(base+path,o).then(function(r){return r.json().then(function(j){j._code=r.status;return j;});});}
+  function msg(box,ok,t){clear(box);box.appendChild(el('div',{cls:'msg '+(ok?'m-ok':'m-er'),text:t}));}
+
+  function load(){
+    api('').then(function(p){
+      if(!p.ok){clear(main);main.appendChild(el('div',{cls:'card'},[el('h2',{text:'Enlace no disponible'}),el('p',{cls:'hint',text:p.error})]));return;}
+      P=p;document.getElementById('clinic').textContent=p.clinica;document.title='Presupuesto · '+p.clinica;
+      document.getElementById('foot').textContent=[p.direccion,p.telefono?'Tel. '+p.telefono:''].filter(Boolean).join(' · ');
+      render();
+    }).catch(function(){clear(main);main.appendChild(el('div',{cls:'card'},[el('p',{cls:'hint',text:'No se ha podido cargar. Inténtelo de nuevo en unos minutos.'})]));});
+  }
+
+  function render(){
+    clear(main);var p=P;
+    var st={pendiente:['Pendiente de aceptar','p-wa'],aceptado:['Aceptado','p-ok'],rechazado:['No aceptado','p-er'],caducado:['Caducado','p-mu'],cerrado:['Cerrado','p-mu']}[p.estado];
+    var c=el('div',{cls:'card'});
+    c.appendChild(el('div',{style:'display:flex;justify-content:space-between;gap:10px;align-items:flex-start'},[el('div',{},[el('h2',{text:(p.nombre?'Hola, '+p.nombre+'. ':'')+'Este es su presupuesto'}),el('p',{cls:'hint',text:'Nº '+p.numero+' · '+p.titulo+' · '+p.profesional+' · del '+p.fecha+', válido hasta el '+p.valido_hasta})]),el('span',{cls:'pill '+st[1],text:st[0]})]));
+    var list=el('div');
+    p.lineas.forEach(function(l){
+      var d=[l.piezas?('Piezas '+l.piezas):'',l.unidades>1?(l.unidades+' × '+l.precio):'',l.descuento?('descuento '+l.descuento):''].filter(Boolean).join(' · ');
+      list.appendChild(el('div',{cls:'line'},[el('div',{},[el('div',{cls:'t',text:l.tratamiento}),d?el('div',{cls:'d',text:d}):null]),el('div',{cls:'a',text:l.importe})]));
+    });
+    c.appendChild(list);
+    c.appendChild(el('div',{cls:'total'},[el('span',{text:'TOTAL'}),el('b',{text:p.total})]));
+    c.appendChild(el('p',{cls:'hint',style:'margin-top:8px',text:'Servicios sanitarios exentos de IVA.'}));
+    if(p.notas)c.appendChild(el('div',{cls:'notes',text:p.notas}));
+    main.appendChild(c);
+    if(p.estado==='pendiente')sign();
+    else if(p.estado==='aceptado')main.appendChild(el('div',{cls:'card'},[el('h3',{text:'Presupuesto aceptado'}),el('div',{cls:'msg m-ok',text:'Firmado'+(p.firmado_por?' por '+p.firmado_por:'')+(p.firmado_el?' el '+p.firmado_el:'')+'. ¡Gracias! Le enviaremos una copia firmada por correo y le llamaremos para dar las citas.'})]));
+    else main.appendChild(el('div',{cls:'card'},[el('p',{cls:'hint',style:'margin:0',text:p.estado==='caducado'?'Este presupuesto ha caducado. Llámenos al '+p.telefono+' y se lo actualizamos.':'Si quiere hablar de este presupuesto, llámenos al '+p.telefono+'.'})]));
+  }
+
+  function sign(){
+    var p=P,c=el('div',{cls:'card'}),cuotas=0;
+    c.appendChild(el('h3',{text:'¿Cómo prefiere pagarlo?'}));
+    var opts=el('div');
+    function opt(n,title,sub){var r=el('input',{type:'radio',name:'pago'});if(n===0)r.checked=true;var o=el('label',{cls:'opt'+(n===0?' on':'')},[r,el('div',{},[el('b',{text:title}),el('small',{text:sub})])]);
+      r.addEventListener('change',function(){cuotas=n;opts.querySelectorAll('.opt').forEach(function(x){x.className='opt';});o.className='opt on';});opts.appendChild(o);}
+    opt(0,'Según se realizan los tratamientos','Paga cada tratamiento el día que se hace.');
+    p.cuotas.forEach(function(q){opt(q.n,(q.entrada?'Entrada de '+q.entrada+' y ':'')+q.n+' cuotas de '+q.importe,'Sin intereses. La primera cuota, dentro de un mes.');});
+    c.appendChild(opts);
+    c.appendChild(el('h3',{text:'Firma',style:'margin-top:18px'}));
+    var name=el('input',{type:'text',placeholder:'Nombre y apellidos de quien firma',autocomplete:'name'}), nif=el('input',{type:'text',placeholder:'NIF (opcional)'});
+    c.appendChild(el('div',{cls:'row'},[name,nif]));
+    var cv=el('canvas'),ph=el('div',{cls:'ph',text:'Firme aquí con el dedo o el ratón'}),pad=el('div',{cls:'pad'},[el('div',{cls:'ln'}),cv,ph]);
+    c.appendChild(el('label',{cls:'f',text:'Su firma'}));c.appendChild(pad);
+    var strokes=[],cur=null,ctx=null;
+    function size(){var r=pad.getBoundingClientRect(),d=window.devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;ctx=cv.getContext('2d');ctx.scale(d,d);ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#14286e';redraw();}
+    function redraw(){if(!ctx)return;var r=pad.getBoundingClientRect();ctx.clearRect(0,0,r.width,r.height);strokes.forEach(function(s){ctx.beginPath();s.forEach(function(q,i){var x=q[0]*r.width,y=q[1]*r.height;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();});ph.style.display=strokes.length?'none':'grid';}
+    function pt(e){var r=pad.getBoundingClientRect();return [Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))];}
+    cv.addEventListener('pointerdown',function(e){e.preventDefault();cv.setPointerCapture(e.pointerId);cur=[pt(e)];strokes.push(cur);redraw();});
+    cv.addEventListener('pointermove',function(e){if(!cur)return;e.preventDefault();var q=pt(e),l=cur[cur.length-1];if(Math.abs(q[0]-l[0])+Math.abs(q[1]-l[1])>0.004){cur.push(q);redraw();}});
+    ['pointerup','pointercancel','pointerleave'].forEach(function(ev){cv.addEventListener(ev,function(){cur=null;});});
+    c.appendChild(el('button',{cls:'clear',type:'button',text:'Borrar la firma',onclick:function(){strokes=[];redraw();}}));
+    var ok=el('input',{type:'checkbox'});
+    c.appendChild(el('label',{cls:'check'},[ok,'He leído el presupuesto nº '+p.numero+' por '+p.total+', lo acepto y autorizo a '+p.clinica+' a realizar los tratamientos indicados.']));
+    var res=el('div'),send=el('button',{cls:'main',text:'Aceptar y firmar'});
+    send.addEventListener('click',function(){
+      if(name.value.trim().length<3){msg(res,false,'Escriba el nombre y apellidos de quien firma.');return;}
+      var pts=strokes.reduce(function(a,s){return a+s.length;},0);
+      if(pts<10){msg(res,false,'Firme en el recuadro, por favor.');return;}
+      if(!ok.checked){msg(res,false,'Marque la casilla para aceptar el presupuesto.');return;}
+      send.disabled=true;send.textContent='Enviando…';
+      api('/aceptar',{nombre:name.value,nif:nif.value,firma:strokes,cuotas:cuotas,huella:p.huella,acepta:true}).then(function(r){
+        if(r.ok){P.estado='aceptado';P.firmado_por=name.value.trim();render();window.scrollTo(0,0);}
+        else{send.disabled=false;send.textContent='Aceptar y firmar';msg(res,false,r.error);}
+      }).catch(function(){send.disabled=false;send.textContent='Aceptar y firmar';msg(res,false,'No se ha podido enviar. Compruebe la conexión.');});
+    });
+    c.appendChild(res);c.appendChild(send);
+    var more=el('div');
+    c.appendChild(el('div',{cls:'alt'},[el('button',{cls:'btn',text:'Tengo una pregunta',onclick:function(){ask(more,'consulta');}}),el('button',{cls:'btn red',text:'No me interesa',onclick:function(){ask(more,'rechazar');}})]));
+    c.appendChild(more);
+    c.appendChild(el('p',{cls:'legal',text:'Firma electrónica: se guardan su trazo, el nombre que escribe, la fecha y hora, la dirección de conexión y una huella del presupuesto tal como lo ve. Recibirá una copia firmada. Responsable: '+p.clinica+'; finalidad: gestionar su tratamiento.'}));
+    main.appendChild(c);
+    setTimeout(size,0);window.addEventListener('resize',size);
+  }
+
+  function ask(box,kind){
+    clear(box);
+    var t=el('textarea',{rows:'3',placeholder:kind==='consulta'?'Escriba su pregunta para la clínica':'¿Nos dice por qué? (opcional)'});
+    var go=el('button',{cls:'btn'+(kind==='rechazar'?' red':''),style:'margin-top:8px;width:100%',text:kind==='consulta'?'Enviar la pregunta':'No me interesa el presupuesto'});
+    go.addEventListener('click',function(){
+      if(kind==='consulta'&&!t.value.trim())return;
+      go.disabled=true;
+      api('/'+kind,{texto:t.value}).then(function(r){
+        if(!r.ok){go.disabled=false;msg(box,false,r.error);return;}
+        if(kind==='rechazar'){P.estado='rechazado';render();main.lastChild.appendChild(el('div',{cls:'msg m-in',text:r.mensaje}));}
+        else msg(box,true,r.mensaje);
+      });
+    });
+    box.appendChild(el('div',{style:'margin-top:12px'},[t,go]));
+  }
+  load();
+})();
+</script>
+</body>
+</html>

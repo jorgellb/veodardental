@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Mis recetas · {{CLINICA}}</title>
+<style>
+:root{--ac:#0d9488;--acd:#0f766e;--acs:#e6f6f4;--tx:#1e293b;--hd:#0b1324;--mu:#64748b;--bd:#e2e8f0;--bg:#f4f7fb;--ok:#16a34a;--oks:#e8f7ee;--er:#dc2626;--ers:#fdecec;--wa:#b45309;--was:#fff6e6;--in:#2563eb;--ins:#eaf1fe}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tx);background:radial-gradient(1200px 500px at 50% -200px,#d9f2ee 0,var(--bg) 60%) fixed;min-height:100vh}
+.wrap{max-width:720px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--ac),#14b8a6);display:grid;place-items:center;box-shadow:0 6px 18px rgba(13,148,136,.28)}
+.logo svg{width:28px;height:28px}
+h1{font-size:22px;margin:0;color:var(--hd)} .sub{color:var(--mu);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(15,23,42,.06);margin-bottom:14px}
+h2{font-size:18px;margin:0 0 4px;color:var(--hd)} h3{font-size:15.5px;margin:0;color:var(--hd)}
+.hint{color:var(--mu);font-size:14px;margin:0 0 12px;line-height:1.5}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.p-ok{background:var(--oks);color:var(--ok)} .p-wa{background:var(--was);color:var(--wa)} .p-mu{background:#eef2f6;color:var(--mu)} .p-er{background:var(--ers);color:var(--er)} .p-in{background:var(--ins);color:var(--in)}
+input{width:100%;border:1px solid var(--bd);border-radius:12px;padding:11px 13px;font:inherit;font-size:16px;color:var(--tx);background:#fff}
+input:focus{outline:2px solid #99e2d8;border-color:var(--ac)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label.f{display:block;font-size:13px;color:var(--mu);margin:12px 0 5px;font-weight:500}
+button{font:inherit;cursor:pointer}
+.main{width:100%;margin-top:16px;background:var(--ac);border:1px solid var(--acd);color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600;box-shadow:0 6px 16px rgba(13,148,136,.25)}
+.main:disabled{opacity:.6;cursor:default}
+.btn{border:1px solid var(--bd);background:#fff;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:600;color:var(--hd)}
+.msg{border-radius:14px;padding:12px 14px;font-size:14px;margin-top:12px;line-height:1.45}
+.m-ok{background:var(--oks);color:#166534} .m-er{background:var(--ers);color:#991b1b} .m-in{background:#f1f5f9;color:var(--tx)}
+.top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.med{border-top:1px solid var(--bd);padding:12px 0 4px}
+.med:first-of-type{border-top:none}
+.med .nm{font-weight:700;color:var(--hd);font-size:15px}
+.med .po{color:var(--mu);font-size:14px;margin:2px 0 8px}
+.rec{display:flex;justify-content:space-between;gap:10px;align-items:center;background:#f8fafc;border:1px solid #edf1f6;border-radius:12px;padding:8px 11px;margin-top:6px;font-size:14px}
+.sheet{width:100%;height:78vh;border:1px solid var(--bd);border-radius:14px;margin-top:12px;background:#fff}
+.legal{font-size:12px;color:var(--mu);line-height:1.5;margin-top:12px}
+footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-height:1.6}
+@media (max-width:520px){.row{grid-template-columns:1fr}.card{padding:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v2h6V3"/><path d="M9 12h6M12 9v6"/></svg></div>
+    <div><h1 id="clinic">{{CLINICA}}</h1><div class="sub">Mis recetas</div></div>
+  </header>
+  <div id="main"><div class="card"><p class="hint">Cargando…</p></div></div>
+  <footer id="foot"></footer>
+</div>
+<script>
+(function(){
+  var token=location.pathname.split('/').filter(Boolean).pop()||'';
+  var base='../api/recetas/'+encodeURIComponent(token);
+  var CRED=null, main=document.getElementById('main');
+  function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==='text')e.textContent=attrs[k];else if(k==='cls')e.className=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});return e;}
+  function clear(n){while(n.firstChild)n.removeChild(n.firstChild);}
+  function api(path,body){var o=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};return fetch(base+path,o).then(function(r){return r.json().then(function(j){j._code=r.status;return j;});});}
+  function msg(box,ok,t){clear(box);box.appendChild(el('div',{cls:'msg '+(ok?'m-ok':'m-er'),text:t}));}
+  function card(kids){return el('div',{cls:'card'},kids);}
+
+  function load(){
+    api('').then(function(d){
+      if(!d.ok){clear(main);main.appendChild(card([el('h2',{text:'Enlace no disponible'}),el('p',{cls:'hint',text:d.error})]));return;}
+      document.getElementById('clinic').textContent=d.clinica;
+      document.getElementById('foot').textContent=[d.direccion,d.telefono?'Tel. '+d.telefono:''].filter(Boolean).join(' · ');
+      if(!d.verificable){clear(main);main.appendChild(card([el('h2',{text:'Sus recetas'}),el('p',{cls:'hint',text:'Para ver sus recetas por internet, la clínica necesita su DNI o NIE y su fecha de nacimiento en su ficha. Llámenos'+(d.telefono?' al '+d.telefono:'')+' y se lo dejamos preparado.'})]));return;}
+      login();
+    }).catch(function(){clear(main);main.appendChild(card([el('p',{cls:'hint',text:'No se ha podido cargar. Inténtelo de nuevo en unos minutos.'})]));});
+  }
+
+  function login(){
+    clear(main);
+    var dni=el('input',{type:'text',autocomplete:'off',placeholder:'12345678Z',maxlength:'20'});
+    var born=el('input',{type:'text',inputmode:'numeric',placeholder:'dd/mm/aaaa',maxlength:'10'});
+    var res=el('div'),go=el('button',{cls:'main',text:'Ver mis recetas'});
+    function send(){
+      if(dni.value.trim().length<5||born.value.trim().length<8){msg(res,false,'Escriba su DNI o NIE y su fecha de nacimiento.');return;}
+      go.disabled=true;go.textContent='Comprobando…';
+      var c={dni:dni.value,nacimiento:born.value};
+      api('',c).then(function(r){
+        go.disabled=false;go.textContent='Ver mis recetas';
+        if(!r.ok){msg(res,false,r.error);return;}
+        CRED=c;show(r);
+      }).catch(function(){go.disabled=false;go.textContent='Ver mis recetas';msg(res,false,'No se ha podido comprobar. Revise la conexión.');});
+    }
+    go.addEventListener('click',send);
+    born.addEventListener('keydown',function(e){if(e.key==='Enter')send();});
+    main.appendChild(card([
+      el('h2',{text:'Sus recetas electrónicas'}),
+      el('p',{cls:'hint',text:'Para proteger sus datos de salud, escriba su DNI o NIE y su fecha de nacimiento, tal como están en su ficha de la clínica.'}),
+      el('div',{cls:'row'},[el('div',{},[el('label',{cls:'f',text:'DNI o NIE'}),dni]),el('div',{},[el('label',{cls:'f',text:'Fecha de nacimiento'}),born])]),
+      res,go,
+      el('p',{cls:'legal',text:'Por seguridad, tras 5 intentos con datos que no coinciden el enlace se bloquea media hora. La clínica nunca le pedirá estos datos por teléfono ni por correo. Este enlace es personal: no lo comparta.'})
+    ]));
+  }
+
+  function pill(st,txt){var c={0:'p-in',1:'p-ok',2:'p-er',3:'p-mu',4:'p-mu',5:'p-mu',8:'p-wa',10:'p-wa',11:'p-mu'}[st]||'p-mu';return el('span',{cls:'pill '+c,text:txt});}
+
+  function show(d){
+    clear(main);
+    main.appendChild(card([el('h2',{text:'Hola, '+d.nombre}),el('p',{cls:'hint',style:'margin:0',text:d.recetas.length?'Estas son sus recetas del último año. En la farmacia enseñe la hoja de la receta (en papel o en el móvil) y su DNI.':'No tiene recetas electrónicas del último año.'})]));
+    d.recetas.forEach(function(r){
+      var c=card([]);
+      var tags=el('div',{},[r.confidencial?el('span',{cls:'pill p-wa',text:'Confidencial: diga su PIN en la farmacia'}):null,r.pruebas?el('span',{cls:'pill p-mu',style:'margin-left:6px',text:'Receta de prueba'}):null]);
+      c.appendChild(el('div',{cls:'top'},[el('div',{},[el('h3',{text:'Receta del '+r.fecha}),el('p',{cls:'hint',style:'margin:2px 0 6px',text:r.profesional})]),tags]));
+      r.medicamentos.forEach(function(m){
+        var box=el('div',{cls:'med'},[el('div',{cls:'nm',text:m.nombre}),el('div',{cls:'po',text:m.posologia})]);
+        m.recetas.forEach(function(x){box.appendChild(el('div',{cls:'rec'},[el('span',{text:'Se recoge del '+x.desde+' al '+x.hasta+' · '+x.envases+(x.envases===1?' envase':' envases')}),pill(x.estado,x.estado_texto)]));});
+        c.appendChild(box);
+      });
+      var area=el('div'),btn=el('button',{cls:'btn',style:'margin-top:12px',text:'Ver la hoja para la farmacia'});
+      btn.addEventListener('click',function(){
+        btn.disabled=true;
+        api('/hoja/'+r.i,CRED).then(function(h){
+          btn.disabled=false;
+          if(!h.ok){msg(area,false,h.error);return;}
+          clear(area);
+          var f=el('iframe',{cls:'sheet',title:'Hoja para la farmacia',sandbox:'allow-modals allow-same-origin'});
+          f.srcdoc=h.html;
+          var pr=el('button',{cls:'btn',style:'margin-top:8px',text:'Imprimir la hoja',onclick:function(){try{f.contentWindow.print();}catch(e){}}});
+          area.appendChild(f);area.appendChild(pr);
+        }).catch(function(){btn.disabled=false;msg(area,false,'No se ha podido cargar la hoja.');});
+      });
+      c.appendChild(btn);c.appendChild(area);
+      main.appendChild(c);
+    });
+    if(d.actualizado)main.appendChild(el('p',{cls:'legal',style:'text-align:center',text:'Estado de las farmacias consultado el '+d.actualizado+'.'}));
+    main.appendChild(el('div',{style:'text-align:center;margin-top:8px'},[el('button',{cls:'btn',text:'Salir',onclick:function(){CRED=null;login();}})]));
+  }
+  load();
+})();
+</script>
+</body>
+</html>

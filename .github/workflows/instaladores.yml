@@ -1,0 +1,76 @@
+# Compila VeodarDental y crea los instaladores en cada sistema.
+# Se lanza a mano (Actions › Instaladores › Run workflow) o al subir una
+# etiqueta de versión (git tag v0.2.0 && git push --tags); con etiqueta los
+# instaladores se publican también como «Release» del repositorio.
+name: Instaladores
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Bibliotecas de Linux
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev openssl
+      - name: Pruebas automáticas
+        run: cargo test
+
+  instaladores:
+    needs: pruebas
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            nombre: windows
+            formatos: nsis,wix
+          - os: macos-latest
+            nombre: macos-apple-silicon
+            formatos: app,dmg
+          - os: macos-13
+            nombre: macos-intel
+            formatos: app,dmg
+          - os: ubuntu-22.04
+            nombre: linux
+            formatos: deb,appimage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Bibliotecas de Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libfuse2
+      - name: Herramienta de instaladores
+        run: cargo install cargo-packager --locked
+      - name: Compilar y empaquetar
+        run: cargo packager --release --formats ${{ matrix.formatos }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VeodarDental-${{ matrix.nombre }}
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.dmg
+            dist/*.deb
+            dist/*.AppImage
+          if-no-files-found: error
+      - name: Publicar en la versión
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.dmg
+            dist/*.deb
+            dist/*.AppImage

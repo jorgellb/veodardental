@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Mi cita · {{CLINICA}}</title>
+<style>
+:root{--ac:#0d9488;--acd:#0f766e;--acs:#e6f6f4;--tx:#1e293b;--hd:#0b1324;--mu:#64748b;--bd:#e2e8f0;--bg:#f4f7fb;--ok:#16a34a;--oks:#e8f7ee;--er:#dc2626;--ers:#fdecec;--wa:#b45309;--was:#fff6e6}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tx);background:radial-gradient(1200px 500px at 50% -200px,#d9f2ee 0,var(--bg) 60%) fixed;min-height:100vh}
+.wrap{max-width:640px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--ac),#14b8a6);display:grid;place-items:center;box-shadow:0 6px 18px rgba(13,148,136,.28)}
+.logo svg{width:28px;height:28px}
+h1{font-size:22px;margin:0;color:var(--hd)} .sub{color:var(--mu);font-size:14px;margin-top:2px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(15,23,42,.06);margin-bottom:14px}
+h2{font-size:17px;margin:0 0 6px;color:var(--hd)}
+.hint{color:var(--mu);font-size:14px;margin:0 0 14px;line-height:1.5}
+.when{display:flex;gap:16px;align-items:center;margin:14px 0 6px}
+.cal{width:66px;border-radius:14px;overflow:hidden;border:1px solid var(--bd);text-align:center;flex:none}
+.cal b{display:block;background:var(--ac);color:#fff;font-size:12px;padding:3px 0;text-transform:uppercase;letter-spacing:.05em}
+.cal span{display:block;font-size:26px;font-weight:700;color:var(--hd);padding:5px 0 7px}
+.big{font-size:19px;font-weight:700;color:var(--hd)} .det{color:var(--mu);font-size:14px;margin-top:3px;line-height:1.45}
+.pill{display:inline-block;border-radius:999px;padding:4px 11px;font-size:13px;font-weight:600;margin-top:8px}
+.p-ok{background:var(--oks);color:var(--ok)} .p-wa{background:var(--was);color:var(--wa)} .p-er{background:var(--ers);color:var(--er)} .p-mu{background:#eef2f6;color:var(--mu)}
+.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--bd);background:#fff;border-radius:12px;padding:12px 8px;font-size:14px;font-weight:600;color:var(--hd)}
+.btn:hover{border-color:var(--ac);background:var(--acs)}
+.btn.main{background:var(--ac);border-color:var(--acd);color:#fff} .btn.main:hover{background:var(--acd)}
+.btn.red{color:var(--er)} .btn.red:hover{border-color:var(--er);background:var(--ers)}
+.btn:disabled{opacity:.55;cursor:default}
+.wide{width:100%;margin-top:14px;padding:14px;font-size:16px}
+.msg{border-radius:14px;padding:12px 14px;font-size:14px;margin-top:14px;line-height:1.45}
+.m-ok{background:var(--oks);color:#166534} .m-er{background:var(--ers);color:#991b1b} .m-in{background:#f1f5f9;color:var(--tx)}
+.days{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
+.day{flex:none;min-width:76px;border:1px solid var(--bd);background:#fff;border-radius:14px;padding:9px 8px;text-align:center;font-size:13px;color:var(--mu)}
+.day strong{display:block;font-size:18px;color:var(--hd);margin-top:2px}
+.day.on{border-color:var(--ac);background:var(--acs);color:var(--acd)} .day.on strong{color:var(--acd)}
+.more{border:1px dashed var(--bd);background:transparent;color:var(--acd);min-width:76px;border-radius:14px;font-size:13px;font-weight:600}
+.times{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px}
+.time{border:1px solid var(--bd);background:#fff;border-radius:10px;padding:9px 0;font-size:15px;font-weight:600;color:var(--hd)}
+.time.on{background:var(--ac);border-color:var(--ac);color:#fff}
+textarea,input[type=text]{width:100%;border:1px solid var(--bd);border-radius:12px;padding:11px 13px;font:inherit;font-size:15px;color:var(--tx)}
+textarea:focus,input:focus{outline:2px solid #99e2d8;border-color:var(--ac)}
+.q{border-top:1px solid #eef2f6;padding:12px 0}
+.q:first-of-type{border-top:none}
+.qt{font-size:15px;color:var(--tx);line-height:1.4;margin-bottom:8px}
+.yn{display:inline-flex;border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+.yn button{border:none;background:#fff;padding:7px 18px;font-size:14px;font-weight:600;color:var(--mu)}
+.yn button.on{background:var(--ac);color:#fff} .yn button.on.yes{background:#e11d48}
+.yn button+button{border-left:1px solid var(--bd)}
+.qd{margin-top:8px}
+.part{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin:18px 0 2px;font-weight:600}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.row label{font-size:14px;color:var(--tx)}
+select,input[type=number]{border:1px solid var(--bd);border-radius:10px;padding:8px 10px;font:inherit;font-size:14px;background:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--bd);background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;color:var(--tx)}
+.chip.on{background:var(--acs);border-color:var(--ac);color:var(--acd)}
+.check{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:14px;line-height:1.45}
+.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--ac);flex:none}
+.link{background:none;border:none;color:var(--acd);font-weight:600;font-size:14px;padding:0}
+a.cal-link{color:var(--acd);font-weight:600;font-size:14px;text-decoration:none}
+a.doc-link{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--bd);border-radius:14px;padding:13px 14px;margin-top:8px;text-decoration:none;color:var(--tx);font-size:15px}
+a.doc-link b{color:var(--acd);font-size:14px;white-space:nowrap} a.doc-link:hover{border-color:var(--ac);background:var(--acs)}
+footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-height:1.6}
+@media (max-width:520px){.actions{grid-template-columns:1fr}.card{padding:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.5 1 6.5 2.5 6.5S9 17 10 15.5c.6-.9 1.2-1.5 2-1.5s1.4.6 2 1.5c1 1.5 1 5.5 2.5 5.5S18.5 17 19 14.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+    <div><h1 id="clinic">{{CLINICA}}</h1><div class="sub">Mi cita</div></div>
+  </header>
+  <div id="main"><div class="card"><p class="hint">Cargando…</p></div></div>
+  <footer id="foot"></footer>
+</div>
+<script>
+(function(){
+  var token=location.pathname.split('/').filter(Boolean).pop()||'';
+  var base='../api/cita/'+encodeURIComponent(token);
+  var C=null, main=document.getElementById('main');
+  function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};for(var k in attrs){if(k==='text')e.textContent=attrs[k];else if(k==='cls')e.className=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}(kids||[]).forEach(function(c){if(c)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});return e;}
+  function clear(n){while(n.firstChild)n.removeChild(n.firstChild);}
+  function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+  function api(path,body){var o=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};return fetch(base+path,o).then(function(r){return r.json().then(function(j){j._code=r.status;return j;});});}
+  function note(box,ok,text){clear(box);box.appendChild(el('div',{cls:'msg '+(ok?'m-ok':'m-er'),text:text}));}
+
+  function load(){
+    api('').then(function(c){
+      if(!c.ok){clear(main);main.appendChild(el('div',{cls:'card'},[el('h2',{text:'Enlace no disponible'}),el('p',{cls:'hint',text:c.error||'Este enlace no es válido.'})]));return;}
+      C=c; document.getElementById('clinic').textContent=c.clinica; document.title='Mi cita · '+c.clinica;
+      document.getElementById('foot').textContent=[c.direccion,c.telefono?'Tel. '+c.telefono:''].filter(Boolean).join(' · ');
+      render();
+    }).catch(function(){clear(main);main.appendChild(el('div',{cls:'card'},[el('p',{cls:'hint',text:'No se ha podido cargar. Inténtelo de nuevo en unos minutos.'})]));});
+  }
+
+  function render(){
+    clear(main);
+    var c=C, d=new Date(c.fecha+'T00:00:00');
+    var month=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()];
+    var st={confirmada:['Confirmada','p-ok'],planificada:['Pendiente de confirmar','p-wa'],anulada:['Anulada','p-er'],pasada:['Ya pasó','p-mu'],atendida:['Atendida','p-mu']}[c.estado]||['',''];
+    var card=el('div',{cls:'card'});
+    card.appendChild(el('h2',{text:c.nombre?('Hola, '+c.nombre):'Su cita'}));
+    card.appendChild(el('div',{cls:'when'},[
+      el('div',{cls:'cal'},[el('b',{text:month}),el('span',{text:String(d.getDate())})]),
+      el('div',{},[el('div',{cls:'big',text:cap(c.etiqueta)+' · '+c.hora}),el('div',{cls:'det',text:c.motivo+(c.profesional?' · '+c.profesional:'')+' · '+c.minutos+' min'}),el('span',{cls:'pill '+st[1],text:st[0]})])
+    ]));
+    var box=el('div');
+    if(c.estado==='planificada'||c.estado==='confirmada'){
+      var acts=el('div',{cls:'actions'});
+      var conf=el('button',{cls:'btn main',text:c.estado==='confirmada'?'✓ Confirmada':'Confirmo que iré',onclick:function(){conf.disabled=true;api('/confirmar',{}).then(function(r){note(box,r.ok,r.ok?r.mensaje:r.error);if(r.ok){C.estado='confirmada';C.puede_confirmar=false;setTimeout(render,1600);}else conf.disabled=false;});}});
+      if(!c.puede_confirmar)conf.disabled=true;
+      acts.appendChild(conf);
+      var chg=el('button',{cls:'btn',text:'Cambiar la hora',onclick:function(){cambiar(box);}});
+      var del=el('button',{cls:'btn red',text:'Anular la cita',onclick:function(){anular(box);}});
+      if(!c.puede_cambiar){chg.disabled=true;del.disabled=true;}
+      acts.appendChild(chg);acts.appendChild(del);card.appendChild(acts);
+      if(c.cambio_pendiente)box.appendChild(el('div',{cls:'msg m-in',text:'Ya ha pedido un cambio de hora: le avisaremos en cuanto lo revisemos. Mientras tanto, su cita sigue como está.'}));
+      else if(!c.puede_cambiar)box.appendChild(el('div',{cls:'msg m-in',text:'Quedan menos de '+c.horas_aviso+' horas para la cita: para cambiarla o anularla, llame al '+c.telefono+'.'}));
+      card.appendChild(el('p',{cls:'hint',style:'margin:14px 0 0'},[el('a',{cls:'cal-link',href:base+'/cita.ics',text:'📅 Añadir a mi calendario'})]));
+    } else if(c.estado==='anulada'){
+      card.appendChild(el('p',{cls:'hint',text:'Esta cita está anulada. Si quiere otra, puede pedirla en la web de la clínica o llamando al '+c.telefono+'.'}));
+    } else {
+      card.appendChild(el('p',{cls:'hint',text:'Esta cita ya ha pasado. ¡Gracias por su visita!'}));
+    }
+    card.appendChild(box);
+    main.appendChild(card);
+    if(c.documentos&&c.documentos.length){
+      var dc=el('div',{cls:'card'},[el('h2',{text:'Antes de su visita: documentos para firmar'}),el('p',{cls:'hint',text:'Léalos con calma y fírmelos desde el móvil (o, si lo prefiere, en la clínica).'})]);
+      c.documentos.forEach(function(x){dc.appendChild(el('a',{cls:'doc-link',href:x.enlace},[el('span',{text:'📝 '+x.titulo}),el('b',{text:'Leer y firmar ›'})]));});
+      main.appendChild(dc);
+    }
+    if(c.cuestionario.pedir)salud();
+    else if(c.cuestionario.enviado)main.appendChild(el('div',{cls:'card'},[el('h2',{text:'Cuestionario de salud'}),el('div',{cls:'msg m-ok',text:'Ya lo hemos recibido. ¡Gracias!'})]));
+  }
+
+  function anular(box){
+    clear(box);
+    var t=el('textarea',{rows:'2',placeholder:'Motivo (opcional)'});
+    var go=el('button',{cls:'btn red wide',text:'Sí, anular la cita',onclick:function(){go.disabled=true;api('/anular',{motivo:t.value}).then(function(r){if(r.ok){C.estado='anulada';render();main.firstChild.appendChild(el('div',{cls:'msg m-ok',text:r.mensaje}));}else{note(box,false,r.error);}});}});
+    box.appendChild(el('div',{cls:'msg m-in'},[el('b',{text:'¿Seguro que quiere anular la cita? '}),'La hora quedará libre para otro paciente.']));
+    box.appendChild(t);box.appendChild(go);
+    box.appendChild(el('button',{cls:'link',text:'No, mantener la cita',style:'margin-top:10px',onclick:function(){clear(box);}}));
+  }
+
+  function cambiar(box,desde){
+    clear(box);
+    box.appendChild(el('p',{cls:'hint',style:'margin-top:16px',text:'Elija la nueva hora (con '+C.profesional+'):'}));
+    var wrap=el('div',{},[el('p',{cls:'hint',text:'Buscando horas libres…'})]); box.appendChild(wrap);
+    api('/huecos'+(desde?'?desde='+desde:'')).then(function(r){
+      clear(wrap);
+      var dias=r.dias||[];
+      if(!dias.length){wrap.appendChild(el('div',{cls:'msg m-in',text:'No quedan horas libres próximas. Llámenos al '+C.telefono+' y le buscamos un hueco.'}));return;}
+      var days=el('div',{cls:'days'}),times=el('div'),pick=null,send=el('button',{cls:'btn main wide',text:'Pedir el cambio',disabled:'disabled'});
+      if(desde)days.appendChild(el('button',{cls:'more',text:'‹ Antes',onclick:function(){cambiar(box);}}));
+      function show(i){clear(times);pick=null;send.disabled=true;var d=dias[i];times.appendChild(el('p',{cls:'hint',text:cap(d.etiqueta)}));var g=el('div',{cls:'times'});
+        d.horas.forEach(function(h){var b=el('button',{cls:'time',text:h.hora,onclick:function(){g.querySelectorAll('.time').forEach(function(x){x.className='time';});b.className='time on';pick={fecha:d.fecha,hora:h.hora};send.disabled=false;send.textContent='Cambiar al '+d.etiqueta+' a las '+h.hora;}});g.appendChild(b);});times.appendChild(g);}
+      dias.forEach(function(d,i){days.appendChild(el('button',{cls:'day'+(i===0?' on':''),onclick:function(){days.querySelectorAll('.day').forEach(function(x,k){x.className='day'+(k===i?' on':'');});show(i);}},[d.corta.slice(0,3),el('strong',{text:d.corta.slice(4)})]));});
+      if(r.siguiente)days.appendChild(el('button',{cls:'more',text:'Más días ›',onclick:function(){cambiar(box,r.siguiente);}}));
+      wrap.appendChild(days);wrap.appendChild(times);show(0);
+      send.addEventListener('click',function(){if(!pick)return;send.disabled=true;api('/cambiar',pick).then(function(r){if(r.ok){C.cambio_pendiente=true;C.puede_cambiar=false;render();main.firstChild.appendChild(el('div',{cls:'msg m-ok',text:r.mensaje}));}else{send.disabled=false;wrap.appendChild(el('div',{cls:'msg m-er',text:r.error}));}});});
+      wrap.appendChild(send);
+    });
+  }
+
+  function salud(){
+    var q=C.cuestionario, card=el('div',{cls:'card'});
+    card.appendChild(el('h2',{text:'Antes de su visita: cuestionario de salud'}));
+    card.appendChild(el('p',{cls:'hint',text:'Unas preguntas sobre su salud para atenderle con seguridad (medicación, alergias, enfermedades). Son unos 3 minutos. Lo revisaremos con usted en la consulta.'}));
+    var body=el('div');
+    var open=el('button',{cls:'btn main wide',text:'Rellenar el cuestionario',onclick:function(){open.style.display='none';form(body);}});
+    card.appendChild(open);card.appendChild(body);main.appendChild(card);
+  }
+
+  function form(body){
+    var q=C.cuestionario, ans={}, det={};
+    var motivo=el('input',{type:'text',placeholder:'Motivo de la consulta (opcional)'}); body.appendChild(motivo);
+    [['general','Salud general'],['dental','Salud de la boca']].forEach(function(p){
+      body.appendChild(el('div',{cls:'part',text:p[1]}));
+      q.preguntas.filter(function(x){return x.parte===p[0];}).forEach(function(x){
+        var d=null, wrap=el('div',{cls:'q'});
+        var yes=el('button',{text:'Sí',type:'button'}), no=el('button',{text:'No',type:'button',cls:'on'});
+        function set(v){ans[x.clave]=v;yes.className=v?'on yes':'';no.className=v?'':'on';if(d)d.style.display=v?'block':'none';}
+        yes.addEventListener('click',function(){set(true);});no.addEventListener('click',function(){set(false);});
+        wrap.appendChild(el('div',{cls:'qt',text:x.texto}));wrap.appendChild(el('div',{cls:'yn'},[yes,no]));
+        if(x.detalle){d=el('input',{type:'text',cls:'qd',placeholder:'¿Cuál? Indique el detalle',maxlength:'200'});d.style.display='none';d.addEventListener('input',function(){det[x.clave]=d.value;});wrap.appendChild(d);}
+        body.appendChild(wrap);
+      });
+    });
+    body.appendChild(el('div',{cls:'part',text:'Hábitos'}));
+    var visit=el('select');q.ultima_visita.forEach(function(t,i){visit.appendChild(el('option',{value:String(i),text:t}));});
+    var brush=el('input',{type:'number',min:'0',max:'6',value:'2',style:'width:70px'});
+    var cig=el('input',{type:'number',min:'0',max:'80',value:'0',style:'width:70px'});
+    body.appendChild(el('div',{cls:'row'},[el('label',{text:'Última visita al dentista'}),visit]));
+    body.appendChild(el('div',{cls:'row'},[el('label',{text:'Cepillados al día'}),brush,el('label',{text:'Cigarrillos al día'}),cig]));
+    var aids={}, chips=el('div',{cls:'chips'});
+    q.ayudas.forEach(function(a){var b=el('button',{cls:'chip',type:'button',text:a,onclick:function(){aids[a]=!aids[a];b.className='chip'+(aids[a]?' on':'');}});chips.appendChild(b);});
+    body.appendChild(el('label',{text:'Utiliza para su higiene',style:'display:block;font-size:14px;margin:8px 0 6px'}));body.appendChild(chips);
+    var ok=el('input',{type:'checkbox'});
+    body.appendChild(el('label',{cls:'check'},[ok,'Declaro que los datos son ciertos y avisaré a la clínica de cualquier cambio en mi salud.']));
+    var res=el('div'), send=el('button',{cls:'btn main wide',text:'Enviar el cuestionario'});
+    send.addEventListener('click',function(){
+      if(!ok.checked){note(res,false,'Para enviarlo, marque la casilla de que los datos son ciertos.');return;}
+      send.disabled=true;send.textContent='Enviando…';
+      api('/salud',{respuestas:ans,detalles:det,cigarrillos:+cig.value||0,cepillados:+brush.value||0,ultima_visita:+visit.value||0,ayudas:Object.keys(aids).filter(function(k){return aids[k];}),motivo:motivo.value,acepta:true}).then(function(r){
+        if(r.ok){clear(body);body.appendChild(el('div',{cls:'msg m-ok',text:r.mensaje}));C.cuestionario.pedir=false;C.cuestionario.enviado=true;}
+        else{send.disabled=false;send.textContent='Enviar el cuestionario';note(res,false,r.error);}
+      }).catch(function(){send.disabled=false;send.textContent='Enviar el cuestionario';note(res,false,'No se ha podido enviar. Compruebe la conexión.');});
+    });
+    body.appendChild(res);body.appendChild(send);
+    body.appendChild(el('p',{cls:'hint',style:'margin-top:12px;font-size:12px',text:'Sus respuestas van directamente a la clínica y sólo las ve el equipo que le atiende. Esta página no muestra datos de salud anteriores.'}));
+  }
+  load();
+})();
+</script>
+</body>
+</html>

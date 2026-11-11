@@ -1,0 +1,6 @@
+/target/
+/dist/
+/shots/
+/assets/gesden/
+*.png.tmp
+.DS_Store
