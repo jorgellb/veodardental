@@ -1201,6 +1201,7 @@ impl Db {
             return match serde_json::from_str::<Db>(&txt) {
                 Ok(mut db) => {
                     db.upgrade();
+                    db.reset_hidden_credentials();
                     (db, None)
                 }
                 Err(e) => (

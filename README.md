@@ -45,6 +45,35 @@ aplicación gráfica (X11/Wayland y OpenGL).
 | `veodardental --repositorio-recetas` | Repositorio de recetas electrónicas para las farmacias (SREP) |
 | `veodardental --screenshot captura.png` | Arranca, dibuja y guarda una captura (pruebas) |
 
+## Trabajo en red y seguridad
+
+Un ordenador hace de servidor (`--servidor` o Configuración › Puestos) y los
+demás se conectan con su dirección y la clave de la clínica.
+
+- **Todo va cifrado (TLS 1.3).** El certificado del servidor sale de la clave
+  de la clínica: cada puesto sabe de antemano cuál es el servidor bueno, así
+  que nadie en la red puede leer los datos ni hacerse pasar por él, y no hay
+  certificados que instalar. Si la clave de un puesto está mal, no conecta.
+- **Sin entrar no hay datos.** Antes de entrar, el puesto solo sabe el nombre
+  de la clínica y sus usuarios. Al entrar (contraseña y, si lo tiene, código
+  del móvil) el servidor comprueba el acceso y da al puesto una sesión.
+- **Las contraseñas no salen del servidor.** Los puestos no reciben las
+  huellas de las contraseñas ni las claves del código del móvil; los fallos de
+  acceso y los bloqueos los lleva el servidor. Solo Dirección puede cambiar
+  los usuarios.
+- **Los registros solo crecen**: ningún puesto puede borrar entradas del
+  registro de accesos ni de la auditoría.
+- Contraseñas con PBKDF2-HMAC-SHA256 (600 000 vueltas) y sal aleatoria; las
+  nuevas, de 6 caracteres o más. Las de versiones anteriores siguen valiendo y
+  se pasan al formato nuevo al entrar.
+
+**Al actualizar, actualice el servidor y todos los puestos a la vez**: un
+puesto con una versión anterior no puede conectar con el servidor nuevo (ni al
+revés), y el programa lo dice con un aviso.
+
+Con carpeta compartida (sin servidor), cada puesto lee el fichero entero,
+contraseñas incluidas: para varios puestos se recomienda el servidor.
+
 ## Importar desde otros programas
 
 Configuración › Importar datos:

@@ -114,7 +114,11 @@ pub fn read_backup_with(path: &Path, password: Option<&str>, key: Option<&crate:
         bytes
     };
     let txt = String::from_utf8(plain).map_err(|_| "La copia está dañada o no es de esta aplicación.".to_string())?;
-    serde_json::from_str::<Db>(&txt).map_err(|e| format!("La copia está dañada o no es de esta aplicación: {e}"))
+    let mut db = serde_json::from_str::<Db>(&txt).map_err(|e| format!("La copia está dañada o no es de esta aplicación: {e}"))?;
+    // copia hecha en un puesto conectado: sin contraseñas (si se restaura en
+    // red, el servidor conserva las suyas)
+    db.reset_hidden_credentials();
+    Ok(db)
 }
 
 /// Pone las copias de `dir` con la clave nueva: cifra las que no lo están y

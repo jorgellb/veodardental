@@ -342,6 +342,32 @@ impl Db {
         self.log_access(&name, &format!("Código del móvil quitado por {by}"), true);
     }
 
+    /// Las copias hechas en un puesto conectado al servidor no llevan las
+    /// contraseñas ni las claves del móvil (se quedan en el servidor). Al usar
+    /// una así sin servidor, esos usuarios vuelven a la contraseña inicial
+    /// 0000, que deben cambiar al entrar, y sin código del móvil. Devuelve cuántos.
+    pub fn reset_hidden_credentials(&mut self) -> usize {
+        let hidden = crate::server::HIDDEN;
+        let initial = new_user(0, "", Profile::Recepcion, None, "0000");
+        let mut names = vec![];
+        for u in self.users.iter_mut().filter(|u| u.pin_hash == hidden || u.totp_secret == hidden) {
+            if u.pin_hash == hidden {
+                u.salt = initial.salt.clone();
+                u.pin_hash = initial.pin_hash.clone();
+                u.must_change = true;
+            }
+            if u.totp_secret == hidden {
+                u.totp_secret.clear();
+                u.totp_last = 0;
+            }
+            names.push(u.name.clone());
+        }
+        for n in &names {
+            self.log_access(n, "Contraseña inicial puesta al usar una copia hecha en un puesto (sin contraseñas)", true);
+        }
+        names.len()
+    }
+
     pub fn logout(&mut self, id: u32, reason: &str) {
         if let Some(u) = self.user(id).cloned() {
             self.log_access(&u.name, reason, true);
@@ -518,6 +544,20 @@ mod tests {
         assert!(u.pin_hash.starts_with("pbkdf2$"), "al entrar se pasa al formato nuevo");
         assert_ne!(u.salt, "00112233aabbccdd", "con sal nueva");
         assert!(d.login(2, "4321").is_ok(), "y la misma contraseña sigue sirviendo");
+    }
+
+    #[test]
+    fn backups_made_on_a_station_can_be_used_without_server() {
+        let mut d = db();
+        let v = crate::server::public_view(&serde_json::to_value(&d).unwrap());
+        d = serde_json::from_value(v).unwrap();
+        d.users.iter_mut().find(|u| u.id == 3).unwrap().totp_secret = crate::server::HIDDEN.into();
+        assert!(d.login(1, "0000").is_err(), "sin las contraseñas nadie entra");
+        assert_eq!(d.reset_hidden_credentials(), 5);
+        assert_eq!(d.login(1, "0000"), Ok(LoginStep::Done));
+        assert!(d.user(1).unwrap().must_change);
+        assert_eq!(d.login(3, "0000"), Ok(LoginStep::Done), "sin código del móvil");
+        assert_eq!(d.reset_hidden_credentials(), 0, "las que tienen contraseña no se tocan");
     }
 
     #[test]

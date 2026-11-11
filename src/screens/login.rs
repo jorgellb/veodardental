@@ -22,6 +22,8 @@ pub struct LoginState {
     /// Contraseña correcta de este usuario: falta el código de la app del móvil.
     pub pending_code: Option<u32>,
     pub code: String,
+    /// En red: lo que da el servidor tras la contraseña correcta para pedir el código.
+    pub previous: String,
     /// Activación del código del móvil en curso: (usuario, clave nueva, código escrito).
     pub enroll: Option<(u32, String, String)>,
 }
@@ -35,7 +37,16 @@ fn finish_login(app: &mut App, id: u32, time: f64, second_factor: bool) {
     app.last_activity = time;
     app.login.show_change = app.db.user(id).map(|u| u.must_change).unwrap_or(false);
     app.login.focus_pin = true;
-    app.changed();
+    local_changed(app);
+}
+
+/// Sin servidor, la entrada y los fallos (registro de accesos, cuenta de
+/// fallos) están en los datos de este ordenador y hay que guardarlos; en red
+/// ya los ha anotado el servidor.
+fn local_changed(app: &mut App) {
+    if app.remote.is_none() {
+        app.changed();
+    }
 }
 
 fn try_login(app: &mut App, time: f64) {
@@ -44,7 +55,7 @@ fn try_login(app: &mut App, time: f64) {
         return;
     };
     let pin = std::mem::take(&mut app.login.pin);
-    match app.db.login(id, &pin) {
+    match app.check_login(id, &pin) {
         Ok(LoginStep::Done) => finish_login(app, id, time, false),
         Ok(LoginStep::NeedCode) => {
             app.login.pending_code = Some(id);
@@ -55,7 +66,7 @@ fn try_login(app: &mut App, time: f64) {
         Err(e) => {
             app.login.error = e;
             app.login.focus_pin = true;
-            app.changed();
+            local_changed(app);
         }
     }
 }
@@ -63,7 +74,7 @@ fn try_login(app: &mut App, time: f64) {
 fn try_code(app: &mut App, time: f64) {
     let Some(id) = app.login.pending_code else { return };
     let code = std::mem::take(&mut app.login.code);
-    match app.db.login_code(id, &code, crate::totp::unix_now()) {
+    match app.check_login_code(id, &code) {
         Ok(()) => finish_login(app, id, time, true),
         Err(e) => {
             app.login.error = e;
@@ -72,7 +83,7 @@ fn try_code(app: &mut App, time: f64) {
             if app.db.user(id).is_some_and(|u| !u.active) {
                 app.login.pending_code = None;
             }
-            app.changed();
+            local_changed(app);
         }
     }
 }
@@ -293,15 +304,14 @@ pub fn change_pin_dialog(app: &mut App, ctx: &egui::Context) {
                 if app.login.new_pin != app.login.new_pin2 {
                     app.login.error = "Las contraseñas no coinciden.".into();
                 } else {
-                    let r = if must { app.db.set_pin(uid, &app.login.new_pin) } else { app.db.change_pin(uid, &app.login.old_pin, &app.login.new_pin) };
-                    match r {
+                    let (old, new) = (app.login.old_pin.clone(), app.login.new_pin.clone());
+                    match app.set_user_pin(uid, (!must).then_some(old.as_str()), &new, false) {
                         Ok(()) => {
                             app.login.show_change = false;
                             app.login.error.clear();
                             app.login.old_pin.clear();
                             app.login.new_pin.clear();
                             app.login.new_pin2.clear();
-                            app.changed();
                             app.notify("Contraseña cambiada.");
                         }
                         Err(e) => app.login.error = e,
@@ -355,14 +365,13 @@ fn enroll_card(app: &mut App, ui: &mut Ui, id: u32) {
     }
     if confirm {
         let code = app.login.enroll.as_ref().map(|e| e.2.clone()).unwrap_or_default();
-        match app.db.enable_totp(id, &secret, &code, crate::totp::unix_now()) {
+        match app.enable_user_totp(id, &secret, &code) {
             Ok(()) => {
                 app.login.enroll = None;
                 // quien lo acaba de activar para sí mismo ya ha demostrado tener el móvil
                 if app.user_id == Some(id) {
                     app.second_factor = true;
                 }
-                app.changed();
                 app.notify(format!("Código del móvil activado: desde ahora {name} entrará con su contraseña y el código de la app."));
             }
             Err(e) => app.warn(e),
@@ -472,11 +481,11 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                 }
             }
             if totp_off {
-                let by = app.db.config.current_user.clone();
-                app.db.disable_totp(id, &by);
                 app.login.enroll = None;
-                app.changed();
-                app.notify("Código del móvil quitado: al entrar solo se pedirá la contraseña.");
+                match app.disable_user_totp(id) {
+                    Ok(()) => app.notify("Código del móvil quitado: al entrar solo se pedirá la contraseña."),
+                    Err(e) => app.warn(e),
+                }
             }
             if totp_on {
                 match crate::totp::new_secret() {
@@ -489,13 +498,8 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
             }
             if reset {
                 let pin = std::mem::take(&mut app.login.reset_pin);
-                match app.db.set_pin(id, &pin) {
+                match app.set_user_pin(id, None, &pin, Some(id) != me) {
                     Ok(()) => {
-                        if let Some(u) = app.db.users.iter_mut().find(|u| u.id == id) {
-                            u.must_change = Some(id) != me;
-                            u.active = true;
-                        }
-                        app.changed();
                         app.notify("Contraseña asignada. El usuario deberá cambiarla al entrar.");
                     }
                     Err(e) => app.warn(e),

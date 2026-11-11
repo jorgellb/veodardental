@@ -167,6 +167,18 @@ fn merge_append(base: Option<&Value>, ours: &[Value], theirs: &[Value], cap: usi
     Value::Array(out)
 }
 
+/// En el servidor, tras combinar: los registros que solo crecen conservan
+/// todas las entradas que ya tenía (`current`), aunque un puesto mande menos.
+pub fn keep_logs(base: Option<&Value>, merged: &mut Value, current: &Value) {
+    for (k, cap) in APPEND_ONLY {
+        let kept = match (merged.get(k).and_then(|v| v.as_array()), current.get(k).and_then(|v| v.as_array())) {
+            (Some(m), Some(c)) => merge_append(base.and_then(|b| b.get(k)), m, c, cap),
+            _ => continue,
+        };
+        merged[k] = kept;
+    }
+}
+
 /// Combinación a tres bandas: `base` es lo que este puesto leyó, `ours` lo que
 /// tiene ahora y `theirs` lo que hay en disco (guardado por otro puesto).
 /// Las listas de registros con `id` se combinan registro a registro; si los

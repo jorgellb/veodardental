@@ -55,6 +55,8 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 qrcode = { version = "0.14", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "0.26"
+# servidor de datos con TLS: certificado propio ligado a la clave de la clínica
+rcgen = "0.14"
 # envío de correo (SMTP) con adjuntos: órdenes al laboratorio y comunicaciones
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "rustls", "ring", "webpki-roots"] }
 
@@ -66,4 +68,3 @@ opt-level = 2
 
 [dev-dependencies]
 egui_kittest = { version = "0.37", features = ["eframe"] }
-rcgen = "0.14"

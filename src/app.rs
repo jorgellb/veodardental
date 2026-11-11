@@ -147,6 +147,13 @@ pub struct App {
     pub remote: Option<crate::server::Remote>,
     /// Sin conexión con el servidor: se muestra la pantalla de reintento.
     pub offline: Option<String>,
+    /// Puesto conectado al servidor que aún no tiene los datos: solo conoce la
+    /// clínica y sus usuarios hasta que alguien entra (el servidor da los datos
+    /// con una sesión).
+    pub awaiting_data: bool,
+    /// Los servicios del arranque (avisos, WhatsApp, copia diaria…) esperan a
+    /// tener los datos.
+    pub pending_start: bool,
     pub screenshot: Option<Screenshot>,
     pub agenda: screens::agenda::AgendaState,
     pub odg: screens::odontograma::OdgState,
@@ -198,6 +205,7 @@ impl App {
         let mut base = serde_json::to_value(&db).unwrap_or_default();
         let mut remote = None;
         let mut offline = None;
+        let mut awaiting_data = false;
         if persist && crate::shared::remote_mode() {
             let st = crate::shared::station();
             let local = crate::server::is_local(&st.server);
@@ -205,17 +213,17 @@ impl App {
                 let _ = crate::server::spawn_local_server();
             }
             let mut r = crate::server::Remote::new(&st.server, &st.key, 0);
+            // hasta que alguien entre, el puesto no tiene los datos (ni los de este ordenador)
+            persist = false;
             match crate::server::connect(&mut r, &crate::shared::machine_name(), if local { 20 } else { 1 }) {
-                Ok((d, v)) => {
-                    db = crate::server::adopt(&db, d);
+                Ok(info) => {
+                    db = login_shell(&info, &db.config.current_user, today());
                     db.station = r.station;
-                    base = v;
+                    base = serde_json::Value::Null;
+                    awaiting_data = true;
                     err = None;
                 }
-                Err(e) => {
-                    offline = Some(e);
-                    persist = false;
-                }
+                Err(e) => offline = Some(e),
             }
             remote = Some(r);
         }
@@ -236,6 +244,8 @@ impl App {
             last_poll: 0.0,
             remote,
             offline,
+            awaiting_data,
+            pending_start: false,
             screenshot: shot.map(|path| Screenshot { path, frames: 0, state: Arc::new(AtomicU8::new(0)) }),
             agenda: screens::agenda::AgendaState::new(today()),
             odg: screens::odontograma::OdgState::default(),
@@ -275,24 +285,40 @@ impl App {
         if crate::brand::migrated() > 0 {
             app.notify(format!("El programa ahora se llama {}: sus datos, ajustes y documentos de {} están en las carpetas con el nombre nuevo.", crate::brand::NAME, crate::brand::OLD_DIR));
         }
-        // copia de seguridad automática diaria
-        if app.persist && crate::tools::needs_daily(app.today) {
-            if let Err(e) = crate::tools::create_backup(&app.db, "automatica") {
-                app.save_error = Some(e);
-            }
-        }
-        let (_, skipped) = app.db.generate_messages(app.today);
-        app.db.generate_tasks(app.today);
-        // avisos de llamada de la centralita (no en capturas ni pruebas)
-        if app.screenshot.is_none() {
-            screens::llamadas::start(&mut app, &cc.egui_ctx);
-            screens::whatsapp::start(&mut app, &cc.egui_ctx);
-        }
-        app.comms.last_skipped = skipped;
-        if app.db.patient(app.patient.unwrap_or(0)).is_none() {
-            app.patient = app.db.patients.first().map(|p| p.id);
+        if app.awaiting_data || app.offline.is_some() {
+            app.pending_start = true;
+        } else {
+            app.start_services(&cc.egui_ctx);
         }
         app
+    }
+
+    /// Lo que se hace al tener los datos: copia diaria, avisos y tareas del
+    /// día, y los servicios de la centralita y de WhatsApp.
+    fn start_services(&mut self, ctx: &egui::Context) {
+        // copia de seguridad automática diaria
+        if self.persist
+            && crate::tools::needs_daily(self.today)
+            && let Err(e) = crate::tools::create_backup(&self.db, "automatica")
+        {
+            self.save_error = Some(e);
+        }
+        let (_, skipped) = self.db.generate_messages(self.today);
+        self.db.generate_tasks(self.today);
+        // avisos de llamada de la centralita (no en capturas ni pruebas)
+        if self.screenshot.is_none() {
+            screens::llamadas::start(self, ctx);
+            screens::whatsapp::start(self, ctx);
+        }
+        self.comms.last_skipped = skipped;
+        if self.db.patient(self.patient.unwrap_or(0)).is_none() {
+            self.patient = self.db.patients.first().map(|p| p.id);
+        }
+    }
+
+    /// ¿Están los datos de la clínica? (En red, después de entrar.)
+    pub fn data_ready(&self) -> bool {
+        !self.awaiting_data && self.offline.is_none()
     }
 
     /// Abre un diálogo al arrancar (útil para revisar pantallas): cita, cobro, paciente, presupuesto.
@@ -391,7 +417,7 @@ impl App {
 
     /// En red: si este puesto no tiene cambios pendientes, recoge los de los demás.
     fn poll_shared(&mut self, time: f64) {
-        if !self.persist || self.dirty || time - self.last_poll < 3.0 {
+        if !self.persist || self.dirty || time - self.last_poll < 3.0 || self.session_missing() {
             return;
         }
         self.last_poll = time;
@@ -403,11 +429,11 @@ impl App {
                         self.base = v;
                         self.save_error = None;
                     }
-                    Err(e) => self.save_error = Some(e),
+                    Err(e) => self.remote_error(e),
                 },
                 Ok(_) => self.save_error = None,
                 Err(e) => {
-                    self.save_error = Some(e);
+                    self.remote_error(e);
                     // sin conexión: no insistir cada 3 s para no frenar la pantalla
                     self.last_poll = time + 12.0;
                 }
@@ -424,7 +450,7 @@ impl App {
     }
 
     fn autosave(&mut self, time: f64) {
-        if !self.persist || !self.dirty || time - self.last_save < 1.5 {
+        if !self.persist || !self.dirty || time - self.last_save < 1.5 || self.session_missing() {
             return;
         }
         match self.save_now() {
@@ -437,11 +463,167 @@ impl App {
                 self.last_save = time;
             }
             Err(e) => {
-                self.save_error = Some(e);
+                self.remote_error(e);
                 // reintento más espaciado si falla (p. ej. sin conexión)
                 self.last_save = time + 8.0;
             }
         }
+    }
+
+    /// En red, sin sesión con el servidor (hasta volver a entrar no se guarda ni se recoge nada).
+    fn session_missing(&self) -> bool {
+        self.remote.as_ref().is_some_and(|r| r.session.is_empty())
+    }
+
+    /// Error al hablar con el servidor. Si la sesión ya no vale, se vuelve a la
+    /// pantalla de entrada; los cambios pendientes se envían al entrar.
+    fn remote_error(&mut self, e: String) {
+        if e == crate::server::SESSION_EXPIRED {
+            if let Some(r) = self.remote.as_mut() {
+                r.session.clear();
+            }
+            self.user_id = None;
+            self.second_factor = false;
+            self.dialog = Dialog::None;
+            self.login.pending_code = None;
+            self.login.error = e.clone();
+        }
+        self.save_error = Some(e);
+    }
+
+    /// Comprueba la contraseña: en el servidor de la clínica o en los datos de este ordenador.
+    pub fn check_login(&mut self, id: u32, pin: &str) -> Result<crate::users::LoginStep, String> {
+        let Some(r) = self.remote.clone() else { return self.db.login(id, pin) };
+        match r.login(id, pin) {
+            Ok(crate::server::Entry::Inside(session)) => {
+                self.begin_session(id, session)?;
+                Ok(crate::users::LoginStep::Done)
+            }
+            Ok(crate::server::Entry::NeedCode(previous)) => {
+                self.login.previous = previous;
+                Ok(crate::users::LoginStep::NeedCode)
+            }
+            Err(e) => {
+                self.refresh_users();
+                Err(e)
+            }
+        }
+    }
+
+    /// Segundo paso de la entrada: el código de la app del móvil.
+    pub fn check_login_code(&mut self, id: u32, code: &str) -> Result<(), String> {
+        let Some(r) = self.remote.clone() else { return self.db.login_code(id, code, crate::totp::unix_now()) };
+        match r.login_code(id, code, &self.login.previous) {
+            Ok(session) => {
+                self.login.previous.clear();
+                self.begin_session(id, session)
+            }
+            Err(e) => {
+                self.refresh_users();
+                Err(e)
+            }
+        }
+    }
+
+    /// Sesión nueva con el servidor: recoge sus datos o, si este puesto tenía
+    /// cambios sin enviar (la sesión anterior caducó), los envía y combina.
+    fn begin_session(&mut self, id: u32, session: String) -> Result<(), String> {
+        let Some(r) = self.remote.as_mut() else { return Err("Sin servidor".into()) };
+        r.session = session;
+        let r = r.clone();
+        if self.awaiting_data || !self.dirty {
+            let (d, v) = r.load()?;
+            self.db = crate::server::adopt(&self.db, d);
+            self.base = v;
+        } else {
+            let (d, v) = r.save(&self.db)?;
+            self.db = d;
+            self.base = v;
+        }
+        self.dirty = false;
+        self.awaiting_data = false;
+        self.persist = true;
+        self.save_error = None;
+        if let Some(name) = self.db.user(id).map(|u| u.name.clone()) {
+            self.db.config.current_user = name;
+        }
+        Ok(())
+    }
+
+    /// Antes de tener los datos: vuelve a pedir los usuarios (por si alguno ha quedado bloqueado).
+    fn refresh_users(&mut self) {
+        if !self.awaiting_data {
+            return;
+        }
+        if let Some(info) = self.remote.as_ref().and_then(|r| r.access().ok()) {
+            self.db.users = info.users;
+        }
+    }
+
+    /// Tras cambiar algo en el servidor (contraseña, código del móvil): envía
+    /// los cambios pendientes o recoge los datos nuevos.
+    fn sync_with_server(&mut self) {
+        let Some(r) = self.remote.clone() else { return };
+        let res = if self.dirty {
+            self.save_now().map(|_| ())
+        } else {
+            r.load().map(|(d, v)| {
+                self.db = crate::server::adopt(&self.db, d);
+                self.base = v;
+            })
+        };
+        match res {
+            Ok(()) => {
+                self.dirty = false;
+                self.save_error = None;
+            }
+            Err(e) => self.remote_error(e),
+        }
+    }
+
+    /// Contraseña nueva de un usuario. Con `current`, la propia (comprobando la
+    /// actual); sin ella, la inicial propia o, para Dirección, la de otro.
+    /// `change_at_login`: el usuario tendrá que cambiarla al entrar.
+    pub fn set_user_pin(&mut self, id: u32, current: Option<&str>, new: &str, change_at_login: bool) -> Result<(), String> {
+        if let Some(r) = self.remote.clone() {
+            r.set_pin(id, current, new, change_at_login)?;
+            self.sync_with_server();
+            return Ok(());
+        }
+        match current {
+            Some(old) => self.db.change_pin(id, old, new)?,
+            None => self.db.set_pin(id, new)?,
+        }
+        if let Some(u) = self.db.users.iter_mut().find(|u| u.id == id) {
+            u.must_change = change_at_login;
+        }
+        self.changed();
+        Ok(())
+    }
+
+    /// Activa el código del móvil de un usuario (comprobando un código de la app).
+    pub fn enable_user_totp(&mut self, id: u32, secret: &str, code: &str) -> Result<(), String> {
+        if let Some(r) = self.remote.clone() {
+            r.totp_on(id, secret, code)?;
+            self.sync_with_server();
+            return Ok(());
+        }
+        self.db.enable_totp(id, secret, code, crate::totp::unix_now())?;
+        self.changed();
+        Ok(())
+    }
+
+    /// Quita el código del móvil de un usuario.
+    pub fn disable_user_totp(&mut self, id: u32) -> Result<(), String> {
+        if let Some(r) = self.remote.clone() {
+            r.totp_off(id)?;
+            self.sync_with_server();
+            return Ok(());
+        }
+        let by = self.db.config.current_user.clone();
+        self.db.disable_totp(id, &by);
+        self.changed();
+        Ok(())
     }
 
     /// Guarda en el servidor, en la carpeta compartida o en este ordenador.
@@ -463,19 +645,52 @@ impl App {
     pub fn reconnect(&mut self) {
         let Some(mut r) = self.remote.clone() else { return };
         match crate::server::connect(&mut r, &crate::shared::machine_name(), if crate::server::is_local(&crate::shared::station().server) { 12 } else { 1 }) {
-            Ok((d, v)) => {
-                self.db = crate::server::adopt(&self.db, d);
+            Ok(info) => {
+                // los datos llegan al entrar con un usuario
+                self.db = login_shell(&info, &self.db.config.current_user, self.today);
                 self.db.station = r.station;
-                self.base = v;
+                self.base = serde_json::Value::Null;
                 self.remote = Some(r);
-                self.persist = true;
+                self.awaiting_data = true;
+                self.persist = false;
                 self.offline = None;
                 self.save_error = None;
+                self.user_id = None;
                 self.notify("Conectado con el servidor de la clínica.");
             }
             Err(e) => self.offline = Some(e),
         }
     }
+
+    /// Para las pruebas: conecta este puesto con un servidor (queda en la
+    /// pantalla de entrada, sin datos hasta entrar).
+    #[cfg(test)]
+    pub fn connect_to(&mut self, mut r: crate::server::Remote) -> Result<(), String> {
+        let info = crate::server::connect(&mut r, "Puesto de prueba", 1)?;
+        self.db = login_shell(&info, "", self.today);
+        self.db.station = r.station;
+        self.base = serde_json::Value::Null;
+        self.remote = Some(r);
+        self.awaiting_data = true;
+        self.pending_start = true;
+        self.persist = false;
+        self.user_id = None;
+        Ok(())
+    }
+}
+
+/// Datos de un puesto conectado a un servidor antes de entrar: solo el nombre
+/// de la clínica y sus usuarios (sin contraseñas), sin pacientes ni nada más.
+pub fn login_shell(info: &crate::server::AccessInfo, last_user: &str, today: chrono::NaiveDate) -> Db {
+    let mut db = Db::sample(today);
+    let _ = db.start_empty();
+    db.users = info.users.clone();
+    db.config.name = info.clinic.clone();
+    db.config.current_user = last_user.to_string();
+    db
+}
+
+impl App {
 
     fn handle_screenshot(&mut self, ctx: &egui::Context) {
         let Some(s) = &mut self.screenshot else { return };
@@ -850,6 +1065,11 @@ impl eframe::App for App {
         if self.user_id.is_some() && self.screenshot.is_none() && time - self.last_activity > 15.0 * 60.0 {
             self.lock("Bloqueo automático por inactividad");
         }
+        // en red, los servicios del arranque esperan a que lleguen los datos
+        if self.pending_start && self.data_ready() {
+            self.pending_start = false;
+            self.start_services(&ctx);
+        }
         if self.offline.is_some() {
             egui::CentralPanel::default().frame(Frame::new().fill(SIDEBAR)).show(ui, |ui| screens::puestos::offline_screen(self, ui));
             self.toast(&ctx);
@@ -867,13 +1087,16 @@ impl eframe::App for App {
                 p.text(r.center_bottom() - vec2(0.0, 26.0), Align2::CENTER_CENTER, "VeodarDental · gestión de clínica dental", theme::mdf(12.5), Color32::from_rgb(110, 132, 160));
                 screens::login::login_screen(self, ui)
             });
-            // con la pantalla bloqueada la llamada se apunta, pero no se muestra
-            screens::llamadas::poll(self, &ctx);
-            // y los WhatsApp automáticos siguen funcionando
-            screens::whatsapp::tick(self, time);
-            screens::cita_online::tick(self, &ctx, time);
-            // y el envío automático de comunicaciones por correo
-            screens::comunicaciones::outbox_tick(self, &ctx);
+            // con la pantalla bloqueada (y los datos ya cargados) los servicios siguen
+            if self.data_ready() {
+                // la llamada se apunta, pero no se muestra
+                screens::llamadas::poll(self, &ctx);
+                // los WhatsApp automáticos y la cita online siguen funcionando
+                screens::whatsapp::tick(self, time);
+                screens::cita_online::tick(self, &ctx, time);
+                // y el envío automático de comunicaciones por correo
+                screens::comunicaciones::outbox_tick(self, &ctx);
+            }
             self.toast(&ctx);
             self.autosave(time);
             if self.persist && self.dirty && ctx.input(|i| i.viewport().close_requested()) {

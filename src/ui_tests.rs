@@ -1708,3 +1708,91 @@ fn second_factor_login_with_the_phone_code() {
     assert_eq!(h.state().user_id, Some(doc), "{}", h.state().login.error);
     assert!(h.state().second_factor);
 }
+
+/// Puesto en red: antes de entrar no tiene datos ni contraseñas; al entrar con
+/// su usuario el servidor le da la sesión y los datos; si la sesión caduca,
+/// vuelve a la entrada sin perder lo que tenía sin enviar.
+#[test]
+fn station_signs_in_through_the_server() {
+    use crate::server::{HIDDEN, Remote, serve};
+    let dir = std::env::temp_dir().join(format!("ds_ui_server_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("clinica.json");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let initial = serde_json::to_value(crate::model::Db::sample(crate::model::today())).unwrap();
+    let p2 = path.clone();
+    let server = std::thread::spawn(move || serve(listener, p2, "CLAVE_UI".into(), initial));
+
+    let mut h = harness();
+    h.state_mut().connect_to(Remote::new(&addr, "CLAVE_UI", 0)).unwrap();
+    {
+        let a = h.state();
+        assert!(a.awaiting_data && !a.persist);
+        assert!(a.db.patients.is_empty() && a.db.appointments.is_empty(), "sin entrar no hay datos de pacientes");
+        assert!(a.db.users.iter().all(|u| u.pin_hash == HIDDEN && u.salt.is_empty()), "ni contraseñas");
+    }
+    // entra Recepción con su contraseña
+    h.state_mut().login.selected = Some(2);
+    h.step();
+    h.event(egui::Event::Text("0000".into()));
+    h.step();
+    h.get_by_label("Entrar").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    {
+        let a = h.state();
+        assert_eq!(a.user_id, Some(2), "no entra: {}", a.login.error);
+        assert!(!a.awaiting_data && a.persist && !a.pending_start);
+        assert!(!a.db.patients.is_empty(), "al entrar llegan los datos");
+        assert_eq!(a.db.config.current_user, "Recepción");
+    }
+    // la contraseña inicial se cambia en el servidor
+    h.state_mut().login.new_pin = "739154".into();
+    h.state_mut().login.new_pin2 = "739154".into();
+    h.step();
+    h.get_by_label("Guardar").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(!h.state().login.show_change, "{}", h.state().login.error);
+    let disk = || -> crate::model::Db { serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap() };
+    assert!(crate::users::pin_matches(disk().user(2).unwrap(), "739154"));
+    // un cambio del puesto llega al servidor
+    {
+        let a = h.state_mut();
+        a.db.appointments[0].notes = "desde recepción".into();
+        a.save_now().unwrap();
+    }
+    assert_eq!(disk().appointments[0].notes, "desde recepción");
+    // la sesión deja de valer: vuelve a la entrada y el cambio pendiente se guarda al entrar
+    {
+        let a = h.state_mut();
+        a.remote.as_mut().unwrap().session = "0".repeat(32);
+        a.db.appointments[0].notes = "pendiente de enviar".into();
+        a.changed();
+        a.last_save = -10.0;
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().user_id.is_none(), "con la sesión caducada vuelve a la entrada");
+    assert!(h.state().dirty, "el cambio sigue pendiente");
+    assert_eq!(h.state().login.error, crate::server::SESSION_EXPIRED);
+    h.state_mut().login.selected = Some(2);
+    h.state_mut().login.pin = "739154".into();
+    h.step();
+    h.get_by_label("Entrar").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    assert_eq!(h.state().user_id, Some(2), "{}", h.state().login.error);
+    assert_eq!(disk().appointments[0].notes, "pendiente de enviar");
+    assert!(!h.state().dirty);
+
+    h.state().remote.clone().unwrap().stop().unwrap();
+    server.join().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
