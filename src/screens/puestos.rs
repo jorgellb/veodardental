@@ -128,7 +128,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                         let r = Remote::new(&form.server, &form.key, 0);
                         match r.register(form.name.trim()) {
                             Ok(n) => {
-                                let st = Station { data_dir: String::new(), number: n, server_pin: r.server_pin(), ..form.clone() };
+                                let st = Station { data_dir: String::new(), number: n, server_pin: r.pinned(), ..form.clone() };
                                 let print = server::fingerprint(&st.server_pin);
                                 match save_station(&st) {
                                     Ok(()) => app.notify(format!("Conexión correcta: este ordenador será el puesto {n}. Huella del servidor: {print} (debe ser la misma que muestra el servidor). Cierre y vuelva a abrir VeodarDental para trabajar con los datos del servidor.")),

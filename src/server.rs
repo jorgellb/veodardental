@@ -9,10 +9,12 @@
 //!
 //! Seguridad:
 //! - Todo va cifrado con TLS 1.3. El servidor tiene su propia identidad (una
-//!   clave Ed25519 creada al azar que no sale de él). Cada puesto apunta su
-//!   huella al darse de alta y después no acepta otro servidor: nadie en la
-//!   red, ni siquiera quien sepa la clave de la clínica, puede leer los datos
-//!   ni hacerse pasar por el servidor. Si la huella cambia (servidor
+//!   clave Ed25519 creada al azar que no sale de él). La primera vez, antes de
+//!   mandarle nada, el puesto le pide que firme un reto con la clave de la
+//!   clínica (ligado a su clave pública); si cuadra, apunta su huella y
+//!   después no acepta otro servidor. Nadie en la red puede leer los datos ni
+//!   hacerse pasar por el servidor (tampoco, una vez dado de alta el puesto,
+//!   quien sepa la clave de la clínica). Si la huella cambia (servidor
 //!   reinstalado), el puesto la enseña para compararla con la del servidor.
 //! - Para ver o guardar datos hace falta, además de la clave de la clínica,
 //!   haber entrado con un usuario (contraseña y, si lo tiene, el código del
@@ -63,7 +65,7 @@ const SERVER_FIELDS: [&str; 6] = ["pin_hash", "salt", "totp_secret", "totp_last"
 pub const SESSION_EXPIRED: &str = "La sesión con el servidor ha terminado: vuelva a entrar con su usuario.";
 const OLD_STATION: &str = "Este puesto tiene una versión anterior de VeodarDental: actualícelo para conectar con el servidor de la clínica.";
 const OLD_SERVER: &str = "El servidor de la clínica tiene una versión anterior de VeodarDental: actualice el programa en el ordenador servidor.";
-const WRONG_KEY: &str = "La clave de la clínica no es correcta.";
+const WRONG_KEY: &str = "La clave de la clínica no es correcta (o ese ordenador no es el servidor de la clínica).";
 const NO_CONNECTION: &str = "No hay conexión con el servidor de la clínica.";
 /// El servidor no es el que el puesto conocía (otra clave pública).
 pub const SERVER_CHANGED: &str = "El servidor de la clínica no es el de siempre: su huella ha cambiado. Si se ha reinstalado o cambiado el servidor, compruebe que la huella nueva es la que muestra el servidor; si no, avise al responsable: alguien podría estar haciéndose pasar por él.";
@@ -223,7 +225,8 @@ const PIN_MISMATCH: &str = "VEODAR: servidor distinto del conocido";
 /// El puesto solo acepta el servidor cuya clave pública guardó la primera vez
 /// (si aún no la conoce, la acepta y la apunta).
 struct PinnedServer {
-    pin: Vec<u8>,
+    /// Huella apuntada (vacía mientras no se conoce: solo para la prueba).
+    pin: Arc<Mutex<Vec<u8>>>,
     seen: Arc<Mutex<Vec<u8>>>,
     algs: rustls::crypto::WebPkiSupportedAlgorithms,
 }
@@ -249,7 +252,8 @@ impl rustls::client::danger::ServerCertVerifier for PinnedServer {
         if let Ok(mut s) = self.seen.lock() {
             *s = public.to_vec();
         }
-        if self.pin.is_empty() || ct_eq(public, &self.pin) {
+        let pin = self.pin.lock().map(|p| p.clone()).unwrap_or_default();
+        if pin.is_empty() || ct_eq(public, &pin) {
             Ok(rustls::client::danger::ServerCertVerified::assertion())
         } else {
             Err(mismatch())
@@ -269,7 +273,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedServer {
     }
 }
 
-fn client_tls(pin: Vec<u8>, seen: Arc<Mutex<Vec<u8>>>) -> Result<Arc<rustls::ClientConfig>, String> {
+fn client_tls(pin: Arc<Mutex<Vec<u8>>>, seen: Arc<Mutex<Vec<u8>>>) -> Result<Arc<rustls::ClientConfig>, String> {
     let p = provider();
     let verifier = PinnedServer { pin, seen, algs: p.signature_verification_algorithms };
     let cfg = rustls::ClientConfig::builder_with_provider(p)
@@ -279,6 +283,44 @@ fn client_tls(pin: Vec<u8>, seen: Arc<Mutex<Vec<u8>>>) -> Result<Arc<rustls::Cli
         .with_custom_certificate_verifier(Arc::new(verifier))
         .with_no_client_auth();
     Ok(Arc::new(cfg))
+}
+
+// ─────────────── prueba de que el servidor sabe la clave ───────────────
+//
+// La primera vez que un puesto conecta (al darse de alta, o tras actualizar)
+// aún no conoce la huella del servidor. Antes de mandarle nada, le pide que
+// firme un reto al azar junto con su propia clave pública, con una clave que
+// sale de la clave de la clínica. Solo el servidor de la clínica puede firmarlo,
+// y la firma no vale para otra clave pública (un intermediario no puede
+// reenviar la del servidor de verdad). Si cuadra, el puesto apunta la huella.
+
+const PROOF_SALT: &[u8] = b"VeodarDental prueba del servidor v1";
+/// Vueltas de PBKDF2: con la firma de un reto no se puede adivinar la clave probando.
+const PROOF_ROUNDS: u32 = if cfg!(test) { 1_000 } else { 100_000 };
+
+/// Clave de las firmas, sacada de la clave de la clínica (una vez por clave).
+fn proof_key(clinic_key: &str) -> ring::hmac::Key {
+    static CACHE: std::sync::OnceLock<Mutex<HashMap<String, [u8; 32]>>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let cached = cache.lock().ok().and_then(|c| c.get(clinic_key).copied());
+    let derived = cached.unwrap_or_else(|| {
+        let mut out = [0u8; 32];
+        let rounds = std::num::NonZeroU32::new(PROOF_ROUNDS).unwrap_or(std::num::NonZeroU32::MIN);
+        ring::pbkdf2::derive(ring::pbkdf2::PBKDF2_HMAC_SHA256, rounds, PROOF_SALT, clinic_key.as_bytes(), &mut out);
+        if let Ok(mut c) = cache.lock() {
+            c.insert(clinic_key.to_string(), out);
+        }
+        out
+    });
+    ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &derived)
+}
+
+fn proof_message(challenge: &[u8], public: &[u8]) -> Vec<u8> {
+    let mut m = b"VeodarDental servidor v1|".to_vec();
+    m.extend_from_slice(challenge);
+    m.push(b'|');
+    m.extend_from_slice(public);
+    m
 }
 
 // ───────────────────────────── HTTP ─────────────────────────────
@@ -483,6 +525,10 @@ struct State {
     /// Intentos con la clave de la clínica mal y entradas, por ordenador.
     key_fails: HashMap<IpAddr, VecDeque<Instant>>,
     logins: HashMap<IpAddr, VecDeque<Instant>>,
+    proofs: HashMap<IpAddr, VecDeque<Instant>>,
+    /// Clave pública del servidor y clave de las firmas de la prueba.
+    public: Vec<u8>,
+    proof: ring::hmac::Key,
 }
 
 /// Cuántas veces en la última ventana (y, si `add`, apunta una más).
@@ -616,7 +662,7 @@ struct TotpBody {
 }
 
 impl State {
-    fn new(data: Value, path: PathBuf) -> State {
+    fn new(data: Value, path: PathBuf, key: &str, public: Vec<u8>) -> State {
         let sessions_path = path.with_file_name("sesiones.json");
         let limit = crate::model::now() - chrono::Duration::hours(SESSION_IDLE_HOURS);
         let sessions: HashMap<String, Session> = std::fs::read_to_string(sessions_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
@@ -631,6 +677,9 @@ impl State {
             pending: HashMap::new(),
             key_fails: HashMap::new(),
             logins: HashMap::new(),
+            proofs: HashMap::new(),
+            public,
+            proof: proof_key(key),
         }
     }
 
@@ -878,6 +927,15 @@ impl State {
     /// Atiende una petición; devuelve la respuesta y si hay que parar.
     fn handle(&mut self, req: &Request, key: &str) -> (Response, bool) {
         let window = Duration::from_secs(600);
+        // la prueba de identidad va sin la clave de la clínica (el puesto aún no sabe si es el servidor bueno)
+        if req.method == "GET" && req.path == "/prueba" {
+            if hits(&mut self.proofs, req.peer, window, true) > 30 {
+                return (error(429, "Demasiadas comprobaciones desde este ordenador: espere unos minutos."), false);
+            }
+            let Some(challenge) = req.param("reto").and_then(unhex).filter(|c| c.len() == 16) else { return (error(400, "Reto no válido."), false) };
+            let tag = ring::hmac::sign(&self.proof, &proof_message(&challenge, &self.public));
+            return (reply(200, json!({ "prueba": hex(tag.as_ref()) })), false);
+        }
         if hits(&mut self.key_fails, req.peer, window, false) >= 20 {
             return (error(429, "Demasiados intentos con una clave incorrecta desde este ordenador: espere unos minutos."), false);
         }
@@ -957,7 +1015,8 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
             }
         });
     }
-    let mut st = State::new(initial, path);
+    let public = unhex(&identity_pin(&identity)).unwrap_or_default();
+    let mut st = State::new(initial, path, &key, public);
     for job in jobs {
         let (resp, stop_now) = st.handle(&job.req, &key);
         let _ = job.reply.send(resp);
@@ -1026,8 +1085,9 @@ pub struct Remote {
     pub station: u32,
     /// Sesión dada por el servidor al entrar (vacía hasta entonces).
     pub session: String,
-    /// Clave pública del servidor que ha visto esta conexión (hexadecimal se
-    /// saca con [`Remote::server_pin`]).
+    /// Huella del servidor que acepta (vacía hasta que el servidor demuestra
+    /// que sabe la clave de la clínica) y la que ha visto al conectar.
+    pin: Arc<Mutex<Vec<u8>>>,
     seen: Arc<Mutex<Vec<u8>>>,
     agent: ureq::Agent,
 }
@@ -1109,8 +1169,9 @@ fn parse(text: &str) -> Result<Value, String> {
 }
 
 impl Remote {
-    /// Conexión con un servidor que el puesto aún no conoce: acepta su clave
-    /// pública y la apunta (al dar de alta el puesto).
+    /// Conexión con un servidor que el puesto aún no conoce (al darse de alta):
+    /// antes de mandarle nada, el servidor demuestra que sabe la clave de la
+    /// clínica, y entonces se apunta su huella (ver [`Remote::pinned`]).
     pub fn new(addr: &str, key: &str, station: u32) -> Self {
         Self::with_pin(addr, key, station, "")
     }
@@ -1122,20 +1183,50 @@ impl Remote {
         let addr = if addr.contains(':') { addr.to_string() } else { format!("{addr}:{DEFAULT_PORT}") };
         let key = key.trim().to_string();
         let seen = Arc::new(Mutex::new(Vec::new()));
+        let pin = Arc::new(Mutex::new(unhex(pin).unwrap_or_default()));
         // por lectura y escritura (no en total): enviar los datos de una clínica grande puede tardar
         let mut b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(3)).timeout_read(Duration::from_secs(READ_TIMEOUT)).timeout_write(Duration::from_secs(60));
         // si el cifrado no se pudiera preparar, el agente normal no aceptaría
         // el certificado del servidor: no conecta, pero nunca va sin cifrar
-        if let Ok(tls) = client_tls(unhex(pin).unwrap_or_default(), seen.clone()) {
+        if let Ok(tls) = client_tls(pin.clone(), seen.clone()) {
             b = b.tls_config(tls);
         }
-        Remote { base: format!("https://{addr}"), key, station, session: String::new(), seen, agent: b.build() }
+        Remote { base: format!("https://{addr}"), key, station, session: String::new(), pin, seen, agent: b.build() }
     }
 
-    /// Clave pública (hexadecimal) del servidor con el que ha hablado esta
-    /// conexión; vacía si aún no ha conectado.
+    /// Clave pública (hexadecimal) del servidor que ha visto esta conexión, aunque
+    /// no sea la conocida (para enseñar la huella nueva); vacía si no ha conectado.
     pub fn server_pin(&self) -> String {
         self.seen.lock().map(|s| hex(&s)).unwrap_or_default()
+    }
+
+    /// Huella comprobada del servidor (la que el puesto debe guardar); vacía
+    /// si el servidor aún no ha demostrado saber la clave de la clínica.
+    pub fn pinned(&self) -> String {
+        self.pin.lock().map(|p| hex(&p)).unwrap_or_default()
+    }
+
+    /// Antes de mandarle nada a un servidor cuya huella aún no se conoce, este
+    /// tiene que firmar un reto al azar con la clave de la clínica.
+    fn verify_server(&self) -> Result<(), String> {
+        if self.pin.lock().map(|p| !p.is_empty()).unwrap_or(false) {
+            return Ok(());
+        }
+        use ring::rand::SecureRandom;
+        let mut challenge = [0u8; 16];
+        ring::rand::SystemRandom::new().fill(&mut challenge).map_err(|_| "El sistema no ha dado números aleatorios.".to_string())?;
+        // sin la clave de la clínica ni la sesión
+        let resp = self.agent.get(&format!("{}/prueba?reto={}", self.base, hex(&challenge))).call().map_err(err_text)?;
+        let v = parse(&read_all(resp)?)?;
+        let tag = v["prueba"].as_str().and_then(unhex).ok_or(WRONG_KEY)?;
+        let public = self.seen.lock().map(|s| s.clone()).unwrap_or_default();
+        if public.is_empty() || ring::hmac::verify(&proof_key(&self.key), &proof_message(&challenge, &public), &tag).is_err() {
+            return Err(WRONG_KEY.into());
+        }
+        if let Ok(mut p) = self.pin.lock() {
+            *p = public;
+        }
+        Ok(())
     }
 
     /// Dirección del servidor (sin «https://»).
@@ -1156,10 +1247,12 @@ impl Remote {
     }
 
     fn get(&self, path: &str) -> Result<String, String> {
+        self.verify_server()?;
         read_all(self.request("GET", path).call().map_err(err_text)?)
     }
 
     fn post(&self, path: &str, body: &str) -> Result<String, String> {
+        self.verify_server()?;
         read_all(self.request("POST", path).set("Content-Type", "application/json").send_string(body).map_err(err_text)?)
     }
 
@@ -1481,8 +1574,9 @@ mod tests {
         // al darse de alta, el puesto apunta la huella del servidor
         let mut first = Remote::new(&addr, "CLAVE5", 0);
         connect(&mut first, "Recepción", 1).unwrap();
-        let pin = first.server_pin();
+        let pin = first.pinned();
         assert_eq!(pin.len(), 64);
+        assert_eq!(pin, first.server_pin());
         // con esa huella conecta; con otra (otro servidor, o alguien haciéndose pasar por él), no
         assert!(Remote::with_pin(&addr, "CLAVE5", 0, &pin).access().is_ok());
         let other = identity_pin(&new_identity().unwrap());
@@ -1492,6 +1586,29 @@ mod tests {
         assert_eq!(fingerprint(&pin).len(), 19);
         // cada servidor tiene su propia identidad, aunque tenga la misma clave de la clínica
         assert_ne!(identity_pin(&new_identity().unwrap()), identity_pin(&new_identity().unwrap()));
+
+        // la primera vez, un ordenador que no sabe la clave de la clínica no
+        // supera la prueba: el puesto no apunta su huella ni le manda la clave
+        let (impostor, ipath, ih) = start("OTRA_CLAVE");
+        let mut victim = Remote::new(&impostor, "CLAVE5", 0);
+        assert_eq!(connect(&mut victim, "Recepción", 1).unwrap_err(), WRONG_KEY);
+        assert!(victim.pinned().is_empty());
+        assert!(!victim.server_pin().is_empty(), "lo ha visto, pero no lo acepta");
+        // el impostor no ha guardado nada: el puesto ni siquiera llegó a darse de alta
+        assert!(!ipath.exists(), "no ha llegado a darse de alta en el impostor");
+        // tampoco sirve reenviar la firma del servidor de verdad: va ligada a su huella
+        let mut st = State::new(json!({}), std::env::temp_dir().join("ds_proof_test").join("clinica.json"), "CLAVE5", vec![7; 32]);
+        let reto = "00112233445566778899aabbccddeeff";
+        let q = Request { method: "GET".into(), path: "/prueba".into(), query: format!("reto={reto}"), headers: vec![], body: vec![], peer: IpAddr::V4(Ipv4Addr::LOCALHOST) };
+        let (resp, _) = st.handle(&q, "CLAVE5");
+        let tag = unhex(serde_json::from_str::<Value>(&resp.body).unwrap()["prueba"].as_str().unwrap()).unwrap();
+        let key = proof_key("CLAVE5");
+        assert!(ring::hmac::verify(&key, &proof_message(&unhex(reto).unwrap(), &[7; 32]), &tag).is_ok());
+        assert!(ring::hmac::verify(&key, &proof_message(&unhex(reto).unwrap(), &[8; 32]), &tag).is_err());
+        Remote::with_pin(&impostor, "OTRA_CLAVE", 0, "").stop().unwrap();
+        ih.join().unwrap();
+        let _ = std::fs::remove_dir_all(ipath.parent().unwrap());
+
         first.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -1525,7 +1642,7 @@ mod tests {
         // claves aleatorias y, con una clave mal 20 veces, el ordenador espera
         assert_ne!(new_key(), new_key());
         assert_eq!(new_key().len(), 12);
-        let mut st = State::new(json!({}), std::env::temp_dir().join("ds_limit_test").join("clinica.json"));
+        let mut st = State::new(json!({}), std::env::temp_dir().join("ds_limit_test").join("clinica.json"), "BIEN", vec![1; 32]);
         let bad = Request { method: "GET".into(), path: "/acceso".into(), query: String::new(), headers: vec![("X-Clave".into(), "MAL".into())], body: vec![], peer };
         for _ in 0..20 {
             assert_eq!(st.handle(&bad, "BIEN").0.code, 401);

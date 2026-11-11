@@ -218,9 +218,10 @@ impl App {
             persist = false;
             match crate::server::connect(&mut r, &crate::shared::machine_name(), if local { 20 } else { 1 }) {
                 Ok(info) => {
-                    // puesto dado de alta con una versión anterior: apunta ahora la huella
-                    if st.server_pin.is_empty() {
-                        let _ = crate::shared::save_station(&crate::shared::Station { server_pin: r.server_pin(), ..st.clone() });
+                    // puesto dado de alta con una versión anterior: apunta ahora la huella,
+                    // ya comprobada (el servidor ha demostrado saber la clave de la clínica)
+                    if st.server_pin.is_empty() && !r.pinned().is_empty() {
+                        let _ = crate::shared::save_station(&crate::shared::Station { server_pin: r.pinned(), ..st.clone() });
                     }
                     db = login_shell(&info, &db.config.current_user, today());
                     db.station = r.station;
@@ -671,6 +672,16 @@ impl App {
     /// que es la que muestra el servidor: se apunta la nueva y se reconecta.
     pub fn trust_server(&mut self, pin: &str) {
         let Some(old) = self.remote.clone() else { return };
+        // el servidor nuevo también tiene que demostrar que sabe la clave de la clínica
+        let fresh = crate::server::Remote::new(old.address(), old.key(), 0);
+        if let Err(e) = fresh.access() {
+            self.offline = Some(e);
+            return;
+        }
+        if fresh.pinned() != pin {
+            self.warn("La huella del servidor ha vuelto a cambiar: compruébela otra vez.");
+            return;
+        }
         let st = crate::shared::Station { server_pin: pin.to_string(), ..crate::shared::station().clone() };
         if let Err(e) = crate::shared::save_station(&st) {
             self.warn(format!("No se pudo guardar el ajuste: {e}"));

@@ -51,10 +51,11 @@ Un ordenador hace de servidor (`--servidor` o Configuración › Puestos) y los
 demás se conectan con su dirección y la clave de la clínica.
 
 - **Todo va cifrado (TLS 1.3).** El servidor tiene su propia identidad, creada
-  al azar, que no sale de él; cada puesto apunta su huella al conectarse la
-  primera vez y después no acepta otro servidor. Así nadie en la red, ni quien
-  sepa la clave de la clínica, puede leer los datos ni hacerse pasar por el
-  servidor. La huella se ve en el servidor (Configuración › Puestos y al
+  al azar, que no sale de él. La primera vez, antes de mandarle nada, el
+  puesto le pide que demuestre que sabe la clave de la clínica (firmando un
+  reto, sin que la clave viaje); entonces apunta su huella y después no acepta
+  otro servidor. Así nadie en la red puede leer los datos ni hacerse pasar por
+  el servidor (tampoco, con el puesto ya dado de alta, quien sepa la clave). La huella se ve en el servidor (Configuración › Puestos y al
   arrancar `--servidor`); si cambia, el puesto la enseña para compararla.
 - **Sin entrar no hay datos.** Antes de entrar, el puesto solo sabe el nombre
   de la clínica y sus usuarios. Al entrar (contraseña y, si lo tiene, código
