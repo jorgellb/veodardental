@@ -9,6 +9,7 @@ mod doc_link;
 mod brand;
 mod chat;
 mod cifrado;
+mod disco;
 mod colegiado;
 mod comms;
 mod erx;

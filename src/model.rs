@@ -1171,6 +1171,10 @@ pub fn fold(s: &str) -> String {
 
 impl Db {
     pub fn path() -> PathBuf {
+        // las pruebas nunca tocan los datos ni las copias de este ordenador
+        if cfg!(test) {
+            return std::env::temp_dir().join(format!("veodardental-pruebas-{}", std::process::id())).join("clinica.json");
+        }
         if crate::shared::shared() {
             return PathBuf::from(crate::shared::station().data_dir.trim()).join("clinica.json");
         }

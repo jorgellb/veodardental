@@ -909,6 +909,11 @@ pub fn run() -> Result<(), String> {
     println!("  Datos: {}", path.display());
     println!("  Dirección para los puestos: {}:{}", local_ip().unwrap_or_else(|| "IP-de-este-ordenador".into()), cfg.port);
     println!("  Clave de la clínica: {}", cfg.key);
+    match crate::disco::check_now() {
+        crate::disco::Disk::Plain(why) => println!("  ⚠ {why} Los datos de salud de los pacientes están en este disco."),
+        crate::disco::Disk::Unknown(why) => println!("  ⚠ Cifrado del disco: {why}"),
+        _ => {}
+    }
     let initial = serde_json::to_value(&db).map_err(|e| e.to_string())?;
     serve(listener, path, cfg.key, initial);
     Ok(())

@@ -1430,7 +1430,7 @@ fn go_live_checklist_and_empty_clinic() {
     }
     assert_eq!(h.state().screen, crate::app::Screen::Config);
     assert_eq!(h.state().lists.cfg_tab, crate::screens::config::CfgTab::Marcha);
-    h.get_by_label("Faltan 7 de 7 pasos imprescindibles");
+    h.get_by_label("Faltan 7 de 8 pasos imprescindibles");
     h.get_by_label_contains("Siguen los profesionales de ejemplo");
     h.get_by_label("Empezar con la clínica vacía…").click();
     for _ in 0..3 {
@@ -1448,14 +1448,14 @@ fn go_live_checklist_and_empty_clinic() {
         assert!(!a.db.users.is_empty() && !a.db.collaborators.is_empty());
         assert!(a.patient.is_none());
     }
-    h.get_by_label("Faltan 6 de 7 pasos imprescindibles");
+    h.get_by_label("Faltan 6 de 8 pasos imprescindibles");
     h.get_by_label_contains("Sin datos de ejemplo");
     h.get_by_label("Marcar como hecho").click();
     for _ in 0..3 {
         h.step();
     }
     assert_eq!(h.state().db.golive.len(), 1);
-    h.get_by_label("Faltan 5 de 7 pasos imprescindibles");
+    h.get_by_label("Faltan 5 de 8 pasos imprescindibles");
     // todas las pantallas con la clínica vacía
     for s in crate::app::Screen::NAV.iter().map(|x| x.0) {
         h.state_mut().screen = s;

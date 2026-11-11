@@ -30,6 +30,7 @@ fn facts(app: &mut App, time: f64) -> Facts {
         network: remote || crate::shared::shared() || app.db.stations.len() > 1,
         cert: app.vf.has_cert(),
         whatsapp: app.wa.saved.enabled,
+        disk: crate::disco::status(),
     };
     app.marcha.facts = Some((time, f.clone()));
     f

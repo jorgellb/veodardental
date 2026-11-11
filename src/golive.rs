@@ -74,6 +74,8 @@ pub struct Facts {
     pub cert: bool,
     /// WhatsApp activado en este ordenador.
     pub whatsapp: bool,
+    /// Cifrado del disco de los datos de este ordenador.
+    pub disk: crate::disco::Disk,
 }
 
 /// Paso marcado a mano por la clínica.
@@ -484,6 +486,18 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
         add("copias", "Copias de seguridad", true, Goto::Cfg(CfgTab::Copias), st);
     }
 
+    // cifrado del disco (los datos, las copias y las claves de los servicios están en él)
+    {
+        use crate::disco::Disk;
+        let (essential, st) = match &f.disk {
+            Disk::Encrypted(how) => (true, (Listo, format!("{how}: si roban el ordenador o el disco, los datos no se pueden leer."))),
+            Disk::Plain(why) => (true, (Pendiente, format!("{why} Si roban el ordenador o el disco, se pueden leer los datos de salud de todos los pacientes y las claves del correo, de WhatsApp y de la IA."))),
+            Disk::Unknown(why) => (false, (Opcional, why.clone())),
+            Disk::Checking => (false, (Opcional, "Comprobando el cifrado del disco…".to_string())),
+        };
+        add("disco", "Cifrado del disco", essential, Goto::Nada, st);
+    }
+
     // VERI*FACTU
     {
         let vf = &db.verifactu;
@@ -626,7 +640,7 @@ mod tests {
 
     fn ready_facts() -> Facts {
         let now = day().and_hms_opt(12, 0, 0).unwrap();
-        Facts { now, last_backup: Some(now - Duration::hours(3)), extra_found: true, backup_key: true, cert: true, ..Default::default() }
+        Facts { now, last_backup: Some(now - Duration::hours(3)), extra_found: true, backup_key: true, cert: true, disk: crate::disco::Disk::Encrypted("BitLocker activado en C:".into()), ..Default::default() }
     }
 
     #[test]
@@ -743,6 +757,13 @@ mod tests {
         assert_eq!(get(&v, "copias").status, Status::Pendiente);
         assert!(get(&v, "copias").detail.contains("sin cifrar"));
         assert!(get(&checks(&db, &f), "copias").detail.contains("cifrada"));
+        // disco sin cifrar: falta (si no se sabe, solo se avisa)
+        let v = checks(&db, &Facts { disk: crate::disco::Disk::Plain("C: no está cifrado.".into()), ..ready_facts() });
+        assert_eq!(get(&v, "disco").status, Status::Pendiente);
+        assert!(get(&v, "disco").detail.contains("datos de salud"));
+        let v = checks(&db, &Facts { disk: crate::disco::Disk::Unknown("carpeta de red".into()), ..ready_facts() });
+        assert!(!get(&v, "disco").essential);
+        assert_eq!(get(&checks(&db, &f), "disco").status, Status::Listo);
         // NIF mal escrito
         db.config.nif = "B12345670".into();
         let v = checks(&db, &f);
