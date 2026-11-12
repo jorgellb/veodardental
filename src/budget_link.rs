@@ -101,6 +101,13 @@ pub fn installment_options(db: &Db, b: &Budget) -> Vec<(u32, f64, f64)> {
         .collect()
 }
 
+/// Importe de cada cuota para la página del paciente: «333,33 € (la última de 333,34 €)».
+fn installment_text(total: f64, n: u32, each: f64, down: f64) -> String {
+    let plan = FinancePlan { down_payment: down, installments: n, first_date: today(), every_months: 1, paid: vec![] };
+    let last = plan.installment(n.saturating_sub(1), total);
+    if n > 1 && (last - each).abs() > 0.004 { format!("{} (la última de {})", money(each), money(last)) } else { money(each) }
+}
+
 impl Db {
     pub fn budget_link(&self, bid: u32) -> Option<&BudgetLink> {
         self.budget_links.iter().find(|l| l.budget_id == bid)
@@ -255,10 +262,10 @@ impl Db {
 pub fn pay_text(b: &Budget) -> String {
     match &b.plan {
         Some(p) => format!(
-            "{}{} cuotas mensuales de {} sin intereses (la primera el {})",
+            "{}{}, sin intereses, {} (la primera el {})",
             if p.down_payment > 0.0 { format!("entrada de {} y ", money(p.down_payment)) } else { String::new() },
-            p.installments,
-            money(p.installment_amount(b.total())),
+            p.installments_text(b.total()),
+            if p.every_months <= 1 { "una al mes".to_string() } else { format!("una cada {} meses", p.every_months) },
             fmt_date(p.first_date)
         ),
         None => "según se realizan los tratamientos".into(),
@@ -404,7 +411,7 @@ pub fn budget_json(p: &crate::booking::Published, b: &PubBudget, now: NaiveDateT
         "total": money(b.total),
         "notas": b.notes,
         "estado": if expired { "caducado" } else { b.state },
-        "cuotas": b.options.iter().map(|(n, a, d)| serde_json::json!({"n": n, "importe": money(*a), "entrada": if *d > 0.0 { money(*d) } else { String::new() }})).collect::<Vec<_>>(),
+        "cuotas": b.options.iter().map(|(n, a, d)| serde_json::json!({"n": n, "importe": installment_text(b.total, *n, *a, *d), "entrada": if *d > 0.0 { money(*d) } else { String::new() }})).collect::<Vec<_>>(),
         "huella": b.hash,
         "firmado_por": b.signed_by,
         "firmado_el": b.signed_at.map(|t| t.format("%d/%m/%Y %H:%M").to_string()),

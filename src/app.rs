@@ -574,7 +574,10 @@ impl App {
     pub fn chain_op(&mut self, op: ChainOp) -> Result<u32, String> {
         let user = self.db.config.current_user.clone();
         if let Some(r) = self.remote.clone() {
-            let id = r.chain_op(&mut self.db, &mut self.synced, &op.json())?;
+            // con el centro de este puesto (para la caja de los cobros)
+            let mut v = op.json();
+            v["centro"] = self.db.config.current_center.into();
+            let id = r.chain_op(&mut self.db, &mut self.synced, &v)?;
             self.dirty = false;
             return Ok(id);
         }
@@ -807,31 +810,116 @@ impl App {
     }
 }
 
-/// Operaciones de la cadena de facturas (ver [`App::chain_op`]).
+/// Operaciones que, con varios puestos, se hacen una tras otra (en el
+/// servidor, o con la carpeta compartida bloqueada) para que dos puestos no
+/// hagan lo mismo a la vez: la cadena de facturas, y lo que cobra o liquida
+/// algo (remesas, liquidaciones a mutuas, conciliación del banco). Ver
+/// [`App::chain_op`].
 pub enum ChainOp {
     Issue { patient: u32, entries: Vec<u32>, date: chrono::NaiveDate },
     Rectify { invoice: u32, reason: String },
     Correct { invoice: u32 },
     Cancel { invoice: u32, reason: String },
+    /// Remesa SEPA con las cuotas domiciliables hasta `until` (las que aún
+    /// estén sin remesar al hacerla).
+    Remit { until: chrono::NaiveDate, collection: chrono::NaiveDate },
+    Collected { remittance: u32 },
+    Returned { remittance: u32, item: usize, reason: String },
+    /// Liquidación a la mutua con los actos aún sin liquidar del periodo.
+    Claim { tariff: u32, from: chrono::NaiveDate, to: chrono::NaiveDate, date: chrono::NaiveDate },
+    /// Conciliación automática del banco. Devuelve cuántos movimientos.
+    Reconcile,
+    /// Cita pedida por internet: se apunta en la agenda (devuelve la cita) o se rechaza.
+    Confirm { request: u32 },
+    Reject { request: u32, why: String },
 }
 
 impl ChainOp {
-    fn run(&self, db: &mut Db, user: &str) -> Result<u32, String> {
+    pub(crate) fn run(&self, db: &mut Db, user: &str) -> Result<u32, String> {
         match self {
             ChainOp::Issue { patient, entries, date } => db.issue_invoice(*patient, entries, *date),
             ChainOp::Rectify { invoice, reason } => db.rectify_invoice(*invoice, reason),
             ChainOp::Correct { invoice } => crate::verifactu::create_correction(db, *invoice, user),
             ChainOp::Cancel { invoice, reason } => crate::verifactu::create_cancellation(db, *invoice, reason, user),
+            ChainOp::Remit { until, collection } => {
+                let due = db.due_installments(*until);
+                if due.is_empty() {
+                    return Err("No quedan cuotas que remesar: puede que otro puesto acabe de generar la remesa.".into());
+                }
+                db.create_remittance(&due, *collection)
+            }
+            ChainOp::Collected { remittance } => db.remittance_collected(*remittance).map(|_| *remittance),
+            ChainOp::Returned { remittance, item, reason } => db.remittance_returned(*remittance, *item, reason).map(|_| *remittance),
+            ChainOp::Claim { tariff, from, to, date } => {
+                let id = db.create_claim(*tariff, *from, *to, *date).ok_or("No hay actos pendientes de liquidar en el periodo: puede que otro puesto acabe de liquidarlos.")?;
+                let num = db.claims.iter().find(|c| c.id == id).map(|c| c.number.clone()).unwrap_or_default();
+                let tname = db.tariff_name(*tariff);
+                db.audit("Liquidación a mutua", &format!("{num} · {tname}"));
+                Ok(id)
+            }
+            ChainOp::Reconcile => Ok(db.auto_reconcile() as u32),
+            ChainOp::Confirm { request } => db.booking_confirm(*request),
+            ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
         }
     }
 
-    fn json(&self) -> serde_json::Value {
+    pub(crate) fn json(&self) -> serde_json::Value {
         use serde_json::json;
         match self {
             ChainOp::Issue { patient, entries, date } => json!({ "accion": "emitir", "paciente": patient, "tratamientos": entries, "fecha": date }),
             ChainOp::Rectify { invoice, reason } => json!({ "accion": "rectificar", "factura": invoice, "motivo": reason }),
             ChainOp::Correct { invoice } => json!({ "accion": "subsanar", "factura": invoice }),
             ChainOp::Cancel { invoice, reason } => json!({ "accion": "anular", "factura": invoice, "motivo": reason }),
+            ChainOp::Remit { until, collection } => json!({ "accion": "remesa", "hasta": until, "cargo": collection }),
+            ChainOp::Collected { remittance } => json!({ "accion": "remesa_cobrada", "remesa": remittance }),
+            ChainOp::Returned { remittance, item, reason } => json!({ "accion": "recibo_devuelto", "remesa": remittance, "recibo": item, "motivo": reason }),
+            ChainOp::Claim { tariff, from, to, date } => json!({ "accion": "liquidacion", "tarifa": tariff, "desde": from, "hasta": to, "fecha": date }),
+            ChainOp::Reconcile => json!({ "accion": "conciliar" }),
+            ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
+            ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
+        }
+    }
+
+    /// La misma operación a partir de lo que manda un puesto al servidor.
+    pub(crate) fn from_json(v: &serde_json::Value) -> Result<ChainOp, String> {
+        let num = |k: &str| v[k].as_u64().map(|n| n as u32).ok_or_else(|| format!("Falta «{k}»."));
+        let date = |k: &str| v[k].as_str().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()).ok_or_else(|| format!("Falta «{k}»."));
+        let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+        Ok(match v["accion"].as_str().unwrap_or_default() {
+            "emitir" => ChainOp::Issue {
+                patient: num("paciente")?,
+                entries: v["tratamientos"].as_array().ok_or("Faltan los tratamientos.")?.iter().map(|x| x.as_u64().map(|n| n as u32).ok_or("Tratamiento no válido.")).collect::<Result<_, _>>()?,
+                date: date("fecha").unwrap_or_else(|_| crate::model::today()),
+            },
+            "rectificar" => ChainOp::Rectify { invoice: num("factura")?, reason: text("motivo") },
+            "subsanar" => ChainOp::Correct { invoice: num("factura")? },
+            "anular" => ChainOp::Cancel { invoice: num("factura")?, reason: text("motivo") },
+            "remesa" => ChainOp::Remit { until: date("hasta")?, collection: date("cargo")? },
+            "remesa_cobrada" => ChainOp::Collected { remittance: num("remesa")? },
+            "recibo_devuelto" => ChainOp::Returned { remittance: num("remesa")?, item: num("recibo")? as usize, reason: text("motivo") },
+            "liquidacion" => ChainOp::Claim { tariff: num("tarifa")?, from: date("desde")?, to: date("hasta")?, date: date("fecha")? },
+            "conciliar" => ChainOp::Reconcile,
+            "confirmar_cita" => ChainOp::Confirm { request: num("solicitud")? },
+            "rechazar_cita" => ChainOp::Reject { request: num("solicitud")?, why: text("motivo") },
+            _ => return Err("Acción no válida.".into()),
+        })
+    }
+
+    /// Quién puede hacerla (con qué permiso; ninguno = todos), y qué datos usa
+    /// (los que el servidor le prepara).
+    pub(crate) fn needs(&self) -> (Option<crate::users::Perm>, &'static [&'static str]) {
+        use crate::users::Perm::*;
+        const CHAIN: &[&str] = &["invoices", "vf_records", "entries", "patients", "config", "verifactu", "next_id"];
+        const REMIT: &[&str] = &["remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
+        const CLAIM: &[&str] = &["claims", "entries", "patients", "tariffs", "auths", "config", "audit_log", "next_id"];
+        const BANK: &[&str] = &["bank_moves", "expenses", "remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
+        const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
+        match self {
+            ChainOp::Issue { .. } | ChainOp::Rectify { .. } | ChainOp::Correct { .. } | ChainOp::Cancel { .. } => (Some(Facturacion), CHAIN),
+            ChainOp::Remit { .. } | ChainOp::Collected { .. } | ChainOp::Returned { .. } => (Some(Economia), REMIT),
+            ChainOp::Claim { .. } => (Some(Facturacion), CLAIM),
+            ChainOp::Reconcile => (Some(Gastos), BANK),
+            ChainOp::Confirm { .. } | ChainOp::Reject { .. } => (None, BOOKING),
         }
     }
 }

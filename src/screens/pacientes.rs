@@ -820,7 +820,7 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section(ui, &format!("Plan económico · {t}"));
-            muted(ui, format!("Total {} · entrada {} · {} cuotas de {}", money(total), money(plan.down_payment), plan.installments, money(plan.installment_amount(total))));
+            muted(ui, format!("Total {} · entrada {} · {}", money(total), money(plan.down_payment), plan.installments_text(total)));
             let mut pay_idx = None;
             ui.horizontal_wrapped(|ui| {
                 for i in 0..plan.installments {
@@ -831,9 +831,11 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                     egui::Frame::new().fill(tint(col, 0.1)).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
                         ui.vertical(|ui| {
                             ui.label(RichText::new(format!("Cuota {}", i + 1)).family(crate::theme::sb()).color(col));
-                            ui.label(RichText::new(fmt_date(due)).size(13.5));
+                            ui.label(RichText::new(format!("{} · {}", fmt_date(due), money(plan.installment(i, total)))).size(13.5));
                             if paid {
                                 ui.label(RichText::new("Pagada").size(13.5).color(OK));
+                            } else if let Some(rid) = app.db.installment_remittance(bid, i) {
+                                ui.label(RichText::new(format!("En remesa #{rid}")).size(13.5).color(INFO)).on_hover_text("Se ha enviado al banco para cobrarla por domiciliación. Si el banco la devuelve, regístrelo en Remesas SEPA y se podrá cobrar aquí.");
                             } else if ui.small_button("Cobrar").clicked() {
                                 pay_idx = Some(i);
                             }
@@ -842,7 +844,7 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                 }
             });
             if let Some(i) = pay_idx {
-                let amount = plan.installment_amount(total);
+                let amount = plan.installment(i, total);
                 app.db.add_payment(pid, amount, "Financiación", &format!("Cuota {} plan presupuesto #{bid}", i + 1));
                 if let Some(b) = app.db.budgets.iter_mut().find(|b| b.id == bid) && let Some(pl) = &mut b.plan {
                     if pl.paid.len() < pl.installments as usize {

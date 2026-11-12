@@ -235,6 +235,11 @@ pub struct MedEntry {
     /// Factura en la que se ha incluido (None = pendiente de facturar).
     #[serde(default)]
     pub invoice_id: Option<u32>,
+    /// Tarifa (mutua) del paciente cuando se hizo: el acto se liquida a esa
+    /// compañía aunque el paciente cambie después. 0 = no se sabe (tratamientos
+    /// de versiones anteriores): la tarifa actual del paciente.
+    #[serde(default)]
+    pub tariff_id: u32,
 }
 
 impl MedEntry {
@@ -322,6 +327,26 @@ impl FinancePlan {
             return 0.0;
         }
         round2((total - self.down_payment).max(0.0) / self.installments as f64)
+    }
+    /// Importe de la cuota `i` (desde 0): todas como [`Self::installment_amount`]
+    /// salvo la última, que completa el total (1.000 € en 3 cuotas: 333,33 +
+    /// 333,33 + 333,34), para que no quede un céntimo de deuda al pagarlas todas.
+    pub fn installment(&self, i: u32, total: f64) -> f64 {
+        let each = self.installment_amount(total);
+        if self.installments == 0 || i + 1 < self.installments {
+            return each;
+        }
+        round2((total - self.down_payment).max(0.0) - each * (self.installments - 1) as f64)
+    }
+    /// «3 cuotas de 333,33 € (la última de 333,34 €)».
+    pub fn installments_text(&self, total: f64) -> String {
+        let each = self.installment_amount(total);
+        let last = self.installment(self.installments.saturating_sub(1), total);
+        let mut s = format!("{} cuotas de {}", self.installments, money(each));
+        if self.installments > 1 && (last - each).abs() > 0.004 {
+            s.push_str(&format!(" (la última de {})", money(last)));
+        }
+        s
     }
     pub fn due_date(&self, i: u32) -> NaiveDate {
         add_months(self.first_date, i * self.every_months.max(1))
@@ -1413,6 +1438,59 @@ impl Db {
         self.cash.iter().find(|s| s.state == CashState::Abierta && cid(s.center_id) == c)
     }
 
+    /// Cajas abiertas del centro activo: más de una si dos puestos la abrieron a la vez.
+    pub fn open_cashes(&self) -> Vec<&CashSession> {
+        let c = cid(self.config.current_center);
+        self.cash.iter().filter(|s| s.state == CashState::Abierta && cid(s.center_id) == c).collect()
+    }
+
+    /// Abre la caja del centro activo con ese fondo. Devuelve su id.
+    pub fn open_cash_session(&mut self, opening: f64) -> u32 {
+        let id = self.new_id();
+        self.cash.push(CashSession {
+            id,
+            opened: now(),
+            closed: None,
+            opening_balance: round2(opening),
+            moves: vec![],
+            counted: None,
+            state: CashState::Abierta,
+            user: self.config.current_user.clone(),
+            notes: String::new(),
+            center_id: cid(self.config.current_center),
+        });
+        id
+    }
+
+    /// Cierra la caja con el efectivo contado. Devuelve el descuadre (contado − esperado).
+    pub fn close_cash_session(&mut self, id: u32, counted: f64) -> f64 {
+        let Some(expected) = self.cash.iter().find(|c| c.id == id).map(|c| self.cash_expected(c)) else { return 0.0 };
+        let diff = round2(counted - expected);
+        if let Some(c) = self.cash.iter_mut().find(|c| c.id == id) {
+            c.counted = Some(round2(counted));
+            c.closed = Some(now());
+            c.state = CashState::Cerrada;
+            c.notes = if diff.abs() < 0.005 { "Cuadrada".into() } else { format!("Descuadre {}", money(diff)) };
+        }
+        diff
+    }
+
+    /// Cobros nuevos (`is_new`) que han caído en una caja que otro puesto
+    /// cerró mientras tanto: el arqueo ya está hecho sin ellos, así que pasan a
+    /// la caja abierta de su centro (o a ninguna). Devuelve cuántos.
+    pub fn move_late_payments(&mut self, is_new: impl Fn(u32) -> bool) -> usize {
+        let closed: Vec<u32> = self.cash.iter().filter(|c| c.state == CashState::Cerrada).map(|c| c.id).collect();
+        let open: Vec<(u32, u32)> = self.cash.iter().filter(|c| c.state == CashState::Abierta).map(|c| (cid(c.center_id), c.id)).collect();
+        let mut moved = 0;
+        for p in self.payments.iter_mut() {
+            if p.cash_session.is_some_and(|s| closed.contains(&s)) && is_new(p.id) {
+                p.cash_session = open.iter().find(|(c, _)| *c == cid(p.center_id)).map(|x| x.1);
+                moved += 1;
+            }
+        }
+        moved
+    }
+
     pub fn session_payments(&self, sid: u32) -> impl Iterator<Item = &Payment> {
         self.payments.iter().filter(move |p| p.cash_session == Some(sid))
     }
@@ -1503,6 +1581,7 @@ impl Db {
             notes: String::new(),
             odg,
             invoice_id: None,
+            tariff_id: tariff,
         });
         if state == TxState::Realizado {
             self.after_realized(id);
@@ -1512,9 +1591,15 @@ impl Db {
 
     /// Marca una entrada como realizada y genera el recall si procede.
     pub fn realize_entry(&mut self, id: u32, date: NaiveDate, doctor_id: u32) {
+        let pid = self.entries.iter().find(|e| e.id == id).map(|e| e.patient_id);
+        let tariff = pid.and_then(|p| self.patient(p)).map(|p| p.tariff_id);
         if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
             e.state = TxState::Realizado;
             e.date = date;
+            // la compañía que cubre al paciente el día que se hace
+            if let Some(t) = tariff {
+                e.tariff_id = t;
+            }
             if doctor_id != 0 {
                 e.doctor_id = doctor_id;
             }
@@ -1618,6 +1703,7 @@ impl Db {
                 notes: String::new(),
                 odg: l.odg,
                 invoice_id: None,
+                tariff_id: b.tariff_id,
             });
         }
         // Recall de seguimiento cancelado al aceptar.

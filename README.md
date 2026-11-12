@@ -83,6 +83,14 @@ demás se conectan con su dirección y la clave de la clínica.
   cambiado los demás; el servidor combina los cambios registro a registro sin
   guardar copias antiguas de los datos. Con una clínica grande (unos 220 MB de
   datos), un guardado normal envía alrededor de 1 KB.
+- **Lo que no se puede hacer dos veces lo hace el servidor**, una operación
+  tras otra: emitir, rectificar y anular facturas (números correlativos y
+  cadena VeriFactu), generar remesas SEPA y registrar su cobro o sus recibos
+  devueltos, liquidar a las mutuas, conciliar el banco y confirmar o rechazar
+  las citas pedidas por internet. Si dos puestos lo hacen a la vez, el segundo
+  recibe un aviso y ve lo que ha hecho el primero. Los cobros que llegan a una
+  caja que otro puesto acaba de cerrar pasan a la caja abierta, para que el
+  arqueo hecho siga cuadrando.
 
 **Al actualizar, actualice el servidor y todos los puestos a la vez**: un
 puesto con una versión anterior no puede conectar con el servidor nuevo (ni al

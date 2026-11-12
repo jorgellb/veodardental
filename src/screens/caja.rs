@@ -10,12 +10,36 @@ pub const DENOMS: [f64; 15] = [500.0, 200.0, 100.0, 50.0, 20.0, 10.0, 5.0, 2.0, 
 
 pub fn show(app: &mut App, ui: &mut Ui) {
     title(ui, "Caja", "Arqueo y control del efectivo del día");
-    match app.db.open_cash().cloned() {
+    let opens: Vec<CashSession> = app.db.open_cashes().into_iter().cloned().collect();
+    if opens.len() > 1 {
+        several(app, ui, &opens);
+        ui.add_space(8.0);
+    }
+    match opens.iter().find(|c| Some(c.id) == app.lists.cash_view).or(opens.first()).cloned() {
         None => closed(app, ui),
         Some(s) => open(app, ui, s),
     }
     ui.add_space(10.0);
     history(app, ui);
+}
+
+/// Dos puestos abrieron la caja a la vez: se elige cuál ver, para cerrar cada una con su arqueo.
+fn several(app: &mut App, ui: &mut Ui, opens: &[CashSession]) {
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(RichText::new(format!("⚠ Hay {} cajas abiertas en este centro: se abrieron en dos puestos a la vez.", opens.len())).color(WARN).family(crate::theme::sb()));
+        muted(ui, format!("Los cobros nuevos van a la primera (abierta el {} por {}). Cierre las demás con su arqueo; si no tenían efectivo, ciérrelas con lo que se espera.", opens[0].opened.format("%d/%m %H:%M"), opens[0].user));
+        ui.horizontal_wrapped(|ui| {
+            let shown = opens.iter().find(|c| Some(c.id) == app.lists.cash_view).unwrap_or(&opens[0]).id;
+            for c in opens {
+                let label = format!("Abierta el {} por {} · {} cobros", c.opened.format("%d/%m %H:%M"), c.user, app.db.session_payments(c.id).count());
+                if ui.selectable_label(c.id == shown, label).clicked() {
+                    app.lists.cash_view = Some(c.id);
+                    app.lists.cash_counts = [0; 15];
+                }
+            }
+        });
+    });
 }
 
 fn closed(app: &mut App, ui: &mut Ui) {
@@ -27,19 +51,7 @@ fn closed(app: &mut App, ui: &mut Ui) {
             ui.label("Saldo inicial (fondo de caja)");
             ui.add(egui::DragValue::new(&mut app.lists.cash_opening).range(0.0..=100000.0).speed(1.0).suffix(" €"));
             if primary(ui, "Abrir caja").clicked() {
-                let id = app.db.new_id();
-                app.db.cash.push(CashSession {
-                    id,
-                    opened: now(),
-                    closed: None,
-                    opening_balance: round2(app.lists.cash_opening),
-                    moves: vec![],
-                    counted: None,
-                    state: CashState::Abierta,
-                    user: app.db.config.current_user.clone(),
-                    notes: String::new(),
-                    center_id: cid(app.db.config.current_center),
-                });
+                app.db.open_cash_session(app.lists.cash_opening);
                 app.lists.cash_counts = [0; 15];
                 app.changed();
                 app.notify("Caja abierta.");
@@ -136,12 +148,7 @@ fn open(app: &mut App, ui: &mut Ui, s: CashSession) {
             ui.label(RichText::new(txt).size(20.0).family(crate::theme::sb()).color(col));
             ui.add_space(6.0);
             if danger(ui, "Cerrar caja con este arqueo").clicked() {
-                if let Some(c) = app.db.cash.iter_mut().find(|c| c.id == s.id) {
-                    c.counted = Some(counted);
-                    c.closed = Some(now());
-                    c.state = CashState::Cerrada;
-                    c.notes = if diff.abs() < 0.005 { "Cuadrada".into() } else { format!("Descuadre {}", money(diff)) };
-                }
+                app.db.close_cash_session(s.id, counted);
                 app.lists.cash_opening = counted.min(200.0);
                 app.changed();
                 app.notify("Caja cerrada.");

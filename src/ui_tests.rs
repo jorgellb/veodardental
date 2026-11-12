@@ -1832,3 +1832,40 @@ fn reception_does_not_see_clinical_tabs() {
     h.get_by_label("Periodontograma");
     assert!(h.state().allowed(crate::app::Screen::Imagenes));
 }
+
+/// Remesas SEPA: se abre una remesa cobrada, se elige un recibo y se registra
+/// que el banco lo ha devuelto.
+#[test]
+fn returned_debit_from_the_remittances_screen() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let bid = a.db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        a.db.accept_budget(bid, a.today);
+        let due = a.db.due_installments(a.today + chrono::Duration::days(40));
+        let rid = a.db.create_remittance(&due, a.today + chrono::Duration::days(5)).unwrap();
+        a.db.remittance_collected(rid).unwrap();
+        a.screen = crate::app::Screen::Cobros;
+        a.cobros_tab = 1;
+        a.rem.open = Some(rid);
+        a.rem.item = Some(0);
+        a
+    });
+    for _ in 0..5 {
+        h.step();
+    }
+    let rid = h.state().rem.open.unwrap();
+    let amount = h.state().db.remittances.iter().find(|r| r.id == rid).unwrap().items[0].amount;
+    let bal = h.state().db.patient_balance(101);
+    h.get_by_label_contains("Registrar la devolución").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    let st = h.state();
+    let it = &st.db.remittances.iter().find(|r| r.id == rid).unwrap().items[0];
+    assert!(it.returned.is_some(), "no se registró la devolución");
+    assert_eq!(it.return_reason, "AM04 Saldo insuficiente");
+    assert!((st.db.patient_balance(101) - (bal + amount)).abs() < 0.001, "el paciente vuelve a deber la cuota");
+    assert!(st.rem.item.is_none());
+}

@@ -9,12 +9,27 @@ use egui::{RichText, Ui};
 pub struct RemState2 {
     pub until: chrono::NaiveDate,
     pub collection: chrono::NaiveDate,
+    /// Remesa abierta (se ven sus recibos) y recibo elegido en ella.
+    pub open: Option<u32>,
+    pub item: Option<usize>,
+    pub reason: String,
 }
+
+/// Motivos de devolución más frecuentes (códigos SEPA).
+const REASONS: [&str; 7] = [
+    "AM04 Saldo insuficiente",
+    "MD06 Devuelto a petición del titular",
+    "AC04 Cuenta cancelada",
+    "AC01 IBAN incorrecto",
+    "MD01 Sin mandato",
+    "MS02 Motivo no indicado por el titular",
+    "Otro",
+];
 
 impl Default for RemState2 {
     fn default() -> Self {
         let t = today();
-        RemState2 { until: t + chrono::Duration::days(30), collection: t + chrono::Duration::days(5) }
+        RemState2 { until: t + chrono::Duration::days(30), collection: t + chrono::Duration::days(5), open: None, item: None, reason: REASONS[0].into() }
     }
 }
 
@@ -28,7 +43,7 @@ pub fn view(app: &mut App, ui: &mut Ui) {
         ui.add_space(4.0);
         kpi(ui, w, "Cuotas con problemas", &(due.len() - ok.len()).to_string(), "falta IBAN o mandato", WARN);
         ui.add_space(4.0);
-        let pend: f64 = app.db.remittances.iter().filter(|r| r.state == crate::extra::RemState::Generada).map(|r| r.total()).sum();
+        let pend: f64 = app.db.remittances.iter().filter(|r| r.state == crate::extra::RemState::Generada).map(|r| r.collected()).sum();
         kpi(ui, w, "Remesas enviadas sin cobrar", &money(pend), "pendientes de abono del banco", INFO);
     });
     ui.add_space(8.0);
@@ -68,8 +83,8 @@ pub fn view(app: &mut App, ui: &mut Ui) {
         }
         ui.add_space(8.0);
         if primary(ui, &format!("Generar remesa SEPA ({} cuotas · {})", ok.len(), money(total_ok))).clicked() {
-            let col = app.rem.collection;
-            match app.db.create_remittance(&due, col) {
+            let (until, collection) = (app.rem.until, app.rem.collection);
+            match app.chain_op(crate::app::ChainOp::Remit { until, collection }) {
                 Ok(rid) => match write_xml(app, rid) {
                     Ok(p) => {
                         app.changed();
@@ -95,26 +110,92 @@ pub fn view(app: &mut App, ui: &mut Ui) {
         let mut collect = None;
         for (i, r) in list.iter().enumerate() {
             let cobrada = r.state == crate::extra::RemState::Cobrada;
-            let resp = tbl.row(ui, i, false, &[cell(format!("#{}", r.id)), cell(r.created.format("%d/%m/%Y %H:%M").to_string()), cell(fmt_date(r.collection)), cell(r.items.len().to_string()), cell(money(r.total())), cellc(if cobrada { "Cobrada" } else { "Enviada" }, if cobrada { OK } else { INFO }), cell(&r.file)]);
+            let back = r.items.iter().filter(|x| x.returned.is_some()).count();
+            let state = match (cobrada, back) {
+                (true, 0) => "Cobrada".to_string(),
+                (false, 0) => "Enviada".to_string(),
+                (true, n) => format!("Cobrada · {n} devuelto{}", if n > 1 { "s" } else { "" }),
+                (false, n) => format!("Enviada · {n} devuelto{}", if n > 1 { "s" } else { "" }),
+            };
+            let total = if back > 0 { format!("{} de {}", money(r.collected()), money(r.total())) } else { money(r.total()) };
+            let open = app.rem.open == Some(r.id);
+            let resp = tbl.row(ui, i, open, &[cell(format!("#{}", r.id)), cell(r.created.format("%d/%m/%Y %H:%M").to_string()), cell(fmt_date(r.collection)), cell(r.items.len().to_string()), cell(total), cellc(state, if back > 0 { WARN } else if cobrada { OK } else { INFO }), cell(&r.file)]);
+            let resp = resp.on_hover_text(if cobrada { "Pulse para ver los recibos y registrar los devueltos" } else { "Pulse para ver los recibos · clic derecho: marcar como cobrada cuando el banco abone la remesa" });
+            if resp.clicked() {
+                app.rem.open = if open { None } else { Some(r.id) };
+                app.rem.item = None;
+            }
             if !cobrada {
-                resp.on_hover_text("Clic derecho: marcar como cobrada cuando el banco abone la remesa").context_menu(|ui| {
+                resp.context_menu(|ui| {
                     if ui.button("✔ El banco la ha cobrado: registrar cobros").clicked() {
                         collect = Some(r.id);
                         ui.close();
                     }
                 });
             }
+            if open {
+                items(app, ui, r);
+            }
         }
         if let Some(rid) = collect {
-            match app.db.remittance_collected(rid) {
-                Ok(()) => {
+            match app.chain_op(crate::app::ChainOp::Collected { remittance: rid }) {
+                Ok(_) => {
                     app.changed();
                     app.notify("Remesa cobrada: cobros registrados y cuotas marcadas como pagadas.");
                 }
                 Err(e) => app.warn(e),
             }
         }
-        muted(ui, "Cuando el banco abone la remesa, haga clic derecho sobre ella para registrar los cobros. Las devoluciones se cobran de nuevo desde la cuenta del paciente.");
+        muted(ui, "Cuando el banco abone la remesa, haga clic derecho sobre ella para registrar los cobros. Si el banco devuelve un recibo, pulse la remesa y regístrelo: la cuota vuelve a quedar pendiente, para la siguiente remesa o para cobrarla en la clínica.");
+    });
+}
+
+/// Recibos de la remesa `r`, con la devolución del elegido.
+fn items(app: &mut App, ui: &mut Ui, r: &Remittance) {
+    let cobrada = r.state == crate::extra::RemState::Cobrada;
+    egui::Frame::new().fill(tint(INFO, 0.05)).corner_radius(egui::CornerRadius::same(8)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        let tbl = Table::new("rem_items", vec![("Paciente", 220.0), ("Presupuesto", 100.0), ("Cuota", 60.0), ("Importe", 100.0), ("Estado", 320.0)]);
+        tbl.header(ui);
+        for (i, it) in r.items.iter().enumerate() {
+            let state = match &it.returned {
+                Some(d) if it.return_reason.is_empty() => cellc(format!("Devuelto el {}", fmt_date(*d)), DANGER),
+                Some(d) => cellc(format!("Devuelto el {} · {}", fmt_date(*d), it.return_reason), DANGER),
+                None if cobrada => cellc("Cobrado", OK),
+                None => cellc("Pendiente del banco", INFO),
+            };
+            let sel = app.rem.item == Some(i);
+            let resp = tbl.row(ui, i, sel, &[cell(app.db.patient_name(it.patient_id)), cell(format!("#{}", it.budget_id)), cell((it.installment + 1).to_string()), cell(money(it.amount)), state]);
+            if it.returned.is_none() && resp.on_hover_text("Pulse si el banco ha devuelto este recibo").clicked() {
+                app.rem.item = if sel { None } else { Some(i) };
+            }
+        }
+        let Some(i) = app.rem.item else { return };
+        let Some(it) = r.items.get(i).filter(|x| x.returned.is_none()) else { return };
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(format!("Recibo devuelto: {} · cuota {} · {}", app.db.patient_name(it.patient_id), it.installment + 1, money(it.amount))).family(crate::theme::sb()));
+            ui.label("Motivo");
+            crate::theme::combo("rem_reason").width(280.0).selected_text(&app.rem.reason).show_ui(ui, |ui| {
+                for m in REASONS {
+                    ui.selectable_value(&mut app.rem.reason, m.to_string(), m);
+                }
+            });
+            if primary(ui, "↩ Registrar la devolución").clicked() {
+                let reason = if app.rem.reason == "Otro" { String::new() } else { app.rem.reason.clone() };
+                match app.chain_op(crate::app::ChainOp::Returned { remittance: r.id, item: i, reason }) {
+                    Ok(_) => {
+                        app.changed();
+                        app.rem.item = None;
+                        app.notify(if cobrada { "Devolución registrada: se ha anulado el cobro y la cuota vuelve a estar pendiente." } else { "Devolución registrada: ese recibo no se cobrará al registrar la remesa." });
+                    }
+                    Err(e) => app.warn(e),
+                }
+            }
+        });
+        if cobrada {
+            muted(ui, "Se registra un cobro en negativo («Devolución») en la cuenta del paciente: vuelve a deber la cuota, que se podrá incluir en la siguiente remesa o cobrar en la clínica.");
+        }
     });
 }
 

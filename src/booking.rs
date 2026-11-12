@@ -461,11 +461,14 @@ impl Db {
         Ok(appt)
     }
 
-    pub fn booking_reject(&mut self, id: u32, why: &str) {
-        if let Some(x) = self.booking_requests.iter_mut().find(|x| x.id == id && x.state == ReqState::Pendiente) {
-            x.state = ReqState::Rechazada;
-            x.answer = why.trim().to_string();
+    pub fn booking_reject(&mut self, id: u32, why: &str) -> Result<(), String> {
+        let x = self.booking_requests.iter_mut().find(|x| x.id == id).ok_or("La solicitud ya no existe.")?;
+        if x.state != ReqState::Pendiente {
+            return Err("La solicitud ya se atendió.".into());
         }
+        x.state = ReqState::Rechazada;
+        x.answer = why.trim().to_string();
+        Ok(())
     }
 }
 

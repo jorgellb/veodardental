@@ -84,7 +84,9 @@ impl Db {
             .filter(|e| e.state == TxState::Realizado && e.date >= from && e.date <= to && !self.claimed(e.id))
             .filter_map(|e| {
                 let p = self.patient(e.patient_id)?;
-                if p.tariff_id != tariff_id {
+                // la compañía del paciente cuando se hizo el acto
+                let t = if e.tariff_id != 0 { e.tariff_id } else { p.tariff_id };
+                if t != tariff_id {
                     return None;
                 }
                 let fee = round2(self.insurer_fee(tariff_id, &e.code) * e.units.max(1) as f64);
@@ -116,7 +118,9 @@ impl Db {
             return None;
         }
         let year = today.year();
-        let n = self.claims.iter().filter(|c| c.date.year() == year).count() + 1;
+        // la siguiente a la más alta del año (si se anula una, su número no se repite)
+        let prefix = format!("LIQ-{year}-");
+        let n = self.claims.iter().filter_map(|c| c.number.strip_prefix(&prefix)?.parse::<u32>().ok()).max().unwrap_or(0) + 1;
         let id = self.new_id();
         let total = round2(lines.iter().map(|l| l.fee).sum());
         self.claims.push(Claim { id, number: format!("LIQ-{year}-{n:04}"), tariff_id, date: today, from, to, lines, total, paid: 0.0, paid_on: None, notes: String::new() });
@@ -228,6 +232,43 @@ mod tests {
         // anularla devuelve los actos a pendientes
         db.delete_claim(id);
         assert_eq!(db.claimable(2, from, d()).len(), pend.len());
+    }
+
+    #[test]
+    fn acts_go_to_the_insurer_the_patient_had_when_they_were_done() {
+        let mut db = Db::sample(d());
+        let from = d() - chrono::Duration::days(365);
+        let pend = db.claimable(2, from, d());
+        let pid = pend[0].patient_id;
+        let mine = pend.iter().filter(|l| l.patient_id == pid).count();
+        // el paciente se cambia a la tarifa privada: sus actos de antes siguen siendo de la mutua
+        db.patient_mut(pid).unwrap().tariff_id = 1;
+        assert_eq!(db.claimable(2, from, d()).len(), pend.len());
+        // un acto de después no es de la mutua
+        let code = pend[0].code.clone();
+        db.add_entry(pid, &code, vec![], vec![], TxState::Realizado, 1, d());
+        assert_eq!(db.claimable(2, from, d()).len(), pend.len());
+        // un acto previsto con la mutua y hecho ya con la tarifa privada, tampoco
+        db.patient_mut(pid).unwrap().tariff_id = 2;
+        let e = db.add_entry(pid, &code, vec![], vec![], TxState::Previsto, 1, d());
+        db.patient_mut(pid).unwrap().tariff_id = 1;
+        db.realize_entry(e, d(), 0);
+        assert_eq!(db.claimable(2, from, d()).len(), pend.len());
+        assert!(mine > 0);
+    }
+
+    #[test]
+    fn claim_numbers_are_not_repeated_after_cancelling_one() {
+        let mut db = Db::sample(d());
+        let from = d() - chrono::Duration::days(365);
+        let mid = d() - chrono::Duration::days(60);
+        let a = db.create_claim(2, from, mid, d()).unwrap();
+        let b = db.create_claim(2, mid + chrono::Duration::days(1), d(), d()).unwrap();
+        db.delete_claim(a);
+        db.add_entry(db.claimable(2, from, d())[0].patient_id, "0101", vec![], vec![], TxState::Realizado, 1, d());
+        let c = db.create_claim(2, from, d(), d()).unwrap();
+        let num = |id: u32| db.claims.iter().find(|x| x.id == id).unwrap().number.clone();
+        assert_ne!(num(b), num(c));
     }
 
     #[test]

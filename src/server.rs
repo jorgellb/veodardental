@@ -43,6 +43,7 @@
 //! (los WhatsApp, la cita online y el correo siguen guardando) y se renueva al
 //! volver a entrar; caduca tras 24 horas sin usarse.
 
+use crate::app::ChainOp;
 use crate::model::{Db, sha256_hex};
 use crate::shared::StationSeen;
 use crate::sync::{self, Change, Snapshot, canonical};
@@ -669,28 +670,6 @@ struct TotpBody {
     codigo: String,
 }
 
-/// Una operación de la cadena de facturas (VERI*FACTU): emitir, rectificar,
-/// subsanar o anular. Las hace el servidor, una tras otra, para que los
-/// números sean correlativos sin repetirse y cada registro enlace con el
-/// anterior aunque varios puestos facturen a la vez.
-#[derive(Deserialize)]
-struct ChainBody {
-    accion: String,
-    #[serde(default)]
-    paciente: u32,
-    #[serde(default)]
-    tratamientos: Vec<u32>,
-    #[serde(default)]
-    fecha: Option<chrono::NaiveDate>,
-    #[serde(default)]
-    factura: u32,
-    #[serde(default)]
-    motivo: String,
-}
-
-/// Lo que usan las operaciones de la cadena de facturas.
-const CHAIN_FIELDS: [&str; 7] = ["invoices", "vf_records", "entries", "patients", "config", "verifactu", "next_id"];
-
 /// Número de puesto del servidor para los identificadores que crea: los
 /// múltiplos de 16, que no usa ningún puesto (son del 1 al 15).
 const SERVER_STATION: u32 = 16;
@@ -887,7 +866,8 @@ impl State {
             }
         }
         self.drop_auto_duplicates(&mut changes);
-        let existed: std::collections::HashSet<String> = changes.iter().filter(|c| c.field == "patients").filter_map(|c| c.key.clone()).filter(|k| self.snap.get("patients", Some(k)).is_some()).collect();
+        let existed_in = |field: &str| -> std::collections::HashSet<String> { changes.iter().filter(|c| c.field == field).filter_map(|c| c.key.clone()).filter(|k| self.snap.get(field, Some(k)).is_some()).collect() };
+        let (existed, paid_before) = (existed_in("patients"), existed_in("payments"));
         let applied = sync::apply(&mut self.snap, &changes)?;
         let (mut touched, mut previous) = (applied.touched, applied.previous);
         // si algo falla a partir de aquí, se deshace todo
@@ -901,6 +881,14 @@ impl State {
                     if !touched.iter().any(|(f, k)| f == "patients" && k.as_deref() == Some(&key)) {
                         touched.push(("patients".into(), Some(key)));
                     }
+                }
+            }
+            // cobros nuevos en una caja que otro puesto acaba de cerrar (el arqueo
+            // ya está hecho sin ellos): a la caja abierta del centro, o a ninguna
+            let new_payments: Vec<String> = touched.iter().filter(|(f, k)| f == "payments" && k.as_ref().is_some_and(|k| !paid_before.contains(k))).filter_map(|(_, k)| k.clone()).collect();
+            if !new_payments.is_empty() {
+                for (key, old) in self.move_late_payments(&new_payments)? {
+                    previous.push(("payments".into(), Some(key), Some(old), None));
                 }
             }
             if station > 0 {
@@ -974,6 +962,38 @@ impl State {
             self.snap.set("patients", Some(key), Some(canonical("patients", &v.to_string())?));
             *used.entry(n).or_default() -= 1;
             used.insert(next, 1);
+            fixed.push((key.clone(), json));
+        }
+        Ok(fixed)
+    }
+
+    /// Cobros nuevos (`keys`) apuntados a una caja ya cerrada: pasan a la
+    /// abierta de su centro (o a ninguna). Devuelve los que ha cambiado, con
+    /// cómo estaban. Ver [`Db::move_late_payments`].
+    fn move_late_payments(&mut self, keys: &[String]) -> Result<Vec<(String, String)>, String> {
+        let Some(cash) = self.snap.records.get("cash") else { return Ok(vec![]) };
+        let (mut closed, mut open) = (std::collections::HashSet::new(), vec![]);
+        for (_, c) in cash.iter() {
+            let Ok(v) = serde_json::from_str::<Value>(c) else { continue };
+            let (Some(id), center) = (v["id"].as_u64(), crate::model::cid(v["center_id"].as_u64().unwrap_or(0) as u32)) else { continue };
+            match v["state"].as_str() {
+                Some("Cerrada") => {
+                    closed.insert(id);
+                }
+                Some("Abierta") => open.push((center, id)),
+                _ => {}
+            }
+        }
+        let mut fixed = vec![];
+        for key in keys {
+            let Some(json) = self.snap.get("payments", Some(key)).cloned() else { continue };
+            let mut v: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            if !v["cash_session"].as_u64().is_some_and(|s| closed.contains(&s)) {
+                continue;
+            }
+            let center = crate::model::cid(v["center_id"].as_u64().unwrap_or(0) as u32);
+            v["cash_session"] = open.iter().find(|(c, _)| *c == center).map(|x| json!(x.1)).unwrap_or(Value::Null);
+            self.snap.set("payments", Some(key), Some(canonical("payments", &v.to_string())?));
             fixed.push((key.clone(), json));
         }
         Ok(fixed)
@@ -1104,22 +1124,40 @@ impl State {
         }
     }
 
+    /// Una operación de la cadena de facturas (VERI*FACTU: emitir, rectificar,
+    /// subsanar o anular) o de las que cobran o liquidan algo (remesas,
+    /// liquidaciones a mutuas, conciliación del banco): ver [`ChainOp`]. Las
+    /// hace el servidor, una tras otra, para que los números sean correlativos
+    /// sin repetirse, cada registro enlace con el anterior y nada se cobre o se
+    /// liquide dos veces aunque varios puestos lo hagan a la vez.
     fn chain_op(&mut self, req: &Request, me: u32) -> Response {
-        let Ok(b) = serde_json::from_slice::<ChainBody>(&req.body) else { return error(400, "Petición no válida.") };
-        let Some(u) = self.user(me).filter(|u| u.profile.can(Perm::Facturacion)) else {
-            return error(403, "Este usuario no puede facturar.");
+        let Ok(v) = serde_json::from_slice::<Value>(&req.body) else { return error(400, "Petición no válida.") };
+        let op = match ChainOp::from_json(&v) {
+            Ok(op) => op,
+            Err(e) => return error(400, &e),
         };
-        let r = self.modify(&CHAIN_FIELDS, |db| {
+        let (perm, fields) = op.needs();
+        let Some(u) = self.user(me).filter(|u| perm.is_none_or(|p| u.profile.can(p))) else {
+            return error(403, match perm {
+                Some(Perm::Facturacion) => "Este usuario no puede facturar.",
+                Some(Perm::Economia) => "Este usuario no puede llevar los cobros.",
+                Some(Perm::Gastos) => "Este usuario no puede llevar el banco.",
+                _ => "Este usuario no tiene permiso para hacerlo.",
+            });
+        };
+        let center = v["centro"].as_u64().map(|c| c as u32);
+        let r = self.modify(fields, |db| {
             db.station = SERVER_STATION;
-            // la factura lleva el usuario de la sesión
-            db.config.current_user = u.name.clone();
-            match b.accion.as_str() {
-                "emitir" => db.issue_invoice(b.paciente, &b.tratamientos, b.fecha.unwrap_or_else(crate::model::today)),
-                "rectificar" => db.rectify_invoice(b.factura, &b.motivo),
-                "subsanar" => crate::verifactu::create_correction(db, b.factura, &u.name),
-                "anular" => crate::verifactu::create_cancellation(db, b.factura, &b.motivo, &u.name),
-                _ => Err("Acción no válida.".into()),
+            // lo que se crea lleva el usuario de la sesión y el centro del puesto,
+            // que no se quedan en la configuración del servidor
+            let (user, center_was) = (std::mem::replace(&mut db.config.current_user, u.name.clone()), db.config.current_center);
+            if let Some(c) = center {
+                db.config.current_center = c;
             }
+            let out = op.run(db, &u.name);
+            db.config.current_user = user;
+            db.config.current_center = center_was;
+            out
         });
         match r {
             Err(e) => error(500, &e),
@@ -1679,16 +1717,22 @@ impl Remote {
         Ok(changes.len())
     }
 
-    /// Una operación de la cadena de facturas en el servidor (ver `ChainBody`):
+    /// Una operación de la cadena de facturas (o una remesa, una liquidación…)
+    /// en el servidor (ver [`ChainOp`]):
     /// antes se envía lo pendiente (los tratamientos recién hechos, los datos
     /// del cliente…) y después se recoge el resultado. Devuelve el id creado.
     pub fn chain_op(&self, db: &mut Db, synced: &mut Snapshot, op: &Value) -> Result<u32, String> {
         self.push(db, synced)?;
-        let v = parse(&self.post("/cadena", &op.to_string())?)?;
-        let id = v["id"].as_u64().map(|n| n as u32).ok_or("Respuesta no válida del servidor.")?;
-        let d = self.pull(db.rev)?;
-        self.receive(db, synced, d)?;
-        Ok(id)
+        let answer = self.post("/cadena", &op.to_string());
+        // también si no se ha podido (p. ej., otro puesto acaba de hacerlo): así
+        // el puesto ve enseguida lo que hay
+        match self.pull(db.rev) {
+            Ok(d) => self.receive(db, synced, d)?,
+            Err(e) if answer.is_ok() => return Err(e),
+            Err(_) => {}
+        }
+        let v = parse(&answer?)?;
+        v["id"].as_u64().map(|n| n as u32).ok_or_else(|| "Respuesta no válida del servidor.".to_string())
     }
 
     /// Pone en los datos del puesto lo que ha cambiado en el servidor.
@@ -2312,6 +2356,130 @@ mod tests {
         let after = crate::sync::on_disk(&path);
         assert!(after.patient(p.id).is_none() && after.patients[1].mobile == disk.patients[1].mobile);
         assert_eq!(rb.pull(0).unwrap().rev, rev, "ni una revisión más");
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_payment_made_while_another_station_closes_the_cash_leaves_it_balanced() {
+        let (addr, path, h) = start("CLAVE14");
+        let ra = signed_in(&addr, "CLAVE14", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE14", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        // A cierra la caja con su arqueo (sin abrir otra)
+        let s1 = a.open_cash().unwrap().id;
+        let expected = a.cash_expected(a.open_cash().unwrap());
+        a.close_cash_session(s1, expected);
+        ra.push(&mut a, &mut sa).unwrap();
+        // B, que aún no lo sabe, cobra en efectivo en la caja cerrada
+        let late = b.add_payment(100, 20.0, "Efectivo", "tarde");
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.payments.iter().find(|p| p.id == late).unwrap().cash_session, None, "sin caja abierta, en ninguna");
+        assert_eq!(b.payments.iter().find(|p| p.id == late).unwrap().cash_session, None, "y el puesto lo sabe");
+        assert!((disk.cash_expected(disk.cash.iter().find(|c| c.id == s1).unwrap()) - expected).abs() < 0.005, "la caja cerrada sigue cuadrada");
+        // A abre otra; B la ve. Después A la cierra y abre la siguiente, y B cobra sin saberlo
+        let s2 = a.open_cash_session(100.0);
+        ra.push(&mut a, &mut sa).unwrap();
+        let d = rb.pull(b.rev).unwrap();
+        rb.receive(&mut b, &mut sb, d).unwrap();
+        assert_eq!(b.open_cash().map(|c| c.id), Some(s2));
+        a.close_cash_session(s2, 100.0);
+        let s3 = a.open_cash_session(100.0);
+        ra.push(&mut a, &mut sa).unwrap();
+        let late = b.add_payment(100, 30.0, "Efectivo", "tarde otra vez");
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.payments.iter().find(|p| p.id == late).unwrap().cash_session, Some(s3), "a la caja abierta");
+        assert!((disk.cash_expected(disk.cash.iter().find(|c| c.id == s2).unwrap()) - 100.0).abs() < 0.005);
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn remittances_and_claims_made_by_two_stations_at_once_charge_once() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE15");
+        let ra = signed_in(&addr, "CLAVE15", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE15", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        a.station = ra.station;
+        // un presupuesto financiado aceptado, con cuotas para domiciliar
+        let bid = a.budgets.iter().find(|x| x.patient_id == 101 && x.plan.is_some()).unwrap().id;
+        a.accept_budget(bid, crate::model::today());
+        ra.push(&mut a, &mut sa).unwrap();
+        let server_user = crate::sync::on_disk(&path).config.current_user;
+        let (mut b, mut sb) = rb.load().unwrap();
+        b.station = rb.station;
+        let until = crate::model::today() + chrono::Duration::days(40);
+        let col = crate::model::today() + chrono::Duration::days(5);
+        let n = b.due_installments(until).iter().filter(|x| x.problem.is_none()).count();
+        assert!(n > 0);
+        // los dos generan la remesa a la vez: el segundo ya no tiene cuotas que remesar
+        let remit = ChainOp::Remit { until, collection: col }.json();
+        let rid = ra.chain_op(&mut a, &mut sa, &remit).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &remit).unwrap_err().contains("cuotas"));
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.remittances.len(), 1);
+        assert_eq!(disk.remittances[0].items.len(), n);
+        assert!(b.remittances.iter().any(|r| r.id == rid), "el segundo puesto ve la remesa del primero");
+        // los dos registran el cobro de la remesa: una sola vez
+        let pays = disk.payments.len();
+        ra.chain_op(&mut a, &mut sa, &ChainOp::Collected { remittance: rid }.json()).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &ChainOp::Collected { remittance: rid }.json()).unwrap_err().contains("cobrada"));
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.payments.len(), pays + n, "cada cuota se cobra una vez");
+        assert!(disk.payments.iter().filter(|p| p.method == "Domiciliación").all(|p| p.cash_session.is_none() || disk.cash.iter().any(|c| Some(c.id) == p.cash_session)));
+        // devolución de un recibo
+        ra.chain_op(&mut a, &mut sa, &ChainOp::Returned { remittance: rid, item: 0, reason: "AM04 Saldo insuficiente".into() }.json()).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &ChainOp::Returned { remittance: rid, item: 0, reason: String::new() }.json()).is_err());
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.payments.iter().filter(|p| p.concept.starts_with("Devolución")).count(), 1);
+        assert_eq!(disk.remittances[0].items[0].return_reason, "AM04 Saldo insuficiente");
+        // liquidaciones a la mutua a la vez: los actos, una vez
+        let from = crate::model::today() - chrono::Duration::days(3650);
+        let claim = ChainOp::Claim { tariff: 2, from, to: crate::model::today(), date: crate::model::today() }.json();
+        let cid = ra.chain_op(&mut a, &mut sa, &claim).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &claim).is_err());
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.claims.len(), 1);
+        assert!(disk.audit_log.iter().any(|x| x.action == "Liquidación a mutua"));
+        assert!(b.claims.iter().any(|c| c.id == cid));
+        // el servidor no deja su usuario ni su centro en la configuración
+        assert_eq!(disk.config.current_user, server_user);
+        // cada operación, con su permiso: Recepción no lleva el banco (Dirección sí)
+        assert!(ra.chain_op(&mut a, &mut sa, &ChainOp::Reconcile.json()).unwrap_err().contains("banco"));
+        assert!(rb.chain_op(&mut b, &mut sb, &ChainOp::Reconcile.json()).is_ok());
+        assert!(ra.chain_op(&mut a, &mut sa, &json!({ "accion": "otra" })).is_err());
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_online_request_confirmed_by_two_stations_at_once_makes_one_appointment() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE16");
+        let ra = signed_in(&addr, "CLAVE16", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE16", "Gabinete 1", 3, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        let req = a.booking_requests.iter().find(|r| r.state == crate::booking::ReqState::Pendiente && r.replaces.is_none() && a.is_free(r.doctor_id, r.date, r.start, r.end(), None)).unwrap().id;
+        let appts = crate::sync::on_disk(&path).appointments.len();
+        let appt = ra.chain_op(&mut a, &mut sa, &ChainOp::Confirm { request: req }.json()).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &ChainOp::Confirm { request: req }.json()).unwrap_err().contains("atendió"));
+        assert!(rb.chain_op(&mut b, &mut sb, &ChainOp::Reject { request: req, why: "no".into() }.json()).is_err(), "ni se rechaza después");
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.appointments.len(), appts + 1);
+        assert!(b.appointments.iter().any(|x| x.id == appt), "el otro puesto la ve");
+        assert_eq!(disk.booking_requests.iter().find(|r| r.id == req).unwrap().state, crate::booking::ReqState::Confirmada);
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

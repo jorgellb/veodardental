@@ -48,13 +48,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             section(ui, &format!("Pendiente de liquidar a {tname}"));
             right_aligned(ui, |ui| {
                 let total: f64 = lines.iter().map(|l| l.fee).sum();
-                if ui.add_enabled(!lines.is_empty(), egui::Button::new(RichText::new(format!("Generar liquidación ({})", money(total))).color(egui::Color32::WHITE)).fill(ACCENT)).clicked()
-                    && let Some(id) = app.db.create_claim(tid, app.lists.inv_from, app.lists.inv_to, app.today)
-                {
-                    let num = app.db.claims.iter().find(|c| c.id == id).map(|c| c.number.clone()).unwrap_or_default();
-                    app.db.audit("Liquidación a mutua", &format!("{num} · {tname}"));
-                    app.changed();
-                    app.notify(format!("Liquidación {num} creada."));
+                if ui.add_enabled(!lines.is_empty(), egui::Button::new(RichText::new(format!("Generar liquidación ({})", money(total))).color(egui::Color32::WHITE)).fill(ACCENT)).clicked() {
+                    let op = crate::app::ChainOp::Claim { tariff: tid, from: app.lists.inv_from, to: app.lists.inv_to, date: app.today };
+                    match app.chain_op(op) {
+                        Ok(id) => {
+                            let num = app.db.claims.iter().find(|c| c.id == id).map(|c| c.number.clone()).unwrap_or_default();
+                            app.notify(format!("Liquidación {num} creada."));
+                        }
+                        Err(e) => app.warn(e),
+                    }
                 }
             });
         });

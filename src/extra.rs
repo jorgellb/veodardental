@@ -511,6 +511,11 @@ pub struct RemItem {
     pub mandate: String,
     pub mandate_date: NaiveDate,
     pub end_to_end: String,
+    /// El banco ha devuelto el recibo (fecha y motivo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub return_reason: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -530,8 +535,13 @@ pub struct Remittance {
 }
 
 impl Remittance {
+    /// Lo que se pidió al banco (el total del fichero).
     pub fn total(&self) -> f64 {
         round2(self.items.iter().map(|i| i.amount).sum())
+    }
+    /// Lo cobrado: sin los recibos devueltos.
+    pub fn collected(&self) -> f64 {
+        round2(self.items.iter().filter(|i| i.returned.is_none()).map(|i| i.amount).sum())
     }
 }
 
@@ -561,7 +571,8 @@ impl Db {
                 if paid || due > until {
                     continue;
                 }
-                let remitted = self.remittances.iter().any(|r| r.items.iter().any(|x| x.budget_id == b.id && x.installment == i));
+                // un recibo devuelto se puede volver a domiciliar
+                let remitted = self.remittances.iter().any(|r| r.items.iter().any(|x| x.budget_id == b.id && x.installment == i && x.returned.is_none()));
                 if remitted {
                     continue;
                 }
@@ -573,7 +584,7 @@ impl Db {
                     None => Some("paciente no encontrado".to_string()),
                     _ => None,
                 };
-                out.push(DueInstallment { patient_id: b.patient_id, budget_id: b.id, index: i, due, amount: pl.installment_amount(b.total()), problem });
+                out.push(DueInstallment { patient_id: b.patient_id, budget_id: b.id, index: i, due, amount: pl.installment(i, b.total()), problem });
             }
         }
         out.sort_by_key(|d| d.due);
@@ -603,6 +614,8 @@ impl Db {
                     mandate: if p.sepa_mandate.is_empty() { format!("DS{:06}", p.history_no) } else { p.sepa_mandate.clone() },
                     mandate_date: p.sepa_date.unwrap_or(today()),
                     end_to_end: format!("R{}-{}-{}", id, d.budget_id, d.index + 1),
+                    returned: None,
+                    return_reason: String::new(),
                 }
             })
             .collect();
@@ -651,22 +664,57 @@ impl Db {
         if r.state == RemState::Cobrada {
             return Err("La remesa ya está marcada como cobrada.".into());
         }
-        for it in &r.items {
+        for it in r.items.iter().filter(|i| i.returned.is_none()) {
             let pid = it.patient_id;
             self.add_payment(pid, it.amount, "Domiciliación", &format!("Cuota {} remesa SEPA #{}", it.installment + 1, rid));
-            if let Some(b) = self.budgets.iter_mut().find(|b| b.id == it.budget_id) && let Some(pl) = &mut b.plan {
-                if pl.paid.len() < pl.installments as usize {
-                    pl.paid.resize(pl.installments as usize, false);
-                }
-                if let Some(x) = pl.paid.get_mut(it.installment as usize) {
-                    *x = true;
-                }
-            }
+            self.set_installment_paid(it.budget_id, it.installment, true);
         }
         if let Some(x) = self.remittances.iter_mut().find(|x| x.id == rid) {
             x.state = RemState::Cobrada;
         }
         Ok(())
+    }
+
+    /// El banco ha devuelto el recibo `idx` de la remesa (el paciente no lo ha
+    /// pagado): si ya se había registrado el cobro, se deshace con un cobro en
+    /// negativo; la cuota vuelve a estar pendiente (para la siguiente remesa o
+    /// para cobrarla en la clínica).
+    pub fn remittance_returned(&mut self, rid: u32, idx: usize, reason: &str) -> Result<(), String> {
+        let r = self.remittances.iter().find(|r| r.id == rid).ok_or("Remesa no encontrada")?;
+        let it = r.items.get(idx).cloned().ok_or("Recibo no encontrado en la remesa")?;
+        if it.returned.is_some() {
+            return Err("Ese recibo ya está marcado como devuelto.".into());
+        }
+        let collected = r.state == RemState::Cobrada;
+        if let Some(x) = self.remittances.iter_mut().find(|r| r.id == rid).and_then(|r| r.items.get_mut(idx)) {
+            x.returned = Some(today());
+            x.return_reason = reason.trim().to_string();
+        }
+        if collected {
+            self.add_payment(it.patient_id, -it.amount, "Domiciliación", &format!("Devolución cuota {} remesa SEPA #{rid}", it.installment + 1));
+            self.set_installment_paid(it.budget_id, it.installment, false);
+        }
+        let why = if reason.trim().is_empty() { String::new() } else { format!(" ({})", reason.trim()) };
+        self.audit("Recibo SEPA devuelto", &format!("{} · cuota {} · {} · remesa #{rid}{why}", self.patient_name(it.patient_id), it.installment + 1, money(it.amount)));
+        Ok(())
+    }
+
+    /// Remesa enviada al banco, aún sin cobrar, en la que va la cuota `i` del
+    /// presupuesto (si va en alguna): el banco se la cobrará al paciente.
+    pub fn installment_remittance(&self, budget_id: u32, i: u32) -> Option<u32> {
+        self.remittances.iter().find(|r| r.state == RemState::Generada && r.items.iter().any(|x| x.budget_id == budget_id && x.installment == i && x.returned.is_none())).map(|r| r.id)
+    }
+
+    /// Marca la cuota `i` del plan del presupuesto como pagada (o no).
+    pub fn set_installment_paid(&mut self, budget_id: u32, i: u32, paid: bool) {
+        if let Some(b) = self.budgets.iter_mut().find(|b| b.id == budget_id) && let Some(pl) = &mut b.plan {
+            if pl.paid.len() < pl.installments as usize {
+                pl.paid.resize(pl.installments as usize, false);
+            }
+            if let Some(x) = pl.paid.get_mut(i as usize) {
+                *x = paid;
+            }
+        }
     }
 }
 
@@ -780,6 +828,86 @@ mod tests {
         db.remittance_collected(rid).unwrap();
         assert!(db.patient_paid(101) > paid_before);
         assert!(db.remittance_collected(rid).is_err());
+    }
+
+    #[test]
+    fn installments_add_up_to_the_total() {
+        let pl = FinancePlan { down_payment: 0.0, installments: 3, first_date: d(), every_months: 1, paid: vec![] };
+        let all: Vec<f64> = (0..3).map(|i| pl.installment(i, 1000.0)).collect();
+        assert_eq!(all, vec![333.33, 333.33, 333.34]);
+        let pl = FinancePlan { down_payment: 100.0, installments: 7, first_date: d(), every_months: 1, paid: vec![] };
+        let sum: f64 = (0..7).map(|i| pl.installment(i, 1234.56)).sum();
+        assert!((sum - 1134.56).abs() < 0.001, "{sum}");
+        // un presupuesto de 1.000 € en 3 cuotas, todas cobradas: no queda deuda
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let due = db.due_installments(d() + Duration::days(3650));
+        for x in &due {
+            db.add_payment(x.patient_id, x.amount, "Financiación", "cuota");
+        }
+        let b = db.budgets.iter().find(|b| b.id == bid).unwrap();
+        let pl = b.plan.as_ref().unwrap();
+        let sum: f64 = due.iter().map(|x| x.amount).sum();
+        assert!((sum + pl.down_payment - b.total()).abs() < 0.001, "las cuotas suman {sum} y el total es {}", b.total());
+    }
+
+    #[test]
+    fn a_returned_debit_is_owed_again_and_goes_in_the_next_remittance() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let due = db.due_installments(d() + Duration::days(40));
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        db.remittance_collected(rid).unwrap();
+        let bal = db.patient_balance(101);
+        let it = db.remittances.iter().find(|r| r.id == rid).unwrap().items[0].clone();
+        db.remittance_returned(rid, 0, "AM04 fondos insuficientes").unwrap();
+        // vuelve a deber la cuota, que ya no está pagada
+        assert!((db.patient_balance(101) - (bal + it.amount)).abs() < 0.001);
+        let pl = db.budgets.iter().find(|b| b.id == bid).unwrap().plan.clone().unwrap();
+        assert!(!pl.paid[it.installment as usize]);
+        assert!(db.payments.iter().any(|p| p.amount == -it.amount && p.method == "Domiciliación" && p.concept.contains("Devolución")));
+        // dos veces no
+        assert!(db.remittance_returned(rid, 0, "").is_err());
+        // la cuota se puede volver a domiciliar
+        let again = db.due_installments(d() + Duration::days(40));
+        assert!(again.iter().any(|x| x.budget_id == bid && x.index == it.installment));
+        // lo cobrado de la remesa es lo que no se ha devuelto
+        let r = db.remittances.iter().find(|r| r.id == rid).unwrap();
+        assert!((r.collected() - (r.total() - it.amount)).abs() < 0.001);
+    }
+
+    #[test]
+    fn a_debit_returned_before_marking_the_remittance_collected_is_not_charged() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let due = db.due_installments(d() + Duration::days(40));
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        let pays = db.payments.len();
+        let n = db.remittances.iter().find(|r| r.id == rid).unwrap().items.len();
+        db.remittance_returned(rid, 0, "").unwrap();
+        assert_eq!(db.payments.len(), pays, "sin cobrar aún, no hay nada que deshacer");
+        db.remittance_collected(rid).unwrap();
+        assert_eq!(db.payments.len(), pays + n - 1, "la devuelta no se cobra");
+        let it = &db.remittances.iter().find(|r| r.id == rid).unwrap().items[0];
+        let pl = db.budgets.iter().find(|b| b.id == bid).unwrap().plan.clone().unwrap();
+        assert!(!pl.paid[it.installment as usize]);
+    }
+
+    #[test]
+    fn an_installment_in_a_sent_remittance_is_not_charged_again() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let due = db.due_installments(d() + Duration::days(40));
+        let i = due[0].index;
+        assert_eq!(db.installment_remittance(bid, i), None);
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        assert_eq!(db.installment_remittance(bid, i), Some(rid), "enviada al banco: no se cobra en la clínica");
+        db.remittance_returned(rid, 0, "").unwrap();
+        assert_eq!(db.installment_remittance(bid, i), None, "devuelta: se puede cobrar");
     }
 
     #[test]

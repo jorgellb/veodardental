@@ -270,7 +270,7 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                             ui.label("Primera cuota:");
                             crate::screens::date_picker(ui, "plan_first", &mut pl.first_date);
                         });
-                        ui.label(RichText::new(format!("{} cuotas de {}", pl.installments, money(pl.installment_amount(total)))).family(crate::theme::sb()));
+                        ui.label(RichText::new(pl.installments_text(total)).family(crate::theme::sb()));
                         muted(ui, format!("Última cuota: {}", fmt_date(pl.due_date(pl.installments.saturating_sub(1)))));
                     }
                 });
@@ -414,7 +414,7 @@ fn export_txt(app: &App, b: &Budget) -> Result<String, String> {
     }
     s.push_str(&format!("\nTOTAL: {}\nVálido hasta {}\n", money(b.total()), fmt_date(b.expires())));
     if let Some(pl) = &b.plan {
-        s.push_str(&format!("Financiación: entrada {} + {} cuotas de {}\n", money(pl.down_payment), pl.installments, money(pl.installment_amount(b.total()))));
+        s.push_str(&format!("Financiación: entrada {} + {}\n", money(pl.down_payment), pl.installments_text(b.total())));
     }
     if !b.notes.is_empty() {
         s.push_str(&format!("\n{}\n", b.notes));

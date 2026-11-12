@@ -315,6 +315,9 @@ pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl F
             // recordatorios y tareas que este puesto y otro generaron a la vez: los del otro
             let msgs: std::collections::HashSet<u32> = ["messages", "tasks"].iter().flat_map(|f| d[*f].as_array().into_iter().flatten()).filter_map(|m| m["id"].as_u64()).map(|i| i as u32).collect();
             db.drop_auto_duplicates(|id| msgs.contains(&id));
+            // cobros de este puesto en una caja que otro acaba de cerrar: a la abierta
+            let pays: std::collections::HashSet<u32> = d["payments"].as_array().into_iter().flatten().filter_map(|p| p["id"].as_u64()).map(|i| i as u32).collect();
+            db.move_late_payments(|id| !pays.contains(&id));
             Synced::Merged(conflicts)
         }
         _ => {
@@ -468,6 +471,38 @@ mod tests {
         assert!(fin.verify_chain().is_ok(), "{:?}", fin.verify_chain());
         assert_ne!(fin.patient(pa.id).unwrap().history_no, fin.patient(pb.id).unwrap().history_no);
         assert_eq!(fin.patient(pa.id).unwrap().history_no, pa.history_no, "el primero conserva el suyo");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_payment_made_while_another_station_closes_the_cash_goes_to_the_open_one() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_cash_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        prepare_folder(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        let (mut b, mut base_b) = load();
+        a.station = 1;
+        b.station = 2;
+        let s1 = a.open_cash().unwrap().id;
+        // A cierra con su arqueo y abre la caja siguiente
+        let expected = a.cash_expected(a.open_cash().unwrap());
+        a.close_cash_session(s1, expected);
+        let s2 = a.open_cash_session(100.0);
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        // B, que aún no lo sabe, cobra en efectivo: va a la caja que ya está cerrada
+        let pay = b.add_payment(100, 20.0, "Efectivo", "tarde");
+        assert_eq!(b.payments.iter().find(|p| p.id == pay).unwrap().cash_session, Some(s1));
+        save_synced(&mut b, &mut base_b, &path).unwrap();
+        let (fin, _) = load();
+        assert_eq!(fin.payments.iter().find(|p| p.id == pay).unwrap().cash_session, Some(s2), "a la caja abierta");
+        let closed = fin.cash.iter().find(|c| c.id == s1).unwrap();
+        assert!((fin.cash_expected(closed) - expected).abs() < 0.005, "la caja cerrada sigue cuadrada");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

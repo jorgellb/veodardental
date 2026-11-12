@@ -65,10 +65,10 @@ fn mail_patient(app: &mut App, id: u32) {
 }
 
 pub fn confirm(app: &mut App, id: u32) {
-    match app.db.booking_confirm(id) {
+    // con varios puestos, la confirma uno solo (y solo ese avisa al paciente)
+    match app.chain_op(crate::app::ChainOp::Confirm { request: id }) {
         Ok(_) => {
             let name = app.db.booking_requests.iter().find(|r| r.id == id).map(|r| r.name.clone()).unwrap_or_default();
-            app.changed();
             mail_patient(app, id);
             app.notify(format!("Cita de {name} confirmada y apuntada en la agenda."));
         }
@@ -77,12 +77,15 @@ pub fn confirm(app: &mut App, id: u32) {
 }
 
 pub fn reject(app: &mut App, id: u32, why: &str) {
-    app.db.booking_reject(id, why);
-    app.changed();
-    mail_patient(app, id);
     app.booking.rejecting = None;
     app.booking.reject_text.clear();
-    app.notify("Solicitud rechazada.");
+    match app.chain_op(crate::app::ChainOp::Reject { request: id, why: why.to_string() }) {
+        Ok(_) => {
+            mail_patient(app, id);
+            app.notify("Solicitud rechazada.");
+        }
+        Err(e) => app.warn(e),
+    }
 }
 
 /// Abre o cierra la página según la configuración, recoge las solicitudes y

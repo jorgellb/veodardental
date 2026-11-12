@@ -82,17 +82,20 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                 match read_statement(&p) {
                     Ok(v) => {
                         let (a, d) = app.db.add_bank_moves(acc, &v);
-                        let c = app.db.auto_reconcile();
                         app.changed();
-                        app.notify(format!("{a} movimientos importados ({d} ya estaban) · {c} conciliados automáticamente"));
+                        match app.chain_op(crate::app::ChainOp::Reconcile) {
+                            Ok(c) => app.notify(format!("{a} movimientos importados ({d} ya estaban) · {c} conciliados automáticamente")),
+                            Err(e) => app.warn(format!("{a} movimientos importados ({d} ya estaban), pero no se han podido conciliar: {e}")),
+                        }
                     }
                     Err(e) => app.warn(e),
                 }
             }
             if ui.button("⟳ Conciliar automáticamente").clicked() {
-                let c = app.db.auto_reconcile();
-                app.changed();
-                app.notify(format!("{c} movimientos conciliados"));
+                match app.chain_op(crate::app::ChainOp::Reconcile) {
+                    Ok(c) => app.notify(format!("{c} movimientos conciliados")),
+                    Err(e) => app.warn(e),
+                }
             }
         });
     });

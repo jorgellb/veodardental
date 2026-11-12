@@ -181,7 +181,8 @@ impl Db {
 
     /// Concilia automáticamente: cobros por transferencia/Bizum del mismo
     /// importe (±3 días), liquidaciones de tarjeta (suma del día), remesas SEPA
-    /// por su total y gastos por importe (los marca como pagados).
+    /// por su total, recibos devueltos por su importe y gastos por importe (los
+    /// marca como pagados).
     pub fn auto_reconcile(&mut self) -> usize {
         let mut n = 0;
         let ids: Vec<u32> = self.bank_moves.iter().filter(|m| m.matched.is_none()).map(|m| m.id).collect();
@@ -191,7 +192,8 @@ impl Db {
             let mut found: Option<Match> = None;
             if m.amount > 0.0 {
                 // remesa SEPA
-                if let Some(r) = self.remittances.iter().find(|r| (r.total() - m.amount).abs() < 0.005 && near(r.collection, 5) && !self.bank_moves.iter().any(|b| b.matched == Some(Match::Remittance(r.id)))) {
+                // (por su total o, si el banco descuenta los recibos devueltos, por lo cobrado)
+                if let Some(r) = self.remittances.iter().find(|r| ((r.total() - m.amount).abs() < 0.005 || (r.collected() - m.amount).abs() < 0.005) && near(r.collection, 5) && !self.bank_moves.iter().any(|b| b.matched == Some(Match::Remittance(r.id)))) {
                     found = Some(Match::Remittance(r.id));
                 }
                 // cobro individual
@@ -212,6 +214,9 @@ impl Db {
                         }
                     }
                 }
+            } else if let Some(p) = self.payments.iter().find(|p| p.method == "Domiciliación" && p.amount < 0.0 && (p.amount - m.amount).abs() < 0.005 && near(p.date.date(), 15) && !self.payment_used(p.id)) {
+                // recibo de una remesa devuelto por el banco
+                found = Some(Match::Payments(vec![p.id]));
             } else if let Some(e) = self.expenses.iter().find(|e| (e.total() + m.amount).abs() < 0.005 && near(e.due.unwrap_or(e.date), 40) && !self.bank_moves.iter().any(|b| b.matched == Some(Match::Expense(e.id)))) {
                 found = Some(Match::Expense(e.id));
             }
@@ -404,6 +409,39 @@ mod tests {
         let (added, dup) = db.add_bank_moves(1, &[RawMove { date: d() + Duration::days(1), amount: card_sum, concept: "LIQUIDACION TPV".into(), reference: String::new() }]);
         assert_eq!((added, dup), (0, 1));
         assert_eq!(db.auto_reconcile(), 0);
+    }
+
+    #[test]
+    fn reconcile_a_remittance_with_a_returned_debit() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let due = db.due_installments(d() + Duration::days(40));
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        db.remittance_collected(rid).unwrap();
+        let it = db.remittances.iter().find(|r| r.id == rid).unwrap().items[0].clone();
+        db.remittance_returned(rid, 0, "").unwrap();
+        // el banco abona la remesa entera y días después carga la devolución
+        let total = db.remittances.iter().find(|r| r.id == rid).unwrap().total();
+        db.add_bank_moves(1, &[RawMove { date: d() + Duration::days(5), amount: total, concept: "ABONO REMESA".into(), reference: String::new() }, RawMove { date: d() + Duration::days(9), amount: -it.amount, concept: "DEVOLUCION RECIBO".into(), reference: String::new() }]);
+        db.auto_reconcile();
+        assert!(db.bank_moves.iter().any(|m| m.concept == "ABONO REMESA" && m.matched == Some(Match::Remittance(rid))));
+        let back = db.payments.iter().find(|p| p.amount == -it.amount && p.concept.starts_with("Devolución")).unwrap().id;
+        assert!(db.bank_moves.iter().any(|m| m.concept == "DEVOLUCION RECIBO" && m.matched == Some(Match::Payments(vec![back]))));
+    }
+
+    #[test]
+    fn a_remittance_credited_without_the_returned_debits_is_reconciled() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let due = db.due_installments(d() + Duration::days(40));
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        db.remittance_returned(rid, 0, "").unwrap();
+        let net = db.remittances.iter().find(|r| r.id == rid).unwrap().collected();
+        db.add_bank_moves(1, &[RawMove { date: d() + Duration::days(5), amount: net, concept: "ABONO REMESA".into(), reference: String::new() }]);
+        db.auto_reconcile();
+        assert_eq!(db.remittances.iter().find(|r| r.id == rid).unwrap().state, crate::extra::RemState::Cobrada);
     }
 
     #[test]

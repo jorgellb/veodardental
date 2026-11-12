@@ -66,6 +66,8 @@ pub struct ListsState {
     pub cash_move_amount: f64,
     pub cash_move_text: String,
     pub cash_opening: f64,
+    /// Caja que se ve si hay más de una abierta (dos puestos la abrieron a la vez).
+    pub cash_view: Option<u32>,
     pub pay_from: NaiveDate,
     pub pay_to: NaiveDate,
     pub pay_method: Option<String>,
@@ -107,6 +109,7 @@ impl Default for ListsState {
             cash_move_amount: 0.0,
             cash_move_text: String::new(),
             cash_opening: 150.0,
+            cash_view: None,
             pay_from: t - chrono::Duration::days(30),
             pay_to: t,
             pay_method: None,
