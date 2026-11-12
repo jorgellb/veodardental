@@ -119,6 +119,7 @@ impl Db {
         if let Some(l) = self.link_mut(appt_id) {
             l.cancelled = Some(now());
         }
+        self.refresh_recalls(today());
         true
     }
 

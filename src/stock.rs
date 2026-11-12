@@ -62,6 +62,9 @@ pub struct StockMove {
     pub patient_id: Option<u32>,
     pub lot: String,
     pub user: String,
+    /// Tratamiento que gastó el material (en los consumos automáticos).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_id: Option<u32>,
 }
 
 /// Material que gasta un tratamiento al realizarse.
@@ -189,13 +192,15 @@ impl Db {
         self.products.iter().find(|p| p.id == id)
     }
 
-    /// Registra un movimiento y actualiza el stock del producto.
-    pub fn stock_move(&mut self, product_id: u32, qty: f64, kind: MoveKind, reason: &str, patient_id: Option<u32>, lot: &str) {
-        let Some(p) = self.products.iter_mut().find(|p| p.id == product_id) else { return };
+    /// Registra un movimiento y actualiza el stock del producto. Devuelve el
+    /// movimiento (`None` si el producto no existe).
+    pub fn stock_move(&mut self, product_id: u32, qty: f64, kind: MoveKind, reason: &str, patient_id: Option<u32>, lot: &str) -> Option<u32> {
+        let p = self.products.iter_mut().find(|p| p.id == product_id)?;
         p.stock = round2(p.stock + qty);
         let id = self.new_id();
         let user = self.config.current_user.clone();
-        self.stock_moves.push(StockMove { id, product_id, when: now(), qty: round2(qty), kind, reason: reason.into(), patient_id, lot: lot.into(), user });
+        self.stock_moves.push(StockMove { id, product_id, when: now(), qty: round2(qty), kind, reason: reason.into(), patient_id, lot: lot.into(), user, entry_id: None });
+        Some(id)
     }
 
     /// Descuenta del almacén el material de un tratamiento realizado.
@@ -204,8 +209,54 @@ impl Db {
         let list: Vec<Consumption> = self.consumptions.iter().filter(|c| c.code == e.code).cloned().collect();
         for c in list {
             let qty = c.qty * e.units.max(1) as f64;
-            self.stock_move(c.product_id, -qty, MoveKind::Consumo, &format!("{} {}", e.description, e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-")), Some(e.patient_id), "");
+            let id = self.stock_move(c.product_id, -qty, MoveKind::Consumo, &format!("{} {}", e.description, e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-")), Some(e.patient_id), "");
+            if let Some(m) = id.and_then(|id| self.stock_moves.iter_mut().find(|m| m.id == id)) {
+                m.entry_id = Some(entry_id);
+            }
         }
+    }
+
+    /// Por qué no se puede borrar un tratamiento del historial (`Ok` si se puede):
+    /// lo facturado se corrige con una rectificativa y lo liquidado a la mutua,
+    /// anulando la liquidación.
+    pub fn can_delete_entry(&self, id: u32) -> Result<(), String> {
+        let e = self.entries.iter().find(|e| e.id == id).ok_or("El tratamiento ya no existe.")?;
+        if let Some(inv) = e.invoice_id {
+            let num = self.invoices.iter().find(|i| i.id == inv).map(|i| i.code()).unwrap_or_else(|| format!("#{inv}"));
+            return Err(format!("Está en la factura {num}: para quitarlo, haga antes la factura rectificativa."));
+        }
+        if let Some(c) = self.claims.iter().find(|c| c.lines.iter().any(|l| l.entry_id == id)) {
+            return Err(format!("Va en la liquidación {} a la mutua: para quitarlo, anule antes la liquidación.", c.number));
+        }
+        Ok(())
+    }
+
+    /// Borra un tratamiento del historial: si ya estaba hecho, el material que
+    /// gastó vuelve al almacén, y su trabajo de laboratorio queda sin tratamiento.
+    pub fn delete_entry(&mut self, id: u32) -> Result<(), String> {
+        self.can_delete_entry(id)?;
+        let e = self.entries.iter().find(|e| e.id == id).cloned().ok_or("El tratamiento ya no existe.")?;
+        let mut spent: std::collections::BTreeMap<u32, f64> = Default::default();
+        for m in self.stock_moves.iter().filter(|m| m.entry_id == Some(id)) {
+            *spent.entry(m.product_id).or_default() += m.qty;
+        }
+        for (product, qty) in spent {
+            if qty.abs() > 1e-9 {
+                let reason = format!("Devuelto: {} (tratamiento borrado)", e.description);
+                if let Some(mid) = self.stock_move(product, -qty, MoveKind::Ajuste, &reason, Some(e.patient_id), "")
+                    && let Some(m) = self.stock_moves.iter_mut().find(|m| m.id == mid)
+                {
+                    m.entry_id = Some(id);
+                }
+            }
+        }
+        for w in self.lab_works.iter_mut().filter(|w| w.entry_id == Some(id)) {
+            w.entry_id = None;
+        }
+        let what = format!("{} · {}", self.patient_name(e.patient_id), e.description);
+        self.audit("Borrar tratamiento", &what);
+        self.entries.retain(|x| x.id != id);
+        Ok(())
     }
 
     pub fn low_stock(&self) -> Vec<&Product> {
@@ -282,11 +333,12 @@ impl Db {
         s
     }
 
-    /// Tratamientos protésicos del paciente que aún no tienen trabajo de laboratorio.
+    /// Tratamientos protésicos previstos del paciente que aún no tienen trabajo
+    /// de laboratorio (los ya hechos, como los que vienen de otro programa, no).
     pub fn prosthetic_without_lab(&self, pid: u32) -> Vec<&MedEntry> {
         self.entries
             .iter()
-            .filter(|e| e.patient_id == pid && e.state != TxState::Previo && is_prosthetic(e.odg))
+            .filter(|e| e.patient_id == pid && e.state == TxState::Previsto && is_prosthetic(e.odg))
             .filter(|e| !self.lab_works.iter().any(|w| w.entry_id == Some(e.id)))
             .collect()
     }
@@ -330,7 +382,7 @@ impl Db {
             }
         }
         if matches!(st, LabState::Recibido | LabState::Colocado) {
-            self.expense_from_lab(id);
+            self.sync_lab_expense(id);
         }
     }
 
@@ -382,7 +434,7 @@ pub fn sample_stock(db: &mut Db, today: NaiveDate) {
     let hist = [(3, 100.0, MoveKind::Entrada, "Pedido inicial", 40), (9, 6.0, MoveKind::Entrada, "Pedido inicial", 60), (9, -1.0, MoveKind::Consumo, "Implante dental 46", 150), (9, -1.0, MoveKind::Consumo, "Implante dental 36", 15), (4, -0.2, MoveKind::Consumo, "Obturación composite 2 caras 15", 5)];
     for (pid, qty, kind, reason, ago) in hist {
         let id = db.new_id();
-        db.stock_moves.push(StockMove { id, product_id: pid, when: (today - Duration::days(ago)).and_hms_opt(10, 0, 0).unwrap(), qty, kind, reason: reason.into(), patient_id: None, lot: String::new(), user: "Recepción".into() });
+        db.stock_moves.push(StockMove { id, product_id: pid, when: (today - Duration::days(ago)).and_hms_opt(10, 0, 0).unwrap(), qty, kind, reason: reason.into(), patient_id: None, lot: String::new(), user: "Recepción".into(), entry_id: None });
     }
     let id = db.new_id();
     db.orders.push(PurchaseOrder { id, supplier_id: 2, date: today - Duration::days(3), state: OrderState::Enviado, lines: vec![OrderLine { product_id: 9, qty: 4.0, cost: 145.0 }], notes: "Urgente para cirugía".into(), received_on: None });
@@ -443,6 +495,83 @@ mod tests {
         db.receive_order(id).unwrap();
         assert!((db.product(line.product_id).unwrap().stock - before - line.qty).abs() < 1e-6);
         assert!(db.receive_order(id).is_err());
+    }
+
+    #[test]
+    fn an_invoiced_or_claimed_treatment_cannot_be_deleted() {
+        let mut db = Db::sample(d());
+        let e = db.add_entry(110, "0302", vec![16], vec!["O".into()], TxState::Realizado, 1, d());
+        db.add_payment(110, db.entries.iter().find(|x| x.id == e).unwrap().amount(), "Tarjeta", "");
+        let inv = db.issue_invoice(110, &[e], d()).unwrap();
+        let before = db.patient_balance(110);
+        let err = db.delete_entry(e).unwrap_err();
+        assert!(err.contains("factura"), "{err}");
+        assert!(db.entries.iter().any(|x| x.id == e), "sigue en el historial");
+        assert!((db.patient_balance(110) - before).abs() < 0.005, "y el paciente no queda con saldo a favor");
+        // con la factura rectificada, sí
+        db.rectify_invoice(inv, "Error en el tratamiento").unwrap();
+        db.delete_entry(e).unwrap();
+        assert!(!db.entries.iter().any(|x| x.id == e));
+        // un acto que va en una liquidación a la mutua, tampoco
+        let from = d() - Duration::days(365);
+        let line = db.claimable(2, from, d())[0].clone();
+        db.create_claim(2, from, d(), d()).unwrap();
+        let err = db.delete_entry(line.entry_id).unwrap_err();
+        assert!(err.contains("LIQ-"), "{err}");
+    }
+
+    #[test]
+    fn deleting_a_done_treatment_returns_its_material() {
+        let mut db = Db::sample(d());
+        let before = db.product(4).unwrap().stock;
+        let e = db.add_entry(110, "0302", vec![16], vec!["O".into()], TxState::Realizado, 1, d());
+        assert!((db.product(4).unwrap().stock - (before - 0.2)).abs() < 1e-6);
+        let w = db.new_lab_work(110, Some(e), 3, 7);
+        db.delete_entry(e).unwrap();
+        assert!((db.product(4).unwrap().stock - before).abs() < 1e-6, "el composite vuelve al almacén");
+        assert!(db.stock_moves.iter().any(|m| m.product_id == 4 && m.qty > 0.0 && m.patient_id == Some(110)), "con su movimiento");
+        assert_eq!(db.lab_works.iter().find(|x| x.id == w).unwrap().entry_id, None, "el trabajo de laboratorio queda suelto");
+        // uno previsto no había gastado nada
+        let p = db.add_entry(110, "0302", vec![17], vec![], TxState::Previsto, 1, d());
+        let n = db.stock_moves.len();
+        db.delete_entry(p).unwrap();
+        assert_eq!(db.stock_moves.len(), n);
+    }
+
+    #[test]
+    fn lab_cost_written_after_receiving_goes_to_expenses() {
+        let mut db = Db::sample(d());
+        let w = db.new_lab_work(110, None, 3, 7);
+        db.set_lab_state(w, LabState::Recibido);
+        let exp = |db: &Db| db.expenses.iter().filter(|e| e.concept.ends_with(&format!("#L{w}"))).map(|e| (e.base, e.paid)).collect::<Vec<_>>();
+        assert!(exp(&db).is_empty(), "sin coste aún");
+        // llega la factura del laboratorio y se escribe el coste
+        db.lab_works.iter_mut().find(|x| x.id == w).unwrap().cost = 160.0;
+        db.sync_lab_expense(w);
+        assert_eq!(exp(&db), vec![(160.0, false)]);
+        db.lab_works.iter_mut().find(|x| x.id == w).unwrap().cost = 170.0;
+        db.sync_lab_expense(w);
+        assert_eq!(exp(&db), vec![(170.0, false)], "se corrige, sin duplicar");
+        // ya pagado: no se toca
+        db.expenses.iter_mut().find(|e| e.concept.ends_with(&format!("#L{w}"))).unwrap().paid = true;
+        db.lab_works.iter_mut().find(|x| x.id == w).unwrap().cost = 180.0;
+        db.sync_lab_expense(w);
+        assert_eq!(exp(&db), vec![(170.0, true)]);
+        // un trabajo aún en el laboratorio no es gasto todavía
+        let w2 = db.new_lab_work(110, None, 3, 7);
+        db.lab_works.iter_mut().find(|x| x.id == w2).unwrap().cost = 90.0;
+        db.sync_lab_expense(w2);
+        assert!(!db.expenses.iter().any(|e| e.concept.ends_with(&format!("#L{w2}"))));
+    }
+
+    #[test]
+    fn old_crowns_already_done_are_not_pending_for_the_lab() {
+        let mut db = Db::sample(d());
+        let done = db.add_entry(110, "0802", vec![11], vec![], TxState::Realizado, 1, d() - Duration::days(900));
+        let planned = db.add_entry(110, "0802", vec![21], vec![], TxState::Previsto, 1, d());
+        let ids: Vec<u32> = db.prosthetic_without_lab(110).iter().map(|e| e.id).collect();
+        assert!(ids.contains(&planned));
+        assert!(!ids.contains(&done), "una corona ya colocada no está por enviar");
     }
 
     #[test]

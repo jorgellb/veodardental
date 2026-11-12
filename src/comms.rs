@@ -294,6 +294,8 @@ impl Db {
     /// Genera los mensajes automáticos del día según las plantillas activas.
     /// Devuelve (creados, omitidos por falta de consentimiento o contacto).
     pub fn generate_messages(&mut self, day: NaiveDate) -> (usize, usize) {
+        // a quien ya tiene cita no se le pide que la pida, y a quien la anuló, sí
+        self.refresh_recalls(day);
         let mut created = 0;
         let mut skipped = 0;
         let mut templates: Vec<MsgTemplate> = self.msg_templates.iter().filter(|t| t.active).cloned().collect();
@@ -344,7 +346,7 @@ impl Db {
                 }
                 MsgKind::Recall => {
                     let limit = day + Duration::days(t.days.max(0) as i64);
-                    let recs: Vec<Recall> = self.recalls.iter().filter(|r| r.state == RecallState::Pendiente && r.date <= limit).cloned().collect();
+                    let recs: Vec<Recall> = self.recalls.iter().filter(|r| self.recall_due(r) && r.date <= limit).cloned().collect();
                     for r in recs {
                         if self.has_msg(t.kind, Some(r.id), r.patient_id) {
                             continue;
@@ -522,11 +524,21 @@ mod tests {
             let id = db.new_id();
             db.appointments.push(Appointment { id, date: tomorrow, start: chrono::NaiveTime::from_hms_opt(10 + k as u32, 0, 0).unwrap(), minutes: 30, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: 1, box_id: 1, reason: "Revisión".into(), treatment_code: "0102".into(), state: ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
         }
-        // un presupuesto pendiente de hace 10 días y una revisión que ya toca, de 102
+        // 105, sin citas, acepta correo: le toca la revisión
+        db.appointments.retain(|a| a.patient_id != Some(105) || a.date < d());
+        for p in db.patients.iter_mut().filter(|p| p.id == 105) {
+            p.accepts_gdpr = true;
+            p.accepts_email = true;
+            p.email = "paciente105@example.com".into();
+        }
+        // un presupuesto pendiente de hace 10 días, de 102
         let bid = db.new_id();
         db.budgets.push(Budget { id: bid, patient_id: 102, title: "Ortodoncia".into(), date: d() - Duration::days(10), doctor_id: 3, tariff_id: 1, state: BudgetState::Pendiente, lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno }], valid_days: 90, accepted_on: None, rejected_on: None, reject_reason: String::new(), notes: String::new(), plan: None });
         let rid = db.new_id();
-        db.recalls.push(Recall { id: rid, patient_id: 102, date: d(), reason: "Higiene anual".into(), doctor_id: 4, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None });
+        db.recalls.push(Recall { id: rid, patient_id: 105, date: d(), reason: "Higiene anual".into(), doctor_id: 4, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
+        // la de 102 no se le pide: ya tiene cita mañana
+        let rid = db.new_id();
+        db.recalls.push(Recall { id: rid, patient_id: 102, date: d(), reason: "Revisión semestral".into(), doctor_id: 1, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
         db
     }
 
@@ -545,8 +557,10 @@ mod tests {
         let p = msg(&db, MsgKind::PresupuestoPendiente, 102);
         assert_eq!(p.channel, Channel::Email);
         assert!(p.text.contains("https://citas.example.com/presupuesto/"), "seguimiento con el enlace para firmarlo: {}", p.text);
-        let r = msg(&db, MsgKind::Recall, 102);
+        let r = msg(&db, MsgKind::Recall, 105);
         assert_eq!(r.channel, Channel::Email);
+        assert!(!db.messages.iter().any(|m| m.kind == MsgKind::Recall && m.patient_id == 102), "quien ya tiene cita no recibe el «pida su cita»");
+        assert_eq!(db.recalls.iter().find(|x| x.patient_id == 102 && x.reason == "Revisión semestral").unwrap().state, RecallState::Citado);
         assert!(r.text.contains("Pida su cita por internet: https://citas.example.com/"), "{}", r.text);
         assert!(db.pending_emails().contains(&a.id) && !db.pending_emails().contains(&b.id));
         // tras tres intentos fallidos ya no se reintenta solo
@@ -591,6 +605,20 @@ mod tests {
         let a = db.messages.iter().find(|m| m.kind == MsgKind::RecordatorioCita && m.patient_id == 102).unwrap();
         assert_eq!(a.channel, Channel::WhatsApp, "sin envío automático manda la primera plantilla (WhatsApp)");
         assert!(!a.text.contains("http"), "sin enlaces si la clínica no los quiere");
+    }
+
+    #[test]
+    fn a_patient_who_left_gets_no_checkup_reminder() {
+        let mut db = mail_db(true);
+        db.patients.iter_mut().find(|p| p.id == 105).unwrap().active = false;
+        db.generate_messages(d());
+        assert!(!db.messages.iter().any(|m| m.kind == MsgKind::Recall && m.patient_id == 105), "de baja: sin avisos de revisión");
+        let r = db.recalls.iter().find(|r| r.patient_id == 105).unwrap();
+        assert!(!db.recall_due(r), "ni en la lista de llamadas");
+        // si vuelve, vuelve a la lista
+        db.patients.iter_mut().find(|p| p.id == 105).unwrap().active = true;
+        let r = db.recalls.iter().find(|r| r.patient_id == 105).unwrap();
+        assert!(db.recall_due(r));
     }
 
     #[test]

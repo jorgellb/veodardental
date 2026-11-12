@@ -736,6 +736,7 @@ impl Db {
                             x.state = ApptState::Anulada;
                             let note = format!("Anulada por el paciente por WhatsApp el {}", now.format("%d/%m %H:%M"));
                             x.notes = if x.notes.trim().is_empty() { note } else { format!("{}\n{note}", x.notes) };
+                            self.refresh_recalls(today);
                         }
                         if prev != new {
                             self.add_task(today, "WhatsApp", "", Some(pid), &format!("{who} no puede venir el {when} (avisó por WhatsApp): llamar para darle otra cita"), Some(today));

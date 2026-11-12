@@ -1869,3 +1869,23 @@ fn returned_debit_from_the_remittances_screen() {
     assert!((st.db.patient_balance(101) - (bal + amount)).abs() < 0.001, "el paciente vuelve a deber la cuota");
     assert!(st.rem.item.is_none());
 }
+
+/// «Dar cita» desde un recall de higiene: con el profesional del recall y el
+/// tratamiento de higiene del catálogo de la clínica (no los de los datos de ejemplo).
+#[test]
+fn recall_appointment_uses_the_clinic_catalog() {
+    let h = harness();
+    let mut a = h.into_state();
+    // la clínica llama a su limpieza «HIG» (50 min) y la hace el Dr. con el id 2
+    let t = a.db.treatments.iter_mut().find(|t| t.code == "0201").unwrap();
+    t.code = "HIG".into();
+    t.minutes = 50;
+    let r = crate::model::Recall { id: 1, patient_id: 110, date: a.today, reason: "Higiene anual".into(), doctor_id: 2, state: crate::model::RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None };
+    let d = crate::screens::recalls::appointment_for(&a, &r);
+    assert_eq!((d.a.doctor_id, d.a.treatment_code.as_str(), d.a.minutes, d.a.patient_id), (2, "HIG", 50, Some(110)));
+    // un profesional que ya no está: el habitual del paciente
+    a.db.collaborators.iter_mut().find(|c| c.id == 2).unwrap().active = false;
+    a.db.patient_mut(110).unwrap().doctor_id = 1;
+    let d = crate::screens::recalls::appointment_for(&a, &r);
+    assert_eq!(d.a.doctor_id, 1);
+}

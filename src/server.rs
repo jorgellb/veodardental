@@ -867,7 +867,17 @@ impl State {
         }
         self.drop_auto_duplicates(&mut changes);
         let existed_in = |field: &str| -> std::collections::HashSet<String> { changes.iter().filter(|c| c.field == field).filter_map(|c| c.key.clone()).filter(|k| self.snap.get(field, Some(k)).is_some()).collect() };
-        let (existed, paid_before) = (existed_in("patients"), existed_in("payments"));
+        let (existed, paid_before, moved_before) = (existed_in("patients"), existed_in("payments"), existed_in("stock_moves"));
+        // existencias de los productos antes de guardar (`None`: producto nuevo de este puesto)
+        let stock_before: HashMap<String, Option<f64>> = changes
+            .iter()
+            .filter(|c| c.field == "products")
+            .filter_map(|c| c.key.clone())
+            .map(|k| {
+                let s = self.snap.get("products", Some(&k)).map(|j| serde_json::from_str::<Value>(j).ok().and_then(|v| v["stock"].as_f64()).unwrap_or(0.0));
+                (k, s)
+            })
+            .collect();
         let applied = sync::apply(&mut self.snap, &changes)?;
         let (mut touched, mut previous) = (applied.touched, applied.previous);
         // si algo falla a partir de aquí, se deshace todo
@@ -889,6 +899,15 @@ impl State {
             if !new_payments.is_empty() {
                 for (key, old) in self.move_late_payments(&new_payments)? {
                     previous.push(("payments".into(), Some(key), Some(old), None));
+                }
+            }
+            // las existencias solo cambian con los movimientos del almacén nuevos:
+            // así cuentan los de todos los puestos, y reenviar uno no lo cuenta dos veces
+            let new_moves: Vec<String> = touched.iter().filter(|(f, k)| f == "stock_moves" && k.as_ref().is_some_and(|k| !moved_before.contains(k))).filter_map(|(_, k)| k.clone()).collect();
+            for (key, old) in self.fix_stock(&stock_before, &new_moves)? {
+                previous.push(("products".into(), Some(key.clone()), Some(old), None));
+                if !touched.iter().any(|(f, k)| f == "products" && k.as_deref() == Some(&key)) {
+                    touched.push(("products".into(), Some(key)));
                 }
             }
             if station > 0 {
@@ -995,6 +1014,43 @@ impl State {
             v["cash_session"] = open.iter().find(|(c, _)| *c == center).map(|x| json!(x.1)).unwrap_or(Value::Null);
             self.snap.set("payments", Some(key), Some(canonical("payments", &v.to_string())?));
             fixed.push((key.clone(), json));
+        }
+        Ok(fixed)
+    }
+
+    /// Deja las existencias de los productos que ya había (`before`, cómo
+    /// estaban antes de guardar) en lo que tenían más lo de los movimientos
+    /// nuevos (`moves`). Los productos nuevos se quedan como llegan. Devuelve
+    /// los que ha cambiado, con cómo estaban.
+    fn fix_stock(&mut self, before: &HashMap<String, Option<f64>>, moves: &[String]) -> Result<Vec<(String, String)>, String> {
+        let stock_of = |json: &str| serde_json::from_str::<Value>(json).ok().and_then(|v| v["stock"].as_f64()).unwrap_or(0.0);
+        let mut target: HashMap<String, f64> = before.iter().filter_map(|(k, s)| s.map(|s| (k.clone(), s))).collect();
+        for key in moves {
+            let Some(m) = self.snap.get("stock_moves", Some(key)).and_then(|j| serde_json::from_str::<Value>(j).ok()) else { continue };
+            let (Some(pid), Some(qty)) = (m["product_id"].as_u64(), m["qty"].as_f64()) else { continue };
+            let pk = pid.to_string();
+            let start = match before.get(&pk) {
+                Some(Some(s)) => *s,
+                // el producto lo ha dado de alta este puesto con sus movimientos ya contados
+                Some(None) => continue,
+                None => match self.snap.get("products", Some(&pk)) {
+                    Some(j) => stock_of(j),
+                    None => continue,
+                },
+            };
+            *target.entry(pk).or_insert(start) += qty;
+        }
+        let mut fixed = vec![];
+        for (key, want) in target {
+            let Some(json) = self.snap.get("products", Some(&key)).cloned() else { continue };
+            let want = crate::model::round2(want);
+            if (stock_of(&json) - want).abs() < 1e-9 {
+                continue;
+            }
+            let mut v: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            v["stock"] = json!(want);
+            self.snap.set("products", Some(&key), Some(canonical("products", &v.to_string())?));
+            fixed.push((key, json));
         }
         Ok(fixed)
     }
@@ -2356,6 +2412,42 @@ mod tests {
         let after = crate::sync::on_disk(&path);
         assert!(after.patient(p.id).is_none() && after.patients[1].mobile == disk.patients[1].mobile);
         assert_eq!(rb.pull(0).unwrap().rev, rev, "ni una revisión más");
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn material_spent_by_two_stations_at_once_is_all_taken_from_stock() {
+        let (addr, path, h) = start("CLAVE17");
+        let ra = signed_in(&addr, "CLAVE17", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE17", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        let before = a.product(4).unwrap().stock;
+        a.stock_move(4, -0.2, crate::stock::MoveKind::Consumo, "gabinete 1", None, "");
+        b.stock_move(4, -0.25, crate::stock::MoveKind::Consumo, "gabinete 2", None, "");
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let want = before - 0.45;
+        assert!((disk.product(4).unwrap().stock - want).abs() < 1e-9, "en el servidor: {}", disk.product(4).unwrap().stock);
+        assert!((b.product(4).unwrap().stock - want).abs() < 1e-9, "y el puesto lo sabe");
+        // un puesto que reenvía lo mismo (no le llegó la respuesta) no lo descuenta otra vez
+        let (mut c, mut sc) = ra.load().unwrap();
+        c.station = ra.station;
+        let snap_before = sc.clone();
+        c.stock_move(4, -1.0, crate::stock::MoveKind::Consumo, "gabinete 3", None, "");
+        let resend = (c.clone(), snap_before.clone());
+        ra.push(&mut c, &mut sc).unwrap();
+        b.stock_move(4, 2.0, crate::stock::MoveKind::Entrada, "pedido", None, "");
+        rb.push(&mut b, &mut sb).unwrap();
+        let (mut c2, mut sc2) = resend;
+        ra.push(&mut c2, &mut sc2).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!((disk.product(4).unwrap().stock - (want + 1.0)).abs() < 1e-9, "una vez cada movimiento: {}", disk.product(4).unwrap().stock);
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

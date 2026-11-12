@@ -231,7 +231,29 @@ impl Db {
         self.expenses.push(e);
     }
 
-    pub fn expense_from_lab(&mut self, work_id: u32) {
+    /// Gasto de un trabajo de laboratorio ya recibido: se apunta en cuanto tiene
+    /// coste (aunque se escriba después, al llegar la factura del laboratorio) y
+    /// se corrige si el coste cambia mientras no esté pagado.
+    pub fn sync_lab_expense(&mut self, work_id: u32) {
+        let Some(w) = self.lab_works.iter().find(|w| w.id == work_id).cloned() else { return };
+        if !matches!(w.state, crate::stock::LabState::Recibido | crate::stock::LabState::Colocado) {
+            return;
+        }
+        let tag = format!("#L{}", w.id);
+        match self.expenses.iter().position(|e| e.concept.ends_with(&tag)) {
+            Some(i) if !self.expenses[i].paid => {
+                if w.cost > 0.0 {
+                    self.expenses[i].base = round2(w.cost);
+                } else {
+                    self.expenses.remove(i);
+                }
+            }
+            Some(_) => {}
+            None => self.expense_from_lab(work_id),
+        }
+    }
+
+    fn expense_from_lab(&mut self, work_id: u32) {
         let Some(w) = self.lab_works.iter().find(|w| w.id == work_id).cloned() else { return };
         if w.cost <= 0.0 || self.expenses.iter().any(|e| e.concept.ends_with(&format!("#L{}", w.id))) {
             return;

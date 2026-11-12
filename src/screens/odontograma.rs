@@ -515,10 +515,7 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                     app.notify("Tratamiento realizado y cargado en la cuenta del paciente.");
                 }
                 if let Some(id) = delete {
-                    app.dialog = crate::app::Dialog::Confirm {
-                        text: "¿Borrar este tratamiento del historial?".into(),
-                        action: crate::app::ConfirmAction::DeleteEntry(id),
-                    };
+                    crate::screens::ask_delete_entry(app, id);
                 }
             }
             None => {

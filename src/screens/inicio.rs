@@ -115,7 +115,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             card(ui, |ui| {
                 ui.set_width(ui.available_width());
                 section(ui, "Avisos");
-                let overdue = app.db.recalls.iter().filter(|r| r.state == RecallState::Pendiente && r.date <= today).count();
+                let overdue = app.db.recalls.iter().filter(|r| app.db.recall_due(r) && r.date <= today).count();
                 let exp = app.db.budgets.iter().filter(|b| b.state == BudgetState::Pendiente && b.expires() < today).count();
                 let pend_b = app.db.budgets.iter().filter(|b| b.state == BudgetState::Pendiente).count();
                 let unconfirmed = app.db.appointments.iter().filter(|a| a.date == today + chrono::Duration::days(1) && cid(a.center_id) == center && a.state == ApptState::Planificada).count();

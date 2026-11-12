@@ -91,6 +91,9 @@ demás se conectan con su dirección y la clave de la clínica.
   recibe un aviso y ve lo que ha hecho el primero. Los cobros que llegan a una
   caja que otro puesto acaba de cerrar pasan a la caja abierta, para que el
   arqueo hecho siga cuadrando.
+- **El stock del almacén cuenta lo de todos los puestos**: si dos gabinetes
+  gastan material a la vez, se descuenta lo de los dos (y un puesto que
+  reenvía un cambio tras un corte no lo descuenta dos veces).
 
 **Al actualizar, actualice el servidor y todos los puestos a la vez**: un
 puesto con una versión anterior no puede conectar con el servidor nuevo (ni al

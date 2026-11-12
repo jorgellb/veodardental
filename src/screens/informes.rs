@@ -89,7 +89,7 @@ fn daybook(app: &mut App, ui: &mut Ui) {
         for (i, e) in es.iter().enumerate() {
             let p = app.db.patient(e.patient_id).cloned().unwrap_or_default();
             let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
-            tbl.row(ui, i, false, &[cell(fmt_date(e.date)), cell(p.history_no.to_string()), cell(p.full_name()), cell(&e.code), cell(&e.description), cell(teeth.join("-")), cell(app.db.doctor_alias(e.doctor_id)), cell(app.db.tariff_name(p.tariff_id)), cell(money(e.amount()))]);
+            tbl.row(ui, i, false, &[cell(fmt_date(e.date)), cell(p.history_no.to_string()), cell(p.full_name()), cell(&e.code), cell(&e.description), cell(teeth.join("-")), cell(app.db.doctor_alias(e.doctor_id)), cell(app.db.tariff_name(if e.tariff_id != 0 { e.tariff_id } else { p.tariff_id })), cell(money(e.amount()))]);
         }
         if es.is_empty() {
             empty_state(ui, "Sin actos en el periodo");
@@ -98,15 +98,13 @@ fn daybook(app: &mut App, ui: &mut Ui) {
 }
 
 fn production(app: &mut App, ui: &mut Ui) {
-    let es: Vec<&MedEntry> = app.db.entries.iter().filter(|e| e.state == TxState::Realizado && in_range(app, e.date)).collect();
     let rows: Vec<(String, usize, f64, f64, [u8; 3])> = app
         .db
         .collaborators
         .iter()
         .map(|c| {
-            let mine: Vec<&&MedEntry> = es.iter().filter(|e| e.doctor_id == c.id).collect();
-            let prod: f64 = mine.iter().map(|e| e.amount()).sum();
-            (c.alias.clone(), mine.len(), prod, round2(prod * c.commission_pct / 100.0), c.color)
+            let (mine, prod, _, fee) = app.db.settlement(c.id, app.lists.report_from, app.lists.report_to);
+            (c.alias.clone(), mine.len(), prod, fee, c.color)
         })
         .collect();
     let max = rows.iter().map(|r| r.2).fold(1.0, f64::max);
@@ -116,8 +114,10 @@ fn production(app: &mut App, ui: &mut Ui) {
         let tbl = Table::new("prod", vec![("Colaborador", 160.0), ("Actos", 80.0), ("Producción", 130.0), ("% comisión", 100.0), ("A liquidar", 130.0), ("", 360.0)]);
         tbl.header(ui);
         for (i, (n, count, prod, liq, col)) in rows.iter().enumerate() {
-            let pct = app.db.collaborators.get(i).map(|c| c.commission_pct).unwrap_or(0.0);
-            let r = tbl.row(ui, i, false, &[cell(n), cell(count.to_string()), cell(money(*prod)), cell(format!("{pct:.0} %")), cellc(money(*liq), ACCENT), cell("")]);
+            let c = app.db.collaborators.get(i);
+            let pct = c.map(|c| c.commission_pct).unwrap_or(0.0);
+            let lab = if c.is_some_and(|c| c.deduct_lab) { " − lab." } else { "" };
+            let r = tbl.row(ui, i, false, &[cell(n), cell(count.to_string()), cell(money(*prod)), cell(format!("{pct:.0} %{lab}")), cellc(money(*liq), ACCENT), cell("")]);
             let bar_r = egui::Rect::from_min_size(pos2(r.rect.min.x + 680.0, r.rect.center().y - 6.0), vec2(340.0 * (*prod / max) as f32, 12.0));
             ui.painter().rect_filled(bar_r, CornerRadius::same(4), rgb(*col));
         }

@@ -249,6 +249,7 @@ impl Db {
             center_id: center,
         });
         self.waitlist.retain(|w| w.id != inv.wait_id);
+        self.refresh_recalls(now.date());
         if let Some(x) = self.slot_offers.iter_mut().find(|x| x.id == o.id) {
             x.state = OfferState::Ocupada;
             x.taken_by = Some(inv.patient_id);
@@ -447,7 +448,12 @@ mod tests {
         assert!(!msgs.is_empty());
         let first = o.invites[1].token.clone();
         let second = o.invites[0].token.clone();
+        // tenía pendiente su higiene y ninguna otra cita
+        db.appointments.retain(|a| a.patient_id != Some(102) || a.date < today());
+        let rid = db.new_id();
+        db.recalls.push(crate::model::Recall { id: rid, patient_id: 102, date: d, reason: "Higiene anual".into(), doctor_id: 4, state: crate::model::RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
         let appt = db.take_offer(&first, now).unwrap();
+        assert_eq!(db.recalls.iter().find(|r| r.id == rid).unwrap().appt_id, Some(appt), "su recall queda citado");
         let a = db.appointments.iter().find(|a| a.id == appt).unwrap();
         assert_eq!((a.patient_id, a.date, a.start, a.state), (Some(102), d, s, ApptState::Confirmada));
         assert!(!db.waitlist.iter().any(|w| w.id == wid), "sale de la lista de espera");

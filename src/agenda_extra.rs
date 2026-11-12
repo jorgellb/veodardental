@@ -80,6 +80,7 @@ impl Db {
             self.appointments.push(a);
             res.created.push(date);
         }
+        self.refresh_recalls(today());
         res
     }
 
@@ -146,26 +147,41 @@ impl Db {
     }
 
     /// Liquidación de honorarios de un colaborador en un periodo.
-    pub fn settlement(&self, doctor_id: u32, from: NaiveDate, to: NaiveDate) -> (Vec<&MedEntry>, f64, f64) {
-        let pct = self.doctor(doctor_id).map(|d| d.commission_pct).unwrap_or(0.0);
+    /// Coste de laboratorio de un tratamiento (sus trabajos de laboratorio).
+    pub fn lab_cost_of(&self, entry_id: u32) -> f64 {
+        round2(self.lab_works.iter().filter(|w| w.entry_id == Some(entry_id)).map(|w| w.cost).sum())
+    }
+
+    /// Liquidación de un colaborador: sus tratamientos realizados, lo producido,
+    /// el laboratorio que se le descuenta (0 si no se le descuenta) y los honorarios.
+    pub fn settlement(&self, doctor_id: u32, from: NaiveDate, to: NaiveDate) -> (Vec<&MedEntry>, f64, f64, f64) {
+        let d = self.doctor(doctor_id);
+        let pct = d.map(|d| d.commission_pct).unwrap_or(0.0);
         let mut v: Vec<&MedEntry> = self.entries.iter().filter(|e| e.doctor_id == doctor_id && e.state == TxState::Realizado && e.date >= from && e.date <= to).collect();
         v.sort_by_key(|e| (e.date, e.id));
         let prod: f64 = round2(v.iter().map(|e| e.amount()).sum());
-        (v, prod, round2(prod * pct / 100.0))
+        let lab = if d.is_some_and(|d| d.deduct_lab) { round2(v.iter().map(|e| self.lab_cost_of(e.id)).sum()) } else { 0.0 };
+        (v, prod, lab, round2((prod - lab) * pct / 100.0))
     }
 
     pub fn settlement_html(&self, doctor_id: u32, from: NaiveDate, to: NaiveDate) -> String {
         let d = self.doctor(doctor_id).cloned();
-        let (rows, prod, fee) = self.settlement(doctor_id, from, to);
+        let deduct = d.as_ref().is_some_and(|d| d.deduct_lab);
+        let (rows, prod, lab, fee) = self.settlement(doctor_id, from, to);
         let lines: String = rows
             .iter()
             .map(|e| {
                 let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
-                format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class='n'>{}</td></tr>", fmt_date(e.date), esc(&self.patient_name(e.patient_id)), esc(&e.description), teeth.join("-"), esc(&money(e.amount())))
+                let lab_cell = if deduct { format!("<td class='n'>{}</td>", esc(&match self.lab_cost_of(e.id) { c if c > 0.0 => money(c), _ => String::new() })) } else { String::new() };
+                format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>{lab_cell}<td class='n'>{}</td></tr>", fmt_date(e.date), esc(&self.patient_name(e.patient_id)), esc(&e.description), teeth.join("-"), esc(&money(e.amount())))
             })
             .collect();
+        let cols = if deduct { 5 } else { 4 };
+        let lab_head = if deduct { "<th class='n'>Laboratorio</th>" } else { "" };
+        let lab_rows = if deduct { format!("<tr class='tot'><td colspan='{cols}' class='n'>Laboratorio</td><td class='n'>−{}</td></tr><tr class='tot'><td colspan='{cols}' class='n'>Base de los honorarios</td><td class='n'>{}</td></tr>", esc(&money(lab)), esc(&money(round2(prod - lab)))) } else { String::new() };
+        let basis = if deduct { " sobre la producción menos el laboratorio" } else { "" };
         format!(
-            "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Liquidación</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:820px;margin:32px auto;color:#1e293b}}h1{{font-size:21px}}table{{width:100%;border-collapse:collapse;margin-top:12px}}th{{text-align:left;font-size:12px;color:#475569;background:#eef3f8;padding:6px}}td{{padding:6px;border-bottom:1px solid #e2e8f0;font-size:13px}}.n{{text-align:right}}.tot td{{font-weight:700;border:none;font-size:15px}}</style></head><body><b>{clinic}</b><h1>Liquidación de honorarios · {name}</h1><p>Periodo del {from} al {to} · Nº colegiado {lic} · Comisión {pct:.0} %</p><table><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Piezas</th><th class='n'>Importe</th></tr>{lines}<tr class='tot'><td colspan='4' class='n'>Producción</td><td class='n'>{prod}</td></tr><tr class='tot'><td colspan='4' class='n'>Honorarios a liquidar</td><td class='n'>{fee}</td></tr></table><p style='margin-top:50px'>Conforme: ______________________</p></body></html>",
+            "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Liquidación</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:820px;margin:32px auto;color:#1e293b}}h1{{font-size:21px}}table{{width:100%;border-collapse:collapse;margin-top:12px}}th{{text-align:left;font-size:12px;color:#475569;background:#eef3f8;padding:6px}}td{{padding:6px;border-bottom:1px solid #e2e8f0;font-size:13px}}.n{{text-align:right}}.tot td{{font-weight:700;border:none;font-size:15px}}</style></head><body><b>{clinic}</b><h1>Liquidación de honorarios · {name}</h1><p>Periodo del {from} al {to} · Nº colegiado {lic} · Comisión {pct:.0} %{basis}</p><table><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Piezas</th>{lab_head}<th class='n'>Importe</th></tr>{lines}<tr class='tot'><td colspan='{cols}' class='n'>Producción</td><td class='n'>{prod}</td></tr>{lab_rows}<tr class='tot'><td colspan='{cols}' class='n'>Honorarios a liquidar</td><td class='n'>{fee}</td></tr></table><p style='margin-top:50px'>Conforme: ______________________</p></body></html>",
             clinic = esc(&self.config.name),
             name = esc(&d.as_ref().map(|x| x.name.clone()).unwrap_or_default()),
             from = fmt_date(from),
@@ -299,10 +315,30 @@ mod tests {
     #[test]
     fn settlement_matches_production() {
         let db = Db::sample(d());
-        let (rows, prod, fee) = db.settlement(2, d() - Duration::days(365), d());
+        let (rows, prod, lab, fee) = db.settlement(2, d() - Duration::days(365), d());
         assert!(!rows.is_empty());
-        assert_eq!(fee, round2(prod * 0.40));
+        assert_eq!((lab, fee), (0.0, round2(prod * 0.40)));
         assert!(db.settlement_html(2, d() - Duration::days(365), d()).contains("Honorarios a liquidar"));
+    }
+
+    #[test]
+    fn settlement_can_take_off_the_lab_cost() {
+        let mut db = Db::sample(d());
+        let from = d() - Duration::days(365);
+        // una corona del Dr. (id 2) de 600 € con 160 € de laboratorio
+        let e = db.add_entry(110, "0802", vec![11], vec![], TxState::Realizado, 2, d());
+        db.entries.iter_mut().find(|x| x.id == e).unwrap().price = 600.0;
+        let w = db.new_lab_work(110, Some(e), 3, 7);
+        db.lab_works.iter_mut().find(|x| x.id == w).unwrap().cost = 160.0;
+        let (_, prod, lab, fee) = db.settlement(2, from, d());
+        assert_eq!((lab, fee), (0.0, round2(prod * 0.40)), "sin marcar, como siempre");
+        db.collaborators.iter_mut().find(|c| c.id == 2).unwrap().deduct_lab = true;
+        let (_, prod2, lab, fee) = db.settlement(2, from, d());
+        assert_eq!(prod2, prod);
+        assert!(lab >= 160.0);
+        assert_eq!(fee, round2((prod - lab) * 0.40));
+        let html = db.settlement_html(2, from, d());
+        assert!(html.contains("Base de los honorarios") && html.contains("160,00"), "{html}");
         assert!(db.day_sheet_html(d()).contains("<table>"));
     }
 }

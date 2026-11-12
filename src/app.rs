@@ -1023,7 +1023,7 @@ impl App {
                 p.text(r.min + vec2(46.0, r.height() / 2.0), Align2::LEFT_CENTER, name, if sel { theme::sbf(14.5) } else { theme::mdf(14.5) }, col);
                 // contador
                 let badge = match scr {
-                    Screen::Recalls => self.db.recalls.iter().filter(|r| r.state == RecallState::Pendiente && r.date <= self.today).count(),
+                    Screen::Recalls => self.db.recalls.iter().filter(|r| self.db.recall_due(r) && r.date <= self.today).count(),
                     Screen::Presupuestos => self.db.budgets.iter().filter(|b| b.state == BudgetState::Pendiente).count(),
                     Screen::Agenda => self.db.appointments.iter().filter(|a| a.date == self.today && a.state == ApptState::SalaEspera).count(),
                     _ => 0,

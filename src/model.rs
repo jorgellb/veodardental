@@ -125,6 +125,10 @@ pub struct Collaborator {
     /// Centros en los que trabaja (vacío = todos).
     #[serde(default)]
     pub centers: Vec<u32>,
+    /// La comisión se calcula sobre la producción menos el coste de laboratorio
+    /// de sus tratamientos.
+    #[serde(default)]
+    pub deduct_lab: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -545,6 +549,9 @@ pub struct Recall {
     pub channel: String,
     pub comment: String,
     pub contacted_on: Option<NaiveDate>,
+    /// Cita que lo atiende (cuando está «Citado»): si se anula, vuelve a pendiente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appt_id: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1653,9 +1660,75 @@ impl Db {
                     channel: String::new(),
                     comment: format!("Generado al realizar: {}", t.description),
                     contacted_on: None,
+                    appt_id: None,
                 });
             }
         }
+    }
+
+    /// Recall al que hay que llamar: pendiente y de un paciente que no está de baja.
+    pub fn recall_due(&self, r: &Recall) -> bool {
+        r.state == RecallState::Pendiente && self.patient(r.patient_id).is_some_and(|p| p.active)
+    }
+
+    /// Pone los recalls al día con las citas. El pendiente de un paciente que
+    /// ya tiene cita (en los 30 días siguientes a la fecha del recall, o antes)
+    /// pasa a «Citado» con esa cita; el citado cuya cita se anula, se aplaza, se
+    /// borra o a la que no acude, pasa a la siguiente cita del paciente o, si no
+    /// tiene, vuelve a «Pendiente» para volver a llamarle. Devuelve cuántos cambia.
+    pub fn refresh_recalls(&mut self, today: NaiveDate) -> usize {
+        use std::collections::HashMap;
+        let mut upcoming: HashMap<u32, Vec<(NaiveDate, NaiveTime, u32)>> = HashMap::new();
+        let mut known: HashMap<u32, (NaiveDate, ApptState)> = HashMap::new();
+        for a in self.appointments.iter() {
+            known.insert(a.id, (a.date, a.state));
+            if let Some(p) = a.patient_id
+                && a.date >= today
+                && !a.state.is_cancelled()
+            {
+                upcoming.entry(p).or_default().push((a.date, a.start, a.id));
+            }
+        }
+        for v in upcoming.values_mut() {
+            v.sort();
+        }
+        let next = |pid: u32, due: NaiveDate| upcoming.get(&pid).and_then(|v| v.iter().find(|(d, _, _)| due <= *d + Duration::days(30))).map(|(d, _, id)| (*d, *id));
+        let mut n = 0;
+        for r in self.recalls.iter_mut() {
+            match (r.state, r.appt_id) {
+                (RecallState::Pendiente, _) => {
+                    if let Some((d, id)) = next(r.patient_id, r.date) {
+                        r.state = RecallState::Citado;
+                        r.appt_id = Some(id);
+                        r.contacted_on.get_or_insert(today);
+                        r.comment = format!("Cita el {}", fmt_date(d));
+                        n += 1;
+                    }
+                }
+                (RecallState::Citado, Some(aid)) => {
+                    let gone = known.get(&aid).copied();
+                    if gone.is_some_and(|(_, s)| !s.is_cancelled()) {
+                        continue;
+                    }
+                    if let Some((d, id)) = next(r.patient_id, r.date) {
+                        r.appt_id = Some(id);
+                        r.comment = format!("Cita el {}", fmt_date(d));
+                    } else {
+                        r.state = RecallState::Pendiente;
+                        r.appt_id = None;
+                        r.comment = match gone {
+                            Some((d, ApptState::NoAcude)) => format!("No acudió a la cita del {}", fmt_date(d)),
+                            Some((d, ApptState::Reprogramada)) => format!("Se aplazó la cita del {} sin fecha nueva", fmt_date(d)),
+                            Some((d, _)) => format!("Anuló la cita del {}", fmt_date(d)),
+                            None => "Se borró su cita".into(),
+                        };
+                    }
+                    n += 1;
+                }
+                _ => {}
+            }
+        }
+        n
     }
 
     /// Acepta un presupuesto: pasa sus líneas al historial como "Previsto".

@@ -157,8 +157,10 @@ fn detail(app: &mut App, ui: &mut Ui) {
         let mut settings = false;
         // las imágenes son datos clínicos (Recepción no las recibe)
         let clinical = app.can(crate::users::Perm::Clinico);
+        let mut cost_changed = false;
         if let Some(w) = app.db.lab_works.iter_mut().find(|w| w.id == id) {
             let before = serde_json::to_string(w).unwrap_or_default();
+            let cost_before = w.cost;
             section(ui, &w.description.clone());
             ui.horizontal(|ui| {
                 pill(ui, w.state.label(), state_color(w.state));
@@ -290,6 +292,11 @@ fn detail(app: &mut App, ui: &mut Ui) {
             if serde_json::to_string(w).unwrap_or_default() != before {
                 app.dirty = true;
             }
+            cost_changed = (w.cost - cost_before).abs() > 1e-9;
+        }
+        // el coste que se escribe cuando ya está recibido va a Gastos
+        if cost_changed {
+            app.db.sync_lab_expense(id);
         }
         if let Some(s) = set_state {
             app.db.set_lab_state(id, s);

@@ -15,8 +15,28 @@ pub fn state_color(s: RecallState) -> Color32 {
     }
 }
 
+/// Cita para atender un recall: con quien hizo el tratamiento (si sigue en la
+/// clínica; si no, el profesional del paciente) y, si es de higiene, con el
+/// tratamiento de higiene del catálogo y su duración, en el primer hueco del día.
+pub fn appointment_for(app: &App, r: &Recall) -> ApptDraft {
+    let date = app.today.max(r.date);
+    let doctor = if app.db.collaborators.iter().any(|c| c.id == r.doctor_id && c.active) { r.doctor_id } else { app.db.patient(r.patient_id).map(|p| p.doctor_id).unwrap_or(r.doctor_id) };
+    let hygiene = if fold(&r.reason).contains("higiene") { app.db.treatments.iter().find(|t| t.active && t.odg == OdgKind::Higiene && t.group != "Periodoncia") } else { None };
+    let minutes = hygiene.map(|t| t.minutes).filter(|m| *m > 0).unwrap_or(30);
+    let at = app.db.find_gaps(doctor, date, minutes, app.db.config.open_time, app.db.config.close_time, 1).into_iter().find(|g| g.0 == date).map(|g| (g.1, doctor));
+    let mut d = ApptDraft::new_at(app, date, at, Some(r.patient_id));
+    d.a.doctor_id = doctor;
+    d.a.reason = r.reason.clone();
+    if let Some(t) = hygiene {
+        d.a.treatment_code = t.code.clone();
+        d.a.minutes = minutes;
+    }
+    d
+}
+
 pub fn show(app: &mut App, ui: &mut Ui) {
-    let pending: Vec<&Recall> = app.db.recalls.iter().filter(|r| r.state == RecallState::Pendiente).collect();
+    // los de pacientes de baja no se cuentan ni se listan (vuelven si se reactiva)
+    let pending: Vec<&Recall> = app.db.recalls.iter().filter(|r| app.db.recall_due(r)).collect();
     let overdue = pending.iter().filter(|r| r.date < app.today).count();
     let week = pending.iter().filter(|r| r.date >= app.today && r.date <= app.today + chrono::Duration::days(7)).count();
     title(ui, "Recalls", "Pacientes a los que hay que llamar para su próxima revisión");
@@ -46,7 +66,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             .db
             .recalls
             .iter()
-            .filter(|r| app.lists.recall_filter.map(|f| r.state == f).unwrap_or(true))
+            .filter(|r| app.lists.recall_filter.map(|f| r.state == f && (f != RecallState::Pendiente || app.db.recall_due(r))).unwrap_or(true))
             .filter(|r| !app.lists.recall_until_today || r.date <= app.today)
             .cloned()
             .collect();
@@ -60,7 +80,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 let p = app.db.patient(r.patient_id).cloned().unwrap_or_default();
                 let cells = [
                     cellc(fmt_date(r.date), if r.date < app.today && r.state == RecallState::Pendiente { DANGER } else { TEXT }),
-                    cell(p.full_name()),
+                    cellc(if p.active { p.full_name() } else { format!("{} (de baja)", p.full_name()) }, if p.active { TEXT } else { MUTED }),
                     cell(&p.mobile),
                     cell(&r.reason),
                     cell(app.db.doctor_alias(r.doctor_id)),
@@ -87,14 +107,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             let r = app.db.recalls.iter().find(|r| r.id == id).cloned().unwrap();
             match k {
                 "cita" => {
-                    let mut d = ApptDraft::new_at(app, app.today.max(r.date), None, Some(r.patient_id));
-                    d.a.reason = r.reason.clone();
-                    if r.reason.contains("Higiene") {
-                        d.a.treatment_code = "0201".into();
-                        d.a.minutes = 45;
-                        d.a.doctor_id = 4;
-                    }
-                    app.dialog = Dialog::Appointment(d);
+                    app.dialog = Dialog::Appointment(appointment_for(app, &r));
                 }
                 "ficha" => app.open_patient(r.patient_id, PatTab::Citas),
                 _ => {

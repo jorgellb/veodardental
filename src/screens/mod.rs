@@ -260,17 +260,31 @@ impl App {
     }
 }
 
+/// Pregunta antes de borrar un tratamiento del historial (o avisa de por qué
+/// no se puede: está facturado o liquidado a la mutua).
+pub fn ask_delete_entry(app: &mut App, id: u32) {
+    if let Err(e) = app.db.can_delete_entry(id) {
+        app.warn(e);
+        return;
+    }
+    let returns = app.db.stock_moves.iter().any(|m| m.entry_id == Some(id));
+    let text = if returns { "¿Borrar este tratamiento del historial? El material que gastó vuelve al almacén." } else { "¿Borrar este tratamiento del historial?" };
+    app.dialog = Dialog::Confirm { text: text.into(), action: ConfirmAction::DeleteEntry(id) };
+}
+
 fn run_confirm(app: &mut App, action: ConfirmAction) {
     match action {
         ConfirmAction::DeleteAppointment(id) => {
             app.db.audit("Borrar cita", &format!("cita #{id}"));
             app.db.appointments.retain(|a| a.id != id);
+            app.db.refresh_recalls(app.today);
             app.notify("Cita eliminada.");
         }
         ConfirmAction::DeleteEntry(id) => {
-            let d = app.db.entries.iter().find(|e| e.id == id).map(|e| format!("{} · {}", app.db.patient_name(e.patient_id), e.description)).unwrap_or_default();
-            app.db.audit("Borrar tratamiento", &d);
-            app.db.entries.retain(|e| e.id != id);
+            if let Err(e) = app.db.delete_entry(id) {
+                app.warn(e);
+                return;
+            }
             app.notify("Tratamiento borrado del historial.");
         }
         ConfirmAction::DeleteBudget(id) => {

@@ -468,7 +468,7 @@ impl Db {
             Some(r) => r.date = due,
             None => {
                 let id = self.new_id();
-                self.recalls.push(Recall { id, patient_id: pid, date: due, reason: "Control de ortodoncia".into(), doctor_id: doc, state: RecallState::Pendiente, channel: String::new(), comment: "Programado desde el caso de ortodoncia".into(), contacted_on: None });
+                self.recalls.push(Recall { id, patient_id: pid, date: due, reason: "Control de ortodoncia".into(), doctor_id: doc, state: RecallState::Pendiente, channel: String::new(), comment: "Programado desde el caso de ortodoncia".into(), contacted_on: None, appt_id: None });
             }
         }
     }

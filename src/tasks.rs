@@ -145,6 +145,55 @@ mod tests {
     }
 
     #[test]
+    fn a_recall_follows_its_appointment() {
+        let mut db = Db::sample(d());
+        let pid = db.patients.iter().map(|p| p.id).find(|&p| !db.has_future_appt(p, d())).unwrap();
+        db.recalls.retain(|r| r.patient_id != pid);
+        let rid = db.new_id();
+        db.recalls.push(Recall { id: rid, patient_id: pid, date: d() - Duration::days(10), reason: "Higiene anual".into(), doctor_id: 4, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
+        let r = |db: &Db| db.recalls.iter().find(|r| r.id == rid).unwrap().clone();
+        let mut a = db.appointments[0].clone();
+        a.id = db.new_id();
+        a.patient_id = Some(pid);
+        a.date = d() + Duration::days(3);
+        a.state = ApptState::Planificada;
+        db.appointments.push(a.clone());
+        db.refresh_recalls(d());
+        assert_eq!((r(&db).state, r(&db).appt_id), (RecallState::Citado, Some(a.id)));
+        // anula la cita por internet: vuelve a pendiente para volver a llamarle
+        assert!(db.portal_cancel(a.id, ""));
+        assert_eq!((r(&db).state, r(&db).appt_id), (RecallState::Pendiente, None));
+        assert!(r(&db).comment.contains("Anuló"), "{}", r(&db).comment);
+        // con otra cita y luego no acude: igual
+        let mut b = a.clone();
+        b.id = db.new_id();
+        b.date = d() + Duration::days(5);
+        db.appointments.push(b.clone());
+        db.refresh_recalls(d());
+        assert_eq!(r(&db).appt_id, Some(b.id));
+        let mut c = b.clone();
+        c.id = db.new_id();
+        c.date = d() + Duration::days(9);
+        db.appointments.push(c.clone());
+        // si no acude a una pero tiene otra, sigue citado con la otra
+        db.appointments.iter_mut().find(|x| x.id == b.id).unwrap().state = ApptState::NoAcude;
+        db.refresh_recalls(d());
+        assert_eq!((r(&db).state, r(&db).appt_id), (RecallState::Citado, Some(c.id)));
+        db.appointments.retain(|x| x.id != c.id);
+        db.refresh_recalls(d());
+        assert_eq!(r(&db).state, RecallState::Pendiente, "sin cita, otra vez a la lista");
+        // una cita a la que sí fue deja el recall citado aunque pase el día
+        let mut e = a.clone();
+        e.id = db.new_id();
+        e.date = d() + Duration::days(1);
+        db.appointments.push(e.clone());
+        db.refresh_recalls(d());
+        db.appointments.iter_mut().find(|x| x.id == e.id).unwrap().state = ApptState::Finalizada;
+        db.refresh_recalls(d() + Duration::days(10));
+        assert_eq!(r(&db).state, RecallState::Citado);
+    }
+
+    #[test]
     fn tasks_are_filtered_by_user_and_sorted() {
         let db = Db::sample(d());
         let rec = db.pending_tasks("Recepción");

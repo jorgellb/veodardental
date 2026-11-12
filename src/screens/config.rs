@@ -430,6 +430,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                     active: true,
                     phone: String::new(),
                     centers: vec![],
+                    deduct_lab: false,
                 });
                 app.lists.collab_sel = Some(id);
                 app.changed();
@@ -485,9 +486,12 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 if ui.color_edit_button_srgba(&mut col).changed() {
                     c.color = [col.r(), col.g(), col.b()];
                 }
+                ui.checkbox(&mut c.active, "Activo");
+            });
+            ui.horizontal(|ui| {
                 ui.label("Comisión");
                 ui.add(egui::DragValue::new(&mut c.commission_pct).range(0.0..=100.0).suffix(" %"));
-                ui.checkbox(&mut c.active, "Activo");
+                ui.checkbox(&mut c.deduct_lab, "descontando el laboratorio").on_hover_text("La comisión se calcula sobre lo producido menos el coste de laboratorio de sus tratamientos");
             });
             if serde_json::to_string(c).unwrap_or_default() != before {
                 app.changed();

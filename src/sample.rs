@@ -108,6 +108,7 @@ impl Db {
             active: true,
             phone: format!("600 100 00{id}"),
             centers: vec![],
+            deduct_lab: false,
         };
         let collaborators = vec![
             col(1, "Dra. Ruiz", "Elena Ruiz Prado", "Odontología general", [56, 132, 214], 35.0),
@@ -488,6 +489,7 @@ impl Db {
                 channel: String::new(),
                 comment: String::new(),
                 contacted_on: None,
+                appt_id: None,
             });
         }
 

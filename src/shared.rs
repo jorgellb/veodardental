@@ -152,6 +152,10 @@ fn index(arr: &[Value]) -> HashMap<String, &Value> {
 /// borrar las del otro y se quitan las más antiguas si pasan del máximo.
 const APPEND_ONLY: [(&str, usize); 4] = [("access_log", 2000), ("audit_log", 5000), ("launches", 300), ("wa_seen", 3000)];
 
+/// Dato de los productos del almacén que se combina sumando lo que cambió
+/// cada puesto (es el único `stock` de los datos).
+const STOCK: &str = "stock";
+
 /// Tamaño máximo de un registro que solo crece (`None` si el campo no es de esos).
 pub fn append_only_cap(field: &str) -> Option<usize> {
     APPEND_ONLY.iter().find(|(name, _)| *name == field).map(|(_, cap)| *cap)
@@ -200,6 +204,12 @@ pub fn merge(base: Option<&Value>, ours: &Value, theirs: &Value, conflicts: &mut
                         let append = APPEND_ONLY.iter().find(|(name, _)| name == k).map(|(_, cap)| *cap);
                         let m = match (append, ov, tv) {
                             (Some(cap), Value::Array(oa), Value::Array(ta)) => merge_append(bk, oa, ta, cap),
+                            // las existencias de un producto son un contador: si los dos
+                            // puestos gastan (o reciben) a la vez, cuentan los dos
+                            (_, Value::Number(on), Value::Number(tn)) if k == STOCK && ov != tv => match (bk.and_then(|b| b.as_f64()), on.as_f64(), tn.as_f64()) {
+                                (Some(b), Some(o), Some(t)) => serde_json::Number::from_f64(crate::model::round2(t + o - b)).map(Value::Number).unwrap_or_else(|| tv.clone()),
+                                _ => merge(bk, ov, tv, conflicts),
+                            },
                             _ => merge(bk, ov, tv, conflicts),
                         };
                         out.insert(k.clone(), m);
@@ -503,6 +513,45 @@ mod tests {
         assert_eq!(fin.payments.iter().find(|p| p.id == pay).unwrap().cash_session, Some(s2), "a la caja abierta");
         let closed = fin.cash.iter().find(|c| c.id == s1).unwrap();
         assert!((fin.cash_expected(closed) - expected).abs() < 0.005, "la caja cerrada sigue cuadrada");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stock_spent_by_two_stations_adds_up() {
+        // un producto con 5: este puesto gasta 0,2 y el otro 0,25 a la vez
+        let base = json!({"products": [{"id": 9, "stock": 5.0, "name": "Composite"}]});
+        let ours = json!({"products": [{"id": 9, "stock": 4.8, "name": "Composite"}]});
+        let theirs = json!({"products": [{"id": 9, "stock": 4.75, "name": "Composite A2"}]});
+        let mut c = 0;
+        let m = merge(Some(&base), &ours, &theirs, &mut c);
+        assert!((m["products"][0]["stock"].as_f64().unwrap() - 4.55).abs() < 1e-9, "{m}");
+        assert_eq!(m["products"][0]["name"], "Composite A2");
+        assert_eq!(c, 0, "no es un conflicto");
+    }
+
+    #[test]
+    fn stock_moves_made_by_two_stations_at_once_are_all_counted() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_stock_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        prepare_folder(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        let (mut b, mut base_b) = load();
+        a.station = 1;
+        b.station = 2;
+        let before = a.product(4).unwrap().stock;
+        a.stock_move(4, -0.2, crate::stock::MoveKind::Consumo, "gabinete 1", None, "");
+        b.stock_move(4, -0.25, crate::stock::MoveKind::Consumo, "gabinete 2", None, "");
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        save_synced(&mut b, &mut base_b, &path).unwrap();
+        let (fin, _) = load();
+        assert!((fin.product(4).unwrap().stock - (before - 0.45)).abs() < 1e-9, "se descuentan los dos: {}", fin.product(4).unwrap().stock);
+        assert_eq!(fin.stock_moves.iter().filter(|m| m.product_id == 4 && m.reason.starts_with("gabinete")).count(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

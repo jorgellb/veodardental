@@ -156,6 +156,10 @@ pub fn set_state(db: &mut Db, id: u32, st: ApptState) {
             _ => {}
         }
     }
+    // si no acude o la anula, su recall vuelve a pendiente
+    if st.is_cancelled() || prev.is_some_and(|p| p.is_cancelled()) {
+        db.refresh_recalls(crate::model::today());
+    }
 }
 
 fn hm(t: NaiveTime) -> String {
@@ -991,15 +995,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
             }
             app.notify("Cita actualizada.");
         }
-        // Si la cita viene de un recall pendiente, se marca como citado.
-        if let Some(pid) = d.a.patient_id {
-            for r in app.db.recalls.iter_mut() {
-                if r.patient_id == pid && r.state == RecallState::Pendiente && r.date <= d.a.date + Duration::days(30) {
-                    r.state = RecallState::Citado;
-                    r.contacted_on = Some(app.today);
-                }
-            }
-        }
+        // el recall pendiente del paciente queda citado con esta cita (y, si se
+        // anula o se aplaza, vuelve a pendiente)
+        app.db.refresh_recalls(app.today);
         app.agenda.date = d.a.date;
         app.changed();
         return app.dialog_take_or_none();

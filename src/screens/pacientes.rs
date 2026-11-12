@@ -473,7 +473,7 @@ fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
         app.notify("Tratamiento realizado: se ha cargado en la cuenta del paciente.");
     }
     if let Some(id) = delete {
-        app.dialog = Dialog::Confirm { text: "¿Borrar este tratamiento del historial?".into(), action: crate::app::ConfirmAction::DeleteEntry(id) };
+        crate::screens::ask_delete_entry(app, id);
     }
 }
 
@@ -920,6 +920,7 @@ fn citas(app: &mut App, ui: &mut Ui, pid: u32) {
                             channel: String::new(),
                             comment: String::new(),
                             contacted_on: None,
+                            appt_id: None,
                         });
                         app.changed();
                         app.notify("Recall programado.");

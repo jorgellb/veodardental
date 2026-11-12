@@ -458,6 +458,7 @@ impl Db {
         if self.booking.links {
             self.appt_token(appt);
         }
+        self.refresh_recalls(today());
         Ok(appt)
     }
 
@@ -1646,9 +1647,16 @@ mod tests {
         db.holidays.retain(|h| h.date != day);
         let (_, start) = db.find_gaps(1, day, 30, db.config.open_time, db.config.close_time, 1)[0];
         let req = BookingRequest { id: 0, received: now(), name: "Laura".into(), phone, email: "laura@example.com".into(), reason: "Revisión".into(), minutes: 30, code: "0102".into(), doctor_id: 1, date: day, start, notes: "Prefiero por la mañana".into(), first_visit: false, patient_id: None, state: ReqState::Pendiente, appointment_id: None, answer: String::new(), center_id: 1, replaces: None };
+        // tenía pendiente su revisión: al confirmar la cita deja de recibir el «pida su cita»
+        db.appointments.retain(|a| a.patient_id != Some(pid) || a.date < today);
+        db.recalls.retain(|r| r.patient_id != pid);
+        let rid = db.new_id();
+        db.recalls.push(Recall { id: rid, patient_id: pid, date: today, reason: "Revisión semestral".into(), doctor_id: 1, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
         let id = db.booking_receive(req);
         assert_eq!(db.booking_requests.iter().find(|r| r.id == id).unwrap().patient_id, Some(pid), "se reconoce por el teléfono");
         let appt = db.booking_confirm(id).unwrap();
+        let rec = db.recalls.iter().find(|r| r.id == rid).unwrap();
+        assert_eq!((rec.state, rec.appt_id), (RecallState::Citado, Some(appt)));
         let a = db.appointments.iter().find(|a| a.id == appt).unwrap();
         assert_eq!((a.patient_id, a.date, a.start, a.state), (Some(pid), day, start, ApptState::Confirmada));
         assert!(a.notes.contains("Prefiero por la mañana"));
