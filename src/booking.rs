@@ -244,6 +244,8 @@ pub struct Published {
     pub doctors: Vec<PubDoctor>,
     pub open: i64,
     pub close: i64,
+    /// Tramos en que pasa consulta cada profesional, por día de la semana (en minutos del día).
+    pub hours: HashMap<u32, [Vec<(i64, i64)>; 7]>,
     pub step: i64,
     pub days_ahead: u32,
     pub min_notice_hours: u32,
@@ -301,8 +303,9 @@ pub fn publish(db: &Db, today: NaiveDate) -> Published {
         intro: c.intro.clone(),
         reasons,
         doctors: db.collaborators.iter().filter(|d| docs.contains(&d.id)).map(|d| PubDoctor { id: d.id, name: d.alias.clone(), specialty: d.specialty.clone() }).collect(),
-        open: mins(db.config.open_time),
-        close: mins(db.config.close_time),
+        open: mins(db.clinic_week().span().map(|s| s.0).unwrap_or(db.config.open_time)),
+        close: mins(db.clinic_week().span().map(|s| s.1).unwrap_or(db.config.close_time)),
+        hours: docs.iter().map(|d| (*d, db.doctor_week(*d).0.map(|day| day.iter().map(|s| (mins(s.start), mins(s.end))).collect()))).collect(),
         step: db.config.slot_minutes.clamp(10, 60) as i64,
         days_ahead: c.days_ahead.min(180),
         min_notice_hours: c.min_notice_hours,
@@ -332,9 +335,10 @@ pub fn slots(p: &Published, held: &[Busy], now: NaiveDateTime, reason: usize, do
 /// ocupado que no cuenta (la propia cita cuando se cambia de hora).
 pub fn slots_for(p: &Published, held: &[Busy], now: NaiveDateTime, minutes: u32, cands: &[u32], date: NaiveDate, ignore: Option<Busy>) -> Vec<(NaiveTime, u32)> {
     let today = now.date();
-    if date < today || date > today + Duration::days(p.days_ahead as i64) || date.weekday().num_days_from_monday() >= 5 || p.closed.contains(&date) {
+    if date < today || date > today + Duration::days(p.days_ahead as i64) || p.closed.contains(&date) {
         return vec![];
     }
+    let wd = date.weekday().num_days_from_monday() as usize;
     let earliest = now + Duration::hours(p.min_notice_hours as i64);
     let len = minutes as i64;
     let mut out = vec![];
@@ -344,7 +348,9 @@ pub fn slots_for(p: &Published, held: &[Busy], now: NaiveDateTime, minutes: u32,
         if start >= earliest {
             let free = |d: u32| {
                 let e = t + len;
-                !p.busy.iter().chain(held.iter()).any(|b| Some(*b) != ignore && b.0 == d && b.1 == date && b.2 < e && t < b.3) && !p.daily.iter().any(|b| b.0 == d && b.1 < e && t < b.2)
+                // dentro de su horario ese día de la semana
+                let works = p.hours.get(&d).is_some_and(|w| w[wd].iter().any(|(a, b)| *a <= t && e <= *b));
+                works && !p.busy.iter().chain(held.iter()).any(|b| Some(*b) != ignore && b.0 == d && b.1 == date && b.2 < e && t < b.3) && !p.daily.iter().any(|b| b.0 == d && b.1 < e && t < b.2)
             };
             if let Some(d) = cands.iter().copied().find(|d| free(*d)) {
                 out.push((at(t), d));
@@ -396,6 +402,10 @@ impl Db {
         let r = self.booking_requests.iter().find(|r| r.id == id).cloned().ok_or("La solicitud ya no existe.")?;
         if r.state != ReqState::Pendiente {
             return Err("La solicitud ya se atendió.".into());
+        }
+        // fuera de horario (p. ej. se cambió el horario del profesional después de pedirla)
+        if let Some(why) = self.schedule_problem(r.doctor_id, r.date, r.start, r.end()) {
+            return Err(format!("{why} Llame al paciente para darle otra hora, o rechace la solicitud."));
         }
         if !self.is_free(r.doctor_id, r.date, r.start, r.end(), r.replaces) {
             return Err("Esa hora ya está ocupada en la agenda: mueva la cita a otra hora al llamar al paciente, o rechace la solicitud.".into());
@@ -1635,6 +1645,36 @@ mod tests {
         db.holidays.push(crate::agenda_extra::Holiday { date: day, name: "Fiesta".into() });
         assert!(slots(&publish(&db, today), &[], now, ri, 0, day).is_empty());
         assert!(slots(&p, &[], now, ri, 0, today + Duration::days(200)).is_empty());
+    }
+
+    #[test]
+    fn online_slots_follow_the_clinic_and_doctor_hours() {
+        use crate::horario::{Shift, Week};
+        let today = today();
+        let mut db = Db::sample(today);
+        let mon = monday_after(today) + Duration::days(7);
+        let (wed, sat) = (mon + Duration::days(2), mon + Duration::days(5));
+        db.holidays.retain(|h| h.date < mon || h.date > sat);
+        db.booking.enabled = true;
+        db.booking.min_notice_hours = 0;
+        let t = |h, m| NaiveTime::from_hms_opt(h, m, 0).unwrap();
+        // la clínica abre también el sábado por la mañana; el Dr. Navarro (2) solo los miércoles por la tarde
+        let mut w = Week::simple(t(9, 0), t(20, 0), false);
+        w.0[5] = vec![Shift::new(t(9, 0), t(14, 0))];
+        db.config.hours = Some(w);
+        let mut nav = Week::default();
+        nav.0[2] = vec![Shift::new(t(16, 0), t(20, 0))];
+        db.collaborators.iter_mut().find(|c| c.id == 2).unwrap().hours = Some(nav);
+        let p = publish(&db, today);
+        let now = today.and_hms_opt(8, 0, 0).unwrap();
+        let ri = p.reasons.iter().position(|r| r.doctors.contains(&2)).expect("un motivo con el Dr. Navarro");
+        // el sábado hay huecos, solo por la mañana
+        let s = slots(&p, &[], now, ri, 0, sat);
+        assert!(!s.is_empty() && s.iter().all(|(h, _)| *h < t(14, 0)), "{s:?}");
+        // con el Dr. Navarro: el lunes nada; el miércoles, de 16:00 en adelante
+        assert!(slots(&p, &[], now, ri, 2, mon).is_empty());
+        let w = slots(&p, &[], now, ri, 2, wed);
+        assert!(!w.is_empty() && w.iter().all(|(h, d)| *d == 2 && *h >= t(16, 0)), "{w:?}");
     }
 
     #[test]

@@ -129,6 +129,9 @@ pub struct Collaborator {
     /// de sus tratamientos.
     #[serde(default)]
     pub deduct_lab: bool,
+    /// Días y horas en que pasa consulta (vacío: el horario de la clínica).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hours: Option<crate::horario::Week>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -607,8 +610,13 @@ pub struct ClinicConfig {
     pub address: String,
     pub phone: String,
     pub email: String,
+    /// Primera hora de apertura y última de cierre (lo que abarca la agenda;
+    /// con horario por días, se calculan de él).
     pub open_time: NaiveTime,
     pub close_time: NaiveTime,
+    /// Horario por día de la semana (vacío: de lunes a viernes, de la apertura al cierre).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hours: Option<crate::horario::Week>,
     pub slot_minutes: u32,
     pub receipt_series: String,
     pub next_receipt: u32,
@@ -1920,30 +1928,36 @@ impl Db {
         let step = self.config.slot_minutes.max(5) as i64;
         for d in 0..days as i64 {
             let date = from + Duration::days(d);
-            if date.weekday().num_days_from_monday() >= 5 || self.holidays.iter().any(|h| h.date == date) {
-                continue;
-            }
-            let mut t = earliest.max(self.config.open_time);
-            let close = latest.min(self.config.close_time);
-            let mut guard = 0;
-            while t + Duration::minutes(minutes as i64) <= close && guard < 400 {
-                guard += 1;
-                let end = t + Duration::minutes(minutes as i64);
-                if self.is_free(doctor_id, date, t, end, None) {
-                    out.push((date, t));
-                    if out.len() >= 12 {
-                        return out;
+            // en los tramos en que el profesional pasa consulta ese día (ninguno si es festivo)
+            for shift in self.doctor_day(doctor_id, date) {
+                let mut t = earliest.max(shift.start);
+                let close = latest.min(shift.end);
+                let mut guard = 0;
+                while t + Duration::minutes(minutes as i64) <= close && guard < 400 {
+                    guard += 1;
+                    let end = t + Duration::minutes(minutes as i64);
+                    if self.is_free(doctor_id, date, t, end, None) {
+                        out.push((date, t));
+                        if out.len() >= 12 {
+                            return out;
+                        }
+                        t = end;
+                        continue;
                     }
-                    t = end;
-                    continue;
+                    t += Duration::minutes(step);
                 }
-                t += Duration::minutes(step);
             }
         }
         out
     }
 
+    /// El profesional está libre (sin otra cita ni bloqueo) y pasa consulta a esa hora.
     pub fn is_free(&self, doctor_id: u32, date: NaiveDate, s: NaiveTime, e: NaiveTime, ignore: Option<u32>) -> bool {
+        !self.overlaps(doctor_id, date, s, e, ignore) && self.works_at(doctor_id, date, s, e)
+    }
+
+    /// El profesional ya tiene otra cita (o un bloqueo) que se cruza con esa hora.
+    pub fn overlaps(&self, doctor_id: u32, date: NaiveDate, s: NaiveTime, e: NaiveTime, ignore: Option<u32>) -> bool {
         let busy = self.appointments.iter().any(|a| {
             Some(a.id) != ignore
                 && a.doctor_id == doctor_id
@@ -1955,8 +1969,7 @@ impl Db {
         let blocked = self.blocks.iter().any(|b| {
             b.doctor_id == doctor_id && b.date.map(|d| d == date).unwrap_or(true) && b.start < e && s < b.end
         });
-        let holiday = self.holidays.iter().any(|h| h.date == date);
-        !busy && !blocked && !holiday
+        busy || blocked
     }
 
     // ── facturación ──

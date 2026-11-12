@@ -302,7 +302,9 @@ fn grid(app: &mut App, ui: &mut Ui) {
         View::Semana => {
             let monday = app.agenda.date - Duration::days(app.agenda.date.weekday().num_days_from_monday() as i64);
             let c = app.db.doctor(app.agenda.week_doctor).cloned();
-            (0..6)
+            // de lunes a sábado (y el domingo, si la clínica abre)
+            let days = if app.db.clinic_week().0[6].is_empty() { 6 } else { 7 };
+            (0..days)
                 .map(|i| {
                     let d = monday + Duration::days(i);
                     Col {
@@ -344,8 +346,21 @@ fn grid(app: &mut App, ui: &mut Ui) {
         if i > 0 {
             p.line_segment([pos2(x, rect.min.y + head_h), pos2(x, rect.max.y)], Stroke::new(1.0, BORDER));
         }
-        if c.date.weekday().num_days_from_monday() >= 5 {
-            p.rect_filled(Rect::from_min_max(pos2(x, y_of(open)), pos2(x + col_w, y_of(close))), CornerRadius::ZERO, Color32::from_rgb(246, 247, 249));
+        // fuera del horario del profesional (o de la clínica), en gris
+        if app.db.holiday(c.date).is_none() {
+            let shifts = app.db.doctor_day(c.doctor, c.date);
+            let off = Color32::from_rgb(236, 239, 243);
+            let mut from = open;
+            for (a, b) in shifts.iter().map(|s| (minutes_of(s.start), minutes_of(s.end))).chain(std::iter::once((close, close))) {
+                if a > from {
+                    p.rect_filled(Rect::from_min_max(pos2(x + 1.0, y_of(from)), pos2(x + col_w - 1.0, y_of(a.min(close)))), CornerRadius::ZERO, off);
+                }
+                from = from.max(b);
+            }
+            if shifts.is_empty() {
+                let why = if app.db.clinic_day(c.date).is_empty() { "Cerrado" } else { "No pasa consulta" };
+                p.text(pos2(x + col_w / 2.0, y_of(open) + 40.0), Align2::CENTER_CENTER, why, FontId::proportional(14.0), MUTED);
+            }
         }
         if let Some(h) = app.db.holiday(c.date) {
             let r = Rect::from_min_max(pos2(x + 1.0, y_of(open)), pos2(x + col_w - 1.0, y_of(close)));
@@ -551,9 +566,9 @@ fn grid(app: &mut App, ui: &mut Ui) {
     if let Some((id, date, doc, start)) = drop {
         let minutes = app.db.appointments.iter().find(|a| a.id == id).map(|a| a.minutes).unwrap_or(30);
         let end = start + Duration::minutes(minutes as i64);
-        if minutes_of(start) < open || minutes_of(end) > close {
-            app.warn("La cita quedaría fuera del horario de la clínica.");
-        } else if !app.db.is_free(doc, date, start, end, Some(id)) {
+        if let Some(why) = app.db.schedule_problem(doc, date, start, end) {
+            app.warn(why);
+        } else if app.db.overlaps(doc, date, start, end, Some(id)) {
             app.warn("Ese hueco está ocupado o bloqueado.");
         } else {
             if let Some(a) = app.db.appointments.iter_mut().find(|a| a.id == id) {
@@ -919,13 +934,14 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
         });
         // avisos
         let end = d.a.end();
-        let free = app.db.is_free(d.a.doctor_id, d.a.date, d.a.start, end, (!d.is_new).then_some(d.a.id));
-        let out = d.a.start < app.db.config.open_time || end > app.db.config.close_time;
-        if !free && !d.a.state.is_cancelled() {
-            ui.label(RichText::new("⚠ Se solapa con otra cita o un bloqueo de este doctor.").color(WARN));
-        }
-        if out {
-            ui.label(RichText::new("⚠ Fuera del horario de la clínica.").color(WARN));
+        if !d.a.state.is_cancelled() {
+            // festivo, la clínica no abre o el profesional no pasa consulta (dice cuál)
+            if let Some(why) = app.db.schedule_problem(d.a.doctor_id, d.a.date, d.a.start, end) {
+                ui.label(RichText::new(format!("⚠ {why}")).color(WARN));
+            }
+            if app.db.overlaps(d.a.doctor_id, d.a.date, d.a.start, end, (!d.is_new).then_some(d.a.id)) {
+                ui.label(RichText::new(format!("⚠ Se solapa con otra cita o un bloqueo de {}.", app.db.doctor_alias(d.a.doctor_id))).color(WARN));
+            }
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {

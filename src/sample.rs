@@ -109,6 +109,7 @@ impl Db {
             phone: format!("600 100 00{id}"),
             centers: vec![],
             deduct_lab: false,
+            hours: None,
         };
         let collaborators = vec![
             col(1, "Dra. Ruiz", "Elena Ruiz Prado", "Odontología general", [56, 132, 214], 35.0),
@@ -201,6 +202,7 @@ impl Db {
                 email: "recepcion@clinica-ejemplo.es".into(),
                 open_time: t(9, 0),
                 close_time: t(20, 0),
+                hours: None,
                 slot_minutes: 15,
                 receipt_series: format!("R{}", today.year()),
                 next_receipt: 1,

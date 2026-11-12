@@ -272,15 +272,7 @@ fn clinic_tab(app: &mut App, ui: &mut Ui) {
         card(&mut cols[1], |ui| {
             ui.set_width(ui.available_width());
             let c = &mut app.db.config;
-            section(ui, "Horario de la agenda");
-            muted(ui, "Horas que muestra la agenda y tamaño de cada hueco.");
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 18.0;
-                time_edit(ui, "Apertura", &mut c.open_time);
-                time_edit(ui, "Cierre", &mut c.close_time);
-            });
-            ui.add_space(4.0);
+            section(ui, "Agenda");
             ui.label(RichText::new("Intervalo de la agenda").size(13.5).color(MUTED));
             crate::theme::combo("slot").width(140.0).selected_text(format!("{} min", c.slot_minutes)).show_ui(ui, |ui| {
                 for m in [5, 10, 15, 20, 30] {
@@ -288,6 +280,23 @@ fn clinic_tab(app: &mut App, ui: &mut Ui) {
                 }
             });
         });
+    });
+    ui.add_space(8.0);
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        let mut week = app.db.clinic_week();
+        let c = &mut app.db.config;
+        section(ui, "Horario de la clínica");
+        muted(ui, "Días y horas en que abre. La agenda, la cita por internet y los huecos libres solo ofrecen estas horas; el de cada profesional se pone en Colaboradores.");
+        ui.add_space(4.0);
+        if week_editor(ui, "clinic_week", &mut week, (c.open_time, c.close_time), "cerrado") {
+            // la agenda abarca de la primera apertura al último cierre
+            if let Some((o, e)) = week.span() {
+                c.open_time = o;
+                c.close_time = e;
+            }
+            c.hours = Some(week);
+        }
     });
     if serde_json::to_string(&app.db.config).unwrap_or_default() != before {
         app.changed();
@@ -398,19 +407,76 @@ fn billing_tab(app: &mut App, ui: &mut Ui) {
     crate::screens::verifactu::settings(app, ui);
 }
 
-fn time_edit(ui: &mut Ui, label: &str, t: &mut NaiveTime) {
-    ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(13.5).color(MUTED));
-        ui.horizontal(|ui| {
-            let mut h = t.hour();
-            let mut m = t.minute();
-            ui.add(egui::DragValue::new(&mut h).range(0..=23).custom_formatter(|v, _| format!("{:02}", v as u32)));
-            ui.label(":");
-            ui.add(egui::DragValue::new(&mut m).range(0..=59).custom_formatter(|v, _| format!("{:02}", v as u32)));
-            *t = NaiveTime::from_hms_opt(h, m, 0).unwrap_or(*t);
-        });
-    });
+/// Hora en un solo campo («09:30»: se escribe o se arrastra, de 5 en 5 minutos).
+fn hm_edit(ui: &mut Ui, t: &mut NaiveTime) -> bool {
+    let mut m = (t.hour() * 60 + t.minute()) as f64;
+    let r = ui.add(
+        egui::DragValue::new(&mut m)
+            .range(0.0..=1435.0)
+            .speed(2.0)
+            .custom_formatter(|v, _| format!("{:02}:{:02}", v as u32 / 60, v as u32 % 60))
+            .custom_parser(|s| {
+                let s = s.trim();
+                let (h, mi) = s.split_once(':').unwrap_or((s, "0"));
+                Some(h.trim().parse::<f64>().ok()? * 60.0 + mi.trim().parse::<f64>().ok()?)
+            }),
+    );
+    if r.changed() {
+        let v = (m.round() as u32 / 5) * 5;
+        *t = NaiveTime::from_hms_opt(v / 60, v % 60, 0).unwrap_or(*t);
+    }
+    r.changed()
 }
+
+/// Horario de una semana: cada día, si se trabaja, de qué hora a qué hora y,
+/// con jornada partida, también la tarde. `default`: el horario de un día que
+/// se marca. Devuelve si ha cambiado.
+pub fn week_editor(ui: &mut Ui, id: impl egui::AsIdSalt, w: &mut crate::horario::Week, default: (NaiveTime, NaiveTime), off: &str) -> bool {
+    use crate::horario::{DAYS_SHORT, Shift};
+    let before = w.clone();
+    let t = |h: u32| NaiveTime::from_hms_opt(h, 0, 0).unwrap();
+    egui::Grid::new(id).spacing([8.0, 4.0]).show(ui, |ui| {
+        for (d, name) in DAYS_SHORT.iter().enumerate() {
+            let mut on = !w.0[d].is_empty();
+            if ui.checkbox(&mut on, *name).changed() {
+                w.0[d] = if on { vec![Shift::new(default.0, default.1)] } else { vec![] };
+            }
+            if w.0[d].is_empty() {
+                ui.label(RichText::new(off).color(MUTED));
+                ui.end_row();
+                continue;
+            }
+            ui.horizontal(|ui| {
+                hm_edit(ui, &mut w.0[d][0].start);
+                ui.label("a");
+                hm_edit(ui, &mut w.0[d][0].end);
+            });
+            let mut split = w.0[d].len() > 1;
+            if ui.checkbox(&mut split, "y de").on_hover_text("Jornada partida: también por la tarde").changed() {
+                if split {
+                    let morning_end = w.0[d][0].end.min(t(14));
+                    w.0[d][0].end = morning_end;
+                    w.0[d].push(Shift::new(t(16).max(morning_end), t(20).max(morning_end)));
+                } else {
+                    w.0[d].truncate(1);
+                }
+            }
+            if w.0[d].len() > 1 {
+                ui.horizontal(|ui| {
+                    hm_edit(ui, &mut w.0[d][1].start);
+                    ui.label("a");
+                    hm_edit(ui, &mut w.0[d][1].end);
+                });
+            }
+            if w.0[d].iter().any(|s| s.start >= s.end) || (w.0[d].len() > 1 && w.0[d][1].start < w.0[d][0].end) {
+                ui.label(RichText::new("⚠ revise las horas").color(DANGER).size(12.5));
+            }
+            ui.end_row();
+        }
+    });
+    *w != before
+}
+
 
 pub fn collaborators(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
@@ -431,6 +497,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                     phone: String::new(),
                     centers: vec![],
                     deduct_lab: false,
+                    hours: None,
                 });
                 app.lists.collab_sel = Some(id);
                 app.changed();
@@ -467,6 +534,8 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 .map(|e| e.amount())
                 .sum();
             let appts_today = app.db.appointments.iter().filter(|a| a.doctor_id == id && a.date == today && !a.state.is_cancelled()).count();
+            let clinic = app.db.clinic_week();
+            let clinic_span = clinic.span().unwrap_or((app.db.config.open_time, app.db.config.close_time));
             let Some(c) = app.db.collaborators.iter_mut().find(|c| c.id == id) else { return };
             let before = serde_json::to_string(c).unwrap_or_default();
             section(ui, &c.alias.clone());
@@ -493,6 +562,22 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 ui.add(egui::DragValue::new(&mut c.commission_pct).range(0.0..=100.0).suffix(" %"));
                 ui.checkbox(&mut c.deduct_lab, "descontando el laboratorio").on_hover_text("La comisión se calcula sobre lo producido menos el coste de laboratorio de sus tratamientos");
             });
+            ui.add_space(6.0);
+            section(ui, "Horario de consulta");
+            let mut own = c.hours.is_some();
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut own, false, "El de la clínica");
+                ui.radio_value(&mut own, true, "Sus días y horas");
+            });
+            match (own, c.hours.is_some()) {
+                (true, false) => c.hours = Some(clinic.clone()),
+                (false, true) => c.hours = None,
+                _ => {}
+            }
+            if let Some(h) = &mut c.hours {
+                muted(ui, "Solo se le dan citas (también por internet) en estos días y horas, y siempre dentro del horario de la clínica.");
+                week_editor(ui, ("doc_week", id), h, clinic_span, "no pasa consulta");
+            }
             if serde_json::to_string(c).unwrap_or_default() != before {
                 app.changed();
             }

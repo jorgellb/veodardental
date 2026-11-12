@@ -21,6 +21,7 @@ mod golive;
 mod ia;
 mod mail;
 mod health;
+mod horario;
 mod insurer;
 mod icons;
 mod lab_order;
@@ -207,6 +208,25 @@ fn main() -> eframe::Result<()> {
                     }
                 }
                 a.agenda.date = d;
+            }
+            // horario de ejemplo (para verlo en la agenda y en Configuración): jornada partida de
+            // lunes a jueves, viernes y sábado por la mañana, y el Dr. Navarro solo los miércoles por la tarde
+            if std::env::args().any(|x| x == "--horario") {
+                use horario::{Shift, Week};
+                let t = |h: u32| chrono::NaiveTime::from_hms_opt(h, 0, 0).unwrap();
+                let mut w = Week::default();
+                for d in 0..4 {
+                    w.0[d] = vec![Shift::new(t(9), t(14)), Shift::new(t(16), t(20))];
+                }
+                w.0[4] = vec![Shift::new(t(9), t(15))];
+                w.0[5] = vec![Shift::new(t(9), t(14))];
+                a.db.config.hours = Some(w);
+                let mut nav = Week::default();
+                nav.0[2] = vec![Shift::new(t(16), t(20))];
+                if let Some(c) = a.db.collaborators.iter_mut().find(|c| c.id == 2) {
+                    c.hours = Some(nav);
+                }
+                a.lists.collab_sel = Some(2);
             }
             // código del móvil: «--doble-factor» abre su activación para la Dra. Ruiz;
             // «--doble-factor entrar», el segundo paso de la pantalla de acceso

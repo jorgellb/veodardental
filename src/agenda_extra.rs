@@ -2,7 +2,7 @@
 //! liquidación de honorarios por colaborador.
 
 use crate::model::*;
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,7 +34,7 @@ impl Db {
 
     /// Día laborable para la agenda (ni fin de semana ni festivo).
     pub fn working_day(&self, d: NaiveDate) -> bool {
-        d.weekday().num_days_from_monday() < 5 && self.holiday(d).is_none()
+        !self.clinic_day(d).is_empty()
     }
 
     /// Crea las citas siguientes de una serie periódica a partir de una cita
