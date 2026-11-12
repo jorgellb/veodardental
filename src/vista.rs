@@ -12,9 +12,10 @@
 //! higienistas y Dirección lo reciben todo.
 //!
 //! Lo que manda un puesto que no ve algo no puede borrarlo ni cambiarlo: el
-//! servidor pone lo que no ve tal como está. Sí puede añadir registros nuevos
-//! a una lista que no ve (por ejemplo, el cuestionario que rellena un paciente
-//! en la página de la clínica), pero no los recibe de vuelta.
+//! servidor pone lo que no ve tal como está. En las listas que no recibe no
+//! puede escribir nada (tampoco añadir: una receta o una imagen las crea quien
+//! las ve). Los cuestionarios que rellenan los pacientes en la página de la
+//! clínica sí los guarda, porque esa lista la ve (sin las respuestas).
 
 use crate::users::{Perm, Profile};
 use serde_json::Value;

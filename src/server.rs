@@ -811,12 +811,12 @@ impl State {
             c.before = c.before.as_deref().map(|b| protect_user_json(b, current.as_ref())).transpose()?;
             c.after = c.after.as_deref().map(|a| protect_user_json(a, current.as_ref())).transpose()?;
         }
-        // lo que el perfil no ve: en las listas que no recibe solo puede añadir
-        // registros nuevos, y en los demás registros lo que no ve queda como está
+        // lo que el perfil no ve: en las listas que no recibe no puede escribir
+        // nada (ni añadir: una receta o una imagen las crea quien las ve), y en
+        // los demás registros lo que no ve queda como está
         let view = self.view_of(user);
         if !view.is_full() {
-            let snap = &self.snap;
-            changes.retain(|c| !view.hides(&c.field) || (c.before.is_none() && snap.get(&c.field, c.key.as_deref()).is_none()));
+            changes.retain(|c| !view.hides(&c.field));
             for c in changes.iter_mut().filter(|c| c.key.is_some()) {
                 let current = self.snap.get(&c.field, c.key.as_deref()).cloned();
                 c.before = c.before.as_deref().map(|b| view.restore(&c.field, b, current.as_ref())).transpose()?;
@@ -1776,6 +1776,18 @@ mod tests {
         rec.push(&mut d, &mut sd).unwrap();
         let saved = disk().health.into_iter().find(|f| f.id == form.id).unwrap();
         assert!(saved.signed && saved.notes == "Rellenado por internet" && saved.yes.get("diabetes") == Some(&true));
+        // no puede añadir nada a lo que no ve (una receta falsa, una imagen con otra ruta…)
+        let mut rx = full.prescriptions[0].clone();
+        rx.id = 9_999_001;
+        let mut img = full.images[0].clone();
+        img.id = 9_999_002;
+        img.path = "/etc/passwd".into();
+        let new_rx = Change { field: "prescriptions".into(), key: Some(rx.id.to_string()), before: None, after: Some(serde_json::to_string(&rx).unwrap()) };
+        let new_img = Change { field: "images".into(), key: Some(img.id.to_string()), before: None, after: Some(serde_json::to_string(&img).unwrap()) };
+        let body = json!({ "cambios": [new_rx, new_img] }).to_string();
+        rec.post(&format!("/cambios?base={}", d.rev), &body).unwrap();
+        assert!(disk().prescriptions.iter().all(|r| r.id != rx.id), "Recepción no puede crear recetas");
+        assert!(disk().images.iter().all(|i| i.id != img.id));
         // no puede borrar ni cambiar lo que no ve
         let perio = serde_json::to_string(&full.perio[0]).unwrap();
         let key = full.perio[0].id.to_string();
