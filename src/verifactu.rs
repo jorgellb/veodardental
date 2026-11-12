@@ -61,9 +61,19 @@ pub struct VfConfig {
     /// Dirección alternativa del servicio (sólo para pruebas internas).
     #[serde(default)]
     pub endpoint: String,
+    /// Ordenador que envía los registros a la AEAT (vacío: aún ninguno). Si
+    /// enviaran dos, mandarían los mismos registros a la vez.
+    #[serde(default)]
+    pub sender: String,
 }
 
 impl VfConfig {
+    /// ¿Envía este ordenador (`me`) los registros? El que está elegido o, si
+    /// aún no hay ninguno, el que vaya a enviar (y queda elegido).
+    pub fn may_send(&self, me: &str) -> bool {
+        self.sender.trim().is_empty() || self.sender == me
+    }
+
     pub fn url(&self) -> String {
         if !self.endpoint.trim().is_empty() {
             return self.endpoint.trim().to_string();
@@ -925,6 +935,15 @@ pub fn qr_svg(text: &str, size_mm: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_one_computer_sends_to_the_aeat() {
+        let mut c = VfConfig::default();
+        assert!(c.may_send("RECEPCION") && c.may_send("DESPACHO"), "sin elegido, cualquiera (y queda elegido)");
+        c.sender = "RECEPCION".into();
+        assert!(c.may_send("RECEPCION"));
+        assert!(!c.may_send("DESPACHO"), "los demás no envían");
+    }
 
     /// Ejemplos del documento de la AEAT «Detalle de las especificaciones técnicas para generación de la huella».
     #[test]

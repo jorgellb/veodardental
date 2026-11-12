@@ -148,7 +148,16 @@ pub fn tick(app: &mut App, ctx: &egui::Context) {
     if c.path.trim().is_empty() || c.password.is_empty() {
         return;
     }
+    // un solo ordenador envía a la AEAT (si enviaran dos, mandarían lo mismo a la vez)
+    let me = crate::shared::machine_name();
+    if !app.db.verifactu.may_send(&me) {
+        return;
+    }
     if pending_count(app) > 0 {
+        if app.db.verifactu.sender.trim().is_empty() {
+            app.db.verifactu.sender = me;
+            app.changed();
+        }
         start_send(app, ctx);
     }
     ctx.request_repaint_after(Duration::from_secs(30));
@@ -422,6 +431,17 @@ fn settings_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
             });
         }
         ui.checkbox(&mut cfg.auto_send, "Enviar automáticamente en segundo plano (cada vez que se emite una factura)");
+        let me = crate::shared::machine_name();
+        ui.horizontal_wrapped(|ui| {
+            if cfg.may_send(&me) {
+                ui.label(RichText::new("Envía a la AEAT este ordenador (con el certificado de la clínica).").size(13.0).color(TEXT));
+            } else {
+                ui.label(RichText::new(format!("Envía a la AEAT el ordenador «{}»: los demás no envían, para no mandar los mismos registros dos veces.", cfg.sender)).size(13.0).color(TEXT));
+                if ui.button("Enviar desde este ordenador").on_hover_text("Este ordenador necesita el certificado de la clínica").clicked() {
+                    cfg.sender = me.clone();
+                }
+            }
+        });
         ui.add_space(6.0);
         ui.collapsing("Datos del programa (productor del sistema informático)", |ui| {
             muted(ui, "Si se deja vacío, figura la propia clínica como productora del programa.");
@@ -494,13 +514,19 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
             right_aligned(ui, |ui| {
                 let waiting = app.vf.next_allowed.map(|t| t.saturating_duration_since(Instant::now()).as_secs()).filter(|s| *s > 0);
                 let busy = app.vf.job.is_some();
-                let enabled = app.db.verifactu.enabled && pend > 0 && !busy && waiting.is_none();
-                if ui.add_enabled(enabled, egui::Button::new(RichText::new(format!("Enviar ahora ({pend})")).color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                let mine = app.db.verifactu.may_send(&crate::shared::machine_name());
+                let enabled = app.db.verifactu.enabled && pend > 0 && !busy && waiting.is_none() && mine;
+                let why = if mine { "No hay nada pendiente de enviar ahora.".to_string() } else { format!("Envía a la AEAT el ordenador «{}» (se cambia en la configuración de VERI*FACTU).", app.db.verifactu.sender) };
+                if ui.add_enabled(enabled, egui::Button::new(RichText::new(format!("Enviar ahora ({pend})")).color(Color32::WHITE)).fill(ACCENT)).on_disabled_hover_text(why).clicked() {
                     let c = app.vf.cert().clone();
                     let local = !app.db.verifactu.endpoint.trim().is_empty() && !app.db.verifactu.endpoint.starts_with("https");
                     if !local && (c.path.trim().is_empty() || c.password.is_empty()) {
                         app.warn("Indique el certificado electrónico de la clínica y su contraseña.");
                     } else {
+                        if app.db.verifactu.sender.trim().is_empty() {
+                            app.db.verifactu.sender = crate::shared::machine_name();
+                            app.changed();
+                        }
                         start_send(app, ctx);
                     }
                 }
