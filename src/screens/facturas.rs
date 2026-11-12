@@ -134,7 +134,7 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
             right_aligned(ui, |ui| {
                 let amount: f64 = pending.iter().filter(|e| sel.contains(&e.id)).map(|e| e.amount()).sum();
                 if ui.add_enabled(!sel.is_empty(), egui::Button::new(RichText::new(format!("🧾 Emitir factura ({})", money(amount))).color(Color32::WHITE)).fill(ACCENT)).clicked() {
-                    match app.db.issue_invoice(pid, &sel, app.today) {
+                    match app.chain_op(crate::app::ChainOp::Issue { patient: pid, entries: sel.clone(), date: app.today }) {
                         Ok(id) => {
                             let code = app.db.invoice(id).map(|i| i.code()).unwrap_or_default();
                             app.db.audit("Emitir factura", &code);
@@ -304,7 +304,7 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
     });
     if rectify {
         let reason = app.lists.rect_reason.clone();
-        match app.db.rectify_invoice(id, &reason) {
+        match app.chain_op(crate::app::ChainOp::Rectify { invoice: id, reason: reason.clone() }) {
             Ok(r) => {
                 let code = app.db.invoice(r).map(|i| i.code()).unwrap_or_default();
                 app.db.audit("Factura rectificativa", &format!("{code}: {reason}"));

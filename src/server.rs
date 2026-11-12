@@ -35,6 +35,8 @@
 //!   (cada cosa con cómo estaba y cómo está); devuelve lo nuevo desde `base`
 //! * POST /contrasena         → {"usuario", "actual"?, "nueva", "cambiar_al_entrar"}
 //! * POST /movil              → {"usuario", "accion": "activar"|"quitar", "clave", "codigo"}
+//! * POST /cadena             → {"accion": "emitir"|"rectificar"|"subsanar"|"anular", …}
+//!   facturas y registros de VERI*FACTU, numerados y encadenados por el servidor
 //!   POST /parar              → detiene el servidor (solo desde el propio servidor)
 //!
 //! Cada puesto tiene una sesión, que sigue valiendo con la pantalla bloqueada
@@ -664,6 +666,32 @@ struct TotpBody {
     codigo: String,
 }
 
+/// Una operación de la cadena de facturas (VERI*FACTU): emitir, rectificar,
+/// subsanar o anular. Las hace el servidor, una tras otra, para que los
+/// números sean correlativos sin repetirse y cada registro enlace con el
+/// anterior aunque varios puestos facturen a la vez.
+#[derive(Deserialize)]
+struct ChainBody {
+    accion: String,
+    #[serde(default)]
+    paciente: u32,
+    #[serde(default)]
+    tratamientos: Vec<u32>,
+    #[serde(default)]
+    fecha: Option<chrono::NaiveDate>,
+    #[serde(default)]
+    factura: u32,
+    #[serde(default)]
+    motivo: String,
+}
+
+/// Lo que usan las operaciones de la cadena de facturas.
+const CHAIN_FIELDS: [&str; 7] = ["invoices", "vf_records", "entries", "patients", "config", "verifactu", "next_id"];
+
+/// Número de puesto del servidor para los identificadores que crea: los
+/// múltiplos de 16, que no usa ningún puesto (son del 1 al 15).
+const SERVER_STATION: u32 = 16;
+
 #[derive(Deserialize)]
 struct PushBody {
     #[serde(rename = "cambios", default)]
@@ -977,6 +1005,30 @@ impl State {
         }
     }
 
+    fn chain_op(&mut self, req: &Request, me: u32) -> Response {
+        let Ok(b) = serde_json::from_slice::<ChainBody>(&req.body) else { return error(400, "Petición no válida.") };
+        let Some(u) = self.user(me).filter(|u| u.profile.can(Perm::Facturacion)) else {
+            return error(403, "Este usuario no puede facturar.");
+        };
+        let r = self.modify(&CHAIN_FIELDS, |db| {
+            db.station = SERVER_STATION;
+            // la factura lleva el usuario de la sesión
+            db.config.current_user = u.name.clone();
+            match b.accion.as_str() {
+                "emitir" => db.issue_invoice(b.paciente, &b.tratamientos, b.fecha.unwrap_or_else(crate::model::today)),
+                "rectificar" => db.rectify_invoice(b.factura, &b.motivo),
+                "subsanar" => crate::verifactu::create_correction(db, b.factura, &u.name),
+                "anular" => crate::verifactu::create_cancellation(db, b.factura, &b.motivo, &u.name),
+                _ => Err("Acción no válida.".into()),
+            }
+        });
+        match r {
+            Err(e) => error(500, &e),
+            Ok(Err(msg)) => error(403, &msg),
+            Ok(Ok(id)) => reply(200, json!({ "id": id, "rev": self.rev() })),
+        }
+    }
+
     fn set_pin(&mut self, req: &Request, me: u32) -> Response {
         let Ok(b) = serde_json::from_slice::<PinBody>(&req.body) else { return error(400, "Petición no válida.") };
         let admin = self.is_admin(me);
@@ -1076,6 +1128,7 @@ impl State {
                         Ok(sent) => self.since(param("base"), &sent, self.view_of(me)),
                         Err(e) => error(400, &e),
                     },
+                    ("POST", "/cadena") => self.chain_op(req, me),
                     ("POST", "/contrasena") => self.set_pin(req, me),
                     ("POST", "/movil") => self.totp(req, me),
                     _ => error(404, "no existe"),
@@ -1525,6 +1578,18 @@ impl Remote {
         sync::mark_synced(db);
         self.receive(db, synced, delta)?;
         Ok(changes.len())
+    }
+
+    /// Una operación de la cadena de facturas en el servidor (ver `ChainBody`):
+    /// antes se envía lo pendiente (los tratamientos recién hechos, los datos
+    /// del cliente…) y después se recoge el resultado. Devuelve el id creado.
+    pub fn chain_op(&self, db: &mut Db, synced: &mut Snapshot, op: &Value) -> Result<u32, String> {
+        self.push(db, synced)?;
+        let v = parse(&self.post("/cadena", &op.to_string())?)?;
+        let id = v["id"].as_u64().map(|n| n as u32).ok_or("Respuesta no válida del servidor.")?;
+        let d = self.pull(db.rev)?;
+        self.receive(db, synced, d)?;
+        Ok(id)
     }
 
     /// Pone en los datos del puesto lo que ha cambiado en el servidor.
@@ -2060,6 +2125,45 @@ mod tests {
         let mut small = vec![];
         write_response(&mut small, &error(400, "no"), true).unwrap();
         assert!(!String::from_utf8_lossy(&small).contains("gzip"), "lo pequeño, sin comprimir");
+    }
+
+    #[test]
+    fn invoices_from_two_stations_keep_their_numbers_and_the_chain() {
+        let (addr, path, h) = start("CLAVE9");
+        let ra = signed_in(&addr, "CLAVE9", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE9", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        let day = crate::model::today();
+        let pending: Vec<(u32, u32)> = a.entries.iter().filter(|e| e.state == crate::model::TxState::Realizado && e.invoice_id.is_none()).map(|e| (e.patient_id, e.id)).collect();
+        let (p1, e1) = pending[0];
+        let (p2, e2) = *pending.iter().find(|(p, _)| *p != p1).unwrap();
+        // los dos facturan sin haber visto la factura del otro
+        let ia = ra.chain_op(&mut a, &mut sa, &json!({ "accion": "emitir", "paciente": p1, "tratamientos": [e1], "fecha": day })).unwrap();
+        let ib = rb.chain_op(&mut b, &mut sb, &json!({ "accion": "emitir", "paciente": p2, "tratamientos": [e2], "fecha": day })).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let (fa, fb) = (disk.invoices.iter().find(|i| i.id == ia).unwrap(), disk.invoices.iter().find(|i| i.id == ib).unwrap());
+        assert_eq!(fb.number, fa.number + 1, "números seguidos, sin repetir");
+        assert_eq!(fb.prev_hash, fa.hash, "la segunda enlaza con la primera");
+        assert!(disk.verify_chain().is_ok(), "{:?}", disk.verify_chain());
+        // cada puesto tiene ya su factura (y la del otro, al recoger)
+        assert!(a.invoices.iter().any(|i| i.id == ia) && b.invoices.iter().any(|i| i.id == ib));
+        assert_eq!(a.entries.iter().find(|e| e.id == e1).unwrap().invoice_id, Some(ia));
+        assert_eq!(fa.user, "Recepción", "con el usuario de la sesión");
+        // rectificar y anular, también en el servidor y en la cadena
+        let ra2 = ra.chain_op(&mut a, &mut sa, &json!({ "accion": "rectificar", "factura": ia, "motivo": "Error en el importe" })).unwrap();
+        assert!(crate::sync::on_disk(&path).invoices.iter().any(|i| i.id == ra2 && i.rectifies == Some(ia)));
+        assert!(crate::sync::on_disk(&path).verify_chain().is_ok());
+        // sin permiso de facturación, no
+        let doc = signed_in(&addr, "CLAVE9", "Gabinete", 3, "0000");
+        let (mut d, mut sd) = doc.load().unwrap();
+        let (p3, e3) = *pending.iter().find(|(p, _)| *p != p1 && *p != p2).unwrap();
+        assert!(doc.chain_op(&mut d, &mut sd, &json!({ "accion": "emitir", "paciente": p3, "tratamientos": [e3], "fecha": day })).unwrap_err().contains("facturar"));
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

@@ -567,6 +567,27 @@ impl App {
         }
     }
 
+    /// Una operación de la cadena de facturas (emitir, rectificar, subsanar,
+    /// anular): en red la hace el servidor y con carpeta compartida se hace con
+    /// el fichero bloqueado, para que dos puestos no saquen el mismo número ni
+    /// rompan la cadena de VERI*FACTU. Devuelve el id creado.
+    pub fn chain_op(&mut self, op: ChainOp) -> Result<u32, String> {
+        let user = self.db.config.current_user.clone();
+        if let Some(r) = self.remote.clone() {
+            let id = r.chain_op(&mut self.db, &mut self.synced, &op.json())?;
+            self.dirty = false;
+            return Ok(id);
+        }
+        if crate::shared::shared() {
+            let (_, id) = crate::shared::save_synced_with(&mut self.db, &mut self.base, &Db::path(), |db| op.run(db, &user))?;
+            self.dirty = false;
+            return id;
+        }
+        let id = op.run(&mut self.db, &user)?;
+        self.changed();
+        Ok(id)
+    }
+
     /// Comprueba la contraseña: en el servidor de la clínica o en los datos de este ordenador.
     pub fn check_login(&mut self, id: u32, pin: &str) -> Result<crate::users::LoginStep, String> {
         let Some(r) = self.remote.clone() else { return self.db.login(id, pin) };
@@ -783,6 +804,35 @@ impl App {
         self.persist = false;
         self.user_id = None;
         Ok(())
+    }
+}
+
+/// Operaciones de la cadena de facturas (ver [`App::chain_op`]).
+pub enum ChainOp {
+    Issue { patient: u32, entries: Vec<u32>, date: chrono::NaiveDate },
+    Rectify { invoice: u32, reason: String },
+    Correct { invoice: u32 },
+    Cancel { invoice: u32, reason: String },
+}
+
+impl ChainOp {
+    fn run(&self, db: &mut Db, user: &str) -> Result<u32, String> {
+        match self {
+            ChainOp::Issue { patient, entries, date } => db.issue_invoice(*patient, entries, *date),
+            ChainOp::Rectify { invoice, reason } => db.rectify_invoice(*invoice, reason),
+            ChainOp::Correct { invoice } => crate::verifactu::create_correction(db, *invoice, user),
+            ChainOp::Cancel { invoice, reason } => crate::verifactu::create_cancellation(db, *invoice, reason, user),
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        use serde_json::json;
+        match self {
+            ChainOp::Issue { patient, entries, date } => json!({ "accion": "emitir", "paciente": patient, "tratamientos": entries, "fecha": date }),
+            ChainOp::Rectify { invoice, reason } => json!({ "accion": "rectificar", "factura": invoice, "motivo": reason }),
+            ChainOp::Correct { invoice } => json!({ "accion": "subsanar", "factura": invoice }),
+            ChainOp::Cancel { invoice, reason } => json!({ "accion": "anular", "factura": invoice, "motivo": reason }),
+        }
     }
 }
 

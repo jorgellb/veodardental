@@ -280,7 +280,6 @@ fn record_actions(app: &mut App, ui: &mut Ui, f: &Invoice) {
             app.vf.fix = None;
         }
     });
-    let user = app.db.config.current_user.clone();
     if app.vf.fix == Some(f.id) {
         egui::Frame::new().fill(tint(INFO, 0.05)).stroke(Stroke::new(1.0, tint(INFO, 0.25))).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -296,7 +295,7 @@ fn record_actions(app: &mut App, ui: &mut Ui, f: &Invoice) {
                         inv.client_name = name;
                         inv.client_nif = nif;
                     }
-                    match verifactu::create_correction(&mut app.db, f.id, &user) {
+                    match app.chain_op(crate::app::ChainOp::Correct { invoice: f.id }) {
                         Ok(_) => {
                             app.db.audit("VERI*FACTU: corrección", &f.code());
                             app.vf.fix = None;
@@ -320,7 +319,7 @@ fn record_actions(app: &mut App, ui: &mut Ui, f: &Invoice) {
                 ui.add_sized([340.0, 36.0], egui::TextEdit::singleline(&mut app.vf.cancel_reason).hint_text("Motivo de la anulación"));
                 if danger(ui, "Anular la factura").clicked() {
                     let reason = app.vf.cancel_reason.clone();
-                    match verifactu::create_cancellation(&mut app.db, f.id, &reason, &user) {
+                    match app.chain_op(crate::app::ChainOp::Cancel { invoice: f.id, reason: reason.clone() }) {
                         Ok(_) => {
                             app.db.audit("VERI*FACTU: anulación", &format!("{}: {reason}", f.code()));
                             app.vf.cancel = None;

@@ -275,6 +275,13 @@ fn rev_of(v: &Value) -> u64 {
 /// Guarda los datos combinándolos con lo que otro puesto haya guardado desde
 /// la última lectura. `base` se actualiza con lo que queda en disco.
 pub fn save_synced(db: &mut Db, base: &mut Value, path: &Path) -> Result<Synced, String> {
+    save_synced_with(db, base, path, |_| ()).map(|(s, _)| s)
+}
+
+/// Como [`save_synced`], pero con el fichero bloqueado hace `f` sobre los
+/// datos ya al día (con lo de los demás puestos) antes de guardarlos: para lo
+/// que tiene que hacer un puesto solo, como numerar una factura.
+pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl FnOnce(&mut Db) -> R) -> Result<(Synced, R), String> {
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let who = station_label();
@@ -288,33 +295,33 @@ pub fn save_synced(db: &mut Db, base: &mut Value, path: &Path) -> Result<Synced,
         Ok(t) => Some(serde_json::from_str(&t).map_err(|e| format!("El fichero de datos compartido está dañado: {e}"))?),
         Err(_) => None,
     };
-    let mut ours = serde_json::to_value(&*db).map_err(|e| e.to_string())?;
     let outcome = match disk {
         Some(d) if rev_of(&d) != rev_of(base) => {
+            let ours = serde_json::to_value(&*db).map_err(|e| e.to_string())?;
             let mut conflicts = 0;
             let mut m = merge(Some(base), &ours, &d, &mut conflicts);
             let next = ours.get("next_id").and_then(|v| v.as_u64()).unwrap_or(0).max(d.get("next_id").and_then(|v| v.as_u64()).unwrap_or(0));
             m["next_id"] = Value::from(next);
             m["rev"] = Value::from(rev_of(&d) + 1);
             let (station, user, center) = (db.station, db.config.current_user.clone(), db.config.current_center);
-            *db = serde_json::from_value(m.clone()).map_err(|e| format!("No se pudieron combinar los datos: {e}"))?;
+            *db = serde_json::from_value(m).map_err(|e| format!("No se pudieron combinar los datos: {e}"))?;
             db.station = station;
             db.config.current_user = user;
             db.config.current_center = center;
-            ours = m;
             Synced::Merged(conflicts)
         }
         _ => {
             db.rev += 1;
-            ours["rev"] = Value::from(db.rev);
             Synced::Saved
         }
     };
+    let out = f(db);
+    let ours = serde_json::to_value(&*db).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_string(&ours).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     *base = ours;
-    Ok(outcome)
+    Ok((outcome, out))
 }
 
 /// Lee los datos del disco si otro puesto los cambió (revisión distinta).
@@ -414,6 +421,36 @@ mod tests {
         assert_eq!(m["payments"][2]["text"], "entrada 3 suyo");
         assert_eq!(c, 0);
         assert!(took < std::time::Duration::from_secs(3), "combinar ha tardado {took:?}");
+    }
+
+    #[test]
+    fn two_stations_invoicing_in_a_shared_folder_keep_the_chain() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_inv_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let start = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap());
+        prepare_folder(&start, &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        // los dos leen los datos antes de que el otro facture
+        let (mut a, mut base_a) = load();
+        let (mut b, mut base_b) = load();
+        a.station = 1;
+        b.station = 2;
+        let day = crate::model::today();
+        let pending: Vec<(u32, u32)> = a.entries.iter().filter(|e| e.state == crate::model::TxState::Realizado && e.invoice_id.is_none()).map(|e| (e.patient_id, e.id)).collect();
+        let (p1, e1) = pending[0];
+        let (p2, e2) = *pending.iter().find(|(p, _)| *p != p1).unwrap();
+        let (_, ia) = save_synced_with(&mut a, &mut base_a, &path, |db| db.issue_invoice(p1, &[e1], day)).unwrap();
+        let (_, ib) = save_synced_with(&mut b, &mut base_b, &path, |db| db.issue_invoice(p2, &[e2], day)).unwrap();
+        let (fin, _) = load();
+        let (fa, fb) = (fin.invoice(ia.unwrap()).unwrap(), fin.invoice(ib.unwrap()).unwrap());
+        assert_eq!(fb.number, fa.number + 1);
+        assert!(fin.verify_chain().is_ok(), "{:?}", fin.verify_chain());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
