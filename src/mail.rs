@@ -70,12 +70,27 @@ pub struct MailConfig {
     /// Hora a partir de la que se hace el envío del día.
     #[serde(default)]
     pub auto_hour: u32,
+    /// Hora hasta la que se hace (si el ordenador se enciende más tarde, sale
+    /// a la mañana siguiente: de noche no se escribe a los pacientes).
+    #[serde(default = "default_until")]
+    pub auto_until: u32,
     /// Ordenador que hace el envío automático (sólo uno, para no enviarlo dos veces).
     #[serde(default)]
     pub auto_station: String,
     /// Último día en que se hizo el envío automático.
     #[serde(default)]
     pub last_auto: Option<chrono::NaiveDate>,
+}
+
+fn default_until() -> u32 {
+    21
+}
+
+impl MailConfig {
+    /// Es hora de hacer el envío automático del día (entre las dos horas).
+    pub fn auto_window(&self, hour: u32) -> bool {
+        hour >= self.auto_hour && hour < self.auto_until.max(self.auto_hour + 1)
+    }
 }
 
 impl Default for MailConfig {
@@ -92,6 +107,7 @@ impl Default for MailConfig {
             bcc_self: false,
             auto_send: false,
             auto_hour: 10,
+            auto_until: default_until(),
             auto_station: String::new(),
             last_auto: None,
         }
@@ -176,6 +192,20 @@ pub fn send(cfg: &MailConfig, to: &str, subject: &str, text: &str, files: &[File
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_emails_are_not_sent_at_night() {
+        let m = MailConfig::default();
+        assert_eq!((m.auto_hour, m.auto_until), (10, 21));
+        assert!(!m.auto_window(9) && m.auto_window(10) && m.auto_window(20));
+        assert!(!m.auto_window(21) && !m.auto_window(23), "si se enciende a las 23:30, espera a mañana");
+        // los datos de antes (sin la hora final) también paran a las 21:00
+        let old: MailConfig = serde_json::from_str(r#"{"enabled":true,"host":"h","port":587,"security":"StartTls","user":"","password":"","from_name":"","from_email":"a@b.es","auto_send":true,"auto_hour":9}"#).unwrap();
+        assert_eq!(old.auto_until, 21);
+        // una hora final antes de la inicial no deja sin envío
+        let odd = MailConfig { auto_hour: 18, auto_until: 8, ..Default::default() };
+        assert!(odd.auto_window(18));
+    }
     use std::io::{BufRead, BufReader, Write};
 
     /// Atiende una conexión SMTP y devuelve las órdenes y el mensaje recibidos.

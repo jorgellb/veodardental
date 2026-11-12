@@ -577,7 +577,15 @@ fn grid(app: &mut App, ui: &mut Ui) {
                 a.doctor_id = doc;
             }
             app.changed();
-            app.notify(format!("Cita movida a {} {} con {}", fmt_date(date), hm(start), app.db.doctor_alias(doc)));
+            let moved = format!("Cita movida a {} {} con {}", fmt_date(date), hm(start), app.db.doctor_alias(doc));
+            let m = app.db.appointments.iter().find(|a| a.id == id).cloned();
+            match m.as_ref().and_then(|m| app.db.room_taken(m.box_id, m.center_id, m.date, m.start, m.end(), Some(id)).filter(|o| o.doctor_id != m.doctor_id)) {
+                Some(o) => {
+                    let why = room_text(&app.db, o);
+                    app.warn(format!("{moved}. {why} Cambie el gabinete en la cita."));
+                }
+                None => app.notify(moved),
+            }
         }
     }
     // clic en hueco vacío → nueva cita
@@ -767,6 +775,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
     let mut delete = false;
     let mut resched = false;
     let mut to_patient = None;
+    // primera visita: dar de alta su ficha, o usar la que ya hay con su teléfono
+    let mut make_patient = false;
+    let mut use_patient: Option<u32> = None;
     crate::theme::modal("appt_dialog").show(ctx, |ui| {
         ui.set_width(790.0);
         title(ui, if d.is_new { "Nueva cita" } else { "Editar cita" }, &long_date(d.a.date));
@@ -792,6 +803,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                         });
                     });
                     if let Some(p) = &p {
+                        if !p.active {
+                            ui.label(RichText::new("⚠ Este paciente está de baja.").color(DANGER));
+                        }
                         if !p.alerts.is_empty() || !p.allergies.is_empty() {
                             ui.label(RichText::new(format!("⚠ {} {}", p.alerts, p.allergies)).color(DANGER));
                         }
@@ -822,6 +836,25 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     });
                     if !d.a.free_name.is_empty() {
                         d.a.first_visit = true;
+                    }
+                    // la cita ya guardada de alguien sin ficha (primera visita, pedida por internet…)
+                    if !d.is_new && !d.a.free_name.trim().is_empty() {
+                        match app.db.patient_with_phone(&d.a.phone) {
+                            Some(pid) => {
+                                let n = app.db.patient(pid).map(|p| format!("{} (Nº {})", p.full_name(), p.history_no)).unwrap_or_default();
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(RichText::new(format!("Ya hay una ficha con ese teléfono: {n}")).color(WARN));
+                                    if ui.button("Usar esta ficha").clicked() {
+                                        use_patient = Some(pid);
+                                    }
+                                });
+                            }
+                            None => {
+                                if primary(ui, "＋ Dar de alta a este paciente").on_hover_text("Abre su ficha con los datos de la cita; al guardarla, sus citas quedan unidas a ella").clicked() {
+                                    make_patient = true;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -942,6 +975,10 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
             if app.db.overlaps(d.a.doctor_id, d.a.date, d.a.start, end, (!d.is_new).then_some(d.a.id)) {
                 ui.label(RichText::new(format!("⚠ Se solapa con otra cita o un bloqueo de {}.", app.db.doctor_alias(d.a.doctor_id))).color(WARN));
             }
+            // el sillón: dos doctores en el mismo gabinete a la vez
+            if let Some(o) = app.db.room_taken(d.a.box_id, d.a.center_id, d.a.date, d.a.start, end, (!d.is_new).then_some(d.a.id)).filter(|o| o.doctor_id != d.a.doctor_id) {
+                ui.label(RichText::new(format!("⚠ {}", room_text(&app.db, o))).color(WARN));
+            }
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
@@ -970,6 +1007,30 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
     if let Some(pid) = to_patient {
         app.open_patient(pid, PatTab::Resumen);
         return Dialog::None;
+    }
+    if let Some(pid) = use_patient {
+        // con lo que se haya cambiado en la cita
+        if let Some(a) = app.db.appointments.iter_mut().find(|a| a.id == d.a.id) {
+            *a = d.a.clone();
+        }
+        let n = app.db.link_first_visit(d.a.id, pid);
+        d.a.patient_id = Some(pid);
+        d.a.free_name.clear();
+        app.changed();
+        app.notify(format!("{} unida a la ficha de {}.", if n == 1 { "La cita queda".to_string() } else { format!("Sus {n} citas quedan") }, app.db.patient_name(pid)));
+        return Dialog::Appointment(d);
+    }
+    if make_patient {
+        if let Some(a) = app.db.appointments.iter_mut().find(|a| a.id == d.a.id) {
+            *a = d.a.clone();
+        }
+        app.changed();
+        let mut p = pacientes::blank_patient(&app.db, app.today);
+        if let Some(x) = app.db.patient_from_appt(d.a.id) {
+            (p.first_name, p.last_name, p.mobile, p.email, p.doctor_id) = (x.first_name, x.last_name, x.mobile, x.email, x.doctor_id);
+        }
+        app.new_patient_for = Some(d.a.id);
+        return Dialog::NewPatient(Box::new(p));
     }
     if resched && let Some(n) = app.db.reschedule_draft(d.a.id) {
         app.agenda.date = n.date;
@@ -1019,6 +1080,13 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
         return app.dialog_take_or_none();
     }
     if open { Dialog::Appointment(d) } else { app.dialog_take_or_none() }
+}
+
+/// «El gabinete Gabinete 1 lo ocupa la Dra. Ruiz de 10:00 a 11:00 (Ana García).»
+fn room_text(db: &Db, o: &Appointment) -> String {
+    let room = db.boxes.iter().find(|b| b.id == o.box_id).map(|b| b.name.clone()).unwrap_or_else(|| format!("nº {}", o.box_id));
+    let who = o.patient_id.map(|p| db.patient_name(p)).unwrap_or_else(|| o.free_name.clone());
+    format!("El gabinete «{room}» ya lo ocupa {} de {} a {} ({who}).", db.doctor_alias(o.doctor_id), hm(o.start), hm(o.end()))
 }
 
 fn time_combo(ui: &mut Ui, id: &str, t: &mut NaiveTime, open: NaiveTime, close: NaiveTime) {

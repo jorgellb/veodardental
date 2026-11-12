@@ -164,6 +164,9 @@ pub struct App {
     /// tener los datos.
     pub pending_start: bool,
     pub screenshot: Option<Screenshot>,
+    /// Cita de primera visita cuya ficha se está dando de alta (al guardarla,
+    /// se le pone a esa cita y a las demás de esa persona).
+    pub new_patient_for: Option<u32>,
     pub agenda: screens::agenda::AgendaState,
     pub odg: screens::odontograma::OdgState,
     pub lists: screens::ListsState,
@@ -292,6 +295,7 @@ impl App {
             awaiting_data,
             pending_start: false,
             screenshot: shot.map(|path| Screenshot { path, frames: 0, state: Arc::new(AtomicU8::new(0)) }),
+            new_patient_for: None,
             agenda: screens::agenda::AgendaState::new(today()),
             odg: screens::odontograma::OdgState::default(),
             lists: screens::ListsState::default(),

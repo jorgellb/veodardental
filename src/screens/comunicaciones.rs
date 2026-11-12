@@ -142,7 +142,7 @@ pub fn outbox_tick(app: &mut App, ctx: &egui::Context) {
     let m = &app.db.mail;
     if m.auto_send && m.ready() && m.auto_station == crate::shared::machine_name() && app.comms.outbox.is_none() && m.last_auto != Some(app.today) {
         use chrono::Timelike;
-        if chrono::Local::now().hour() >= m.auto_hour {
+        if m.auto_window(chrono::Local::now().hour()) {
             run_daily(app);
         }
     }
@@ -279,12 +279,12 @@ fn messages(app: &mut App, ui: &mut Ui) {
                     } else if !m.auto_send {
                         ("Envío automático por correo desactivado: los correos se envían con el botón «Enviar por correo».".to_string(), MUTED)
                     } else if m.auto_station != me {
-                        (format!("Envío automático por correo: cada día a partir de las {}:00 desde el ordenador «{}».", m.auto_hour, m.auto_station), INFO)
+                        (format!("Envío automático por correo: cada día entre las {}:00 y las {}:00 desde el ordenador «{}».", m.auto_hour, m.auto_until, m.auto_station), INFO)
                     } else if m.last_auto == Some(app.today) {
                         let last = app.comms.last_outbox.filter(|l| l.3).map(|l| format!(" ({} enviados{})", l.1, if l.2 > 0 { format!(", {} con error", l.2) } else { String::new() })).unwrap_or_default();
                         (format!("Envío automático por correo: hoy ya se ha hecho{last}. Mañana, a partir de las {}:00.", m.auto_hour), OK)
                     } else {
-                        (format!("Envío automático por correo: hoy a partir de las {}:00 desde este ordenador.", m.auto_hour), INFO)
+                        (format!("Envío automático por correo: hoy entre las {}:00 y las {}:00 desde este ordenador (si no da tiempo, mañana).", m.auto_hour, m.auto_until), INFO)
                     };
                     ui.label(RichText::new(txt.0).size(12.5).color(txt.1));
                     if ui.link(RichText::new("Ajustes ›").size(12.5)).clicked() {

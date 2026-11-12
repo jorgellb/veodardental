@@ -538,7 +538,7 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
     {
         let m = &db.mail;
         let st = if m.ready() {
-            (Listo, format!("Envía desde {}{}.", m.from_email.trim(), if m.auto_send { format!("; los avisos automáticos salen cada día a las {}:00", m.auto_hour) } else { String::new() }))
+            (Listo, format!("Envía desde {}{}.", m.from_email.trim(), if m.auto_send { format!("; los avisos automáticos salen cada día entre las {}:00 y las {}:00", m.auto_hour, m.auto_until) } else { String::new() }))
         } else {
             (Opcional, "Para mandar presupuestos, recordatorios, enlaces y órdenes al laboratorio por correo, con la cuenta de la clínica.".to_string())
         };

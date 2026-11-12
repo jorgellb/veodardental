@@ -855,12 +855,22 @@ pub fn new_dialog(app: &mut App, ctx: &egui::Context, mut p: Box<Patient>) -> Di
         p.id = id;
         p.history_no = app.db.next_history_no();
         app.db.patients.push(*p);
+        // de una cita de primera visita: la ficha queda en sus citas
+        let linked = app.new_patient_for.take().map(|appt| app.db.link_first_visit(appt, id)).unwrap_or(0);
         app.changed();
         app.open_patient(id, PatTab::Resumen);
-        app.notify("Paciente dado de alta.");
+        app.notify(match linked {
+            0 => "Paciente dado de alta.".to_string(),
+            1 => "Paciente dado de alta y unido a su cita.".to_string(),
+            n => format!("Paciente dado de alta y unido a sus {n} citas."),
+        });
         return app.dialog_take_or_none();
     }
-    if open { Dialog::NewPatient(p) } else { app.dialog_take_or_none() }
+    if open {
+        return Dialog::NewPatient(p);
+    }
+    app.new_patient_for = None;
+    app.dialog_take_or_none()
 }
 
 fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {

@@ -126,6 +126,13 @@ impl Db {
         self.doctor_day(doctor_id, date).iter().any(|s| s.start <= start && end <= s.end)
     }
 
+    /// Otra cita (no anulada) que ocupa ese gabinete del centro a esa hora.
+    pub fn room_taken(&self, box_id: u32, center: u32, date: NaiveDate, start: NaiveTime, end: NaiveTime, ignore: Option<u32>) -> Option<&Appointment> {
+        self.appointments.iter().find(|a| {
+            Some(a.id) != ignore && a.box_id == box_id && cid(a.center_id) == cid(center) && a.date == date && !a.state.is_cancelled() && a.start < end && start < a.end()
+        })
+    }
+
     /// Por qué no se puede dar cita a esa hora con ese profesional según los
     /// horarios (festivo, la clínica no abre, el profesional no está…).
     /// `None` si está dentro de su horario.
@@ -214,6 +221,24 @@ mod tests {
         db.holidays.push(crate::agenda_extra::Holiday { date: wed, name: "Fiesta local".into() });
         assert!(db.schedule_problem(2, wed, t(16, 0), t(17, 0)).unwrap().contains("Fiesta local"));
         assert!(!db.working_day(wed) && db.working_day(sat));
+    }
+
+    #[test]
+    fn a_room_used_by_another_doctor_is_flagged() {
+        let mut db = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 4).unwrap());
+        let mon = monday(&db);
+        db.appointments.retain(|a| a.date != mon);
+        let mut a = db.appointments[0].clone();
+        (a.id, a.date, a.start, a.minutes, a.doctor_id, a.box_id, a.center_id, a.state) = (db.new_id(), mon, t(10, 0), 60, 1, 1, 1, ApptState::Planificada);
+        db.appointments.push(a.clone());
+        // otro doctor en el mismo gabinete a las 10:30
+        let other = db.room_taken(1, 1, mon, t(10, 30), t(11, 0), None).map(|x| x.id);
+        assert_eq!(other, Some(a.id));
+        assert!(db.room_taken(1, 1, mon, t(11, 0), t(11, 30), None).is_none(), "justo al acabar, libre");
+        assert!(db.room_taken(2, 1, mon, t(10, 30), t(11, 0), None).is_none(), "otro gabinete");
+        assert!(db.room_taken(1, 1, mon, t(10, 30), t(11, 0), Some(a.id)).is_none(), "la propia cita no cuenta");
+        db.appointments.iter_mut().find(|x| x.id == a.id).unwrap().state = ApptState::Anulada;
+        assert!(db.room_taken(1, 1, mon, t(10, 30), t(11, 0), None).is_none(), "una anulada no ocupa");
     }
 
     #[test]

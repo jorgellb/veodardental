@@ -195,6 +195,41 @@ impl Db {
     }
 }
 
+impl Db {
+    /// Datos para la ficha de la persona de una cita de primera visita (sin
+    /// ficha): nombre y apellidos, teléfono y, si la pidió por internet, su correo.
+    pub fn patient_from_appt(&self, appt: u32) -> Option<Patient> {
+        let a = self.appointments.iter().find(|a| a.id == appt && a.patient_id.is_none())?;
+        let name = a.free_name.trim();
+        let (first, last) = name.split_once(' ').map(|(f, l)| (f.trim(), l.trim())).unwrap_or((name, ""));
+        let email = self.booking_requests.iter().find(|r| r.appointment_id == Some(appt)).map(|r| r.email.trim().to_string()).unwrap_or_default();
+        Some(Patient { first_name: first.to_string(), last_name: last.to_string(), mobile: a.phone.trim().to_string(), email, doctor_id: a.doctor_id, ..Default::default() })
+    }
+
+    /// Ficha (activa) que ya tiene ese teléfono.
+    pub fn patient_with_phone(&self, phone: &str) -> Option<u32> {
+        self.patients.iter().filter(|p| p.active).find(|p| crate::booking::same_phone(&p.mobile, phone) || crate::booking::same_phone(&p.phone, phone)).map(|p| p.id)
+    }
+
+    /// Pone la ficha `pid` en la cita de primera visita `appt` y en las demás
+    /// citas sin ficha de la misma persona (mismo nombre y teléfono), y en sus
+    /// solicitudes por internet. Devuelve cuántas citas.
+    pub fn link_first_visit(&mut self, appt: u32, pid: u32) -> usize {
+        let Some(a) = self.appointments.iter().find(|a| a.id == appt).cloned() else { return 0 };
+        let same = |x: &Appointment| x.id == appt || (x.patient_id.is_none() && fold(x.free_name.trim()) == fold(a.free_name.trim()) && crate::booking::same_phone(&x.phone, &a.phone));
+        let mut ids = vec![];
+        for x in self.appointments.iter_mut().filter(|x| same(x)) {
+            x.patient_id = Some(pid);
+            x.free_name.clear();
+            ids.push(x.id);
+        }
+        for r in self.booking_requests.iter_mut().filter(|r| r.appointment_id.is_some_and(|i| ids.contains(&i))) {
+            r.patient_id = Some(pid);
+        }
+        ids.len()
+    }
+}
+
 /// Festivos nacionales de ejemplo para el año indicado (editables).
 pub fn default_holidays(year: i32) -> Vec<Holiday> {
     let h = |m: u32, d: u32, n: &str| Holiday { date: NaiveDate::from_ymd_opt(year, m, d).unwrap(), name: n.into() };
@@ -253,6 +288,36 @@ pub fn lanes(items: &[(u32, i64, i64)]) -> std::collections::HashMap<u32, (usize
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_first_visit_becomes_a_patient_with_all_their_appointments() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(today);
+        let mut a = db.appointments[0].clone();
+        (a.id, a.patient_id, a.free_name, a.phone, a.first_visit, a.date) = (db.new_id(), None, "Lucía Gómez Ortega".into(), "+34 611 222 333".into(), true, today);
+        db.appointments.push(a.clone());
+        // otra cita suya (otro día) y la de otra persona
+        let mut b = a.clone();
+        (b.id, b.date) = (db.new_id(), today + Duration::days(7));
+        db.appointments.push(b.clone());
+        let mut c = a.clone();
+        (c.id, c.free_name, c.phone) = (db.new_id(), "Pedro Ruiz".into(), "622 000 000".into());
+        db.appointments.push(c.clone());
+        // la pidió por internet con su correo
+        let rid = db.new_id();
+        db.booking_requests.push(crate::booking::BookingRequest { id: rid, received: now(), name: "Lucía Gómez Ortega".into(), phone: a.phone.clone(), email: "lucia@example.com".into(), reason: "Revisión".into(), minutes: 30, code: String::new(), doctor_id: a.doctor_id, date: a.date, start: a.start, notes: String::new(), first_visit: true, patient_id: None, state: crate::booking::ReqState::Confirmada, appointment_id: Some(a.id), answer: String::new(), center_id: 1, replaces: None });
+        let p = db.patient_from_appt(a.id).unwrap();
+        assert_eq!((p.first_name.as_str(), p.last_name.as_str(), p.mobile.as_str(), p.email.as_str()), ("Lucía", "Gómez Ortega", "+34 611 222 333", "lucia@example.com"));
+        assert_eq!(db.patient_with_phone("611 222 333"), None, "aún no tiene ficha");
+        let pid = db.new_id();
+        db.patients.push(Patient { id: pid, first_name: p.first_name.clone(), last_name: p.last_name.clone(), mobile: p.mobile.clone(), active: true, ..Default::default() });
+        assert_eq!(db.link_first_visit(a.id, pid), 2, "sus dos citas");
+        let pat = |id: u32, db: &Db| db.appointments.iter().find(|x| x.id == id).unwrap().patient_id;
+        assert_eq!((pat(a.id, &db), pat(b.id, &db), pat(c.id, &db)), (Some(pid), Some(pid), None));
+        assert!(db.booking_requests.iter().any(|r| r.appointment_id == Some(a.id) && r.patient_id == Some(pid)));
+        // la próxima vez se encuentra por el teléfono
+        assert_eq!(db.patient_with_phone("611222333"), Some(pid));
+    }
 
     #[test]
     fn overlapping_appointments_go_side_by_side() {

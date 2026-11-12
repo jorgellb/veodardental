@@ -1291,7 +1291,7 @@ fn daily_emails_are_sent_automatically() {
             let id = a.db.new_id();
             a.db.appointments.push(crate::model::Appointment { id, date: tomorrow, start: chrono::NaiveTime::from_hms_opt(9 + k as u32, 0, 0).unwrap(), minutes: 30, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: 1, box_id: 1, reason: "Revisión".into(), treatment_code: "0102".into(), state: crate::model::ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
         }
-        a.db.mail = crate::mail::MailConfig { enabled: true, host: "127.0.0.1".into(), port, security: crate::mail::Security::Ninguna, from_email: "clinica@example.com".into(), auto_send: true, auto_hour: 0, auto_station: crate::shared::machine_name(), ..Default::default() };
+        a.db.mail = crate::mail::MailConfig { enabled: true, host: "127.0.0.1".into(), port, security: crate::mail::Security::Ninguna, from_email: "clinica@example.com".into(), auto_send: true, auto_hour: 0, auto_until: 24, auto_station: crate::shared::machine_name(), ..Default::default() };
         a.screen = crate::app::Screen::Comunicaciones;
     }
     let done = |a: &App| a.db.mail.last_auto == Some(a.today) && a.comms.outbox.is_none() && a.db.messages.len() == 2 && a.db.messages.iter().all(|m| m.state == MsgState::Enviado);
@@ -1988,4 +1988,44 @@ fn installment_paid_in_cash_and_cancelled_from_the_dialog() {
     let back = a.db.payments.iter().find(|p| p.cancels == Some(pay)).expect("anulación");
     assert_eq!(back.amount, -amount);
     assert!((a.db.cash_expected(a.db.open_cash().unwrap()) - cash_before).abs() < 0.005, "la caja vuelve a cuadrar");
+}
+
+/// Una cita de primera visita: «Dar de alta a este paciente» abre su ficha con
+/// los datos de la cita y, al guardarla, la cita queda unida a ella.
+#[test]
+fn first_visit_appointment_creates_the_patient_file() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Recep")).map(|u| u.id);
+        let mut x = a.db.appointments[0].clone();
+        (x.id, x.patient_id, x.free_name, x.phone, x.first_visit) = (a.db.new_id(), None, "Nuria Prieto Gil".into(), "655 444 333".into(), true);
+        a.db.appointments.push(x.clone());
+        a.screen = crate::app::Screen::Agenda;
+        a.dialog = crate::app::Dialog::Appointment(crate::screens::agenda::ApptDraft { a: x, is_new: false, search: String::new(), repeat: 0, repeat_count: 4, from_id: None });
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    let appt = match &h.state().dialog {
+        crate::app::Dialog::Appointment(d) => d.a.id,
+        _ => panic!("sin diálogo de cita"),
+    };
+    h.get_by_label_contains("Dar de alta a este paciente").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    match &h.state().dialog {
+        crate::app::Dialog::NewPatient(p) => assert_eq!((p.first_name.as_str(), p.last_name.as_str(), p.mobile.as_str()), ("Nuria", "Prieto Gil", "655 444 333")),
+        _ => panic!("no se abrió la ficha nueva"),
+    }
+    h.get_by_label("Guardar paciente").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let a = h.state();
+    let pid = a.db.patients.iter().find(|p| p.mobile == "655 444 333").expect("ficha creada").id;
+    assert_eq!(a.db.appointments.iter().find(|x| x.id == appt).unwrap().patient_id, Some(pid), "la cita queda unida a la ficha");
+    assert!(a.new_patient_for.is_none());
 }

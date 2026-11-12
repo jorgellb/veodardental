@@ -73,9 +73,11 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
             ui.label(RichText::new("Primero configure y active el correo de arriba.").size(12.5).color(MUTED));
         }
         ui.horizontal(|ui| {
-            ui.label("A partir de las");
+            ui.label("Entre las");
             ui.add(egui::DragValue::new(&mut c.auto_hour).range(0..=22).suffix(":00"));
-            ui.label(RichText::new("(si el ordenador está apagado a esa hora, se envía al encenderlo)").size(12.5).color(MUTED));
+            ui.label("y las");
+            ui.add(egui::DragValue::new(&mut c.auto_until).range(1..=24).suffix(":00"));
+            ui.label(RichText::new("(si el ordenador está apagado, se envía al encenderlo; de noche, a la mañana siguiente)").size(12.5).color(MUTED));
         });
         ui.horizontal_wrapped(|ui| {
             if c.auto_station.trim().is_empty() || c.auto_station == me {
