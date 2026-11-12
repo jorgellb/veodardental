@@ -3,6 +3,7 @@
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
 pub use crate::sync::Tracked;
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -1340,6 +1341,31 @@ impl Db {
         self.patients.iter().map(|p| p.history_no).max().unwrap_or(1000) + 1
     }
 
+    /// Números de historia repetidos (dos puestos dieron de alta pacientes a
+    /// la vez): los pacientes para los que `keep` es falso reciben el
+    /// siguiente libre (el número nombra su carpeta de imágenes). Devuelve
+    /// cuántos ha cambiado.
+    pub fn fix_history_numbers(&mut self, keep: impl Fn(u32) -> bool) -> usize {
+        let mut count: HashMap<u32, usize> = HashMap::new();
+        for p in self.patients.iter() {
+            *count.entry(p.history_no).or_default() += 1;
+        }
+        if count.values().all(|n| *n <= 1) {
+            return 0;
+        }
+        let mut next = self.next_history_no();
+        let mut fixed = 0;
+        for p in self.patients.iter_mut() {
+            if count.get(&p.history_no).copied().unwrap_or(0) > 1 && !keep(p.id) {
+                *count.entry(p.history_no).or_default() -= 1;
+                p.history_no = next;
+                next += 1;
+                fixed += 1;
+            }
+        }
+        fixed
+    }
+
     pub fn patient_debit(&self, pid: u32) -> f64 {
         round2(
             self.entries
@@ -1397,11 +1423,32 @@ impl Db {
         round2(s.opening_balance + cash_pay + s.moves.iter().map(|m| m.amount).sum::<f64>())
     }
 
+    /// Número del recibo siguiente. En red, cada puesto tiene su serie (R2-00001,
+    /// R3-00001…): el recibo se imprime al cobrar, así que su número tiene que
+    /// ser único ya, sin esperar al servidor. En un solo ordenador, el contador
+    /// de la configuración.
+    fn next_receipt(&mut self) -> String {
+        let r = self.peek_receipt();
+        if self.station == 0 {
+            self.config.next_receipt += 1;
+        }
+        r
+    }
+
+    /// El número que llevará el próximo recibo (sin gastarlo).
+    pub fn peek_receipt(&self) -> String {
+        if self.station == 0 {
+            return format!("{}-{:05}", self.config.receipt_series, self.config.next_receipt);
+        }
+        let prefix = format!("{}{}-", self.config.receipt_series, self.station);
+        let n = self.payments.iter().filter_map(|p| p.receipt_no.strip_prefix(&prefix)?.parse::<u32>().ok()).max().unwrap_or(0) + 1;
+        format!("{prefix}{n:05}")
+    }
+
     /// Registra un cobro; numera el recibo y lo asocia a la caja abierta.
     pub fn add_payment(&mut self, pid: u32, amount: f64, method: &str, concept: &str) -> u32 {
         let id = self.new_id();
-        let receipt = format!("{}-{:05}", self.config.receipt_series, self.config.next_receipt);
-        self.config.next_receipt += 1;
+        let receipt = self.next_receipt();
         let cash = self.open_cash().map(|c| c.id);
         self.payments.push(Payment {
             id,

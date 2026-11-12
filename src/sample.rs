@@ -734,6 +734,42 @@ mod tests {
     }
 
     #[test]
+    fn receipts_are_unique_per_station() {
+        let mut db = Db::sample(d());
+        // un solo ordenador: el contador de la configuración
+        let next = db.config.next_receipt;
+        let id = db.add_payment(100, 10.0, "Efectivo", "");
+        assert_eq!(db.payments.iter().find(|p| p.id == id).unwrap().receipt_no, format!("{}-{next:05}", db.config.receipt_series));
+        // en red, cada puesto su serie: nunca coinciden
+        let mut a = db.clone();
+        a.station = 2;
+        let mut b = db.clone();
+        b.station = 3;
+        let ra: Vec<String> = (0..2).map(|_| { let id = a.add_payment(100, 10.0, "Efectivo", ""); a.payments.iter().find(|p| p.id == id).unwrap().receipt_no.clone() }).collect();
+        let id = b.add_payment(101, 10.0, "Tarjeta", "");
+        let rb = b.payments.iter().find(|p| p.id == id).unwrap().receipt_no.clone();
+        assert_eq!(ra, vec![format!("{}2-00001", db.config.receipt_series), format!("{}2-00002", db.config.receipt_series)]);
+        assert_eq!(rb, format!("{}3-00001", db.config.receipt_series));
+    }
+
+    #[test]
+    fn repeated_history_numbers_get_the_next_free_one() {
+        let mut db = Db::sample(d());
+        let mut p = db.patients[0].clone();
+        p.id = db.new_id();
+        p.history_no = db.patients[1].history_no;
+        db.patients.push(p.clone());
+        let keep_old = db.patients[1].id;
+        assert_eq!(db.fix_history_numbers(|id| id != p.id), 1);
+        assert_eq!(db.patient(keep_old).unwrap().history_no, db.patients[1].history_no, "el que ya estaba lo conserva");
+        let mut all: Vec<u32> = db.patients.iter().map(|x| x.history_no).collect();
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), db.patients.len());
+        assert_eq!(db.fix_history_numbers(|_| false), 0, "sin repetidos no cambia nada");
+    }
+
+    #[test]
     fn patient_data_cannot_inject_program_options() {
         let mut db = Db::sample(d());
         // nombre escrito por alguien en la cita online, con opciones y rutas

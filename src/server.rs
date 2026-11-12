@@ -867,7 +867,18 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
+        let existed: std::collections::HashSet<String> = changes.iter().filter(|c| c.field == "patients").filter_map(|c| c.key.clone()).filter(|k| self.snap.get("patients", Some(k)).is_some()).collect();
         let mut touched = sync::apply(&mut self.snap, &changes)?.touched;
+        // dos puestos que dan de alta pacientes a la vez sacan el mismo número de
+        // historia (con él se nombra su carpeta de imágenes): el nuevo, el siguiente libre
+        let new_patients: Vec<String> = touched.iter().filter(|(f, k)| f == "patients" && k.as_ref().is_some_and(|k| !existed.contains(k))).filter_map(|(_, k)| k.clone()).collect();
+        if !new_patients.is_empty() {
+            for key in self.fix_history_numbers(&new_patients)? {
+                if !touched.iter().any(|(f, k)| f == "patients" && k.as_deref() == Some(&key)) {
+                    touched.push(("patients".into(), Some(key)));
+                }
+            }
+        }
         if station > 0 {
             let key = station.to_string();
             if let Some(mut s) = self.snap.get("stations", Some(&key)).and_then(|j| serde_json::from_str::<StationSeen>(j).ok()) {
@@ -878,6 +889,36 @@ impl State {
         }
         self.commit(touched)?;
         Ok(sent)
+    }
+
+    /// Pacientes nuevos (`keys`) cuyo número de historia ya tiene otro: les da
+    /// el siguiente libre. Devuelve los que ha cambiado.
+    fn fix_history_numbers(&mut self, keys: &[String]) -> Result<Vec<String>, String> {
+        let no = |json: &str| serde_json::from_str::<Value>(json).ok().and_then(|v| v["history_no"].as_u64());
+        let Some(list) = self.snap.records.get("patients") else { return Ok(vec![]) };
+        let mut used: HashMap<u64, usize> = HashMap::new();
+        for (_, p) in list.iter() {
+            if let Some(n) = no(p) {
+                *used.entry(n).or_default() += 1;
+            }
+        }
+        let mut next = used.keys().max().copied().unwrap_or(1000);
+        let mut fixed = vec![];
+        for key in keys {
+            let Some(json) = self.snap.get("patients", Some(key)).cloned() else { continue };
+            let Some(n) = no(&json) else { continue };
+            if used.get(&n).copied().unwrap_or(0) <= 1 {
+                continue;
+            }
+            next += 1;
+            let mut v: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            v["history_no"] = json!(next);
+            self.snap.set("patients", Some(key), Some(canonical("patients", &v.to_string())?));
+            *used.entry(n).or_default() -= 1;
+            used.insert(next, 1);
+            fixed.push(key.clone());
+        }
+        Ok(fixed)
     }
 
     /// Lo que ha cambiado desde la revisión `since`, más lo de `also` (o, si
@@ -2161,6 +2202,43 @@ mod tests {
         let (mut d, mut sd) = doc.load().unwrap();
         let (p3, e3) = *pending.iter().find(|(p, _)| *p != p1 && *p != p2).unwrap();
         assert!(doc.chain_op(&mut d, &mut sd, &json!({ "accion": "emitir", "paciente": p3, "tratamientos": [e3], "fecha": day })).unwrap_err().contains("facturar"));
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn two_new_patients_never_share_a_history_number() {
+        let (addr, path, h) = start("CLAVE10");
+        let ra = signed_in(&addr, "CLAVE10", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE10", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        // los dos dan de alta un paciente a la vez: el mismo número siguiente
+        let new_patient = |d: &mut Db, name: &str| {
+            let mut p = d.patients[0].clone();
+            p.id = d.new_id();
+            p.history_no = d.next_history_no();
+            p.first_name = name.into();
+            d.patients.push(p.clone());
+            p
+        };
+        let pa = new_patient(&mut a, "Desde A");
+        let pb = new_patient(&mut b, "Desde B");
+        assert_eq!(pa.history_no, pb.history_no);
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let (na, nb) = (disk.patient(pa.id).unwrap().history_no, disk.patient(pb.id).unwrap().history_no);
+        assert_ne!(na, nb, "números de historia distintos");
+        assert_eq!(na, pa.history_no, "el primero conserva el suyo");
+        assert_eq!(b.patient(pb.id).unwrap().history_no, nb, "el segundo puesto recibe el número corregido");
+        let mut all: Vec<u32> = disk.patients.iter().map(|p| p.history_no).collect();
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), disk.patients.len());
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

@@ -58,7 +58,7 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
             ui.label(RichText::new("⚠ No hay caja abierta: el efectivo no se asignará a ninguna caja.").color(WARN));
         }
         ui.add_space(4.0);
-        muted(ui, format!("Recibo nº {}-{:05}", app.db.config.receipt_series, app.db.config.next_receipt));
+        muted(ui, format!("Recibo nº {}", app.db.peek_receipt()));
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui.add_enabled(d.amount > 0.0, egui::Button::new(RichText::new("Cobrar").color(Color32::WHITE)).fill(ACCENT)).clicked() {

@@ -308,6 +308,10 @@ pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl F
             db.station = station;
             db.config.current_user = user;
             db.config.current_center = center;
+            // pacientes dados de alta a la vez en dos puestos: el de este puesto,
+            // con el siguiente número de historia libre
+            let on_disk: std::collections::HashSet<u32> = d["patients"].as_array().into_iter().flatten().filter_map(|p| p["id"].as_u64()).map(|i| i as u32).collect();
+            db.fix_history_numbers(|id| on_disk.contains(&id));
             Synced::Merged(conflicts)
         }
         _ => {
@@ -444,12 +448,23 @@ mod tests {
         let pending: Vec<(u32, u32)> = a.entries.iter().filter(|e| e.state == crate::model::TxState::Realizado && e.invoice_id.is_none()).map(|e| (e.patient_id, e.id)).collect();
         let (p1, e1) = pending[0];
         let (p2, e2) = *pending.iter().find(|(p, _)| *p != p1).unwrap();
+        // y a la vez dan de alta un paciente con el mismo número de historia
+        let mut pa = a.patients[0].clone();
+        pa.id = a.new_id();
+        pa.history_no = a.next_history_no();
+        a.patients.push(pa.clone());
+        let mut pb = b.patients[0].clone();
+        pb.id = b.new_id();
+        pb.history_no = b.next_history_no();
+        b.patients.push(pb.clone());
         let (_, ia) = save_synced_with(&mut a, &mut base_a, &path, |db| db.issue_invoice(p1, &[e1], day)).unwrap();
         let (_, ib) = save_synced_with(&mut b, &mut base_b, &path, |db| db.issue_invoice(p2, &[e2], day)).unwrap();
         let (fin, _) = load();
         let (fa, fb) = (fin.invoice(ia.unwrap()).unwrap(), fin.invoice(ib.unwrap()).unwrap());
         assert_eq!(fb.number, fa.number + 1);
         assert!(fin.verify_chain().is_ok(), "{:?}", fin.verify_chain());
+        assert_ne!(fin.patient(pa.id).unwrap().history_no, fin.patient(pb.id).unwrap().history_no);
+        assert_eq!(fin.patient(pa.id).unwrap().history_no, pa.history_no, "el primero conserva el suyo");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
