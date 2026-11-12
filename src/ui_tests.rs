@@ -2029,3 +2029,34 @@ fn first_visit_appointment_creates_the_patient_file() {
     assert_eq!(a.db.appointments.iter().find(|x| x.id == appt).unwrap().patient_id, Some(pid), "la cita queda unida a la ficha");
     assert!(a.new_patient_for.is_none());
 }
+
+/// Con una cuota cobrada, el plan del presupuesto queda bloqueado: quitar
+/// «Pagar a plazos» no hace nada y lo explica.
+#[test]
+fn a_plan_with_a_paid_installment_is_locked_in_the_budget() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let bid = a.db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        a.db.accept_budget(bid, a.today);
+        a.db.pay_installment(bid, 0, "Tarjeta").unwrap();
+        a.screen = crate::app::Screen::Presupuestos;
+        a.dialog = crate::app::Dialog::Budget(bid);
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    let bid = match h.state().dialog {
+        crate::app::Dialog::Budget(id) => id,
+        _ => panic!("sin presupuesto abierto"),
+    };
+    let _ = h.get_by_label_contains("El plan ya no se puede cambiar");
+    h.get_by_label("Pagar a plazos").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let b = h.state().db.budgets.iter().find(|b| b.id == bid).unwrap().clone();
+    assert!(b.plan.is_some_and(|p| p.paid[0]), "el plan sigue, con su cuota cobrada");
+}

@@ -149,6 +149,8 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
     let mut delete = false;
     let mut to_patient = false;
     let editable = b.state == BudgetState::Pendiente;
+    // con cuotas cobradas o en una remesa, el plan ya no se toca (ni se borra el presupuesto)
+    let locked = app.db.plan_locked(id);
     crate::theme::modal("budget_dlg").show(ctx, |ui| {
         ui.set_width(980.0);
         ui.horizontal(|ui| {
@@ -250,7 +252,10 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 ui.set_width(ui.available_width());
                 section(ui, "Financiación");
                 let mut has = b.plan.is_some();
-                ui.add_enabled_ui(b.state != BudgetState::Cerrado, |ui| {
+                if let Some(why) = &locked {
+                    ui.label(RichText::new(format!("🔒 El plan ya no se puede cambiar: {why}.")).color(WARN).size(13.0));
+                }
+                ui.add_enabled_ui(b.state != BudgetState::Cerrado && locked.is_none(), |ui| {
                     if ui.checkbox(&mut has, "Pagar a plazos").changed() {
                         b.plan = if has { Some(FinancePlan { down_payment: 0.0, installments: 6, first_date: add_months(app.today, 1), every_months: 1, paid: vec![false; 6] }) } else { None };
                     }
@@ -324,13 +329,22 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 }
             }
             right_aligned(ui, |ui| {
-                if danger(ui, "Borrar").clicked() {
+                if ui.add_enabled(locked.is_none(), egui::Button::new(RichText::new("Borrar").color(egui::Color32::WHITE)).fill(DANGER)).on_disabled_hover_text("Tiene cuotas cobradas o en una remesa").clicked() {
                     delete = true;
                 }
             });
         });
     });
     if serde_json::to_string(&b).unwrap_or_default() != original {
+        let was = app.db.budgets.iter().find(|x| x.id == id).and_then(|x| x.plan.clone());
+        if locked.is_some() {
+            // por si acaso: el plan bloqueado se queda como estaba
+            b.plan = was.clone();
+        }
+        if b.state == BudgetState::Aceptado && b.plan != was {
+            let text = b.plan.as_ref().map(|p| p.installments_text(b.total())).unwrap_or_else(|| "sin plan".into());
+            app.db.audit("Cambiar plan de cuotas", &format!("presupuesto #{id} · {} · {text}", app.db.patient_name(b.patient_id)));
+        }
         if let Some(x) = app.db.budgets.iter_mut().find(|x| x.id == id) {
             *x = b.clone();
         }

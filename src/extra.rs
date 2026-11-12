@@ -705,7 +705,16 @@ impl Db {
         self.remittances.iter().find(|r| r.state == RemState::Generada && r.items.iter().any(|x| x.budget_id == budget_id && x.installment == i && x.returned.is_none())).map(|r| r.id)
     }
 
-    /// Marca la cuota `i` del plan del presupuesto como pagada (o no).
+    /// Por qué ya no se puede cambiar el plan de cuotas de un presupuesto (o
+    /// borrarlo): alguna cuota está cobrada o va en una remesa al banco.
+    pub fn plan_locked(&self, budget_id: u32) -> Option<String> {
+        let plan = self.budgets.iter().find(|b| b.id == budget_id)?.plan.as_ref()?;
+        if let Some(i) = plan.paid.iter().position(|p| *p) {
+            return Some(format!("la cuota {} ya está cobrada", i + 1));
+        }
+        (0..plan.installments).find_map(|i| self.installment_remittance(budget_id, i).map(|r| format!("la cuota {} va en la remesa #{r}", i + 1)))
+    }
+
     /// Cobra en la clínica una cuota de un plan (con la forma de pago que use
     /// el paciente: si es efectivo, cuenta en la caja). Devuelve el cobro.
     pub fn pay_installment(&mut self, budget_id: u32, i: u32, method: &str) -> Result<u32, String> {
@@ -728,6 +737,7 @@ impl Db {
         Ok(id)
     }
 
+    /// Marca la cuota `i` del plan del presupuesto como pagada (o no).
     pub fn set_installment_paid(&mut self, budget_id: u32, i: u32, paid: bool) {
         if let Some(b) = self.budgets.iter_mut().find(|b| b.id == budget_id) && let Some(pl) = &mut b.plan {
             if pl.paid.len() < pl.installments as usize {
@@ -872,6 +882,23 @@ mod tests {
         let pl = b.plan.as_ref().unwrap();
         let sum: f64 = due.iter().map(|x| x.amount).sum();
         assert!((sum + pl.down_payment - b.total()).abs() < 0.001, "las cuotas suman {sum} y el total es {}", b.total());
+    }
+
+    #[test]
+    fn a_plan_with_paid_or_remitted_installments_cannot_change() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        assert_eq!(db.plan_locked(bid), None, "sin cobrar nada, se puede cambiar");
+        // una cuota en una remesa
+        let due: Vec<_> = db.due_installments(d() + Duration::days(400)).into_iter().filter(|x| x.budget_id == bid).take(1).collect();
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        assert!(db.plan_locked(bid).unwrap().contains(&format!("remesa #{rid}")));
+        // o cobrada en la clínica
+        let mut db2 = Db::sample(d());
+        db2.accept_budget(bid, d());
+        db2.pay_installment(bid, 0, "Tarjeta").unwrap();
+        assert!(db2.plan_locked(bid).unwrap().contains("cobrada"));
     }
 
     #[test]

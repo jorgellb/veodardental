@@ -288,6 +288,10 @@ fn run_confirm(app: &mut App, action: ConfirmAction) {
             app.notify("Tratamiento borrado del historial.");
         }
         ConfirmAction::DeleteBudget(id) => {
+            if let Some(why) = app.db.plan_locked(id) {
+                app.warn(format!("No se puede borrar: {why}."));
+                return;
+            }
             app.db.audit("Borrar presupuesto", &format!("presupuesto #{id}"));
             app.db.budgets.retain(|b| b.id != id);
             for e in app.db.entries.iter_mut() {

@@ -359,7 +359,7 @@ impl Budget {
 }
 
 /// Plan económico (financiación en cuotas).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FinancePlan {
     pub down_payment: f64,
     pub installments: u32,

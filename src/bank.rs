@@ -256,28 +256,45 @@ impl Db {
 
     // ── fusión de duplicados ──
 
-    /// Parejas de pacientes que parecen la misma persona.
+    /// Parejas de pacientes que parecen la misma persona: mismo NIF; mismo
+    /// nombre (con la misma fecha de nacimiento o sin ella); o mismo móvil y
+    /// apellidos. Se agrupan por esos datos en vez de comparar cada paciente con
+    /// todos (con miles de pacientes eso tardaba minutos).
     pub fn find_duplicates(&self) -> Vec<(u32, u32, String)> {
-        let mut out = vec![];
+        use std::collections::{BTreeMap, HashMap};
         let ps = &self.patients;
-        for i in 0..ps.len() {
-            for j in i + 1..ps.len() {
-                let (a, b) = (&ps[i], &ps[j]);
-                let reason = if !a.nif.is_empty() && a.nif == b.nif {
-                    Some("mismo NIF")
-                } else if fold(&a.full_name()) == fold(&b.full_name()) && (a.birth == b.birth || a.birth.is_none() || b.birth.is_none()) {
-                    Some("mismo nombre")
-                } else if !a.mobile.is_empty() && a.mobile.replace(' ', "") == b.mobile.replace(' ', "") && fold(&a.last_name) == fold(&b.last_name) {
-                    Some("mismo móvil y apellidos")
-                } else {
-                    None
-                };
-                if let Some(r) = reason {
-                    out.push((a.id, b.id, r.to_string()));
-                }
+        let mut by_nif: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut by_mobile: HashMap<(String, String), Vec<usize>> = HashMap::new();
+        for (i, p) in ps.iter().enumerate() {
+            let nif = p.nif.trim().to_uppercase();
+            if !nif.is_empty() {
+                by_nif.entry(nif).or_default().push(i);
+            }
+            by_name.entry(fold(&p.full_name())).or_default().push(i);
+            let mobile = p.mobile.replace(' ', "");
+            if !mobile.is_empty() {
+                by_mobile.entry((mobile, fold(&p.last_name))).or_default().push(i);
             }
         }
-        out
+        // (posición del primero, del segundo) → motivo; el primero que se encuentra manda
+        let mut pairs: BTreeMap<(usize, usize), &str> = BTreeMap::new();
+        let mut add = |groups: &HashMap<_, Vec<usize>>, reason: &'static str, ok: &dyn Fn(usize, usize) -> bool| {
+            for g in groups.values().filter(|g| g.len() > 1) {
+                for (n, &i) in g.iter().enumerate() {
+                    for &j in &g[n + 1..] {
+                        if ok(i, j) {
+                            pairs.entry((i.min(j), i.max(j))).or_insert(reason);
+                        }
+                    }
+                }
+            }
+        };
+        add(&by_nif, "mismo NIF", &|_, _| true);
+        add(&by_name, "mismo nombre", &|i, j| ps[i].birth == ps[j].birth || ps[i].birth.is_none() || ps[j].birth.is_none());
+        let by_mobile: HashMap<String, Vec<usize>> = by_mobile.into_iter().map(|((m, l), v)| (format!("{m}|{l}"), v)).collect();
+        add(&by_mobile, "mismo móvil y apellidos", &|_, _| true);
+        pairs.into_iter().map(|((i, j), r)| (ps[i].id, ps[j].id, r.to_string())).collect()
     }
 
     /// Une `remove` en `keep`: pasa todo su historial y completa los datos vacíos.
@@ -318,18 +335,30 @@ impl Db {
         macro_rules! move_pid {
             ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == remove { x.patient_id = keep; } } )* };
         }
-        move_pid!(entries, budgets, payments, recalls, waitlist, invoices, perio, images, messages, documents, lab_works, prescriptions, ortho);
-        for a in self.appointments.iter_mut() {
-            if a.patient_id == Some(remove) {
-                a.patient_id = Some(keep);
+        // todo lo suyo (lo clínico, lo económico y los avisos) pasa al que se conserva
+        move_pid!(entries, budgets, payments, recalls, waitlist, invoices, perio, images, messages, documents, lab_works, prescriptions, ortho, health, ia_reports, whatsapp, rx_links);
+        macro_rules! move_opt_pid {
+            ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == Some(remove) { x.patient_id = Some(keep); } } )* };
+        }
+        move_opt_pid!(appointments, stock_moves, tasks, chat, booking_requests);
+        for rm in self.remittances.iter_mut() {
+            for it in rm.items.iter_mut().filter(|it| it.patient_id == remove) {
+                it.patient_id = keep;
             }
         }
-        for rm in self.remittances.iter_mut() {
-            for it in rm.items.iter_mut() {
-                if it.patient_id == remove {
-                    it.patient_id = keep;
-                }
+        for c in self.claims.iter_mut() {
+            for l in c.lines.iter_mut().filter(|l| l.patient_id == remove) {
+                l.patient_id = keep;
             }
+        }
+        for o in self.slot_offers.iter_mut() {
+            for i in o.invites.iter_mut().filter(|i| i.patient_id == remove) {
+                i.patient_id = keep;
+            }
+        }
+        for c in self.calls.iter_mut().filter(|c| c.patients.contains(&remove)) {
+            c.patients.retain(|p| *p != remove && *p != keep);
+            c.patients.push(keep);
         }
         self.patients.retain(|p| p.id != remove);
         self.audit("Fusión de pacientes", &format!("{} (Nº {}) unido a {}", r.full_name(), r.history_no, kname));
@@ -376,6 +405,111 @@ mod tests {
 
     fn d() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()
+    }
+
+    /// Todo lo que en los datos se refiere al paciente `pid` (por su número).
+    fn references(v: &serde_json::Value, pid: u64, path: &str, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                for (k, x) in m {
+                    let here = format!("{path}.{k}");
+                    let mine = |y: &serde_json::Value| y.as_u64() == Some(pid);
+                    if (k == "patient_id" || k == "patient") && mine(x) {
+                        out.push(here.clone());
+                    }
+                    if k == "patients" && x.as_array().is_some_and(|a| a.iter().any(mine)) {
+                        out.push(here.clone());
+                    }
+                    references(x, pid, &here, out);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| references(x, pid, path, out)),
+            _ => {}
+        }
+    }
+
+    /// La búsqueda de antes, comparando todos con todos (para comprobar la nueva).
+    fn duplicates_one_by_one(db: &Db) -> Vec<(u32, u32, String)> {
+        let mut out = vec![];
+        let ps = &db.patients;
+        for i in 0..ps.len() {
+            for j in i + 1..ps.len() {
+                let (a, b) = (&ps[i], &ps[j]);
+                let reason = if !a.nif.trim().is_empty() && a.nif.trim().to_uppercase() == b.nif.trim().to_uppercase() {
+                    Some("mismo NIF")
+                } else if fold(&a.full_name()) == fold(&b.full_name()) && (a.birth == b.birth || a.birth.is_none() || b.birth.is_none()) {
+                    Some("mismo nombre")
+                } else if !a.mobile.is_empty() && a.mobile.replace(' ', "") == b.mobile.replace(' ', "") && fold(&a.last_name) == fold(&b.last_name) {
+                    Some("mismo móvil y apellidos")
+                } else {
+                    None
+                };
+                if let Some(r) = reason {
+                    out.push((a.id, b.id, r.to_string()));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn duplicates_are_found_quickly_in_a_big_clinic() {
+        let mut db = Db::sample(d());
+        // unos cuantos repetidos de cada clase
+        let base = db.patients[0].clone();
+        let mut x = base.clone();
+        (x.id, x.history_no, x.first_name, x.mobile) = (9001, 9001, "Otro".into(), "600 999 999".into());
+        db.patients.push(x);
+        let mut y = db.patients[1].clone();
+        (y.id, y.history_no, y.nif, y.birth) = (9002, 9002, String::new(), None);
+        db.patients.push(y);
+        let mut z = db.patients[2].clone();
+        (z.id, z.history_no, z.nif, z.first_name, z.mobile) = (9003, 9003, String::new(), "Zacarías".into(), db.patients[2].mobile.replace(' ', ""));
+        db.patients.push(z);
+        assert_eq!(db.find_duplicates(), duplicates_one_by_one(&db), "lo mismo que comparando uno a uno");
+        assert!(db.find_duplicates().len() >= 3);
+        // una clínica con 20.000 pacientes
+        let proto = db.patients[0].clone();
+        for i in 0..20_000u32 {
+            let mut p = proto.clone();
+            p.id = 100_000 + i;
+            p.history_no = 100_000 + i;
+            p.first_name = format!("Nombre{i}");
+            p.last_name = format!("Apellido{} Segundo{}", i % 977, i % 13);
+            p.nif = format!("{:08}X", 20_000_000 + i);
+            p.mobile = format!("6{:08}", 10_000_000 + i);
+            db.patients.push(p);
+        }
+        let t = std::time::Instant::now();
+        let found = db.find_duplicates();
+        assert!(t.elapsed() < std::time::Duration::from_secs(1), "tarda {:?}", t.elapsed());
+        assert!(found.len() >= 3);
+    }
+
+    #[test]
+    fn merging_moves_everything_of_the_removed_patient() {
+        let mut db = Db::sample(d());
+        let (keep, remove) = (100u32, 101u32);
+        // de todo un poco del paciente que se va: tarea, aviso interno, cita pedida
+        // por internet, liquidación a la mutua, llamada… (lo demás ya está en la muestra)
+        db.add_task(d(), "Recepción", "", Some(remove), "Llamar", None);
+        db.send_msg("Recepción", "", "Ha llamado", Some(remove));
+        let rid = db.new_id();
+        db.booking_requests.push(crate::booking::BookingRequest { id: rid, received: now(), name: "Carlos".into(), phone: "613 207 111".into(), email: String::new(), reason: "Revisión".into(), minutes: 30, code: String::new(), doctor_id: 1, date: d(), start: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(), notes: String::new(), first_visit: false, patient_id: Some(remove), state: crate::booking::ReqState::Confirmada, appointment_id: None, answer: String::new(), center_id: 1, replaces: None });
+        let tariff = db.patient(remove).unwrap().tariff_id;
+        db.create_claim(tariff, d() - chrono::Duration::days(800), d(), d());
+        if let Some(c) = db.calls.first_mut() {
+            c.patients = vec![remove];
+        }
+        let before: Vec<String> = { let mut v = vec![]; references(&serde_json::to_value(&db).unwrap(), remove as u64, "", &mut v); v };
+        assert!(before.len() > 10, "la prueba tiene datos del paciente: {before:?}");
+        db.merge_patients(keep, remove).unwrap();
+        let mut left = vec![];
+        references(&serde_json::to_value(&db).unwrap(), remove as u64, "", &mut left);
+        assert!(left.is_empty(), "queda del paciente eliminado: {left:?}");
+        // y lo suyo está ahora en la ficha que se conserva
+        assert!(!db.patient_lots(keep).is_empty(), "sus implantes, con su lote");
+        assert!(db.tasks.iter().any(|t| t.patient_id == Some(keep) && t.text == "Llamar"));
     }
 
     fn n43_line22(date: &str, debe: bool, cents: u64, r1: &str) -> String {
