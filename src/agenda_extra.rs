@@ -195,9 +195,65 @@ pub fn default_holidays(year: i32) -> Vec<Holiday> {
     ]
 }
 
+/// Carriles de las citas de una columna de la agenda: las que se solapan se
+/// ponen una al lado de otra para que ninguna tape a otra. Cada cita (id,
+/// inicio, fin en minutos) recibe su carril y cuántos carriles tiene su grupo
+/// de citas solapadas; las que no se solapan con ninguna, (0, 1).
+pub fn lanes(items: &[(u32, i64, i64)]) -> std::collections::HashMap<u32, (usize, usize)> {
+    let mut v = items.to_vec();
+    v.sort_by_key(|&(id, s, e)| (s, std::cmp::Reverse(e), id));
+    let mut out = std::collections::HashMap::new();
+    let mut i = 0;
+    while i < v.len() {
+        // grupo: citas que se solapan entre sí, directa o indirectamente
+        let mut end = v[i].2;
+        let mut j = i + 1;
+        while j < v.len() && v[j].1 < end {
+            end = end.max(v[j].2);
+            j += 1;
+        }
+        // en cada carril, la primera cita que cabe después de la anterior
+        let mut lane_end: Vec<i64> = vec![];
+        let mut placed = vec![];
+        for &(id, s, e) in &v[i..j] {
+            let lane = match lane_end.iter().position(|&le| le <= s) {
+                Some(l) => l,
+                None => {
+                    lane_end.push(e);
+                    lane_end.len() - 1
+                }
+            };
+            lane_end[lane] = e;
+            placed.push((id, lane));
+        }
+        for (id, lane) in placed {
+            out.insert(id, (lane, lane_end.len()));
+        }
+        i = j;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlapping_appointments_go_side_by_side() {
+        // 9:00-9:30 y 9:15-10:00 se solapan; 10:00-10:30 va sola (empieza cuando acaba la otra)
+        let l = lanes(&[(1, 540, 570), (2, 555, 600), (3, 600, 630)]);
+        assert_eq!(l[&1], (0, 2));
+        assert_eq!(l[&2], (1, 2));
+        assert_eq!(l[&3], (0, 1));
+        // tres a la vez y una que cabe en el hueco de la primera
+        let l = lanes(&[(1, 540, 560), (2, 540, 600), (3, 545, 600), (4, 565, 590)]);
+        assert_eq!(l.values().map(|x| x.1).max(), Some(3));
+        assert_eq!(l[&4].0, l[&1].0, "la cuarta usa el carril de la primera, que ya acabó");
+        let mut seen: Vec<usize> = [1, 2, 3].iter().map(|id| l[id].0).collect();
+        seen.sort();
+        assert_eq!(seen, vec![0, 1, 2]);
+        assert!(lanes(&[]).is_empty());
+    }
     use chrono::NaiveTime;
 
     fn d() -> NaiveDate {

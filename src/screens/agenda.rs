@@ -413,12 +413,24 @@ fn grid(app: &mut App, ui: &mut Ui) {
         .filter(|a| cid(a.center_id) == cid(app.db.config.current_center) && cols.iter().any(|c| c.date == a.date && c.doctor == a.doctor_id))
         .cloned()
         .collect();
+    // las que se solapan (dadas a la vez a propósito, o por dos puestos o la
+    // cita online), una al lado de otra; las anuladas, debajo de las demás
+    let mut lane_of = std::collections::HashMap::new();
+    for c in &cols {
+        let items: Vec<(u32, i64, i64)> = appts.iter().filter(|a| a.date == c.date && a.doctor_id == c.doctor && !a.state.is_cancelled()).map(|a| (a.id, minutes_of(a.start), minutes_of(a.end()))).collect();
+        lane_of.extend(crate::agenda_extra::lanes(&items));
+    }
+    let mut appts = appts;
+    appts.sort_by_key(|a| !a.state.is_cancelled());
     let mut open_dialog: Option<Appointment> = None;
     let mut drop: Option<(u32, NaiveDate, u32, NaiveTime)> = None;
     for a in &appts {
         let Some(ci) = cols.iter().position(|c| c.date == a.date && c.doctor == a.doctor_id) else { continue };
         let x = rect.min.x + time_w + ci as f32 * col_w;
-        let mut r = Rect::from_min_max(pos2(x + 4.0, y_of(minutes_of(a.start)) + 1.0), pos2(x + col_w - 4.0, y_of(minutes_of(a.end())) - 1.0));
+        let (lane, n) = lane_of.get(&a.id).copied().unwrap_or((0, 1));
+        let lane_w = (col_w - 8.0) / n as f32;
+        let x0 = x + 4.0 + lane as f32 * lane_w;
+        let mut r = Rect::from_min_max(pos2(x0, y_of(minutes_of(a.start)) + 1.0), pos2(x0 + lane_w - if n > 1 { 2.0 } else { 0.0 }, y_of(minutes_of(a.end())) - 1.0));
         let id = ui.scope_id().with(("appt", a.id));
         let resp = ui.interact(r, id, Sense::click_and_drag());
         if resp.drag_started() {
