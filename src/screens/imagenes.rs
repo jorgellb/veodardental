@@ -814,7 +814,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                     section(ui, "Equipos de imagen");
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nuevo enlace").clicked() {
-                            let id = app.db.connectors.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                            let id = app.db.new_id();
                             app.db.connectors.push(Connector { id, name: "Nuevo enlace".into(), vendor: String::new(), kind: ImageKind::Periapical, exe: String::new(), args: "[NUMPAC]".into(), bridge_file: true, bridge_path: String::new(), image_folder: String::new(), enabled: true, notes: String::new() });
                             app.img.edit_connector = Some(id);
                             app.changed();

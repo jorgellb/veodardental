@@ -321,7 +321,7 @@ impl Db {
                     t.id
                 }
                 None => {
-                    let id = self.tariffs.iter().map(|t| t.id).max().unwrap_or(1) + 1;
+                    let id = self.new_id();
                     self.tariffs.push(Tariff {
                         id,
                         name: text(&tariff_name(g)),

@@ -12,9 +12,9 @@ pub fn centers_panel(app: &mut App, ui: &mut Ui) {
             section(ui, "Centros");
             right_aligned(ui, |ui| {
                 if ui.button("＋ Nuevo centro").clicked() {
-                    let id = app.db.centers.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                    let id = app.db.new_id();
                     app.db.centers.push(Center { id, name: format!("Centro {id}"), address: String::new(), phone: String::new(), color: [56, 132, 214], active: true });
-                    let bid = app.db.boxes.iter().map(|b| b.id).max().unwrap_or(0) + 1;
+                    let bid = app.db.new_id();
                     app.db.boxes.push(Boxroom { id: bid, name: format!("Gabinete centro {id}"), center_id: id });
                     app.db.audit("Nuevo centro", &format!("Centro {id}"));
                     app.changed();

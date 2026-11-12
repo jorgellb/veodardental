@@ -305,7 +305,7 @@ fn boxes_tab(app: &mut App, ui: &mut Ui) {
             section(ui, "Gabinetes / boxes");
             right_aligned(ui, |ui| {
                 if primary(ui, "＋ Añadir gabinete").clicked() {
-                    let id = app.db.boxes.iter().map(|b| b.id).max().unwrap_or(0) + 1;
+                    let id = app.db.new_id();
                     let center = cid(app.db.config.current_center);
                     app.db.boxes.push(Boxroom { id, name: format!("Gabinete {id}"), center_id: center });
                 }
@@ -417,7 +417,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
         title(ui, "Colaboradores", "Doctores, higienistas y personal clínico");
         right_aligned(ui, |ui| {
             if primary(ui, "＋ Nuevo colaborador").clicked() {
-                let id = app.db.collaborators.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                let id = app.db.new_id();
                 app.db.collaborators.push(Collaborator {
                     id,
                     code: format!("{id:02}"),

@@ -431,7 +431,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                     section(ui, "Plantillas");
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nueva").clicked() {
-                            let id = app.db.msg_templates.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+                            let id = app.db.new_id();
                             app.db.msg_templates.push(MsgTemplate { id, name: "Nueva plantilla".into(), kind: MsgKind::Libre, channel: Channel::WhatsApp, days: 1, text: "Hola [NOMBRE], ".into(), subject: String::new(), active: true });
                             app.comms.tpl_sel = Some(id);
                             app.changed();
@@ -542,7 +542,7 @@ fn doc_templates(app: &mut App, ui: &mut Ui) {
                     section(ui, "Documentos y consentimientos");
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nuevo").clicked() {
-                            let id = app.db.doc_templates.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+                            let id = app.db.new_id();
                             app.db.doc_templates.push(DocTemplate { id, name: "Nuevo documento".into(), category: "Consentimiento informado".into(), body: "D./Dña. [NOMBRE] [APELLIDOS] …\n\nEn [CIUDAD], a [FECHA].".into(), marks_gdpr: false });
                             app.comms.doc_tpl_sel = Some(id);
                             app.changed();

@@ -387,7 +387,7 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
             section(ui, "Usuarios y permisos");
             right_aligned(ui, |ui| {
                 if ui.button("＋ Nuevo usuario").clicked() {
-                    let id = app.db.users.iter().map(|u| u.id).max().unwrap_or(0) + 1;
+                    let id = app.db.new_id();
                     let name = if app.login.new_user.trim().is_empty() { format!("Usuario {id}") } else { std::mem::take(&mut app.login.new_user).trim().to_string() };
                     app.db.users.push(new_user(id, &name, Profile::Recepcion, None, "0000"));
                     app.login.edit_user = Some(id);

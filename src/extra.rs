@@ -200,7 +200,7 @@ impl Db {
                 match self.tariffs.iter().find(|t| fold(&t.name) == fold(&tariff_name)) {
                     Some(t) => t.id,
                     None => {
-                        let id = self.tariffs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+                        let id = self.new_id();
                         self.tariffs.push(Tariff { id, name: tariff_name.clone(), is_insurer: true, discount_pct: 0.0, prices: vec![], phone: String::new(), notes: "Creada al importar".into(), valid_from: today(), valid_to: None, inactive: false });
                         id
                     }

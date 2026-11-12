@@ -31,7 +31,7 @@ fn tariffs(app: &mut App, ui: &mut Ui) {
                     app.screen = crate::app::Screen::Config;
                 }
                 if ui.button("＋ Nueva tarifa").clicked() {
-                    let id = app.db.tariffs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+                    let id = app.db.new_id();
                     app.db.tariffs.push(Tariff {
                         id,
                         name: format!("Nueva tarifa {id}"),

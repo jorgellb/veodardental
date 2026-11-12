@@ -99,7 +99,7 @@ fn products(app: &mut App, ui: &mut Ui) {
                     ui.checkbox(&mut app.stock.only_low, "Solo bajo mínimo");
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Producto").clicked() {
-                            let id = app.db.products.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+                            let id = app.db.new_id();
                             app.db.products.push(Product { id, code: format!("P{id:03}"), name: "Nuevo producto".into(), family: "General".into(), unit: "unidad".into(), stock: 0.0, min_stock: 1.0, cost: 0.0, supplier_id: app.db.suppliers.first().map(|s| s.id).unwrap_or(0), location: String::new(), active: true });
                             app.stock.product = Some(id);
                             app.changed();
@@ -407,7 +407,7 @@ fn suppliers(app: &mut App, ui: &mut Ui) {
                     section(ui, "Proveedores y laboratorios");
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nuevo").clicked() {
-                            let id = app.db.suppliers.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+                            let id = app.db.new_id();
                             app.db.suppliers.push(Supplier { id, name: "Nuevo proveedor".into(), nif: String::new(), phone: String::new(), email: String::new(), contact: String::new(), is_lab: false, notes: String::new() });
                             app.stock.supplier = Some(id);
                             app.changed();

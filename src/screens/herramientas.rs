@@ -393,7 +393,7 @@ pub fn listin(app: &mut App, ui: &mut Ui) {
         title(ui, "Listín telefónico", "Contactos de la clínica, colaboradores, proveedores, mutuas y pacientes");
         right_aligned(ui, |ui| {
             if primary(ui, "＋ Nuevo contacto").clicked() {
-                let id = app.db.contacts.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                let id = app.db.new_id();
                 app.db.contacts.push(Contact { id, name: "Nuevo contacto".into(), company: String::new(), category: "General".into(), phone: String::new(), mobile: String::new(), email: String::new(), notes: String::new() });
                 app.tools.contact_sel = Some(id);
                 app.changed();
