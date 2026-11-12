@@ -36,6 +36,7 @@ mod server;
 mod srep;
 mod srep_cert;
 mod srep_doc;
+mod sync;
 mod stock;
 mod tasks;
 mod screens;

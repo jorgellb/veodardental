@@ -227,7 +227,8 @@ impl Db {
     pub fn expense_from_order(&mut self, order_id: u32) {
         let Some(o) = self.orders.iter().find(|o| o.id == order_id).cloned() else { return };
         let id = self.new_id();
-        self.expenses.push(Expense { id, date: today(), supplier: self.supplier_name(o.supplier_id), concept: format!("Pedido #{}", o.id), category: "Material".into(), base: o.total(), vat_pct: 21.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(today() + Duration::days(30)) });
+        let e = Expense { id, date: today(), supplier: self.supplier_name(o.supplier_id), concept: format!("Pedido #{}", o.id), category: "Material".into(), base: o.total(), vat_pct: 21.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(today() + Duration::days(30)) };
+        self.expenses.push(e);
     }
 
     pub fn expense_from_lab(&mut self, work_id: u32) {
@@ -237,7 +238,8 @@ impl Db {
         }
         let id = self.new_id();
         // las prótesis dentales a medida de laboratorio están exentas de IVA
-        self.expenses.push(Expense { id, date: today(), supplier: self.supplier_name(w.lab_id), concept: format!("{} · {} #L{}", w.description, self.patient_name(w.patient_id), w.id), category: "Laboratorio".into(), base: w.cost, vat_pct: 0.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(today() + Duration::days(30)) });
+        let e = Expense { id, date: today(), supplier: self.supplier_name(w.lab_id), concept: format!("{} · {} #L{}", w.description, self.patient_name(w.patient_id), w.id), category: "Laboratorio".into(), base: w.cost, vat_pct: 0.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(today() + Duration::days(30)) };
+        self.expenses.push(e);
     }
 
     pub fn new_prescription(&mut self, pid: u32, doctor_id: u32) -> u32 {

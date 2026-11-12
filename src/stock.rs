@@ -344,14 +344,14 @@ impl Db {
 
 pub fn sample_stock(db: &mut Db, today: NaiveDate) {
     let s = |id: u32, name: &str, nif: &str, phone: &str, email: &str, contact: &str, lab: bool| Supplier { id, name: name.into(), nif: nif.into(), phone: phone.into(), email: email.into(), contact: contact.into(), is_lab: lab, notes: String::new() };
-    db.suppliers = vec![
+    *db.suppliers = vec![
         s(1, "Depósito Dental Ejemplo", "B11111111", "900 100 100", "pedidos@deposito-ejemplo.es", "Marta", false),
         s(2, "Implantes Ejemplo S.L.", "B22222222", "900 200 200", "comercial@implantes-ejemplo.es", "Jorge", false),
         s(3, "Laboratorio Dental Arte", "B33333333", "91 300 30 30", "trabajos@lab-arte.es", "Luis", true),
         s(4, "Laboratorio Orto Plus", "B44444444", "91 400 40 40", "orto@lab-ortoplus.es", "Ana", true),
     ];
     let p = |id: u32, code: &str, name: &str, family: &str, unit: &str, stock: f64, min: f64, cost: f64, sup: u32, loc: &str| Product { id, code: code.into(), name: name.into(), family: family.into(), unit: unit.into(), stock, min_stock: min, cost, supplier_id: sup, location: loc.into(), active: true };
-    db.products = vec![
+    *db.products = vec![
         p(1, "GUA-M", "Guantes nitrilo talla M", "Desechables", "caja 100", 6.0, 4.0, 6.5, 1, "Almacén A1"),
         p(2, "MAS-Q", "Mascarillas quirúrgicas", "Desechables", "caja 50", 3.0, 4.0, 4.2, 1, "Almacén A1"),
         p(3, "ANE-ART", "Articaína 4% con epinefrina", "Anestesia", "carpule", 38.0, 50.0, 0.65, 1, "Gabinetes"),

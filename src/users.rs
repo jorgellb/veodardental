@@ -549,8 +549,10 @@ mod tests {
     #[test]
     fn backups_made_on_a_station_can_be_used_without_server() {
         let mut d = db();
-        let v = crate::server::public_view(&serde_json::to_value(&d).unwrap());
-        d = serde_json::from_value(v).unwrap();
+        // como llegan a un puesto: sin las contraseñas
+        for u in d.users.iter_mut() {
+            *u = serde_json::from_str(&crate::server::strip_user_json(&serde_json::to_string(u).unwrap())).unwrap();
+        }
         d.users.iter_mut().find(|u| u.id == 3).unwrap().totp_secret = crate::server::HIDDEN.into();
         assert!(d.login(1, "0000").is_err(), "sin las contraseñas nadie entra");
         assert_eq!(d.reset_hidden_credentials(), 5);

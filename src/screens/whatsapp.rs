@@ -515,7 +515,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
 pub fn log_tab(app: &mut App, ui: &mut Ui) {
     let today = app.today;
     let since = now() - chrono::Duration::days(7);
-    let list: Vec<WaMessage> = app.db.whatsapp.clone();
+    let list: Vec<WaMessage> = app.db.whatsapp.to_vec();
     let n = |f: &dyn Fn(&WaMessage) -> bool| list.iter().filter(|m| f(m)).count();
     let sent = n(&|m| m.sent_at.is_some_and(|d| d >= since));
     let waiting = n(&|m| m.state.waiting());

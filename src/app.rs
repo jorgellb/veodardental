@@ -142,6 +142,9 @@ pub struct App {
     pub save_error: Option<String>,
     /// Últimos datos leídos o guardados (para combinar con otros puestos).
     pub base: serde_json::Value,
+    /// En red: cómo están los datos en el servidor (lo último recibido o
+    /// enviado), registro a registro, para enviar solo lo que cambie.
+    pub synced: crate::sync::Snapshot,
     pub last_poll: f64,
     /// Conexión con el servidor de la clínica (puesto cliente).
     pub remote: Option<crate::server::Remote>,
@@ -247,6 +250,7 @@ impl App {
             last_save: 0.0,
             save_error: err,
             base,
+            synced: crate::sync::Snapshot::default(),
             last_poll: 0.0,
             remote,
             offline,
@@ -428,13 +432,10 @@ impl App {
         }
         self.last_poll = time;
         if let Some(r) = self.remote.clone() {
-            match r.rev() {
-                Ok(rev) if rev != self.db.rev => match r.load() {
-                    Ok((d, v)) => {
-                        self.db = crate::server::adopt(&self.db, d);
-                        self.base = v;
-                        self.save_error = None;
-                    }
+            // solo lo que ha cambiado desde la última vez (casi siempre, nada)
+            match r.pull(self.db.rev) {
+                Ok(d) if d.full || !d.changes.is_empty() || d.rev != self.db.rev => match r.receive(&mut self.db, &mut self.synced, d) {
+                    Ok(()) => self.save_error = None,
                     Err(e) => self.remote_error(e),
                 },
                 Ok(_) => self.save_error = None,
@@ -538,13 +539,11 @@ impl App {
         r.session = session;
         let r = r.clone();
         if self.awaiting_data || !self.dirty {
-            let (d, v) = r.load()?;
+            let (d, synced) = r.load()?;
             self.db = crate::server::adopt(&self.db, d);
-            self.base = v;
+            self.synced = synced;
         } else {
-            let (d, v) = r.save(&self.db)?;
-            self.db = d;
-            self.base = v;
+            r.push(&mut self.db, &mut self.synced)?;
         }
         self.dirty = false;
         self.awaiting_data = false;
@@ -562,7 +561,7 @@ impl App {
             return;
         }
         if let Some(info) = self.remote.as_ref().and_then(|r| r.access().ok()) {
-            self.db.users = info.users;
+            *self.db.users = info.users;
         }
     }
 
@@ -570,14 +569,7 @@ impl App {
     /// los cambios pendientes o recoge los datos nuevos.
     fn sync_with_server(&mut self) {
         let Some(r) = self.remote.clone() else { return };
-        let res = if self.dirty {
-            self.save_now().map(|_| ())
-        } else {
-            r.load().map(|(d, v)| {
-                self.db = crate::server::adopt(&self.db, d);
-                self.base = v;
-            })
-        };
+        let res = if self.dirty { self.save_now().map(|_| ()) } else { r.pull(self.db.rev).and_then(|d| r.receive(&mut self.db, &mut self.synced, d)) };
         match res {
             Ok(()) => {
                 self.dirty = false;
@@ -636,9 +628,8 @@ impl App {
     /// Devuelve cuántos datos coincidieron con cambios de otro puesto.
     pub fn save_now(&mut self) -> Result<usize, String> {
         if let Some(r) = self.remote.clone() {
-            let (d, v) = r.save(&self.db)?;
-            self.db = d;
-            self.base = v;
+            // solo lo que ha cambiado (si nada, no se envía nada)
+            r.push(&mut self.db, &mut self.synced)?;
             return Ok(0);
         }
         match crate::shared::save_synced(&mut self.db, &mut self.base, &Db::path())? {
@@ -656,6 +647,7 @@ impl App {
                 self.db = login_shell(&info, &self.db.config.current_user, self.today);
                 self.db.station = r.station;
                 self.base = serde_json::Value::Null;
+                self.synced = crate::sync::Snapshot::default();
                 self.remote = Some(r);
                 self.awaiting_data = true;
                 self.persist = false;
@@ -699,6 +691,7 @@ impl App {
         self.db = login_shell(&info, "", self.today);
         self.db.station = r.station;
         self.base = serde_json::Value::Null;
+        self.synced = crate::sync::Snapshot::default();
         self.remote = Some(r);
         self.awaiting_data = true;
         self.pending_start = true;
@@ -713,7 +706,7 @@ impl App {
 pub fn login_shell(info: &crate::server::AccessInfo, last_user: &str, today: chrono::NaiveDate) -> Db {
     let mut db = Db::sample(today);
     let _ = db.start_empty();
-    db.users = info.users.clone();
+    *db.users = info.users.clone();
     db.config.name = info.clinic.clone();
     db.config.current_user = last_user.to_string();
     db

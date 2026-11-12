@@ -152,7 +152,12 @@ fn index(arr: &[Value]) -> HashMap<String, &Value> {
 /// borrar las del otro y se quitan las más antiguas si pasan del máximo.
 const APPEND_ONLY: [(&str, usize); 4] = [("access_log", 2000), ("audit_log", 5000), ("launches", 300), ("wa_seen", 3000)];
 
-fn merge_append(base: Option<&Value>, ours: &[Value], theirs: &[Value], cap: usize) -> Value {
+/// Tamaño máximo de un registro que solo crece (`None` si el campo no es de esos).
+pub fn append_only_cap(field: &str) -> Option<usize> {
+    APPEND_ONLY.iter().find(|(name, _)| *name == field).map(|(_, cap)| *cap)
+}
+
+pub fn merge_append(base: Option<&Value>, ours: &[Value], theirs: &[Value], cap: usize) -> Value {
     let mut seen: HashSet<String> = base.and_then(|b| b.as_array()).into_iter().flatten().chain(theirs).map(|v| v.to_string()).collect();
     let mut out = theirs.to_vec();
     for v in ours {
@@ -168,18 +173,6 @@ fn merge_append(base: Option<&Value>, ours: &[Value], theirs: &[Value], cap: usi
         out.drain(..out.len() - cap);
     }
     Value::Array(out)
-}
-
-/// En el servidor, tras combinar: los registros que solo crecen conservan
-/// todas las entradas que ya tenía (`current`), aunque un puesto mande menos.
-pub fn keep_logs(base: Option<&Value>, merged: &mut Value, current: &Value) {
-    for (k, cap) in APPEND_ONLY {
-        let kept = match (merged.get(k).and_then(|v| v.as_array()), current.get(k).and_then(|v| v.as_array())) {
-            (Some(m), Some(c)) => merge_append(base.and_then(|b| b.get(k)), m, c, cap),
-            _ => continue,
-        };
-        merged[k] = kept;
-    }
 }
 
 /// Combinación a tres bandas: `base` es lo que este puesto leyó, `ours` lo que
@@ -482,5 +475,96 @@ mod tests {
         assert!(re.patients.iter().any(|p| p.first_name == "Desde B"));
         assert!(!dir.join("clinica.lock").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// Clínica grande de prueba (unos 10 años de trabajo) para medir tiempos.
+#[cfg(test)]
+pub fn big_clinic() -> Db {
+    let sample = serde_json::to_value(Db::sample(chrono::NaiveDate::from_ymd_opt(2026, 11, 4).unwrap())).unwrap();
+    let targets = [
+        ("patients", 8_000),
+        ("entries", 100_000),
+        ("appointments", 120_000),
+        ("payments", 80_000),
+        ("invoices", 40_000),
+        ("budgets", 20_000),
+        ("documents", 20_000),
+        ("perio", 3_000),
+        ("messages", 100_000),
+        ("calls", 50_000),
+        ("recalls", 8_000),
+        ("health", 8_000),
+        ("images", 30_000),
+    ];
+    let mut v = sample.clone();
+    for (k, n) in targets {
+        let Some(src) = sample[k].as_array().filter(|a| !a.is_empty()) else { continue };
+        let out: Vec<Value> = (0..n)
+            .map(|i| {
+                let mut r = src[i % src.len()].clone();
+                if r.get("id").is_some() {
+                    r["id"] = Value::from(1_000_000 + i as u64);
+                }
+                r
+            })
+            .collect();
+        v[k] = Value::Array(out);
+    }
+    serde_json::from_value(v).unwrap()
+}
+
+#[cfg(test)]
+mod big_clinic_timings {
+    use super::*;
+    use crate::sync::{Snapshot, apply, diff};
+    use std::time::Instant;
+
+    fn rss_mb() -> u64 {
+        std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1)?.parse::<u64>().ok()).map(|p| p * 4096 / 1_000_000).unwrap_or(0)
+    }
+
+    /// Tiempos y memoria con una clínica grande (unos 220 MB de datos):
+    /// `cargo test big_clinic -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn big_clinic_save_costs() {
+        let t = Instant::now();
+        let mut db = big_clinic();
+        println!("crear: {:?} · memoria {} MB", t.elapsed(), rss_mb());
+        let t = Instant::now();
+        let text = serde_json::to_string(&db).unwrap();
+        println!("datos enteros a texto (lo que se enviaba en cada guardado): {:?} · {} MB", t.elapsed(), text.len() / 1_000_000);
+        drop(text);
+        let t = Instant::now();
+        let mut server = Snapshot::from_db(&db);
+        let synced = server.clone();
+        println!("partir en registros: {:?} · memoria {} MB (datos + servidor + lo sincronizado)", t.elapsed(), rss_mb());
+        // un cambio normal: una cita y un cobro (tras el último envío)
+        crate::sync::mark_synced(&mut db);
+        db.appointments[500].notes = "llamar antes".into();
+        db.add_payment(1_000_100, 40.0, "Tarjeta", "");
+        let t = Instant::now();
+        let changes = crate::sync::diff_db(&synced, &db);
+        println!("puesto: comparar solo lo tocado: {:?} · {} cambios", t.elapsed(), changes.len());
+        let t = Instant::now();
+        let clone = db.clone();
+        println!("copiar los datos (para hacerlo en segundo plano): {:?}", t.elapsed());
+        drop(clone);
+        let t = Instant::now();
+        let ours = Snapshot::from_db(&db);
+        let changes2 = diff(&synced, &ours);
+        assert_eq!(changes.len(), changes2.len(), "lo mismo que comparando todo");
+        drop(ours);
+        let sent: usize = changes.iter().map(|c| c.after.as_ref().map_or(0, |a| a.len()) + c.before.as_ref().map_or(0, |b| b.len())).sum();
+        println!("puesto: ver qué ha cambiado: {:?} · {} cambios · se envían {} KB", t.elapsed(), changes.len(), sent / 1000);
+        let t = Instant::now();
+        let o = apply(&mut server, &changes).unwrap();
+        println!("servidor: aplicar: {:?} · {} tocados", t.elapsed(), o.touched.len());
+        let t = Instant::now();
+        let out = server.to_json();
+        println!("servidor: escribir el fichero: {:?} · {} MB", t.elapsed(), out.len() / 1_000_000);
+        println!("memoria al final: {} MB", rss_mb());
+        assert!(changes.len() <= 6);
     }
 }

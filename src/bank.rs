@@ -336,7 +336,7 @@ impl Db {
 
 pub fn sample_bank(db: &mut Db, today: NaiveDate) {
     sample_centers(db, today);
-    db.bank_accounts = vec![BankAccount { id: 1, name: "Cuenta principal".into(), iban: "ES9121000418450200051332".into(), opening_balance: 12500.0 }];
+    *db.bank_accounts = vec![BankAccount { id: 1, name: "Cuenta principal".into(), iban: "ES9121000418450200051332".into(), opening_balance: 12500.0 }];
     // extracto de ejemplo: una transferencia de paciente, la liquidación de tarjeta y un recibo
     let card_day = today - Duration::days(1);
     let mut moves = vec![];
@@ -352,7 +352,7 @@ pub fn sample_bank(db: &mut Db, today: NaiveDate) {
 }
 
 fn sample_centers(db: &mut Db, today: NaiveDate) {
-    db.centers = vec![
+    *db.centers = vec![
         Center { id: 1, name: "Centro (Madrid)".into(), address: db.config.address.clone(), phone: db.config.phone.clone(), color: [14, 150, 136], active: true },
         Center { id: 2, name: "Clínica Norte (Alcobendas)".into(), address: "Av. Ejemplo 20, 28100 Alcobendas".into(), phone: "91 000 00 01".into(), color: [56, 132, 214], active: true },
     ];

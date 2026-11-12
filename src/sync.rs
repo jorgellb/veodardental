@@ -1,0 +1,785 @@
+//! Sincronización registro a registro con el servidor de la clínica.
+//!
+//! Los datos se parten en registros: cada lista con clave (pacientes, citas,
+//! cobros… por su `id`; los enlaces, por su `token`) va registro a registro, y
+//! lo demás (configuración, registros de accesos…) va por campos enteros.
+//! Cada registro se guarda como su texto JSON compacto: así se comparan sin
+//! convertir los datos enteros y ocupan en memoria lo mismo que en el disco.
+//!
+//! - El puesto envía solo lo que ha cambiado, cada cosa con cómo estaba
+//!   (`antes`) y cómo está (`ahora`). Con eso el servidor combina cambios de
+//!   varios puestos sin guardar copias antiguas de los datos.
+//! - El servidor devuelve solo lo que ha cambiado desde la última vez que el
+//!   puesto habló con él, y los puestos recogen así lo de los demás.
+
+use crate::model::Db;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+
+/// Campos de los datos de la clínica: las listas de registros (con el campo
+/// que hace de clave) y los que van enteros. Si se añade un campo a [`Db`],
+/// hay que ponerlo aquí (lo comprueba una prueba).
+macro_rules! db_fields {
+    (records: [$(($rf:ident, $rk:ident)),* $(,)?], plain: [$($pf:ident),* $(,)?] $(,)?) => {
+        /// Listas que se sincronizan registro a registro.
+        pub const RECORD_FIELDS: &[&str] = &[$(stringify!($rf)),*];
+        /// Campos que se sincronizan enteros.
+        pub const PLAIN_FIELDS: &[&str] = &[$(stringify!($pf)),*];
+
+        fn records_of(db: &Db, field: &str) -> Option<Records> {
+            match field {
+                $(stringify!($rf) => Some(Records::collect(db.$rf.iter().map(|r| (to_json(&r.$rk), to_json(r))))),)*
+                _ => None,
+            }
+        }
+
+        fn plain_of(db: &Db, field: &str) -> Option<String> {
+            match field {
+                $(stringify!($pf) => Some(to_json(&db.$pf)),)*
+                _ => None,
+            }
+        }
+
+        /// Texto de un registro de los datos (si está).
+        pub fn record_of(db: &Db, field: &str, key: &str) -> Option<String> {
+            match field {
+                $(stringify!($rf) => {
+                    let want = parse_key(&db.$rf, |r| &r.$rk, key).ok()?;
+                    db.$rf.iter().find(|r| r.$rk == want).map(to_json)
+                })*
+                _ => None,
+            }
+        }
+
+        /// Pone (o, con `None`, quita) un registro en los datos.
+        pub fn set_record(db: &mut Db, field: &str, key: &str, json: Option<&str>) -> Result<(), String> {
+            match field {
+                $(stringify!($rf) => {
+                    let want = parse_key(&db.$rf, |r| &r.$rk, key).map_err(|e| format!("{field}: clave {key}: {e}"))?;
+                    // lo que llega del servidor no cuenta como cambio del puesto
+                    let list = db.$rf.untracked_mut();
+                    let pos = list.iter().position(|r| r.$rk == want);
+                    match (json, pos) {
+                        (Some(j), Some(i)) => list[i] = serde_json::from_str(j).map_err(|e| format!("{field}: {e}"))?,
+                        (Some(j), None) => list.push(serde_json::from_str(j).map_err(|e| format!("{field}: {e}"))?),
+                        (None, Some(i)) => {
+                            list.remove(i);
+                        }
+                        (None, None) => {}
+                    }
+                    Ok(())
+                })*
+                _ => Err(format!("campo desconocido: {field}")),
+            }
+        }
+
+        /// Pone un campo entero (una lista de registros o un campo normal).
+        pub fn set_field(db: &mut Db, field: &str, json: &str) -> Result<(), String> {
+            match field {
+                $(stringify!($rf) => db.$rf = serde_json::from_str(json).map_err(|e| format!("{field}: {e}"))?,)*
+                $(stringify!($pf) => db.$pf = serde_json::from_str(json).map_err(|e| format!("{field}: {e}"))?,)*
+                _ => return Err(format!("campo desconocido: {field}")),
+            }
+            Ok(())
+        }
+
+        /// El registro (o campo) tal como lo escribe el programa: comprueba que
+        /// sirve para sus datos y deja los campos en su orden (para comparar textos).
+        pub fn canonical(field: &str, json: &str) -> Result<String, String> {
+            match field {
+                $(stringify!($rf) => parse_item(|d: &Db| &d.$rf, json),)*
+                $(stringify!($pf) => parse_value(|d: &Db| &d.$pf, json),)*
+                _ => Err(format!("campo desconocido: {field}")),
+            }
+            .map_err(|e| format!("{field}: {e}"))
+        }
+
+        /// Lo que ha cambiado en `db` respecto a `synced`, sin partir los datos
+        /// enteros: cada registro se escribe en el mismo búfer y se compara.
+        pub fn diff_db(synced: &Snapshot, db: &Db) -> Vec<Change> {
+            let mut out = vec![];
+            let empty = Records::default();
+            let mut buf: Vec<u8> = Vec::with_capacity(4096);
+            $({
+                let field = stringify!($rf);
+                let b = synced.records.get(field).unwrap_or(&empty);
+                let mut matched = 0usize;
+                // las listas que nadie ha tocado desde el último envío no han cambiado
+                if db.$rf.is_touched() {
+                for r in db.$rf.iter() {
+                    let k = to_json(&r.$rk);
+                    buf.clear();
+                    if serde_json::to_writer(&mut buf, r).is_err() {
+                        continue;
+                    }
+                    let v = std::str::from_utf8(&buf).unwrap_or("");
+                    match b.get(&k) {
+                        Some(old) => {
+                            matched += 1;
+                            if old.as_str() != v {
+                                out.push(Change { field: field.to_string(), key: Some(k), before: Some(old.clone()), after: Some(v.to_string()) });
+                            }
+                        }
+                        None => out.push(Change { field: field.to_string(), key: Some(k), before: None, after: Some(v.to_string()) }),
+                    }
+                }
+                // borrados (solo se buscan si faltan registros)
+                if matched < b.map.len() {
+                    let here: std::collections::HashSet<String> = db.$rf.iter().map(|r| to_json(&r.$rk)).collect();
+                    for (k, v) in b.iter().filter(|(k, _)| !here.contains(*k)) {
+                        out.push(Change { field: field.to_string(), key: Some(k.clone()), before: Some(v.clone()), after: None });
+                    }
+                }
+                }
+            })*
+            $({
+                let field = stringify!($pf);
+                if field != "rev" {
+                    let now = to_json(&db.$pf);
+                    let before = synced.plain.get(field);
+                    if before != Some(&now) {
+                        out.push(Change { field: field.to_string(), key: None, before: before.cloned(), after: Some(now) });
+                    }
+                }
+            })*
+            out
+        }
+
+        /// Todo lo que hay en `db` ya está en el servidor: las listas dejan de
+        /// estar marcadas como tocadas.
+        pub fn mark_synced(db: &mut Db) {
+            $(db.$rf.clear_touched();)*
+        }
+
+        /// Quita todos los registros (para unos datos mínimos).
+        fn clear_records(db: &mut Db) {
+            $(db.$rf.clear();)*
+        }
+    };
+}
+
+db_fields! {
+    records: [
+        (tariffs, id), (collaborators, id), (boxes, id), (patients, id), (entries, id), (budgets, id),
+        (payments, id), (cash, id), (appointments, id), (blocks, id), (waitlist, id), (recalls, id),
+        (invoices, id), (perio, id), (images, id), (connectors, id), (msg_templates, id), (messages, id),
+        (doc_templates, id), (documents, id), (suppliers, id), (products, id), (stock_moves, id),
+        (orders, id), (lab_works, id), (users, id), (expenses, id), (prescriptions, id), (ortho, id),
+        (remittances, id), (contacts, id), (bank_accounts, id), (bank_moves, id), (centers, id),
+        (health, id), (claims, id), (tasks, id), (stations, id), (chat, id), (calls, id), (whatsapp, id),
+        (vf_records, id), (ia_reports, id), (booking_requests, id), (slot_offers, id),
+        (appt_links, token), (budget_links, token), (doc_links, token), (rx_links, token),
+    ],
+    plain: [
+        config, treatments, next_id, launches, consumptions, access_log, drugs, audit_log, holidays,
+        auths, erx, rev, wa_seen, wa_sender, verifactu, mail, ia, booking, golive, data_version,
+    ],
+}
+
+/// Lista de registros que sabe si se ha tocado desde que se envió al servidor:
+/// cualquier acceso para cambiarla (añadir, quitar, `iter_mut`, `[i] = …`) la
+/// marca. Así, al guardar, solo se miran las listas tocadas y no los datos
+/// enteros. Se lee y se cambia como la lista de dentro.
+#[derive(Clone, Default)]
+pub struct Tracked<T> {
+    inner: T,
+    touched: bool,
+}
+
+impl<T> Tracked<T> {
+    pub fn is_touched(&self) -> bool {
+        self.touched
+    }
+
+    /// Para cambiarla sin marcarla (al poner lo que llega del servidor, que
+    /// ya queda apuntado como sincronizado).
+    pub fn untracked_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
+    fn clear_touched(&mut self) {
+        self.touched = false;
+    }
+}
+
+impl<T> std::ops::Deref for Tracked<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T> std::ops::DerefMut for Tracked<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.touched = true;
+        &mut self.inner
+    }
+}
+
+impl<T> From<T> for Tracked<T> {
+    fn from(inner: T) -> Self {
+        Tracked { inner, touched: true }
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Tracked<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<T: PartialEq> PartialEq for Tracked<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<T: Serialize> Serialize for Tracked<T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.inner.serialize(s)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Tracked<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        T::deserialize(d).map(Tracked::from)
+    }
+}
+
+impl<T> FromIterator<T> for Tracked<Vec<T>> {
+    fn from_iter<I: IntoIterator<Item = T>>(it: I) -> Self {
+        Tracked::from(it.into_iter().collect::<Vec<T>>())
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Tracked<Vec<T>> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Tracked<Vec<T>> {
+    type Item = &'a mut T;
+    type IntoIter = std::slice::IterMut<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.touched = true;
+        self.inner.iter_mut()
+    }
+}
+
+impl<T> IntoIterator for Tracked<Vec<T>> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+fn to_json<T: Serialize + ?Sized>(v: &T) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| "null".into())
+}
+
+/// La clave de un registro, con su tipo (el del campo `get` de los registros de la lista).
+fn parse_key<T, K: DeserializeOwned>(_: &[T], _get: fn(&T) -> &K, key: &str) -> Result<K, String> {
+    serde_json::from_str(key).map_err(|e| e.to_string())
+}
+
+fn parse_item<T: DeserializeOwned + Serialize>(_: fn(&Db) -> &Vec<T>, json: &str) -> Result<String, String> {
+    serde_json::from_str::<T>(json).map(|v| to_json(&v)).map_err(|e| e.to_string())
+}
+
+fn parse_value<T: DeserializeOwned + Serialize>(_: fn(&Db) -> &T, json: &str) -> Result<String, String> {
+    serde_json::from_str::<T>(json).map(|v| to_json(&v)).map_err(|e| e.to_string())
+}
+
+/// Registros de una lista, en su orden, por su clave (texto JSON de la clave).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Records {
+    order: Vec<String>,
+    map: HashMap<String, String>,
+}
+
+impl Records {
+    fn collect(it: impl Iterator<Item = (String, String)>) -> Records {
+        let mut r = Records::default();
+        for (k, v) in it {
+            // si una clave se repitiera, vale el primero
+            if !r.map.contains_key(&k) {
+                r.order.push(k.clone());
+                r.map.insert(k, v);
+            }
+        }
+        r
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.map.get(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.order.iter().filter_map(|k| self.map.get(k).map(|v| (k, v)))
+    }
+
+    fn set(&mut self, key: &str, json: Option<String>) {
+        match json {
+            Some(j) => {
+                if self.map.insert(key.to_string(), j).is_none() {
+                    self.order.push(key.to_string());
+                }
+            }
+            None => {
+                if self.map.remove(key).is_some() {
+                    self.order.retain(|k| k != key);
+                }
+            }
+        }
+    }
+
+    /// La lista como texto JSON, pasando cada registro por `f`.
+    fn to_json_with(&self, f: &dyn Fn(&str) -> String) -> String {
+        let mut s = String::with_capacity(self.map.values().map(|v| v.len() + 1).sum::<usize>() + 2);
+        s.push('[');
+        for (i, (_, v)) in self.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            s.push_str(&f(v));
+        }
+        s.push(']');
+        s
+    }
+}
+
+/// Los datos de la clínica partidos en registros y campos (texto JSON).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Snapshot {
+    pub records: HashMap<String, Records>,
+    pub plain: HashMap<String, String>,
+}
+
+impl Snapshot {
+    pub fn from_db(db: &Db) -> Snapshot {
+        Snapshot {
+            records: RECORD_FIELDS.iter().filter_map(|f| Some((f.to_string(), records_of(db, f)?))).collect(),
+            plain: PLAIN_FIELDS.iter().filter_map(|f| Some((f.to_string(), plain_of(db, f)?))).collect(),
+        }
+    }
+
+    /// Los datos enteros como texto JSON; `users` pasa cada usuario por `f`
+    /// (para quitar las contraseñas al mandarlos a un puesto).
+    pub fn to_json_with(&self, users: &dyn Fn(&str) -> String) -> String {
+        let same = |s: &str| s.to_string();
+        let mut out = String::from("{");
+        let mut first = true;
+        let mut put = |name: &str, value: String| {
+            if !first {
+                out.push(',');
+            }
+            first = false;
+            out.push_str(&to_json(name));
+            out.push(':');
+            out.push_str(&value);
+        };
+        for f in RECORD_FIELDS {
+            let r = self.records.get(*f).cloned().unwrap_or_default();
+            put(f, r.to_json_with(if *f == "users" { users } else { &same }));
+        }
+        for f in PLAIN_FIELDS {
+            if let Some(v) = self.plain.get(*f) {
+                put(f, v.clone());
+            }
+        }
+        out.push('}');
+        out
+    }
+
+    pub fn to_json(&self) -> String {
+        self.to_json_with(&|s| s.to_string())
+    }
+
+    pub fn to_db(&self) -> Result<Db, String> {
+        serde_json::from_str(&self.to_json()).map_err(|e| format!("datos no válidos: {e}"))
+    }
+
+    pub fn rev(&self) -> u64 {
+        self.plain.get("rev").and_then(|r| r.parse().ok()).unwrap_or(0)
+    }
+
+    pub fn set_rev(&mut self, rev: u64) {
+        self.plain.insert("rev".into(), rev.to_string());
+    }
+
+    /// Un registro (con clave) o un campo entero (sin ella).
+    pub fn get(&self, field: &str, key: Option<&str>) -> Option<&String> {
+        match key {
+            Some(k) => self.records.get(field)?.get(k),
+            None => self.plain.get(field),
+        }
+    }
+
+    pub fn set(&mut self, field: &str, key: Option<&str>, json: Option<String>) {
+        match key {
+            Some(k) => self.records.entry(field.to_string()).or_default().set(k, json),
+            None => match json {
+                Some(j) => {
+                    self.plain.insert(field.to_string(), j);
+                }
+                None => {
+                    self.plain.remove(field);
+                }
+            },
+        }
+    }
+}
+
+/// Un cambio: un registro (con `key`) o un campo entero, cómo estaba y cómo está.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Change {
+    #[serde(rename = "campo")]
+    pub field: String,
+    #[serde(rename = "clave", default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(rename = "antes", default)]
+    pub before: Option<String>,
+    #[serde(rename = "ahora", default)]
+    pub after: Option<String>,
+}
+
+/// Lo que ha cambiado de `base` a `ours` (la revisión no cuenta: la pone el servidor).
+pub fn diff(base: &Snapshot, ours: &Snapshot) -> Vec<Change> {
+    let mut out = vec![];
+    let empty = Records::default();
+    for f in RECORD_FIELDS {
+        let (b, o) = (base.records.get(*f).unwrap_or(&empty), ours.records.get(*f).unwrap_or(&empty));
+        for (k, v) in o.iter() {
+            if b.get(k) != Some(v) {
+                out.push(Change { field: f.to_string(), key: Some(k.clone()), before: b.get(k).cloned(), after: Some(v.clone()) });
+            }
+        }
+        for (k, v) in b.iter() {
+            if o.get(k).is_none() {
+                out.push(Change { field: f.to_string(), key: Some(k.clone()), before: Some(v.clone()), after: None });
+            }
+        }
+    }
+    for f in PLAIN_FIELDS.iter().filter(|f| **f != "rev") {
+        if base.plain.get(*f) != ours.plain.get(*f) {
+            out.push(Change { field: f.to_string(), key: None, before: base.plain.get(*f).cloned(), after: ours.plain.get(*f).cloned() });
+        }
+    }
+    out
+}
+
+fn parse(s: &str) -> Result<Value, String> {
+    serde_json::from_str(s).map_err(|e| e.to_string())
+}
+
+/// Qué se ha tocado: campo y, si es un registro, su clave.
+pub type Touched = Vec<(String, Option<String>)>;
+
+/// Resultado de aplicar los cambios de un puesto.
+#[derive(Debug, Default)]
+pub struct Outcome {
+    /// Qué se ha tocado (campo y clave del registro).
+    pub touched: Touched,
+    /// Datos que ambos lados cambiaron a la vez (gana el puesto que envía).
+    pub conflicts: usize,
+}
+
+/// Aplica en el servidor los cambios de un puesto sobre los datos actuales,
+/// combinándolos con lo que otros puestos hayan cambiado mientras (como
+/// [`crate::shared::merge`], registro a registro). Si algún registro no es
+/// válido no se aplica nada.
+pub fn apply(cur: &mut Snapshot, changes: &[Change]) -> Result<Outcome, String> {
+    let mut out = Outcome::default();
+    let mut results: Vec<(String, Option<String>, Option<String>)> = vec![];
+    for ch in changes {
+        if ch.field == "rev" || !(RECORD_FIELDS.contains(&ch.field.as_str()) || PLAIN_FIELDS.contains(&ch.field.as_str())) {
+            continue;
+        }
+        let current = cur.get(&ch.field, ch.key.as_deref()).cloned();
+        let result = if ch.key.is_none() && ch.field == "next_id" {
+            // los identificadores nunca bajan
+            let n = |s: &Option<String>| s.as_deref().and_then(|x| x.parse::<u64>().ok()).unwrap_or(0);
+            Some(n(&ch.after).max(n(&current)).to_string())
+        } else if let (None, Some(cap)) = (&ch.key, crate::shared::append_only_cap(&ch.field)) {
+            // registros que solo crecen: se juntan las entradas nuevas de los dos
+            let arr = |s: &Option<String>| s.as_deref().and_then(|x| serde_json::from_str::<Vec<Value>>(x).ok()).unwrap_or_default();
+            let before = ch.before.as_deref().map(parse).transpose()?;
+            Some(crate::shared::merge_append(before.as_ref(), &arr(&ch.after), &arr(&current), cap).to_string())
+        } else if current == ch.before {
+            // nadie lo ha tocado mientras
+            ch.after.clone()
+        } else {
+            match (&ch.before, &ch.after, &current) {
+                // lo ha borrado este puesto pero otro lo cambió: se conserva
+                (_, None, Some(_)) => {
+                    out.conflicts += 1;
+                    current.clone()
+                }
+                // otro lo borró: si este no lo había cambiado, queda borrado
+                (Some(b), Some(a), None) if a == b => None,
+                (_, Some(a), None) => {
+                    out.conflicts += 1;
+                    Some(a.clone())
+                }
+                // los dos lo cambiaron: dato a dato
+                (b, Some(a), Some(c)) => {
+                    let b = b.as_deref().map(parse).transpose()?;
+                    let (a, c) = (parse(a)?, parse(c)?);
+                    let m = crate::shared::merge(b.as_ref(), &a, &c, &mut out.conflicts);
+                    Some(m.to_string())
+                }
+                (_, None, None) => None,
+            }
+        };
+        let result = result.map(|r| canonical(&ch.field, &r)).transpose()?;
+        if result != current {
+            results.push((ch.field.clone(), ch.key.clone(), result));
+        }
+    }
+    for (field, key, value) in results {
+        cur.set(&field, key.as_deref(), value);
+        out.touched.push((field, key));
+    }
+    Ok(out)
+}
+
+/// Pone en los datos del puesto lo que llega del servidor, y lo apunta en
+/// `synced` (lo último que se sabe del servidor) tal como lo escribiría el
+/// puesto, para que no parezca un cambio suyo.
+pub fn apply_to_db(db: &mut Db, synced: &mut Snapshot, changes: &[Change]) -> Result<(), String> {
+    for ch in changes {
+        match &ch.key {
+            Some(k) => {
+                set_record(db, &ch.field, k, ch.after.as_deref())?;
+                synced.set(&ch.field, Some(k), record_of(db, &ch.field, k));
+            }
+            None => {
+                if let Some(a) = &ch.after {
+                    set_field(db, &ch.field, a)?;
+                    synced.set(&ch.field, None, plain_of(db, &ch.field));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Unos datos mínimos (sin registros) para usar solo algunos campos.
+pub fn skeleton() -> Db {
+    static SKELETON: std::sync::OnceLock<Db> = std::sync::OnceLock::new();
+    SKELETON
+        .get_or_init(|| {
+            let mut db = Db::sample(crate::model::today());
+            clear_records(&mut db);
+            db
+        })
+        .clone()
+}
+
+/// Los datos mínimos con estos campos sacados de `snap`.
+pub fn partial_db(snap: &Snapshot, fields: &[&str]) -> Result<Db, String> {
+    let mut db = skeleton();
+    for f in fields {
+        let json = match snap.records.get(*f) {
+            Some(r) => r.to_json_with(&|s| s.to_string()),
+            None => match snap.plain.get(*f) {
+                Some(p) => p.clone(),
+                None => continue,
+            },
+        };
+        set_field(&mut db, f, &json)?;
+    }
+    Ok(db)
+}
+
+/// Lo que ha cambiado en `fields` de `db` respecto a `snap` (como valores nuevos).
+pub fn changes_in(snap: &Snapshot, db: &Db, fields: &[&str]) -> Vec<Change> {
+    let mut part = Snapshot::default();
+    let mut base = Snapshot::default();
+    for f in fields {
+        if let Some(r) = records_of(db, f) {
+            part.records.insert(f.to_string(), r);
+            base.records.insert(f.to_string(), snap.records.get(*f).cloned().unwrap_or_default());
+        } else if let Some(p) = plain_of(db, f) {
+            part.plain.insert(f.to_string(), p);
+            if let Some(b) = snap.plain.get(*f) {
+                base.plain.insert(f.to_string(), b.clone());
+            }
+        }
+    }
+    diff(&base, &part)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn db() -> Db {
+        Db::sample(NaiveDate::from_ymd_opt(2026, 11, 4).unwrap())
+    }
+
+    #[test]
+    fn every_field_of_the_data_is_listed_once() {
+        let v = serde_json::to_value(db()).unwrap();
+        let mut keys: Vec<&String> = v.as_object().unwrap().keys().collect();
+        keys.sort();
+        let mut listed: Vec<&str> = RECORD_FIELDS.iter().chain(PLAIN_FIELDS).copied().collect();
+        listed.sort();
+        assert_eq!(keys.iter().map(|s| s.as_str()).collect::<Vec<_>>(), listed, "falta (o sobra) un campo de Db en sync.rs");
+        // las listas con clave tienen la clave en todos los registros
+        for f in RECORD_FIELDS {
+            assert!(v[*f].as_array().unwrap().iter().all(|r| r.get("id").is_some() || r.get("token").is_some()), "{f}");
+        }
+    }
+
+    #[test]
+    fn round_trip_keeps_everything() {
+        let d = db();
+        let snap = Snapshot::from_db(&d);
+        let back: Value = serde_json::from_str(&snap.to_json()).unwrap();
+        // como texto (lo que va al disco y por la red): `to_value` pasaría los f32 a f64
+        let orig: Value = serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
+        for (k, v) in orig.as_object().unwrap() {
+            assert_eq!(back.get(k), Some(v), "el campo {k} cambia al ir y volver");
+        }
+        assert_eq!(back.as_object().unwrap().len(), orig.as_object().unwrap().len());
+        assert_eq!(snap.to_db().unwrap().patients.len(), d.patients.len());
+    }
+
+    #[test]
+    fn only_what_changed_is_sent() {
+        let mut d = db();
+        let base = Snapshot::from_db(&d);
+        assert!(diff(&base, &Snapshot::from_db(&d)).is_empty(), "sin cambios no se manda nada");
+        d.appointments[0].notes = "nota".into();
+        let gone = d.payments.remove(0).id;
+        let id = d.new_id();
+        let mut p = d.patients[0].clone();
+        p.id = id;
+        d.patients.push(p);
+        d.config.name = "Otra".into();
+        let ch = diff(&base, &Snapshot::from_db(&d));
+        let what: Vec<(String, Option<String>, bool, bool)> = ch.iter().map(|c| (c.field.clone(), c.key.clone(), c.before.is_some(), c.after.is_some())).collect();
+        assert!(what.contains(&("appointments".into(), Some(d.appointments[0].id.to_string()), true, true)));
+        assert!(what.contains(&("payments".into(), Some(gone.to_string()), true, false)));
+        assert!(what.contains(&("patients".into(), Some(id.to_string()), false, true)));
+        assert!(what.contains(&("config".into(), None, true, true)));
+        assert!(what.contains(&("next_id".into(), None, true, true)));
+        assert_eq!(ch.len(), 5, "{what:?}");
+    }
+
+    #[test]
+    fn changes_from_two_stations_are_combined() {
+        let start = db();
+        let server = Snapshot::from_db(&start);
+        let mut cur = server.clone();
+        // A cambia las notas de una cita; B, la hora de la misma cita y borra un cobro
+        let mut a = start.clone();
+        a.appointments[0].notes = "de A".into();
+        let mut b = start.clone();
+        b.appointments[0].minutes += 15;
+        let paid = b.payments.remove(0).id;
+        apply(&mut cur, &diff(&server, &Snapshot::from_db(&a))).unwrap();
+        let o = apply(&mut cur, &diff(&server, &Snapshot::from_db(&b))).unwrap();
+        assert_eq!(o.conflicts, 0);
+        let fin = cur.to_db().unwrap();
+        assert_eq!(fin.appointments[0].notes, "de A");
+        assert_eq!(fin.appointments[0].minutes, start.appointments[0].minutes + 15);
+        assert!(fin.payments.iter().all(|p| p.id != paid));
+        // A borra la cita que B ha cambiado: se conserva
+        let mut a2 = start.clone();
+        let appt = a2.appointments.remove(0).id;
+        let o = apply(&mut cur, &diff(&server, &Snapshot::from_db(&a2))).unwrap();
+        assert_eq!(o.conflicts, 1);
+        assert!(cur.to_db().unwrap().appointments.iter().any(|x| x.id == appt));
+        // los identificadores nunca bajan
+        let mut low = start.clone();
+        low.next_id = 1;
+        let mut high = start.clone();
+        high.next_id = start.next_id + 50;
+        apply(&mut cur, &diff(&server, &Snapshot::from_db(&high))).unwrap();
+        apply(&mut cur, &diff(&server, &Snapshot::from_db(&low))).unwrap();
+        assert_eq!(cur.to_db().unwrap().next_id, start.next_id + 50);
+    }
+
+    #[test]
+    fn direct_comparison_finds_the_same_changes() {
+        let mut d = db();
+        let base = Snapshot::from_db(&d);
+        assert!(diff_db(&base, &d).is_empty());
+        d.appointments[0].notes = "nota".into();
+        d.payments.remove(0);
+        let id = d.new_id();
+        let mut p = d.patients[0].clone();
+        p.id = id;
+        d.patients.push(p);
+        d.config.name = "Otra".into();
+        let key = |c: &Change| (c.field.clone(), c.key.clone());
+        let mut a = diff(&base, &Snapshot::from_db(&d));
+        let mut b = diff_db(&base, &d);
+        a.sort_by_key(key);
+        b.sort_by_key(key);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn untouched_lists_are_not_looked_at() {
+        let mut d = db();
+        let base = Snapshot::from_db(&d);
+        mark_synced(&mut d);
+        assert!(!d.appointments.is_touched());
+        // leer no marca; cambiar, sí
+        let _ = d.appointments.iter().count();
+        let _ = d.appointments[0].notes.len();
+        assert!(!d.appointments.is_touched());
+        d.appointments[0].notes = "nota".into();
+        assert!(d.appointments.is_touched());
+        assert!(!d.patients.is_touched());
+        assert_eq!(diff_db(&base, &d).len(), 1);
+        // lo que llega del servidor no marca
+        mark_synced(&mut d);
+        let p = serde_json::to_string(&d.patients[0]).unwrap();
+        let key = d.patients[0].id.to_string();
+        set_record(&mut d, "patients", &key, Some(&p)).unwrap();
+        assert!(!d.patients.is_touched());
+        // un cambio en una lista no marcada (no debería pasar) no se ve: por eso
+        // al cargar los datos todas empiezan marcadas
+        let loaded: Db = serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
+        assert!(loaded.patients.is_touched() && loaded.appointments.is_touched());
+    }
+
+    #[test]
+    fn invalid_records_are_refused_whole() {
+        let start = db();
+        let mut cur = Snapshot::from_db(&start);
+        let before = cur.clone();
+        let bad = vec![
+            Change { field: "config".into(), key: None, before: cur.plain.get("config").cloned(), after: Some("{\"nombre\": 3}".into()) },
+            Change { field: "patients".into(), key: Some("999999".into()), before: None, after: Some("{\"id\": \"no\"}".into()) },
+        ];
+        assert!(apply(&mut cur, &bad).is_err());
+        assert_eq!(cur, before, "no se aplica nada");
+    }
+
+    #[test]
+    fn changes_reach_the_station_data() {
+        let start = db();
+        let mut station = start.clone();
+        let mut synced = Snapshot::from_db(&station);
+        let mut other = start.clone();
+        other.patients[1].first_name = "Cambiado".into();
+        other.appt_links.clear();
+        let ch = diff(&synced, &Snapshot::from_db(&other));
+        apply_to_db(&mut station, &mut synced, &ch).unwrap();
+        assert_eq!(station.patients[1].first_name, "Cambiado");
+        assert!(station.appt_links.is_empty());
+        assert!(diff(&synced, &Snapshot::from_db(&station)).is_empty(), "lo recibido no parece un cambio del puesto");
+    }
+}

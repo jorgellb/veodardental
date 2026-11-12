@@ -70,6 +70,12 @@ demás se conectan con su dirección y la clave de la clínica.
   nuevas, de 6 caracteres o más. Las de versiones anteriores siguen valiendo y
   se pasan al formato nuevo al entrar.
 
+- **Solo viaja lo que cambia.** Cada puesto envía solo los registros que ha
+  cambiado (si no ha cambiado nada, no envía nada) y recoge solo lo que han
+  cambiado los demás; el servidor combina los cambios registro a registro sin
+  guardar copias antiguas de los datos. Con una clínica grande (unos 220 MB de
+  datos), un guardado normal envía alrededor de 1 KB.
+
 **Al actualizar, actualice el servidor y todos los puestos a la vez**: un
 puesto con una versión anterior no puede conectar con el servidor nuevo (ni al
 revés), y el programa lo dice con un aviso.

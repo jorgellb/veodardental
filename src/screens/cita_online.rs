@@ -1451,7 +1451,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         card(&mut cols[1], |ui| {
             ui.set_width(ui.available_width());
             section(ui, "Últimas solicitudes");
-            let mut list: Vec<BookingRequest> = app.db.booking_requests.clone();
+            let mut list: Vec<BookingRequest> = app.db.booking_requests.to_vec();
             list.sort_by_key(|r| std::cmp::Reverse(r.received));
             if list.is_empty() {
                 muted(ui, "Aún no ha llegado ninguna.");

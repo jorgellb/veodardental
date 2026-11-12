@@ -325,7 +325,7 @@ impl Db {
 
 pub fn sample_contacts(db: &mut Db) {
     let c = |id: u32, name: &str, company: &str, cat: &str, phone: &str, email: &str| Contact { id, name: name.into(), company: company.into(), category: cat.into(), phone: phone.into(), mobile: String::new(), email: email.into(), notes: String::new() };
-    db.contacts = vec![
+    *db.contacts = vec![
         c(1, "Servicio técnico de equipos", "Técnico Ejemplo", "Mantenimiento", "900 300 300", "sat@tecnico-ejemplo.es"),
         c(2, "Gestoría", "Gestoría Ejemplo", "Administración", "91 500 50 50", "info@gestoria-ejemplo.es"),
         c(3, "Colegio de Dentistas", "", "Institucional", "91 600 60 60", ""),

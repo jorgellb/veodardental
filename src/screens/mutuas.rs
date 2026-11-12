@@ -107,7 +107,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Liquidaciones emitidas");
-        let mut list: Vec<crate::insurer::Claim> = app.db.claims.clone();
+        let mut list: Vec<crate::insurer::Claim> = app.db.claims.to_vec();
         list.sort_by_key(|c| std::cmp::Reverse(c.id));
         if list.is_empty() {
             empty_state(ui, "Aún no se ha emitido ninguna liquidación.");

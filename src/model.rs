@@ -2,6 +2,7 @@
 //! cobros, caja y recalls. Todo se guarda en un único fichero JSON.
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
+pub use crate::sync::Tracked;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -547,101 +548,118 @@ pub struct ClinicConfig {
     pub board_initials: bool,
 }
 
+// Listas que empiezan con contenido (para los datos guardados por versiones que no las tenían).
+fn tracked_connectors() -> Tracked<Vec<Connector>> {
+    default_connectors().into()
+}
+fn tracked_msg_templates() -> Tracked<Vec<crate::comms::MsgTemplate>> {
+    crate::comms::default_msg_templates().into()
+}
+fn tracked_doc_templates() -> Tracked<Vec<crate::comms::DocTemplate>> {
+    crate::comms::default_doc_templates().into()
+}
+fn tracked_users() -> Tracked<Vec<crate::users::User>> {
+    crate::users::default_users().into()
+}
+fn tracked_centers() -> Tracked<Vec<Center>> {
+    default_centers().into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Db {
     pub config: ClinicConfig,
     pub treatments: Vec<Treatment>,
-    pub tariffs: Vec<Tariff>,
-    pub collaborators: Vec<Collaborator>,
-    pub boxes: Vec<Boxroom>,
-    pub patients: Vec<Patient>,
-    pub entries: Vec<MedEntry>,
-    pub budgets: Vec<Budget>,
-    pub payments: Vec<Payment>,
-    pub cash: Vec<CashSession>,
-    pub appointments: Vec<Appointment>,
-    pub blocks: Vec<Block>,
-    pub waitlist: Vec<WaitItem>,
-    pub recalls: Vec<Recall>,
+    pub tariffs: Tracked<Vec<Tariff>>,
+    pub collaborators: Tracked<Vec<Collaborator>>,
+    pub boxes: Tracked<Vec<Boxroom>>,
+    pub patients: Tracked<Vec<Patient>>,
+    pub entries: Tracked<Vec<MedEntry>>,
+    pub budgets: Tracked<Vec<Budget>>,
+    pub payments: Tracked<Vec<Payment>>,
+    pub cash: Tracked<Vec<CashSession>>,
+    pub appointments: Tracked<Vec<Appointment>>,
+    pub blocks: Tracked<Vec<Block>>,
+    pub waitlist: Tracked<Vec<WaitItem>>,
+    pub recalls: Tracked<Vec<Recall>>,
     pub next_id: u32,
     #[serde(default)]
-    pub invoices: Vec<Invoice>,
+    pub invoices: Tracked<Vec<Invoice>>,
     #[serde(default)]
-    pub perio: Vec<PerioChart>,
+    pub perio: Tracked<Vec<PerioChart>>,
     #[serde(default)]
-    pub images: Vec<PatientImage>,
-    #[serde(default = "default_connectors")]
-    pub connectors: Vec<Connector>,
+    pub images: Tracked<Vec<PatientImage>>,
+    #[serde(default = "tracked_connectors")]
+    pub connectors: Tracked<Vec<Connector>>,
     #[serde(default)]
     pub launches: Vec<LaunchLog>,
-    #[serde(default = "crate::comms::default_msg_templates")]
-    pub msg_templates: Vec<crate::comms::MsgTemplate>,
+    #[serde(default = "tracked_msg_templates")]
+    pub msg_templates: Tracked<Vec<crate::comms::MsgTemplate>>,
     #[serde(default)]
-    pub messages: Vec<crate::comms::Message>,
-    #[serde(default = "crate::comms::default_doc_templates")]
-    pub doc_templates: Vec<crate::comms::DocTemplate>,
+    pub messages: Tracked<Vec<crate::comms::Message>>,
+    #[serde(default = "tracked_doc_templates")]
+    pub doc_templates: Tracked<Vec<crate::comms::DocTemplate>>,
     #[serde(default)]
-    pub documents: Vec<crate::comms::PatientDoc>,
+    pub documents: Tracked<Vec<crate::comms::PatientDoc>>,
     #[serde(default)]
-    pub suppliers: Vec<crate::stock::Supplier>,
+    pub suppliers: Tracked<Vec<crate::stock::Supplier>>,
     #[serde(default)]
-    pub products: Vec<crate::stock::Product>,
+    pub products: Tracked<Vec<crate::stock::Product>>,
     #[serde(default)]
-    pub stock_moves: Vec<crate::stock::StockMove>,
+    pub stock_moves: Tracked<Vec<crate::stock::StockMove>>,
     #[serde(default)]
     pub consumptions: Vec<crate::stock::Consumption>,
     #[serde(default)]
-    pub orders: Vec<crate::stock::PurchaseOrder>,
+    pub orders: Tracked<Vec<crate::stock::PurchaseOrder>>,
     #[serde(default)]
-    pub lab_works: Vec<crate::stock::LabWork>,
-    #[serde(default = "crate::users::default_users")]
-    pub users: Vec<crate::users::User>,
+    pub lab_works: Tracked<Vec<crate::stock::LabWork>>,
+    #[serde(default = "tracked_users")]
+    pub users: Tracked<Vec<crate::users::User>>,
     #[serde(default)]
     pub access_log: Vec<crate::users::AccessLog>,
     #[serde(default)]
-    pub expenses: Vec<crate::finance::Expense>,
+    pub expenses: Tracked<Vec<crate::finance::Expense>>,
     #[serde(default = "crate::finance::default_drugs")]
     pub drugs: Vec<crate::finance::Drug>,
     #[serde(default)]
-    pub prescriptions: Vec<crate::finance::Prescription>,
+    pub prescriptions: Tracked<Vec<crate::finance::Prescription>>,
     #[serde(default)]
-    pub ortho: Vec<crate::extra::OrthoCase>,
+    pub ortho: Tracked<Vec<crate::extra::OrthoCase>>,
     #[serde(default)]
-    pub remittances: Vec<crate::extra::Remittance>,
+    pub remittances: Tracked<Vec<crate::extra::Remittance>>,
     #[serde(default)]
-    pub contacts: Vec<crate::tools::Contact>,
+    pub contacts: Tracked<Vec<crate::tools::Contact>>,
     #[serde(default)]
-    pub bank_accounts: Vec<crate::bank::BankAccount>,
+    pub bank_accounts: Tracked<Vec<crate::bank::BankAccount>>,
     #[serde(default)]
-    pub bank_moves: Vec<crate::bank::BankMove>,
+    pub bank_moves: Tracked<Vec<crate::bank::BankMove>>,
     #[serde(default)]
     pub audit_log: Vec<crate::bank::AuditEntry>,
-    #[serde(default = "default_centers")]
-    pub centers: Vec<Center>,
+    #[serde(default = "tracked_centers")]
+    pub centers: Tracked<Vec<Center>>,
     #[serde(default)]
     pub holidays: Vec<crate::agenda_extra::Holiday>,
     #[serde(default)]
-    pub health: Vec<crate::health::HealthForm>,
+    pub health: Tracked<Vec<crate::health::HealthForm>>,
     #[serde(default)]
-    pub claims: Vec<crate::insurer::Claim>,
+    pub claims: Tracked<Vec<crate::insurer::Claim>>,
     /// Nº de autorización de la compañía por acto (id del acto, número).
     #[serde(default)]
     pub auths: Vec<(u32, String)>,
     #[serde(default)]
     pub erx: crate::erx::ErxConfig,
     #[serde(default)]
-    pub tasks: Vec<crate::tasks::Task>,
+    pub tasks: Tracked<Vec<crate::tasks::Task>>,
     /// Revisión del fichero (sube en cada guardado; sirve para detectar cambios de otros puestos).
     #[serde(default)]
     pub rev: u64,
     #[serde(default)]
-    pub stations: Vec<crate::shared::StationSeen>,
+    pub stations: Tracked<Vec<crate::shared::StationSeen>>,
     #[serde(default)]
-    pub chat: Vec<crate::chat::InternalMsg>,
+    pub chat: Tracked<Vec<crate::chat::InternalMsg>>,
     #[serde(default)]
-    pub calls: Vec<crate::phone::CallLog>,
+    pub calls: Tracked<Vec<crate::phone::CallLog>>,
     #[serde(default)]
-    pub whatsapp: Vec<crate::whatsapp::WaMessage>,
+    pub whatsapp: Tracked<Vec<crate::whatsapp::WaMessage>>,
     /// Avisos de Meta ya procesados (Meta reintenta durante 7 días).
     #[serde(default)]
     pub wa_seen: Vec<String>,
@@ -656,37 +674,37 @@ pub struct Db {
     pub mail: crate::mail::MailConfig,
     /// Registros de facturación posteriores a la factura (subsanaciones y anulaciones).
     #[serde(default)]
-    pub vf_records: Vec<crate::verifactu::VfRecord>,
+    pub vf_records: Tracked<Vec<crate::verifactu::VfRecord>>,
     /// Análisis de imágenes con inteligencia artificial: agentes y modo.
     #[serde(default)]
     pub ia: crate::ia::IaConfig,
     /// Análisis guardados.
     #[serde(default)]
-    pub ia_reports: Vec<crate::ia::IaReport>,
+    pub ia_reports: Tracked<Vec<crate::ia::IaReport>>,
     /// Cita online: página para que los pacientes pidan cita.
     #[serde(default)]
     pub booking: crate::booking::BookingConfig,
     /// Solicitudes de cita recibidas desde la página.
     #[serde(default)]
-    pub booking_requests: Vec<crate::booking::BookingRequest>,
+    pub booking_requests: Tracked<Vec<crate::booking::BookingRequest>>,
     /// Enlaces personales de las citas («Mi cita»).
     #[serde(default)]
-    pub appt_links: Vec<crate::portal::ApptLink>,
+    pub appt_links: Tracked<Vec<crate::portal::ApptLink>>,
     /// Presupuestos enviados para firmar por internet.
     #[serde(default)]
-    pub budget_links: Vec<crate::budget_link::BudgetLink>,
+    pub budget_links: Tracked<Vec<crate::budget_link::BudgetLink>>,
     /// Documentos enviados para firmar por internet.
     #[serde(default)]
-    pub doc_links: Vec<crate::doc_link::DocLink>,
+    pub doc_links: Tracked<Vec<crate::doc_link::DocLink>>,
     /// Huecos libres ofrecidos a la lista de espera.
     #[serde(default)]
-    pub slot_offers: Vec<crate::slot_offer::SlotOffer>,
+    pub slot_offers: Tracked<Vec<crate::slot_offer::SlotOffer>>,
     /// Pasos de la puesta en marcha que la clínica marca a mano.
     #[serde(default)]
     pub golive: Vec<crate::golive::Tick>,
     /// Enlaces «Mis recetas» de los pacientes.
     #[serde(default)]
-    pub rx_links: Vec<crate::rx_link::RxLink>,
+    pub rx_links: Tracked<Vec<crate::rx_link::RxLink>>,
     /// Versión de los datos (para completar lo que añaden las versiones nuevas del programa).
     #[serde(default)]
     pub data_version: u32,

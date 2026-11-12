@@ -2,10 +2,10 @@
 //!
 //! Un ordenador hace de servidor: guarda el único fichero de datos, hace las
 //! copias de seguridad y atiende a los puestos de recepción y gabinetes.
-//! Cada puesto trabaja con una copia en memoria y envía sus cambios; el
-//! servidor los combina con los de los demás (registro a registro) y devuelve
-//! el resultado. Los puestos sin cambios recogen los de los demás cada pocos
-//! segundos.
+//! Cada puesto trabaja con una copia en memoria y envía solo lo que cambia;
+//! el servidor lo combina con lo de los demás (registro a registro, ver
+//! [`crate::sync`]) y devuelve solo lo nuevo. Los puestos sin cambios recogen
+//! cada pocos segundos lo que han cambiado los demás.
 //!
 //! Seguridad:
 //! - Todo va cifrado con TLS 1.3. El servidor tiene su propia identidad (una
@@ -29,8 +29,10 @@
 //!   POST /entrar             → {"usuario", "contrasena"} → sesión o código del móvil
 //!   POST /codigo             → {"usuario", "codigo", "previa"} → sesión
 //! * GET  /estado             → {"rev": n}
-//! * GET  /datos              → datos completos
-//! * POST /guardar?base=REV   → (cuerpo: datos del puesto) datos combinados
+//! * GET  /datos              → datos completos (al entrar)
+//! * GET  /cambios?desde=REV  → lo que ha cambiado desde esa revisión
+//! * POST /cambios?base=REV   → {"cambios": [...]} solo lo cambiado en el puesto
+//!   (cada cosa con cómo estaba y cómo está); devuelve lo nuevo desde `base`
 //! * POST /contrasena         → {"usuario", "actual"?, "nueva", "cambiar_al_entrar"}
 //! * POST /movil              → {"usuario", "accion": "activar"|"quitar", "clave", "codigo"}
 //!   POST /parar              → detiene el servidor (solo desde el propio servidor)
@@ -40,7 +42,8 @@
 //! volver a entrar; caduca tras 24 horas sin usarse.
 
 use crate::model::{Db, sha256_hex};
-use crate::shared::{StationSeen, keep_logs, merge};
+use crate::shared::StationSeen;
+use crate::sync::{self, Change, Snapshot, canonical};
 use crate::users::{LoginStep, Perm, ct_eq};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -157,10 +160,6 @@ pub fn local_ip() -> Option<String> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.168.1.1:80").ok()?;
     s.local_addr().ok().map(|a| a.ip().to_string())
-}
-
-fn rev_of(v: &Value) -> u64 {
-    v.get("rev").and_then(|r| r.as_u64()).unwrap_or(0)
 }
 
 // ───────────────────────── cifrado (TLS) ─────────────────────────
@@ -512,9 +511,18 @@ struct Session {
     last_used: chrono::NaiveDateTime,
 }
 
+/// Revisiones de las que se recuerda qué se tocó (para dar a los puestos solo
+/// lo nuevo; un puesto más atrasado recibe los datos enteros).
+const LOG_REVS: usize = 5000;
+
+/// Campos que cambian las entradas y las contraseñas.
+const AUTH_FIELDS: [&str; 3] = ["users", "access_log", "config"];
+
 struct State {
-    data: Value,
-    history: VecDeque<(u64, Value)>,
+    /// Los datos, registro a registro (texto JSON compacto de cada uno).
+    snap: Snapshot,
+    /// Qué se tocó en cada revisión.
+    log: VecDeque<(u64, sync::Touched)>,
     path: PathBuf,
     last_backup_day: Option<chrono::NaiveDate>,
     /// Sesiones abiertas, por la huella (SHA-256) de su código.
@@ -550,16 +558,9 @@ fn token_hash(t: &str) -> String {
     sha256_hex(t.trim())
 }
 
-/// Copia de los datos para un puesto: sin huellas de contraseñas ni claves del móvil.
-pub fn public_view(v: &Value) -> Value {
-    let mut out = v.clone();
-    if let Some(users) = out.get_mut("users").and_then(|u| u.as_array_mut()) {
-        users.iter_mut().for_each(strip_user);
-    }
-    out
-}
-
-fn strip_user(u: &mut Value) {
+/// Un usuario para un puesto: sin la huella de la contraseña ni la clave del móvil.
+pub fn strip_user_json(json: &str) -> String {
+    let Ok(mut u) = serde_json::from_str::<Value>(json) else { return json.to_string() };
     for f in ["pin_hash", "totp_secret"] {
         if u.get(f).and_then(|x| x.as_str()).is_some_and(|s| !s.is_empty()) {
             u[f] = json!(HIDDEN);
@@ -567,60 +568,41 @@ fn strip_user(u: &mut Value) {
     }
     u["salt"] = json!("");
     u["totp_last"] = json!(0);
+    canonical("users", &u.to_string()).unwrap_or_else(|_| u.to_string())
 }
 
-fn users_by_id(v: &Value) -> HashMap<u64, Value> {
-    v.get("users").and_then(|u| u.as_array()).into_iter().flatten().filter_map(|u| Some((u.get("id")?.as_u64()?, u.clone()))).collect()
-}
-
-/// Pone en los usuarios de un puesto los datos que solo guarda el servidor.
-fn hydrate_users(ours: &mut Value, current: &Value) {
-    let cur = users_by_id(current);
-    let Some(users) = ours.get_mut("users").and_then(|u| u.as_array_mut()) else { return };
-    for u in users {
-        let Some(c) = u.get("id").and_then(|i| i.as_u64()).and_then(|i| cur.get(&i)) else { continue };
-        for f in SERVER_FIELDS {
-            match c.get(f) {
-                Some(x) => u[f] = x.clone(),
-                None => {
-                    if let Some(o) = u.as_object_mut() {
-                        o.remove(f);
+/// Un usuario que manda un puesto (Dirección): con lo que solo guarda el
+/// servidor (contraseña, clave del móvil, fallos) sacado del actual.
+fn protect_user_json(json: &str, current: Option<&String>) -> Result<String, String> {
+    let mut u: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    match current.and_then(|c| serde_json::from_str::<Value>(c).ok()) {
+        Some(c) => {
+            for f in SERVER_FIELDS {
+                match c.get(f) {
+                    Some(x) => u[f] = x.clone(),
+                    None => {
+                        if let Some(o) = u.as_object_mut() {
+                            o.remove(f);
+                        }
                     }
                 }
             }
-        }
-    }
-}
-
-/// Tras combinar: los usuarios solo los cambia Dirección, y las contraseñas,
-/// las claves del móvil y los fallos de acceso nunca vienen de un puesto.
-fn protect_users(merged: &mut Value, current: &Value, admin: bool) {
-    if !admin {
-        merged["users"] = current.get("users").cloned().unwrap_or_else(|| json!([]));
-        return;
-    }
-    let cur = users_by_id(current);
-    hydrate_users(merged, current);
-    let Some(users) = merged.get_mut("users").and_then(|u| u.as_array_mut()) else { return };
-    for u in users {
-        match u.get("id").and_then(|i| i.as_u64()).and_then(|i| cur.get(&i)) {
-            Some(c) => {
-                // reactivado por Dirección: sus fallos anteriores ya no cuentan
-                if c["active"] == json!(false) && u["active"] == json!(true) {
-                    u["failed_logins"] = json!(0);
-                    u["last_failed"] = Value::Null;
-                }
-            }
-            None => {
-                // usuario nuevo: con su contraseña inicial, que tendrá que cambiar
-                u["must_change"] = json!(true);
-                u["totp_secret"] = json!("");
-                u["totp_last"] = json!(0);
+            // reactivado por Dirección: sus fallos anteriores ya no cuentan
+            if c["active"] == json!(false) && u["active"] == json!(true) {
                 u["failed_logins"] = json!(0);
                 u["last_failed"] = Value::Null;
             }
         }
+        None => {
+            // usuario nuevo: con su contraseña inicial, que tendrá que cambiar
+            u["must_change"] = json!(true);
+            u["totp_secret"] = json!("");
+            u["totp_last"] = json!(0);
+            u["failed_logins"] = json!(0);
+            u["last_failed"] = Value::Null;
+        }
     }
+    canonical("users", &u.to_string())
 }
 
 #[derive(Deserialize)]
@@ -661,15 +643,21 @@ struct TotpBody {
     codigo: String,
 }
 
+#[derive(Deserialize)]
+struct PushBody {
+    #[serde(rename = "cambios", default)]
+    changes: Vec<Change>,
+}
+
 impl State {
-    fn new(data: Value, path: PathBuf, key: &str, public: Vec<u8>) -> State {
+    fn new(initial: &Db, path: PathBuf, key: &str, public: Vec<u8>) -> State {
         let sessions_path = path.with_file_name("sesiones.json");
         let limit = crate::model::now() - chrono::Duration::hours(SESSION_IDLE_HOURS);
         let sessions: HashMap<String, Session> = std::fs::read_to_string(sessions_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let sessions = sessions.into_iter().filter(|(_, s)| s.last_used > limit).collect();
         State {
-            data,
-            history: VecDeque::new(),
+            snap: Snapshot::from_db(initial),
+            log: VecDeque::new(),
             path,
             last_backup_day: None,
             sessions,
@@ -683,17 +671,21 @@ impl State {
         }
     }
 
+    fn rev(&self) -> u64 {
+        self.snap.rev()
+    }
+
     fn persist(&mut self) -> Result<(), String> {
         let tmp = self.path.with_extension("json.tmp");
         if let Some(d) = self.path.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
-        std::fs::write(&tmp, serde_json::to_string(&self.data).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, self.snap.to_json()).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
         // copia de seguridad diaria en el servidor
         let today = crate::model::today();
         if self.last_backup_day != Some(today) && crate::tools::needs_daily(today) {
-            if let Ok(db) = serde_json::from_value::<Db>(self.data.clone()) {
+            if let Ok(db) = self.snap.to_db() {
                 let _ = crate::tools::create_backup(&db, "automatica (servidor)");
             }
             self.last_backup_day = Some(today);
@@ -714,82 +706,108 @@ impl State {
         self.sessions_saved = Instant::now();
     }
 
-    /// Deja `db` como datos actuales (nueva revisión) y los guarda.
-    fn commit(&mut self, mut db: Db) -> Result<(), String> {
-        let rev = rev_of(&self.data);
-        db.rev = rev + 1;
-        let v = serde_json::to_value(&db).map_err(|e| e.to_string())?;
-        self.history.push_back((rev, std::mem::replace(&mut self.data, v)));
-        while self.history.len() > 40 {
-            self.history.pop_front();
+    /// Nueva revisión con lo tocado, y a disco.
+    fn commit(&mut self, touched: Vec<(String, Option<String>)>) -> Result<(), String> {
+        if touched.is_empty() {
+            return Ok(());
+        }
+        let rev = self.rev() + 1;
+        self.snap.set_rev(rev);
+        self.log.push_back((rev, touched));
+        while self.log.len() > LOG_REVS {
+            self.log.pop_front();
         }
         self.persist()
     }
 
-    /// Cambia los datos con las funciones del programa (entradas, contraseñas…).
-    fn modify<T>(&mut self, f: impl FnOnce(&mut Db) -> T) -> Result<T, String> {
-        let mut db: Db = serde_json::from_value(self.data.clone()).map_err(|e| format!("datos no válidos: {e}"))?;
+    /// Cambia algunos campos con las funciones del programa (entradas,
+    /// contraseñas, puestos…), sin convertir los datos enteros.
+    fn modify<T>(&mut self, fields: &[&str], f: impl FnOnce(&mut Db) -> T) -> Result<T, String> {
+        let mut db = sync::partial_db(&self.snap, fields)?;
         let out = f(&mut db);
-        self.commit(db)?;
+        let mut touched = vec![];
+        for ch in sync::changes_in(&self.snap, &db, fields) {
+            self.snap.set(&ch.field, ch.key.as_deref(), ch.after);
+            touched.push((ch.field, ch.key));
+        }
+        self.commit(touched)?;
         Ok(out)
     }
 
     fn user(&self, id: u32) -> Option<crate::users::User> {
-        users_by_id(&self.data).remove(&(id as u64)).and_then(|u| serde_json::from_value(u).ok())
+        serde_json::from_str(self.snap.get("users", Some(&id.to_string()))?).ok()
     }
 
     fn is_admin(&self, id: u32) -> bool {
         self.user(id).is_some_and(|u| u.active && u.profile.can(Perm::Configuracion))
     }
 
-    /// Combina los datos de un puesto con los actuales (quedan en `self.data`).
-    fn save(&mut self, base_rev: u64, mut ours: Value, station: u32, user: u32) -> Result<(), String> {
+    /// Aplica los cambios de un puesto, combinándolos con los de los demás.
+    /// Devuelve todo lo que mandó el puesto (también lo que no se ha aceptado,
+    /// para que el puesto se quede con lo que de verdad hay en el servidor).
+    fn save(&mut self, mut changes: Vec<Change>, station: u32, user: u32) -> Result<Vec<(String, Option<String>)>, String> {
         let admin = self.is_admin(user);
-        let cur_rev = rev_of(&self.data);
-        hydrate_users(&mut ours, &self.data);
-        let merged = {
-            let current = &self.data;
-            let base = if base_rev == cur_rev { Some(current) } else { self.history.iter().find(|(r, _)| *r == base_rev).map(|(_, v)| v) };
-            let mut merged = if base_rev == cur_rev {
-                ours
-            } else {
-                let mut conflicts = 0;
-                let mut m = merge(base, &ours, current, &mut conflicts);
-                let next = ours.get("next_id").and_then(|v| v.as_u64()).unwrap_or(0).max(current.get("next_id").and_then(|v| v.as_u64()).unwrap_or(0));
-                m["next_id"] = Value::from(next);
-                m
-            };
-            // los registros (accesos, auditoría…) solo crecen: un puesto no borra entradas
-            keep_logs(base, &mut merged, current);
-            protect_users(&mut merged, current, admin);
-            merged
-        };
-        // los datos deben seguir siendo válidos
-        let mut db: Db = serde_json::from_value(merged).map_err(|e| format!("datos no válidos: {e}"))?;
-        if let Some(s) = db.stations.iter_mut().find(|s| station > 0 && s.id == station) {
-            s.last_seen = crate::model::now();
+        let sent: Vec<(String, Option<String>)> = changes.iter().map(|c| (c.field.clone(), c.key.clone())).collect();
+        // los puestos (y la revisión) los lleva el servidor; los usuarios solo los
+        // cambia Dirección, y nunca sus contraseñas ni los fallos de acceso
+        changes.retain(|c| c.field != "stations" && c.field != "rev" && (c.field != "users" || admin));
+        for c in changes.iter_mut().filter(|c| c.field == "users") {
+            let current = c.key.as_deref().and_then(|k| self.snap.get("users", Some(k))).cloned();
+            c.before = c.before.as_deref().map(|b| protect_user_json(b, current.as_ref())).transpose()?;
+            c.after = c.after.as_deref().map(|a| protect_user_json(a, current.as_ref())).transpose()?;
         }
-        self.commit(db)
+        let mut touched = sync::apply(&mut self.snap, &changes)?.touched;
+        if station > 0 {
+            let key = station.to_string();
+            if let Some(mut s) = self.snap.get("stations", Some(&key)).and_then(|j| serde_json::from_str::<StationSeen>(j).ok()) {
+                s.last_seen = crate::model::now();
+                self.snap.set("stations", Some(&key), serde_json::to_string(&s).ok());
+                touched.push(("stations".into(), Some(key)));
+            }
+        }
+        self.commit(touched)?;
+        Ok(sent)
+    }
+
+    /// Lo que ha cambiado desde la revisión `since`, más lo de `also` (o, si
+    /// `since` es de hace mucho, que el puesto pida los datos enteros).
+    fn since(&self, since: u64, also: &[(String, Option<String>)]) -> Response {
+        let rev = self.rev();
+        if since < rev && self.log.front().is_none_or(|(first, _)| *first > since + 1) {
+            return reply(200, json!({ "rev": rev, "completo": true }));
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut out = vec![];
+        let logged = self.log.iter().filter(|(r, _)| *r > since).flat_map(|(_, t)| t.iter());
+        for (field, key) in logged.chain(also.iter()) {
+            if !seen.insert((field.clone(), key.clone())) {
+                continue;
+            }
+            let mut after = self.snap.get(field, key.as_deref()).cloned();
+            if field == "users" {
+                after = after.map(|u| strip_user_json(&u));
+            }
+            out.push(Change { field: field.clone(), key: key.clone(), before: None, after });
+        }
+        reply(200, json!({ "rev": rev, "cambios": out }))
     }
 
     fn register(&mut self, name: &str) -> Result<u32, String> {
-        let mut db: Db = serde_json::from_value(self.data.clone()).map_err(|e| e.to_string())?;
-        let n = match db.stations.iter().find(|s| s.name == name) {
-            Some(s) => s.id,
+        self.modify(&["stations"], |db| match db.stations.iter().find(|s| s.name == name) {
+            Some(s) => Ok(s.id),
             None => {
                 let n = (1..=15).find(|n| !db.stations.iter().any(|s| s.id == *n)).ok_or("No caben más puestos (máximo 15).")?;
                 db.stations.push(StationSeen { id: n, name: name.into(), last_seen: crate::model::now() });
-                n
+                Ok(n)
             }
-        };
-        self.commit(db)?;
-        Ok(n)
+        })?
     }
 
     /// Lo que necesita la pantalla de entrada (antes de entrar).
     fn access(&self) -> Response {
-        let v = public_view(&self.data);
-        reply(200, json!({ "clinica": v["config"]["name"], "usuarios": v["users"], "rev": rev_of(&self.data) }))
+        let users: Vec<Value> = self.snap.records.get("users").into_iter().flat_map(|r| r.iter()).filter_map(|(_, u)| serde_json::from_str(&strip_user_json(u)).ok()).collect();
+        let name = self.snap.get("config", None).and_then(|c| serde_json::from_str::<Value>(c).ok()).map(|c| c["name"].clone()).unwrap_or(Value::Null);
+        reply(200, json!({ "clinica": name, "usuarios": users, "rev": self.rev() }))
     }
 
     fn new_session(&mut self, user: u32, station: u32) -> String {
@@ -827,7 +845,7 @@ impl State {
             return error(429, "Demasiados intentos de entrada desde este ordenador: espere un minuto.");
         }
         let Ok(b) = serde_json::from_slice::<EnterBody>(&req.body) else { return error(400, "Petición no válida.") };
-        match self.modify(|db| db.login(b.usuario, &b.contrasena)) {
+        match self.modify(&AUTH_FIELDS, |db| db.login(b.usuario, &b.contrasena)) {
             Err(e) => error(500, &e),
             Ok(Err(msg)) => error(403, &msg),
             Ok(Ok(LoginStep::Done)) => {
@@ -854,7 +872,7 @@ impl State {
             return error(403, "Vuelva a escribir la contraseña.");
         }
         let unix = crate::totp::unix_now();
-        match self.modify(|db| {
+        match self.modify(&AUTH_FIELDS, |db| {
             let r = db.login_code(b.usuario, &b.codigo, unix);
             (r, db.user(b.usuario).is_some_and(|u| !u.active))
         }) {
@@ -879,12 +897,12 @@ impl State {
         let must = self.user(me).is_some_and(|u| u.must_change);
         let r = match (b.usuario == me, b.actual.as_deref()) {
             // la propia, comprobando la actual
-            (true, Some(old)) => self.modify(|db| db.change_pin(me, old, &b.nueva)),
+            (true, Some(old)) => self.modify(&AUTH_FIELDS, |db| db.change_pin(me, old, &b.nueva)),
             // la propia sin la actual: la inicial, o Dirección
-            (true, None) if must || admin => self.modify(|db| db.set_pin(me, &b.nueva)),
+            (true, None) if must || admin => self.modify(&AUTH_FIELDS, |db| db.set_pin(me, &b.nueva)),
             (true, None) => return error(403, "Escriba su contraseña actual."),
             // la de otro usuario: solo Dirección
-            (false, _) if admin => self.modify(|db| {
+            (false, _) if admin => self.modify(&AUTH_FIELDS, |db| {
                 db.set_pin(b.usuario, &b.nueva)?;
                 if let Some(u) = db.users.iter_mut().find(|u| u.id == b.usuario) {
                     u.must_change = b.cambiar_al_entrar;
@@ -896,7 +914,7 @@ impl State {
         match r {
             Err(e) => error(500, &e),
             Ok(Err(msg)) => error(403, &msg),
-            Ok(Ok(())) => reply(200, json!({ "ok": true, "rev": rev_of(&self.data) })),
+            Ok(Ok(())) => reply(200, json!({ "ok": true, "rev": self.rev() })),
         }
     }
 
@@ -910,8 +928,8 @@ impl State {
         let by = self.user(me).map(|u| u.name).unwrap_or_default();
         let unix = crate::totp::unix_now();
         let r = match b.accion.as_str() {
-            "activar" => self.modify(|db| db.enable_totp(b.usuario, &b.clave, &b.codigo, unix)),
-            "quitar" => self.modify(|db| {
+            "activar" => self.modify(&AUTH_FIELDS, |db| db.enable_totp(b.usuario, &b.clave, &b.codigo, unix)),
+            "quitar" => self.modify(&AUTH_FIELDS, |db| {
                 db.disable_totp(b.usuario, &by);
                 Ok(())
             }),
@@ -920,7 +938,7 @@ impl State {
         match r {
             Err(e) => error(500, &e),
             Ok(Err(msg)) => error(403, &msg),
-            Ok(Ok(())) => reply(200, json!({ "ok": true, "rev": rev_of(&self.data) })),
+            Ok(Ok(())) => reply(200, json!({ "ok": true, "rev": self.rev() })),
         }
     }
 
@@ -960,16 +978,15 @@ impl State {
             ("POST", "/parar") => error(403, "Solo se puede parar el servidor desde el propio ordenador servidor."),
             _ => {
                 let Some(me) = self.session(req) else { return (error(401, SESSION_EXPIRED), false) };
+                let param = |k: &str| req.param(k).and_then(|b| b.parse::<u64>().ok()).unwrap_or(0);
                 match (m, p) {
-                    ("GET", "/estado") => reply(200, json!({ "rev": rev_of(&self.data) })),
-                    ("GET", "/datos") => Response { code: 200, body: public_view(&self.data).to_string() },
-                    ("POST", "/guardar") => {
-                        let base: u64 = req.param("base").and_then(|b| b.parse().ok()).unwrap_or(0);
-                        match serde_json::from_slice::<Value>(&req.body).map_err(|e| e.to_string()).and_then(|v| self.save(base, v, station, me)) {
-                            Ok(()) => Response { code: 200, body: public_view(&self.data).to_string() },
-                            Err(e) => error(400, &e),
-                        }
-                    }
+                    ("GET", "/estado") => reply(200, json!({ "rev": self.rev() })),
+                    ("GET", "/datos") => Response { code: 200, body: self.snap.to_json_with(&strip_user_json) },
+                    ("GET", "/cambios") => self.since(param("desde"), &[]),
+                    ("POST", "/cambios") => match serde_json::from_slice::<PushBody>(&req.body).map_err(|e| e.to_string()).and_then(|b| self.save(b.changes, station, me)) {
+                        Ok(sent) => self.since(param("base"), &sent),
+                        Err(e) => error(400, &e),
+                    },
                     ("POST", "/contrasena") => self.set_pin(req, me),
                     ("POST", "/movil") => self.totp(req, me),
                     _ => error(404, "no existe"),
@@ -981,7 +998,7 @@ impl State {
 }
 
 /// Atiende peticiones hasta recibir /parar desde el propio ordenador.
-pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8>, initial: Value) {
+pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8>, initial: Db) {
     let tls = match server_tls(&identity) {
         Ok(t) => t,
         Err(e) => {
@@ -1016,7 +1033,8 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
         });
     }
     let public = unhex(&identity_pin(&identity)).unwrap_or_default();
-    let mut st = State::new(initial, path, &key, public);
+    let mut st = State::new(&initial, path, &key, public);
+    drop(initial);
     for job in jobs {
         let (resp, stop_now) = st.handle(&job.req, &key);
         let _ = job.reply.send(resp);
@@ -1051,8 +1069,7 @@ pub fn run() -> Result<(), String> {
         crate::disco::Disk::Unknown(why) => println!("  ⚠ Cifrado del disco: {why}"),
         _ => {}
     }
-    let initial = serde_json::to_value(&db).map_err(|e| e.to_string())?;
-    serve(listener, path, cfg.key, identity, initial);
+    serve(listener, path, cfg.key, identity, db);
     Ok(())
 }
 
@@ -1101,6 +1118,41 @@ pub struct AccessInfo {
     pub clinic: String,
     #[serde(rename = "usuarios", default)]
     pub users: Vec<crate::users::User>,
+}
+
+/// Lo que devuelve el servidor: su revisión y lo que ha cambiado.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Delta {
+    pub rev: u64,
+    #[serde(rename = "cambios", default)]
+    pub changes: Vec<Change>,
+    /// El puesto está demasiado atrasado: tiene que pedir los datos enteros.
+    #[serde(rename = "completo", default)]
+    pub full: bool,
+}
+
+/// Lo que ha cambiado en el puesto respecto al servidor. El usuario y el
+/// centro de este puesto no cuentan como cambios (cada puesto tiene los suyos).
+fn station_changes(db: &Db, synced: &Snapshot) -> Vec<Change> {
+    let mut changes = sync::diff_db(synced, db);
+    let server = synced.plain.get("config").and_then(|c| serde_json::from_str::<Value>(c).ok());
+    changes.retain_mut(|ch| {
+        if ch.field != "config" || ch.key.is_some() {
+            return true;
+        }
+        let (Some(theirs), Some(Ok(mut ours))) = (&server, ch.after.as_deref().map(serde_json::from_str::<Value>)) else { return true };
+        ours["current_user"] = theirs["current_user"].clone();
+        ours["current_center"] = theirs["current_center"].clone();
+        match canonical("config", &ours.to_string()) {
+            Ok(c) if ch.before.as_deref() == Some(c.as_str()) => false,
+            Ok(c) => {
+                ch.after = Some(c);
+                true
+            }
+            Err(_) => true,
+        }
+    });
+    changes
 }
 
 /// Respuesta del servidor a la contraseña.
@@ -1311,16 +1363,21 @@ impl Remote {
         self.post("/movil", &json!({ "usuario": user, "accion": "quitar" }).to_string()).map(|_| ())
     }
 
+    #[cfg(test)]
     pub fn rev(&self) -> Result<u64, String> {
-        Ok(rev_of(&parse(&self.get("/estado")?)?))
+        Ok(parse(&self.get("/estado")?)?["rev"].as_u64().unwrap_or(0))
     }
 
-    pub fn load(&self) -> Result<(Db, Value), String> {
-        let v = parse(&self.get("/datos")?)?;
-        let mut db: Db = serde_json::from_value(v.clone()).map_err(|e| format!("Datos del servidor no válidos: {e}"))?;
+    /// Los datos enteros (al entrar): los datos y cómo están en el servidor.
+    pub fn load(&self) -> Result<(Db, Snapshot), String> {
+        let text = self.get("/datos")?;
+        let mut db: Db = serde_json::from_str(&text).map_err(|e| format!("Datos del servidor no válidos: {e}"))?;
+        drop(text);
+        let synced = Snapshot::from_db(&db);
+        sync::mark_synced(&mut db);
         // lo que traen las versiones nuevas (llega al servidor con el próximo guardado)
         db.upgrade();
-        Ok((db, v))
+        Ok((db, synced))
     }
 
     pub fn register(&self, name: &str) -> Result<u32, String> {
@@ -1328,15 +1385,47 @@ impl Remote {
         v["numero"].as_u64().map(|n| n as u32).ok_or_else(|| "Respuesta no válida del servidor".into())
     }
 
-    /// Envía los datos del puesto; devuelve los datos combinados del servidor.
-    pub fn save(&self, db: &Db) -> Result<(Db, Value), String> {
-        let body = serde_json::to_string(db).map_err(|e| e.to_string())?;
-        let v = parse(&self.post(&format!("/guardar?base={}", db.rev), &body)?)?;
-        let mut new: Db = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
-        new.station = db.station;
-        new.config.current_user = db.config.current_user.clone();
-        new.config.current_center = db.config.current_center;
-        Ok((new, v))
+    /// Lo que ha cambiado en el servidor desde la revisión `since`.
+    pub fn pull(&self, since: u64) -> Result<Delta, String> {
+        serde_json::from_str(&self.get(&format!("/cambios?desde={since}"))?).map_err(|e| format!("Respuesta no válida del servidor: {e}"))
+    }
+
+    /// Envía al servidor lo que ha cambiado en el puesto (si no ha cambiado
+    /// nada, no envía nada) y pone en sus datos lo que devuelve el servidor
+    /// (lo suyo combinado y lo de los demás). Devuelve cuántos cambios envió.
+    pub fn push(&self, db: &mut Db, synced: &mut Snapshot) -> Result<usize, String> {
+        let changes = station_changes(db, synced);
+        if changes.is_empty() {
+            sync::mark_synced(db);
+            return Ok(0);
+        }
+        let body = json!({ "cambios": changes }).to_string();
+        let delta: Delta = serde_json::from_str(&self.post(&format!("/cambios?base={}", db.rev), &body)?).map_err(|e| format!("Respuesta no válida del servidor: {e}"))?;
+        // lo enviado ya está en el servidor (y lo que haya cambiado al combinar, llega en la respuesta)
+        for ch in &changes {
+            synced.set(&ch.field, ch.key.as_deref(), ch.after.clone());
+        }
+        sync::mark_synced(db);
+        self.receive(db, synced, delta)?;
+        Ok(changes.len())
+    }
+
+    /// Pone en los datos del puesto lo que ha cambiado en el servidor.
+    pub fn receive(&self, db: &mut Db, synced: &mut Snapshot, delta: Delta) -> Result<(), String> {
+        if delta.full {
+            // el puesto estaba demasiado atrasado: los datos enteros
+            let (fresh, snap) = self.load()?;
+            *db = adopt(db, fresh);
+            *synced = snap;
+            return Ok(());
+        }
+        // el usuario y el centro son de cada puesto
+        let (user, center) = (db.config.current_user.clone(), db.config.current_center);
+        sync::apply_to_db(db, synced, &delta.changes)?;
+        db.config.current_user = user;
+        db.config.current_center = center;
+        db.rev = delta.rev;
+        Ok(())
     }
 
     pub fn stop(&self) -> Result<(), String> {
@@ -1394,7 +1483,7 @@ mod tests {
         let path = dir.join("clinica.json");
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let initial = serde_json::to_value(Db::sample(today)).unwrap();
+        let initial = Db::sample(today);
         let (p2, k2) = (path.clone(), key.to_string());
         let identity = new_identity().unwrap();
         let h = std::thread::spawn(move || serve(listener, p2, k2, identity, initial));
@@ -1439,11 +1528,15 @@ mod tests {
             e => panic!("{e:?}"),
         };
 
-        let (mut a, _) = ra.load().unwrap();
-        let (mut b, _) = rb.load().unwrap();
-        assert!(a.users.iter().all(|u| u.pin_hash == HIDDEN && u.totp_secret.is_empty() || u.totp_secret == HIDDEN));
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        assert!(a.users.iter().all(|u| u.pin_hash == HIDDEN && u.salt.is_empty()));
         a.station = ra.station;
         b.station = rb.station;
+        // lo que trae la versión nueva al cargar llega con el primer envío; después, sin cambios no se envía nada
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        assert_eq!(ra.push(&mut a, &mut sa).unwrap(), 0, "sin cambios no se envía nada");
         let pays = a.payments.len();
         a.add_payment(100, 25.0, "Tarjeta", "desde recepción");
         b.appointments[0].notes = "nota del gabinete".into();
@@ -1451,14 +1544,22 @@ mod tests {
         let idb = b.new_id();
         assert_ne!(ida, idb);
 
-        let (a2, _) = ra.save(&a).unwrap();
-        let (b2, _) = rb.save(&b).unwrap();
-        assert_eq!(b2.payments.len(), pays + 1, "el gabinete recibe el cobro de recepción");
-        assert_eq!(b2.appointments[0].notes, "nota del gabinete");
-        assert!(rb.rev().unwrap() > a2.rev);
-        // recepción recoge lo del gabinete
-        let (a3, _) = ra.load().unwrap();
-        assert_eq!(a3.appointments[0].notes, "nota del gabinete");
+        // solo van los registros cambiados (el cobro, la caja, next_id…), no los datos enteros
+        let sent = ra.push(&mut a, &mut sa).unwrap();
+        assert!((1..=6).contains(&sent), "{sent} cambios");
+        rb.push(&mut b, &mut sb).unwrap();
+        assert_eq!(b.payments.len(), pays + 1, "el gabinete recibe el cobro de recepción al guardar");
+        assert_eq!(b.appointments[0].notes, "nota del gabinete");
+        assert_eq!(rb.rev().unwrap(), b.rev);
+        // recepción recoge lo del gabinete (solo lo nuevo)
+        let d = ra.pull(a.rev).unwrap();
+        assert!(!d.full && d.changes.iter().any(|c| c.field == "appointments"));
+        ra.receive(&mut a, &mut sa, d).unwrap();
+        assert_eq!(a.appointments[0].notes, "nota del gabinete");
+        assert_eq!(a.rev, b.rev);
+        assert!(ra.pull(a.rev).unwrap().changes.is_empty(), "al día: nada nuevo");
+        // lo recibido no vuelve como cambio del puesto
+        assert_eq!(ra.push(&mut a, &mut sa).unwrap(), 0);
         // el servidor lo ha guardado en disco, con las contraseñas de verdad
         let disk: Db = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(disk.payments.len(), pays + 1);
@@ -1477,31 +1578,36 @@ mod tests {
         let (addr, path, h) = start("CLAVE2");
         // recepción intenta hacerse Dirección y desbloquear a otro
         let rec = signed_in(&addr, "CLAVE2", "Recepción", 2, "0000");
-        let (mut d, _) = rec.load().unwrap();
+        let (mut d, mut sd) = rec.load().unwrap();
         d.station = rec.station;
         d.users.iter_mut().find(|u| u.id == 2).unwrap().profile = crate::users::Profile::Direccion;
         d.users.iter_mut().find(|u| u.id == 5).unwrap().name = "Cambiado".into();
         d.users.push(crate::users::new_user(99, "Intruso", crate::users::Profile::Direccion, None, "0000"));
         d.access_log.clear();
-        let (back, _) = rec.save(&d).unwrap();
-        assert_eq!(back.user(2).unwrap().profile, crate::users::Profile::Recepcion);
-        assert_eq!(back.user(5).unwrap().name, "Hig. Campos");
-        assert!(back.user(99).is_none());
-        assert!(!back.access_log.is_empty(), "no puede vaciar el registro de accesos");
+        rec.push(&mut d, &mut sd).unwrap();
+        let disk = || -> Db { serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap() };
+        assert_eq!(disk().user(2).unwrap().profile, crate::users::Profile::Recepcion);
+        assert_eq!(disk().user(5).unwrap().name, "Hig. Campos");
+        assert!(disk().user(99).is_none());
+        assert!(!disk().access_log.is_empty(), "no puede vaciar el registro de accesos");
 
         // Dirección sí cambia usuarios, pero no sus contraseñas por /guardar
         let dir = signed_in(&addr, "CLAVE2", "Despacho", 1, "0000");
-        let (mut d, _) = dir.load().unwrap();
+        let (mut d, mut sd) = dir.load().unwrap();
         d.station = dir.station;
         d.users.iter_mut().find(|u| u.id == 5).unwrap().name = "Higienista Campos".into();
         d.users.iter_mut().find(|u| u.id == 4).unwrap().pin_hash = "pbkdf2$1$falso".into();
         d.users.push(crate::users::new_user(20, "Nueva", crate::users::Profile::Recepcion, None, "0000"));
-        let (back, _) = dir.save(&d).unwrap();
-        assert_eq!(back.user(5).unwrap().name, "Higienista Campos");
-        assert!(back.user(20).unwrap().must_change);
-        let disk: Db = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(crate::users::pin_matches(disk.user(4).unwrap(), "0000"), "la contraseña del doctor no cambia");
-        assert!(crate::users::pin_matches(disk.user(20).unwrap(), "0000"));
+        dir.push(&mut d, &mut sd).unwrap();
+        assert_eq!(d.user(5).unwrap().name, "Higienista Campos");
+        assert!(d.user(20).unwrap().must_change);
+        assert_eq!(d.user(4).unwrap().pin_hash, HIDDEN, "al puesto le vuelve sin la contraseña");
+        assert!(crate::users::pin_matches(disk().user(4).unwrap(), "0000"), "la contraseña del doctor no cambia");
+        assert!(crate::users::pin_matches(disk().user(20).unwrap(), "0000"));
+        // Dirección puede borrar un usuario
+        d.users.retain(|u| u.id != 20);
+        dir.push(&mut d, &mut sd).unwrap();
+        assert!(disk().user(20).is_none());
 
         // las contraseñas se cambian con su propia orden
         assert!(rec.set_pin(4, None, "582941", true).unwrap_err().contains("Dirección"));
@@ -1617,7 +1723,7 @@ mod tests {
         // el impostor no ha guardado nada: el puesto ni siquiera llegó a darse de alta
         assert!(!ipath.exists(), "no ha llegado a darse de alta en el impostor");
         // tampoco sirve reenviar la firma del servidor de verdad: va ligada a su huella
-        let mut st = State::new(json!({}), std::env::temp_dir().join("ds_proof_test").join("clinica.json"), "CLAVE5", vec![7; 32]);
+        let mut st = State::new(&Db::sample(crate::model::today()), std::env::temp_dir().join("ds_proof_test").join("clinica.json"), "CLAVE5", vec![7; 32]);
         let reto = "00112233445566778899aabbccddeeff";
         let q = Request { method: "GET".into(), path: "/prueba".into(), query: format!("reto={reto}"), headers: vec![], body: vec![], peer: IpAddr::V4(Ipv4Addr::LOCALHOST) };
         let (resp, _) = st.handle(&q, "CLAVE5");
@@ -1671,6 +1777,22 @@ mod tests {
     }
 
     #[test]
+    fn a_station_too_far_behind_gets_everything() {
+        // servidor recién arrancado: no sabe qué cambió antes, así que da los datos enteros
+        let mut db = Db::sample(crate::model::today());
+        db.rev = 40;
+        let st = State::new(&db, std::env::temp_dir().join("ds_since_test").join("clinica.json"), "K", vec![1; 32]);
+        let v: Value = serde_json::from_str(&st.since(12, &[]).body).unwrap();
+        assert_eq!((v["rev"].as_u64(), v["completo"].as_bool()), (Some(40), Some(true)));
+        let v: Value = serde_json::from_str(&st.since(40, &[]).body).unwrap();
+        assert_eq!(v["cambios"], json!([]), "al día: nada");
+        // lo que mandó el puesto vuelve siempre, aunque no haya cambiado nada en el servidor
+        let v: Value = serde_json::from_str(&st.since(40, &[("users".into(), Some("4".into()))]).body).unwrap();
+        assert_eq!(v["cambios"][0]["clave"], "4");
+        assert!(v["cambios"][0]["ahora"].as_str().unwrap().contains(HIDDEN), "sin la contraseña");
+    }
+
+    #[test]
     fn requests_are_limited() {
         let peer = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let raw = |s: &str| std::io::Cursor::new(s.as_bytes().to_vec());
@@ -1698,7 +1820,7 @@ mod tests {
         // claves aleatorias y, con una clave mal 20 veces, el ordenador espera
         assert_ne!(new_key(), new_key());
         assert_eq!(new_key().len(), 12);
-        let mut st = State::new(json!({}), std::env::temp_dir().join("ds_limit_test").join("clinica.json"), "BIEN", vec![1; 32]);
+        let mut st = State::new(&Db::sample(crate::model::today()), std::env::temp_dir().join("ds_limit_test").join("clinica.json"), "BIEN", vec![1; 32]);
         let bad = Request { method: "GET".into(), path: "/acceso".into(), query: String::new(), headers: vec![("X-Clave".into(), "MAL".into())], body: vec![], peer };
         for _ in 0..20 {
             assert_eq!(st.handle(&bad, "BIEN").0.code, 401);

@@ -1721,7 +1721,7 @@ fn station_signs_in_through_the_server() {
     let path = dir.join("clinica.json");
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
-    let initial = serde_json::to_value(crate::model::Db::sample(crate::model::today())).unwrap();
+    let initial = crate::model::Db::sample(crate::model::today());
     let p2 = path.clone();
     let identity = crate::server::new_identity().unwrap();
     let server = std::thread::spawn(move || serve(listener, p2, "CLAVE_UI".into(), identity, initial));
