@@ -550,6 +550,8 @@ fn implants(app: &mut App, ui: &mut Ui, pid: u32) {
     }
     let mut set: Option<(u32, String)> = None;
     let mut print = false;
+    // todos lo ven (y pueden dar la hoja); el lote lo corrige el personal clínico
+    let clinical = app.can(crate::users::Perm::Clinico);
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
@@ -570,24 +572,30 @@ fn implants(app: &mut App, ui: &mut Ui, pid: u32) {
                 lab(ui, 150.0, when.as_str());
                 lab(ui, 260.0, name.as_str());
                 let shown = if lot.is_empty() { RichText::new("sin apuntar").color(DANGER) } else { RichText::new(lot) };
-                crate::theme::combo(("impl_lot", *mid)).width(180.0).selected_text(shown).show_ui(ui, |ui| {
-                    for o in options {
-                        if ui.selectable_label(o == lot, o).clicked() {
-                            set = Some((*mid, o.clone()));
+                if clinical {
+                    crate::theme::combo(("impl_lot", *mid)).width(180.0).selected_text(shown).show_ui(ui, |ui| {
+                        for o in options {
+                            if ui.selectable_label(o == lot, o).clicked() {
+                                set = Some((*mid, o.clone()));
+                            }
                         }
-                    }
-                    if options.is_empty() {
-                        ui.label(RichText::new("No hay lotes de este producto en el almacén").color(MUTED));
-                    }
-                });
+                        if options.is_empty() {
+                            ui.label(RichText::new("No hay lotes de este producto en el almacén").color(MUTED));
+                        }
+                    });
+                } else {
+                    lab(ui, 180.0, shown);
+                }
                 lab(ui, 90.0, expiry.map(crate::stock::fmt_expiry).unwrap_or_default());
             });
         }
-        muted(ui, "Se apunta solo al realizar el tratamiento (del lote que antes caduca); si se usó otro, cámbielo aquí.");
+        muted(ui, if clinical { "Se apunta solo al realizar el tratamiento (del lote que antes caduca); si se usó otro, cámbielo aquí." } else { "Se apunta solo al realizar el tratamiento; si el lote no es el que se usó, lo corrige el doctor o la higienista." });
     });
     ui.add_space(10.0);
-    if let Some((mid, lot)) = set {
-        app.db.set_move_lot(mid, &lot);
+    if let Some((mid, lot)) = set
+        && clinical
+        && app.db.set_move_lot(mid, pid, &lot)
+    {
         app.changed();
     }
     if print {

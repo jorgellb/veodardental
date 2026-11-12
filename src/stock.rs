@@ -374,14 +374,20 @@ impl Db {
         v
     }
 
-    /// Corrige el lote de lo que se le puso a un paciente (con la caducidad de ese lote).
-    pub fn set_move_lot(&mut self, move_id: u32, lot: &str) {
-        let Some(pid) = self.stock_moves.iter().find(|m| m.id == move_id).map(|m| m.product_id) else { return };
+    /// Corrige el lote de lo que se le puso al paciente `patient` (con la
+    /// caducidad de ese lote). Devuelve si lo ha cambiado (no, si el
+    /// movimiento no es de ese paciente).
+    pub fn set_move_lot(&mut self, move_id: u32, patient: u32, lot: &str) -> bool {
+        let Some(product) = self.stock_moves.iter().find(|m| m.id == move_id && m.patient_id == Some(patient)).map(|m| m.product_id) else { return false };
         let lot = lot.trim().to_string();
-        let expiry = self.lots(pid).into_iter().find(|l| l.lot == lot).and_then(|l| l.expiry);
-        if let Some(m) = self.stock_moves.iter_mut().find(|m| m.id == move_id) {
-            m.lot = lot;
-            m.expiry = expiry;
+        let expiry = self.lots(product).into_iter().find(|l| l.lot == lot).and_then(|l| l.expiry);
+        match self.stock_moves.iter_mut().find(|m| m.id == move_id) {
+            Some(m) => {
+                m.lot = lot;
+                m.expiry = expiry;
+                true
+            }
+            None => false,
         }
     }
 
@@ -880,7 +886,8 @@ mod tests {
         assert!(who.contains(&110));
         // el lote se puede corregir
         let mid = db.patient_lots(110)[0].id;
-        db.set_move_lot(mid, "L-NUEVO");
+        assert!(!db.set_move_lot(mid, 111, "L-NUEVO"), "solo en la ficha de su paciente");
+        assert!(db.set_move_lot(mid, 110, "L-NUEVO"));
         assert_eq!(db.patient_lots(110)[0].lot, "L-NUEVO");
         assert_eq!(db.patient_lots(110)[0].expiry, NaiveDate::from_ymd_opt(2031, 6, 30), "con la caducidad de ese lote");
         // borrar el tratamiento devuelve cada implante a su lote
