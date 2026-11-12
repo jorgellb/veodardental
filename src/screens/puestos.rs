@@ -88,20 +88,28 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                     if remote_mode() && !server::is_local(&station().server) {
                         app.warn("Este puesto está conectado a otro servidor: desconéctelo primero.");
                     } else {
+                        // el servidor abre los datos de este ordenador: esta ventana los
+                        // deja guardados (con la anotación) y los suelta
+                        app.db.audit("Servidor de datos activado", &addr);
+                        app.changed();
+                        app.release_local();
                         match server::ensure_server_config().and_then(|cfg| server::spawn_local_server().map(|_| cfg)) {
                             Ok(cfg) => {
                                 let st = Station { server: format!("127.0.0.1:{}", cfg.port), key: cfg.key.clone(), data_dir: String::new(), number: 0, name: app.tools.puesto.st.name.clone(), server_pin: cfg.pin() };
                                 match save_station(&st) {
                                     Ok(()) => {
-                                        app.db.audit("Servidor de datos activado", &addr);
-                                        app.changed();
                                         app.tools.puesto.server_up = None;
                                         app.notify("Servidor en marcha. Cierre y vuelva a abrir VeodarDental en este ordenador; luego conecte los demás puestos con la dirección y la clave que aparecerán aquí.");
                                     }
                                     Err(e) => app.warn(format!("No se pudo guardar el ajuste: {e}")),
                                 }
                             }
-                            Err(e) => app.warn(format!("No se pudo arrancar el servidor: {e}")),
+                            Err(e) => {
+                                app.reopen_local();
+                                app.db.audit("No se pudo arrancar el servidor de datos", &e);
+                                app.changed();
+                                app.warn(format!("No se pudo arrancar el servidor: {e}"));
+                            }
                         }
                     }
                 }

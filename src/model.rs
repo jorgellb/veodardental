@@ -1220,23 +1220,40 @@ impl Db {
     /// Escribe los datos enteros en `path` (en un fichero aparte que luego
     /// ocupa su lugar, para no dejarlo a medias).
     pub fn write_full(db: &Db, path: &std::path::Path) -> Result<(), String> {
+        use std::io::Write;
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string(db).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        {
+            let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+            f.write_all(serde_json::to_string(db).map_err(|e| e.to_string())?.as_bytes()).map_err(|e| e.to_string())?;
+            // en el disco antes de ocupar el lugar del bueno
+            f.sync_all().map_err(|e| e.to_string())?;
+        }
         std::fs::rename(&tmp, path).map_err(|e| e.to_string())
     }
 
     pub fn load_or_sample() -> (Db, Option<String>) {
-        let p = Self::path();
+        Self::load_from(&Self::path(), true)
+    }
+
+    /// Lee los datos de `p` con lo que haya en su diario de cambios. Con
+    /// `rewrite` (quien los tiene bloqueados), deja el fichero completo y
+    /// quita el diario; sin él, solo los lee. Si no hay fichero, los datos de
+    /// ejemplo; si no se puede leer, también, con el error.
+    pub fn load_from(p: &std::path::Path, rewrite: bool) -> (Db, Option<String>) {
+        let p = p.to_path_buf();
         if let Ok(txt) = std::fs::read_to_string(&p) {
             return match serde_json::from_str::<Db>(&txt) {
                 Ok(mut db) => {
-                    // lo que el servidor apuntó en su diario y no llegó a reescribir
+                    // lo apuntado en el diario y que no llegó a reescribirse
                     let err = match crate::sync::replay_journal(&mut db, &p) {
-                        Ok(0) => None,
-                        Ok(_) => Db::write_full(&db, &p).err(),
+                        Ok(n) if n > 0 && rewrite => Db::write_full(&db, &p).err(),
+                        Ok(_) => None,
                         Err(e) => Some(format!("No se pudo leer el diario de cambios de {}: {e}", crate::sync::journal_path(&p).display())),
                     };
-                    if err.is_none() {
+                    if err.is_none() && rewrite {
                         let _ = std::fs::remove_file(crate::sync::journal_path(&p));
                     }
                     db.upgrade();

@@ -567,4 +567,41 @@ mod big_clinic_timings {
         println!("memoria al final: {} MB", rss_mb());
         assert!(changes.len() <= 6);
     }
+
+    /// Un solo ordenador: guardar tras un cambio pequeño.
+    /// `cargo test big_clinic_local -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn big_clinic_local_save() {
+        let dir = std::env::temp_dir().join(format!("ds_big_local_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let mut db = big_clinic();
+        std::fs::write(&path, serde_json::to_string(&db).unwrap()).unwrap();
+        let t = Instant::now();
+        let mut base = serde_json::to_value(&db).unwrap();
+        println!("al abrir (copia para combinar): {:?} · memoria {} MB", t.elapsed(), rss_mb());
+        db.appointments[500].notes = "llamar antes".into();
+        let t = Instant::now();
+        save_synced(&mut db, &mut base, &path).unwrap();
+        println!("antes · guardar un cambio: {:?} · memoria {} MB", t.elapsed(), rss_mb());
+        drop(base);
+        // ahora: datos bloqueados y diario
+        let t = Instant::now();
+        let mut st = crate::local::LocalStore::new(path.clone(), crate::local::lock(&path).unwrap(), &mut db).unwrap();
+        println!("ahora · al abrir: {:?} · memoria {} MB", t.elapsed(), rss_mb());
+        db.appointments[501].notes = "otra nota".into();
+        let t = Instant::now();
+        let n = st.save(&mut db).unwrap();
+        println!("ahora · guardar un cambio: {:?} · {n} cambios · diario {} bytes · memoria {} MB", t.elapsed(), std::fs::metadata(crate::sync::journal_path(&path)).unwrap().len(), rss_mb());
+        db.patients[10].mobile = "600000000".into();
+        let t = Instant::now();
+        st.save(&mut db).unwrap();
+        println!("ahora · guardar un cambio en un paciente: {:?}", t.elapsed());
+        let t = Instant::now();
+        st.close(&db).unwrap();
+        println!("ahora · al cerrar (fichero completo): {:?}", t.elapsed());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

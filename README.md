@@ -26,7 +26,7 @@ al compilar (`target/`, `dist/`) y las capturas (`shots/`) no son código.
 
 ## Compilar
 
-Necesita Rust estable (1.88 o posterior).
+Necesita Rust estable (1.89 o posterior).
 
 ```sh
 cargo build --release      # programa en target/release/veodardental
@@ -87,6 +87,12 @@ demás se conectan con su dirección y la clave de la clínica.
 **Al actualizar, actualice el servidor y todos los puestos a la vez**: un
 puesto con una versión anterior no puede conectar con el servidor nuevo (ni al
 revés), y el programa lo dice con un aviso.
+
+En un solo ordenador, al guardar solo se apunta lo que ha cambiado (en el
+diario `clinica.cambios`, junto a los datos) y el fichero entero se reescribe
+de vez en cuando y al cerrar; si se va la luz, al abrir se recupera lo
+apuntado. Solo una ventana de VeodarDental puede guardar en los datos a la
+vez: si se abre otra, avisa y no guarda.
 
 Con carpeta compartida (sin servidor), cada puesto lee el fichero entero,
 contraseñas incluidas: para varios puestos se recomienda el servidor.

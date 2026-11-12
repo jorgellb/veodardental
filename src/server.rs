@@ -1137,6 +1137,8 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
 pub fn run() -> Result<(), String> {
     let cfg = ensure_server_config()?;
     let identity = cfg.identity().ok_or("La identidad del servidor está dañada: borre servidor.json y vuelva a conectar los puestos.")?;
+    // solo el servidor guarda en estos datos mientras funciona
+    let _lock = crate::local::lock(&Db::path()).map_err(|e| if e == crate::local::IN_USE { "Los datos de este ordenador están abiertos en VeodarDental: ciérrelo antes de arrancar el servidor de datos.".to_string() } else { e })?;
     let (db, err) = Db::load_or_sample();
     if let Some(e) = err {
         return Err(e);

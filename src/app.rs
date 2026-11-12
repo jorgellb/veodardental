@@ -147,6 +147,8 @@ pub struct App {
     pub synced: crate::sync::Snapshot,
     /// En red: para qué perfil son los datos recibidos (si entra otro, se recargan).
     pub loaded_view: Option<crate::vista::View>,
+    /// Un solo ordenador: los datos abiertos para guardar (con su diario).
+    pub local: Option<crate::local::LocalStore>,
     pub last_poll: f64,
     /// Conexión con el servidor de la clínica (puesto cliente).
     pub remote: Option<crate::server::Remote>,
@@ -197,7 +199,32 @@ impl App {
         theme::apply(&cc.egui_ctx);
         let live = shot.is_none();
         let mut persist = shot.is_none();
-        let (mut db, mut err) = if persist { Db::load_or_sample() } else { (Db::sample(today()), None) };
+        // un solo ordenador: los datos se bloquean para esta ventana (otra
+        // ventana, o el servidor de datos, los abre sin guardar)
+        let local_mode = persist && !crate::shared::shared() && !crate::shared::remote_mode();
+        let lock = local_mode.then(|| crate::local::lock(&Db::path()));
+        let (mut db, mut err) = match (&lock, persist) {
+            (_, false) => (Db::sample(today()), None),
+            (Some(Err(_)), true) => Db::load_from(&Db::path(), false),
+            _ => Db::load_or_sample(),
+        };
+        let mut local = None;
+        match lock {
+            // si no se han podido leer los datos, no se guarda encima de ellos
+            Some(Ok(_)) if err.is_some() => persist = false,
+            Some(Ok(l)) => match crate::local::LocalStore::new(Db::path(), l, &mut db) {
+                Ok(s) => local = Some(s),
+                Err(e) => {
+                    err = Some(format!("No se pueden guardar los datos: {e}"));
+                    persist = false;
+                }
+            },
+            Some(Err(e)) => {
+                err = Some(e);
+                persist = false;
+            }
+            None => {}
+        }
         if persist && crate::shared::shared() {
             if !Db::path().exists() {
                 err = Some(format!("No se encuentra la carpeta compartida {}: se muestran datos de ejemplo sin guardar.", crate::shared::station().data_dir));
@@ -207,7 +234,8 @@ impl App {
             }
             db.station = crate::shared::station().number;
         }
-        let mut base = serde_json::to_value(&db).unwrap_or_default();
+        // para combinar con otros puestos en la carpeta compartida
+        let mut base = if crate::shared::shared() { serde_json::to_value(&db).unwrap_or_default() } else { serde_json::Value::Null };
         let mut remote = None;
         let mut offline = None;
         let mut awaiting_data = false;
@@ -254,6 +282,7 @@ impl App {
             base,
             synced: crate::sync::Snapshot::default(),
             loaded_view: None,
+            local,
             last_poll: 0.0,
             remote,
             offline,
@@ -501,6 +530,43 @@ impl App {
         self.save_error = Some(e);
     }
 
+    /// Al cerrar la ventana: se guarda lo pendiente y, con los datos en este
+    /// ordenador, el fichero queda completo.
+    fn on_close(&mut self) {
+        if self.persist && self.dirty && self.save_now().is_ok() {
+            self.dirty = false;
+        }
+        if let Some(st) = self.local.as_mut() {
+            let _ = st.close(&self.db);
+        }
+    }
+
+    /// Antes de que el servidor de datos de este ordenador abra los datos: los
+    /// deja guardados y completos y los suelta (esta ventana deja de guardar).
+    pub fn release_local(&mut self) {
+        if let Some(mut st) = self.local.take() {
+            if self.dirty && st.save(&mut self.db).is_ok() {
+                self.dirty = false;
+            }
+            let _ = st.close(&self.db);
+            self.persist = false;
+        }
+    }
+
+    /// Vuelve a abrir los datos de este ordenador para guardar (si el servidor no arrancó).
+    pub fn reopen_local(&mut self) {
+        if self.local.is_some() || crate::shared::shared() || crate::shared::remote_mode() {
+            return;
+        }
+        match crate::local::lock(&Db::path()).and_then(|l| crate::local::LocalStore::new(Db::path(), l, &mut self.db)) {
+            Ok(st) => {
+                self.local = Some(st);
+                self.persist = true;
+            }
+            Err(e) => self.save_error = Some(e),
+        }
+    }
+
     /// Comprueba la contraseña: en el servidor de la clínica o en los datos de este ordenador.
     pub fn check_login(&mut self, id: u32, pin: &str) -> Result<crate::users::LoginStep, String> {
         let Some(r) = self.remote.clone() else { return self.db.login(id, pin) };
@@ -644,6 +710,10 @@ impl App {
             // solo lo que ha cambiado (si nada, no se envía nada)
             r.push(&mut self.db, &mut self.synced)?;
             return Ok(0);
+        }
+        // un solo ordenador: solo lo que ha cambiado, en el diario
+        if let Some(st) = self.local.as_mut() {
+            return st.save(&mut self.db).map(|_| 0);
         }
         match crate::shared::save_synced(&mut self.db, &mut self.base, &Db::path())? {
             crate::shared::Synced::Merged(n) => Ok(n),
@@ -1141,8 +1211,8 @@ impl eframe::App for App {
             }
             self.toast(&ctx);
             self.autosave(time);
-            if self.persist && self.dirty && ctx.input(|i| i.viewport().close_requested()) {
-                let _ = self.save_now();
+            if ctx.input(|i| i.viewport().close_requested()) {
+                self.on_close();
             }
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
             self.handle_screenshot(&ctx);
@@ -1241,9 +1311,8 @@ impl eframe::App for App {
         if self.dirty && self.persist {
             ctx.request_repaint_after(std::time::Duration::from_millis(1600));
         }
-        if self.persist && self.dirty && ctx.input(|i| i.viewport().close_requested()) {
-            let _ = self.save_now();
-            self.dirty = false;
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.on_close();
         }
         self.handle_screenshot(&ctx);
     }

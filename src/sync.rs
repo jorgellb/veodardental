@@ -624,6 +624,12 @@ pub fn journal_line(rev: u64, snap: &Snapshot, touched: &[(String, Option<String
     serde_json::json!({ "rev": rev, "cambios": changes }).to_string()
 }
 
+/// Línea del diario a partir de los cambios (cómo han quedado).
+pub fn journal_line_of(rev: u64, changes: &[Change]) -> String {
+    let after: Vec<Change> = changes.iter().map(|c| Change { field: c.field.clone(), key: c.key.clone(), before: None, after: c.after.clone() }).collect();
+    serde_json::json!({ "rev": rev, "cambios": after }).to_string()
+}
+
 #[derive(Deserialize)]
 struct JournalLine {
     rev: u64,

@@ -24,6 +24,7 @@ mod health;
 mod insurer;
 mod icons;
 mod lab_order;
+mod local;
 mod model;
 mod mssql;
 mod nomenclator;
