@@ -153,6 +153,15 @@ macro_rules! db_fields {
             $(db.$rf.clear_touched();)*
         }
 
+        /// Campo que hace de clave de los registros de una lista (`None` si el
+        /// campo no es una lista con clave).
+        pub fn key_field(field: &str) -> Option<&'static str> {
+            match field {
+                $(stringify!($rf) => Some(stringify!($rk)),)*
+                _ => None,
+            }
+        }
+
         /// Quita todos los registros (para unos datos mínimos).
         fn clear_records(db: &mut Db) {
             $(db.$rf.clear();)*
@@ -490,15 +499,37 @@ pub struct Outcome {
     pub conflicts: usize,
 }
 
+/// ¿Son coherentes los cambios? Cada registro tiene que llevar dentro la misma
+/// clave con la que viene (si no, se colarían dos registros con el mismo `id`),
+/// las listas con clave van registro a registro y los demás campos, enteros.
+pub fn check_keys(changes: &[Change]) -> Result<(), String> {
+    for ch in changes {
+        match (key_field(&ch.field), &ch.key) {
+            (Some(kf), Some(key)) => {
+                for json in [&ch.before, &ch.after].into_iter().flatten() {
+                    let inner = parse(json)?.get(kf).map(|k| k.to_string());
+                    if inner.as_deref() != Some(key.as_str()) {
+                        return Err(format!("{}: el registro {key} lleva dentro otra clave", ch.field));
+                    }
+                }
+            }
+            (None, None) if PLAIN_FIELDS.contains(&ch.field.as_str()) => {}
+            _ => return Err(format!("{}: cambio no válido", ch.field)),
+        }
+    }
+    Ok(())
+}
+
 /// Aplica en el servidor los cambios de un puesto sobre los datos actuales,
 /// combinándolos con lo que otros puestos hayan cambiado mientras (como
 /// [`crate::shared::merge`], registro a registro). Si algún registro no es
 /// válido no se aplica nada.
 pub fn apply(cur: &mut Snapshot, changes: &[Change]) -> Result<Outcome, String> {
+    check_keys(changes)?;
     let mut out = Outcome::default();
     let mut results: Vec<(String, Option<String>, Option<String>)> = vec![];
     for ch in changes {
-        if ch.field == "rev" || !(RECORD_FIELDS.contains(&ch.field.as_str()) || PLAIN_FIELDS.contains(&ch.field.as_str())) {
+        if ch.field == "rev" {
             continue;
         }
         let current = cur.get(&ch.field, ch.key.as_deref()).cloned();
@@ -568,6 +599,64 @@ pub fn apply_to_db(db: &mut Db, synced: &mut Snapshot, changes: &[Change]) -> Re
         }
     }
     Ok(())
+}
+
+// ───────────────────────────── diario ─────────────────────────────
+//
+// El servidor no reescribe el fichero de datos entero en cada guardado: apunta
+// en el diario (`clinica.cambios`, una línea por revisión) cómo han quedado
+// los registros tocados, y el fichero entero se reescribe de vez en cuando.
+// Al abrir los datos, lo del diario que sea más nuevo que el fichero se pone
+// en los datos (por si el servidor se cerró sin reescribirlo).
+
+/// Diario de cambios de un fichero de datos.
+pub fn journal_path(data: &std::path::Path) -> std::path::PathBuf {
+    data.with_extension("cambios")
+}
+
+/// Línea del diario: la revisión y cómo han quedado los registros tocados.
+pub fn journal_line(rev: u64, snap: &Snapshot, touched: &[(String, Option<String>)]) -> String {
+    let changes: Vec<Change> = touched.iter().map(|(f, k)| Change { field: f.clone(), key: k.clone(), before: None, after: snap.get(f, k.as_deref()).cloned() }).collect();
+    serde_json::json!({ "rev": rev, "cambios": changes }).to_string()
+}
+
+#[derive(Deserialize)]
+struct JournalLine {
+    rev: u64,
+    #[serde(rename = "cambios")]
+    changes: Vec<Change>,
+}
+
+/// Pone en `db` lo del diario de `data` que sea más nuevo que `db`. Una línea
+/// a medio escribir (el ordenador se apagó mientras) se descarta. Devuelve
+/// cuántas revisiones se han puesto.
+pub fn replay_journal(db: &mut Db, data: &std::path::Path) -> Result<usize, String> {
+    let Ok(text) = std::fs::read_to_string(journal_path(data)) else { return Ok(0) };
+    let mut n = 0;
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(j) = serde_json::from_str::<JournalLine>(line) else { continue };
+        if j.rev <= db.rev {
+            continue;
+        }
+        for ch in &j.changes {
+            match (&ch.key, &ch.after) {
+                (Some(k), after) => set_record(db, &ch.field, k, after.as_deref())?,
+                (None, Some(a)) => set_field(db, &ch.field, a)?,
+                (None, None) => {}
+            }
+        }
+        db.rev = j.rev;
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// Para las pruebas: los datos tal como quedan en el disco (fichero y diario).
+#[cfg(test)]
+pub fn on_disk(data: &std::path::Path) -> Db {
+    let mut db: Db = serde_json::from_str(&std::fs::read_to_string(data).unwrap()).unwrap();
+    replay_journal(&mut db, data).unwrap();
+    db
 }
 
 /// Unos datos mínimos (sin registros) para usar solo algunos campos.
@@ -753,6 +842,60 @@ mod tests {
         // al cargar los datos todas empiezan marcadas
         let loaded: Db = serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
         assert!(loaded.patients.is_touched() && loaded.appointments.is_touched());
+    }
+
+    #[test]
+    fn the_journal_brings_back_what_was_not_rewritten() {
+        let dir = std::env::temp_dir().join(format!("ds_journal_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("clinica.json");
+        let mut d = db();
+        d.rev = 10;
+        let mut snap = Snapshot::from_db(&d);
+        // dos revisiones apuntadas en el diario, sin reescribir el fichero
+        let id = d.appointments[0].id.to_string();
+        let mut a = d.appointments[0].clone();
+        a.notes = "en el diario".into();
+        snap.set("appointments", Some(&id), Some(serde_json::to_string(&a).unwrap()));
+        let gone = d.payments[0].id.to_string();
+        snap.set("payments", Some(&gone), None);
+        let mut lines = journal_line(11, &snap, &[("appointments".into(), Some(id.clone()))]);
+        lines.push('\n');
+        lines.push_str(&journal_line(12, &snap, &[("payments".into(), Some(gone.clone()))]));
+        // y una línea a medio escribir
+        lines.push_str("\n{\"rev\": 13, \"camb");
+        std::fs::write(journal_path(&data), lines).unwrap();
+        assert_eq!(replay_journal(&mut d, &data).unwrap(), 2);
+        assert_eq!(d.rev, 12);
+        assert_eq!(d.appointments[0].notes, "en el diario");
+        assert!(d.payments.iter().all(|p| p.id.to_string() != gone));
+        // lo que ya está en el fichero no se vuelve a poner
+        assert_eq!(replay_journal(&mut d, &data).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_record_must_carry_its_own_key() {
+        let d = db();
+        let mut cur = Snapshot::from_db(&d);
+        let before = cur.clone();
+        let p = serde_json::to_string(&d.patients[0]).unwrap();
+        // el paciente con id 100 mandado con la clave de otro: dos pacientes con el mismo id
+        let wrong = Change { field: "patients".into(), key: Some("999999".into()), before: None, after: Some(p.clone()) };
+        assert!(apply(&mut cur, &[wrong]).unwrap_err().contains("otra clave"));
+        // una lista con clave sin clave, o un campo normal con clave
+        assert!(apply(&mut cur, &[Change { field: "patients".into(), key: None, before: None, after: Some(format!("[{p}]")) }]).is_err());
+        let config = cur.plain.get("config").cloned();
+        assert!(apply(&mut cur, &[Change { field: "config".into(), key: Some("1".into()), before: None, after: config }]).is_err());
+        assert!(apply(&mut cur, &[Change { field: "inventado".into(), key: None, before: None, after: Some("1".into()) }]).is_err());
+        assert_eq!(cur, before);
+        // los enlaces van por su token
+        let mut d2 = d.clone();
+        let mut l = d2.appt_links[0].clone();
+        l.token = "f".repeat(32);
+        d2.appt_links.push(l);
+        assert!(apply(&mut cur, &diff(&before, &Snapshot::from_db(&d2))).is_ok());
     }
 
     #[test]

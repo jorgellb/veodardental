@@ -524,6 +524,10 @@ struct State {
     /// Qué se tocó en cada revisión.
     log: VecDeque<(u64, sync::Touched)>,
     path: PathBuf,
+    /// Diario de cambios (abierto para añadir) y cuánto lleva desde la última reescritura.
+    journal: Option<std::fs::File>,
+    journal_lines: usize,
+    journal_bytes: usize,
     last_backup_day: Option<chrono::NaiveDate>,
     /// Sesiones abiertas, por la huella (SHA-256) de su código.
     sessions: HashMap<String, Session>,
@@ -659,6 +663,9 @@ impl State {
             snap: Snapshot::from_db(initial),
             log: VecDeque::new(),
             path,
+            journal: None,
+            journal_lines: 0,
+            journal_bytes: 0,
             last_backup_day: None,
             sessions,
             sessions_saved: Instant::now(),
@@ -675,13 +682,42 @@ impl State {
         self.snap.rev()
     }
 
-    fn persist(&mut self) -> Result<(), String> {
-        let tmp = self.path.with_extension("json.tmp");
+    /// Reescribe el fichero de datos entero y vacía el diario.
+    fn rewrite(&mut self) -> Result<(), String> {
         if let Some(d) = self.path.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
-        std::fs::write(&tmp, self.snap.to_json()).map_err(|e| e.to_string())?;
+        let tmp = self.path.with_extension("json.tmp");
+        {
+            let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+            f.write_all(self.snap.to_json().as_bytes()).map_err(|e| e.to_string())?;
+            f.sync_all().map_err(|e| e.to_string())?;
+        }
         std::fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
+        // el fichero ya lo tiene todo: el diario empieza de nuevo
+        let journal = std::fs::File::create(sync::journal_path(&self.path)).map_err(|e| e.to_string())?;
+        self.journal = Some(journal);
+        self.journal_lines = 0;
+        self.journal_bytes = 0;
+        Ok(())
+    }
+
+    /// Apunta la revisión en el diario (y en el disco antes de responder);
+    /// cada cierto tiempo reescribe el fichero entero.
+    fn persist(&mut self, rev: u64, touched: &[(String, Option<String>)]) -> Result<(), String> {
+        if self.journal.is_none() {
+            self.rewrite()?;
+        }
+        let mut line = sync::journal_line(rev, &self.snap, touched);
+        line.push('\n');
+        if let Some(f) = self.journal.as_mut() {
+            f.write_all(line.as_bytes()).and_then(|_| f.sync_data()).map_err(|e| format!("No se pudo guardar en el diario de cambios: {e}"))?;
+        }
+        self.journal_lines += 1;
+        self.journal_bytes += line.len();
+        if self.journal_lines >= 1000 || self.journal_bytes > 64 << 20 {
+            self.rewrite()?;
+        }
         // copia de seguridad diaria en el servidor
         let today = crate::model::today();
         if self.last_backup_day != Some(today) && crate::tools::needs_daily(today) {
@@ -713,11 +749,12 @@ impl State {
         }
         let rev = self.rev() + 1;
         self.snap.set_rev(rev);
+        self.persist(rev, &touched)?;
         self.log.push_back((rev, touched));
         while self.log.len() > LOG_REVS {
             self.log.pop_front();
         }
-        self.persist()
+        Ok(())
     }
 
     /// Cambia algunos campos con las funciones del programa (entradas,
@@ -747,6 +784,9 @@ impl State {
     /// para que el puesto se quede con lo que de verdad hay en el servidor).
     fn save(&mut self, mut changes: Vec<Change>, station: u32, user: u32) -> Result<Vec<(String, Option<String>)>, String> {
         let admin = self.is_admin(user);
+        // cada registro con su propia clave: así la protección de los usuarios
+        // mira al usuario de verdad
+        sync::check_keys(&changes)?;
         let sent: Vec<(String, Option<String>)> = changes.iter().map(|c| (c.field.clone(), c.key.clone())).collect();
         // los puestos (y la revisión) los lleva el servidor; los usuarios solo los
         // cambia Dirección, y nunca sus contraseñas ni los fallos de acceso
@@ -1035,12 +1075,23 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
     let public = unhex(&identity_pin(&identity)).unwrap_or_default();
     let mut st = State::new(&initial, path, &key, public);
     drop(initial);
+    // el fichero de datos queda completo y el diario, vacío
+    if let Err(e) = st.rewrite() {
+        eprintln!("No se pueden guardar los datos: {e}");
+        return;
+    }
     for job in jobs {
         let (resp, stop_now) = st.handle(&job.req, &key);
-        let _ = job.reply.send(resp);
         if stop_now {
+            // al parar, el fichero de datos queda completo
+            let resp = match st.rewrite() {
+                Ok(()) => resp,
+                Err(e) => error(500, &format!("No se pudieron guardar los datos al parar: {e}")),
+            };
+            let _ = job.reply.send(resp);
             break;
         }
+        let _ = job.reply.send(resp);
     }
     stop.store(true, Ordering::SeqCst);
     // despierta la espera de conexiones para que termine
@@ -1561,7 +1612,7 @@ mod tests {
         // lo recibido no vuelve como cambio del puesto
         assert_eq!(ra.push(&mut a, &mut sa).unwrap(), 0);
         // el servidor lo ha guardado en disco, con las contraseñas de verdad
-        let disk: Db = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Db = crate::sync::on_disk(&path);
         assert_eq!(disk.payments.len(), pays + 1);
         assert_eq!(disk.stations.len(), 2);
         assert!(disk.users.iter().all(|u| u.pin_hash.starts_with("pbkdf2$") && !u.salt.is_empty()));
@@ -1585,7 +1636,7 @@ mod tests {
         d.users.push(crate::users::new_user(99, "Intruso", crate::users::Profile::Direccion, None, "0000"));
         d.access_log.clear();
         rec.push(&mut d, &mut sd).unwrap();
-        let disk = || -> Db { serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap() };
+        let disk = || -> Db { crate::sync::on_disk(&path) };
         assert_eq!(disk().user(2).unwrap().profile, crate::users::Profile::Recepcion);
         assert_eq!(disk().user(5).unwrap().name, "Hig. Campos");
         assert!(disk().user(99).is_none());
@@ -1608,11 +1659,19 @@ mod tests {
         d.users.retain(|u| u.id != 20);
         dir.push(&mut d, &mut sd).unwrap();
         assert!(disk().user(20).is_none());
+        // y no puede colar un usuario con la clave de otro para saltarse la protección
+        let mut doc = disk().user(4).unwrap().clone();
+        doc.pin_hash = crate::users::hash_pin("sal", "111111");
+        doc.salt = "sal".into();
+        let fake = Change { field: "users".into(), key: Some("77".into()), before: None, after: Some(serde_json::to_string(&doc).unwrap()) };
+        let body = json!({ "cambios": [fake] }).to_string();
+        assert!(dir.post(&format!("/cambios?base={}", d.rev), &body).unwrap_err().contains("otra clave"));
+        assert!(crate::users::pin_matches(disk().user(4).unwrap(), "582941") || crate::users::pin_matches(disk().user(4).unwrap(), "0000"));
 
         // las contraseñas se cambian con su propia orden
         assert!(rec.set_pin(4, None, "582941", true).unwrap_err().contains("Dirección"));
         dir.set_pin(4, None, "582941", true).unwrap();
-        let disk: Db = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Db = crate::sync::on_disk(&path);
         assert!(crate::users::pin_matches(disk.user(4).unwrap(), "582941"));
         assert!(disk.user(4).unwrap().must_change);
         // la propia, la inicial sin la actual; después ya hace falta la actual
@@ -1637,7 +1696,7 @@ mod tests {
         assert!(doc.totp_on(4, &secret, &code(now)).unwrap_err().contains("Dirección"));
         dir.totp_on(3, &secret, &code(now)).unwrap();
         assert!(doc.totp_off(3).unwrap_err().contains("Dirección"));
-        let disk: Db = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Db = crate::sync::on_disk(&path);
         assert_eq!(disk.user(3).unwrap().totp_secret, secret);
         let (d, _) = dir.load().unwrap();
         assert_eq!(d.user(3).unwrap().totp_secret, HIDDEN, "el puesto sabe que lo tiene, pero no la clave");
@@ -1720,8 +1779,8 @@ mod tests {
         assert_eq!(connect(&mut victim, "Recepción", 1).unwrap_err(), WRONG_KEY);
         assert!(victim.pinned().is_empty());
         assert!(!victim.server_pin().is_empty(), "lo ha visto, pero no lo acepta");
-        // el impostor no ha guardado nada: el puesto ni siquiera llegó a darse de alta
-        assert!(!ipath.exists(), "no ha llegado a darse de alta en el impostor");
+        // el puesto ni siquiera llegó a darse de alta en el impostor
+        assert!(crate::sync::on_disk(&ipath).stations.is_empty(), "no ha llegado a darse de alta en el impostor");
         // tampoco sirve reenviar la firma del servidor de verdad: va ligada a su huella
         let mut st = State::new(&Db::sample(crate::model::today()), std::env::temp_dir().join("ds_proof_test").join("clinica.json"), "CLAVE5", vec![7; 32]);
         let reto = "00112233445566778899aabbccddeeff";

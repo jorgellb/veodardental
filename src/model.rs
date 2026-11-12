@@ -1217,14 +1217,31 @@ impl Db {
         true
     }
 
+    /// Escribe los datos enteros en `path` (en un fichero aparte que luego
+    /// ocupa su lugar, para no dejarlo a medias).
+    pub fn write_full(db: &Db, path: &std::path::Path) -> Result<(), String> {
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_string(db).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+    }
+
     pub fn load_or_sample() -> (Db, Option<String>) {
         let p = Self::path();
         if let Ok(txt) = std::fs::read_to_string(&p) {
             return match serde_json::from_str::<Db>(&txt) {
                 Ok(mut db) => {
+                    // lo que el servidor apuntó en su diario y no llegó a reescribir
+                    let err = match crate::sync::replay_journal(&mut db, &p) {
+                        Ok(0) => None,
+                        Ok(_) => Db::write_full(&db, &p).err(),
+                        Err(e) => Some(format!("No se pudo leer el diario de cambios de {}: {e}", crate::sync::journal_path(&p).display())),
+                    };
+                    if err.is_none() {
+                        let _ = std::fs::remove_file(crate::sync::journal_path(&p));
+                    }
                     db.upgrade();
                     db.reset_hidden_credentials();
-                    (db, None)
+                    (db, err)
                 }
                 Err(e) => (
                     Db::sample(today()),

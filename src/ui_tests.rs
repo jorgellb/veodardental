@@ -1759,7 +1759,7 @@ fn station_signs_in_through_the_server() {
         h.step();
     }
     assert!(!h.state().login.show_change, "{}", h.state().login.error);
-    let disk = || -> crate::model::Db { serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap() };
+    let disk = || -> crate::model::Db { crate::sync::on_disk(&path) };
     assert!(crate::users::pin_matches(disk().user(2).unwrap(), "739154"));
     // un cambio del puesto llega al servidor
     {
