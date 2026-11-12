@@ -1486,7 +1486,7 @@ fn backup_password_encrypts_the_second_copy() {
     {
         let a = h.state_mut();
         a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
-        crate::tools::create_backup_in(&a.db, &extra, "antigua", 30).unwrap();
+        crate::tools::create_backup_in(&a.db, &extra, "antigua").unwrap();
         a.db.config.backup_extra = extra.to_string_lossy().to_string();
         crate::screens::config::open(a, crate::screens::config::CfgTab::Copias);
     }
@@ -1936,4 +1936,56 @@ fn receive_implants_in_two_lots_from_the_orders_screen() {
     assert!((db.product(9).unwrap().stock - (before + 4.0)).abs() < 1e-6);
     let lots: Vec<(String, f64)> = db.lots(9).into_iter().filter(|l| l.lot == "A111" || l.lot == "B222").map(|l| (l.lot, l.qty)).collect();
     assert_eq!(lots, vec![("A111".to_string(), 3.0), ("B222".to_string(), 1.0)]);
+}
+
+/// Cobrar una cuota en efectivo desde la ficha (entra en la caja) y anularla.
+#[test]
+fn installment_paid_in_cash_and_cancelled_from_the_dialog() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let bid = a.db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        a.db.accept_budget(bid, a.today);
+        a.patient = Some(101);
+        a.screen = crate::app::Screen::Pacientes;
+        a.pat_tab = crate::app::PatTab::Cuenta;
+        let mut d = crate::screens::cobros::PayDraft::installment(&a, bid, 0).unwrap();
+        d.method = "Efectivo".into();
+        a.dialog = crate::app::Dialog::Payment(d);
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    let cash_before = { let a = h.state(); a.db.cash_expected(a.db.open_cash().unwrap()) };
+    h.get_all_by_label("Cobrar").last().unwrap().click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let (pay, amount) = {
+        let a = h.state();
+        let p = a.db.payments.iter().rev().find(|p| p.installment.is_some()).expect("cuota cobrada").clone();
+        assert_eq!(p.method, "Efectivo");
+        assert!((a.db.cash_expected(a.db.open_cash().unwrap()) - (cash_before + p.amount)).abs() < 0.005, "en la caja");
+        (p.id, p.amount)
+    };
+    // se anula con su motivo
+    {
+        let a = h.state_mut();
+        let mut d = crate::screens::cobros::PayDraft::cancel(a, pay).unwrap();
+        d.concept = "Cobrada por error".into();
+        a.dialog = crate::app::Dialog::Payment(d);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Anular el cobro").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let a = h.state();
+    let back = a.db.payments.iter().find(|p| p.cancels == Some(pay)).expect("anulación");
+    assert_eq!(back.amount, -amount);
+    assert!((a.db.cash_expected(a.db.open_cash().unwrap()) - cash_before).abs() < 0.005, "la caja vuelve a cuadrar");
 }

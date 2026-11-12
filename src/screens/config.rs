@@ -525,7 +525,7 @@ pub fn modules(app: &mut App, ui: &mut Ui) {
         ("Bancos y conciliación", "Extractos Norma 43 o Excel/CSV, conciliación automática con transferencias, liquidaciones de tarjeta, remesas y gastos"),
         ("Fusión de pacientes duplicados", "Detección por NIF, nombre o móvil y unión de todo el historial con copia de seguridad previa"),
         ("Registro de cambios", "Quién borró, emitió, importó, fusionó o restauró y cuándo"),
-        ("Copias de seguridad", "Copia automática diaria (30 últimas), copia manual, segunda copia en un disco USB o en la nube cifrada con la contraseña de las copias (AES-256; sin ella no se puede leer ni modificar) y restauración comprobada, también de copias cifradas en otro ordenador"),
+        ("Copias de seguridad", "Copia automática diaria (se guarda un año, escalonada: diarias, semanales y mensuales), aviso si falla, copia manual, segunda copia en un disco USB o en la nube cifrada con la contraseña de las copias (AES-256; sin ella no se puede leer ni modificar) y restauración comprobada, también de copias cifradas en otro ordenador"),
         ("Pizarra de sala de espera", "Pantalla para la televisión: paciente llamado a consulta con su gabinete y lista de espera, con opción de mostrar solo iniciales"),
         ("Listín telefónico", "Contactos de la clínica, colaboradores, proveedores, mutuas y pacientes en una sola búsqueda"),
         ("Telefonía", "Al sonar el teléfono aparece quién llama con su próxima cita, avisos y saldo; registro de llamadas"),

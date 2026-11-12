@@ -140,6 +140,8 @@ pub struct App {
     pub persist: bool,
     pub last_save: f64,
     pub save_error: Option<String>,
+    /// Cómo van las copias de seguridad de este ordenador (en red, las del servidor).
+    pub backup: crate::tools::BackupStatus,
     /// Últimos datos leídos o guardados (para combinar con otros puestos).
     pub base: serde_json::Value,
     /// En red: cómo están los datos en el servidor (lo último recibido o
@@ -279,6 +281,7 @@ impl App {
             persist,
             last_save: 0.0,
             save_error: err,
+            backup: crate::tools::BackupStatus::from_dir(&crate::tools::backup_dir()),
             base,
             synced: crate::sync::Snapshot::default(),
             loaded_view: None,
@@ -339,11 +342,12 @@ impl App {
     /// día, y los servicios de la centralita y de WhatsApp.
     fn start_services(&mut self, ctx: &egui::Context) {
         // copia de seguridad automática diaria
-        if self.persist
-            && crate::tools::needs_daily(self.today)
-            && let Err(e) = crate::tools::create_backup(&self.db, "automatica")
-        {
-            self.save_error = Some(e);
+        if self.persist && crate::tools::needs_daily(self.today) {
+            let done = crate::tools::create_backup(&self.db, "automatica");
+            self.backup.record(&done, crate::model::now());
+            if let Err(e) = done {
+                self.save_error = Some(e);
+            }
         }
         let (_, skipped) = self.db.generate_messages(self.today);
         self.db.generate_tasks(self.today);
@@ -455,6 +459,19 @@ impl App {
         self.pat_tab = tab;
         self.screen = Screen::Pacientes;
         self.lists.patient_list_open = false;
+    }
+
+    /// Aviso de las copias de seguridad para Dirección (en red, las del servidor;
+    /// cada puesto con los datos en un servidor no hace las suyas de verdad).
+    pub fn backup_warning(&self) -> Option<String> {
+        if !self.persist || !self.can(crate::users::Perm::Configuracion) {
+            return None;
+        }
+        let status = match &self.remote {
+            Some(r) => r.backup.lock().ok().and_then(|b| b.clone())?,
+            None => self.backup.clone(),
+        };
+        status.warning(crate::model::now()).map(|w| if self.remote.is_some() { format!("Servidor: {w}") } else { w })
     }
 
     /// En red: si este puesto no tiene cambios pendientes, recoge los de los demás.

@@ -760,6 +760,34 @@ mod tests {
     }
 
     #[test]
+    fn a_childs_treatment_is_invoiced_to_the_parent() {
+        let mut db = Db::sample(d());
+        // un niño sin NIF con una ortodoncia de 2.400 €
+        let pid = 110;
+        db.patient_mut(pid).unwrap().nif.clear();
+        let e = db.add_entry(pid, "0302", vec![16], vec![], TxState::Realizado, 1, d());
+        db.entries.iter_mut().find(|x| x.id == e).unwrap().price = 2400.0;
+        assert!(db.issue_invoice(pid, &[e], d()).unwrap_err().contains("NIF"), "sin NIF y más de 400 €, no");
+        db.patient_mut(pid).unwrap().payer = Payer { name: "Ana Pérez Gil".into(), nif: "12345678Z".into(), address: "C/ Mayor 1, 28001 Madrid".into(), relation: "Madre".into() };
+        let inv = db.issue_invoice(pid, &[e], d()).unwrap();
+        let f = db.invoice(inv).unwrap().clone();
+        assert_eq!((f.client_name.as_str(), f.client_nif.as_str(), f.client_address.as_str(), f.kind()), ("Ana Pérez Gil", "12345678Z", "C/ Mayor 1, 28001 Madrid", "F1"));
+        assert_eq!(f.patient_name, db.patient(pid).unwrap().full_name(), "y quién es el paciente");
+        // la rectificativa va a la misma persona
+        let r = db.rectify_invoice(inv, "Error").unwrap();
+        assert_eq!(db.invoice(r).unwrap().client_nif, "12345678Z");
+        // si tiene menos de 16 años, el consentimiento lo firma ella
+        db.patient_mut(pid).unwrap().birth = NaiveDate::from_ymd_opt(2016, 5, 1);
+        assert_eq!(db.representative(pid, d()).as_deref(), Some("Ana Pérez Gil (madre)"));
+        db.patient_mut(pid).unwrap().birth = NaiveDate::from_ymd_opt(2009, 5, 1);
+        assert_eq!(db.representative(pid, d()), None, "con 17 años firma el paciente");
+        // sin dirección del responsable, la del paciente
+        db.patient_mut(pid).unwrap().payer.address.clear();
+        let inv2 = db.issue_invoice(pid, &[e], d()).unwrap();
+        assert!(db.invoice(inv2).unwrap().client_address.contains(&db.patient(pid).unwrap().city));
+    }
+
+    #[test]
     fn an_invoiced_or_claimed_treatment_cannot_be_deleted() {
         let mut db = Db::sample(d());
         let e = db.add_entry(110, "0302", vec![16], vec!["O".into()], TxState::Realizado, 1, d());

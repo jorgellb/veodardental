@@ -770,6 +770,30 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                 p.sepa_date = Some(crate::model::today());
             }
             ui.add_space(6.0);
+            section(ui, "Responsable y factura a nombre de");
+            let minor = p.age(crate::model::today()).is_some_and(|a| a < 18);
+            if minor && p.payer.is_empty() {
+                ui.label(RichText::new("Es menor de edad: indique al padre, la madre o el tutor (recibe las facturas y firma los consentimientos por él).").color(WARN).size(13.0));
+            } else {
+                muted(ui, "Si paga otra persona (o es menor), las facturas van a su nombre. Vacío: a nombre del paciente.");
+            }
+            ui.horizontal(|ui| {
+                field(ui, "Nombre y apellidos", &mut p.payer.name, 210.0);
+                field(ui, "NIF", &mut p.payer.nif, 110.0);
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("Parentesco").size(13.5).color(MUTED));
+                    crate::theme::combo("pf_rel").width(110.0).selected_text(if p.payer.relation.is_empty() { "—".to_string() } else { p.payer.relation.clone() }).show_ui(ui, |ui| {
+                        for r in ["Padre", "Madre", "Tutor legal", "Cónyuge", "Hijo/a", "Otro"] {
+                            ui.selectable_value(&mut p.payer.relation, r.to_string(), r);
+                        }
+                    });
+                });
+            });
+            field(ui, "Dirección para la factura (vacía: la del paciente)", &mut p.payer.address, 380.0);
+            if let Some(err) = nif_problem(&p.payer.nif) {
+                ui.label(RichText::new(format!("⚠ {err}")).color(DANGER).size(13.5));
+            }
+            ui.add_space(6.0);
             section(ui, "Alertas médicas");
             field(ui, "Alertas (se muestran en toda la aplicación)", &mut p.alerts, 380.0);
             field(ui, "Alergias", &mut p.allergies, 380.0);
@@ -860,33 +884,54 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                 if primary(ui, "💶 Registrar cobro").clicked() {
                     app.dialog = Dialog::Payment(cobros::PayDraft::new(app, pid));
                 }
+                if app.db.patient_balance(pid) < -0.005 && ui.button("↩ Devolver dinero").on_hover_text("Devolver lo que el paciente tiene a favor").clicked() {
+                    app.dialog = Dialog::Payment(cobros::PayDraft::refund(app, pid));
+                }
             });
         });
-        // Movimientos: cargos y abonos con saldo acumulado.
-        let mut movs: Vec<(chrono::NaiveDateTime, String, f64, f64)> = vec![];
+        // Movimientos: cargos y abonos con saldo acumulado (y el cobro, para anularlo).
+        let mut movs: Vec<(chrono::NaiveDateTime, String, f64, f64, Option<u32>)> = vec![];
         for e in app.db.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado) {
             let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
-            movs.push((e.date.and_hms_opt(0, 0, 0).unwrap(), format!("{} {}", e.description, teeth.join("-")), e.amount(), 0.0));
+            movs.push((e.date.and_hms_opt(0, 0, 0).unwrap(), format!("{} {}", e.description, teeth.join("-")), e.amount(), 0.0, None));
         }
+        let cancelled: std::collections::HashSet<u32> = app.db.payments.iter().filter_map(|p| p.cancels).collect();
         for p in app.db.payments.iter().filter(|p| p.patient_id == pid) {
-            movs.push((p.date, format!("Cobro {} · {} · {}", p.receipt_no, p.method, p.concept), 0.0, p.amount));
+            let gone = if cancelled.contains(&p.id) { " (anulado)" } else { "" };
+            let can_cancel = p.amount > 0.0 && p.cancels.is_none() && !cancelled.contains(&p.id) && p.method != "Domiciliación";
+            movs.push((p.date, format!("{} {} · {} · {}{gone}", if p.amount < 0.0 { "Abono" } else { "Cobro" }, p.receipt_no, p.method, p.concept), 0.0, p.amount, can_cancel.then_some(p.id)));
         }
         movs.sort_by_key(|m| m.0);
         let tbl = Table::new("acc", vec![("Fecha", 100.0), ("Concepto", 420.0), ("Debe", 110.0), ("Haber", 110.0), ("Saldo", 110.0)]);
         tbl.header(ui);
         let mut bal = 0.0;
-        for (i, (d, c, de, ha)) in movs.iter().enumerate() {
+        let mut cancel = None;
+        for (i, (d, c, de, ha, pay)) in movs.iter().enumerate() {
             bal += de - ha;
-            tbl.row(ui, i, false, &[
+            // las devoluciones y anulaciones van en negativo en el haber
+            let r = tbl.row(ui, i, false, &[
                 cell(fmt_date(d.date())),
                 cell(c),
                 cell(if *de > 0.0 { money(*de) } else { String::new() }),
-                cellc(if *ha > 0.0 { money(*ha) } else { String::new() }, OK),
+                cellc(if ha.abs() > 0.004 { money(*ha) } else { String::new() }, if *ha < 0.0 { DANGER } else { OK }),
                 cellc(money(bal), if bal > 0.005 { DANGER } else { TEXT }),
             ]);
+            if let Some(id) = pay {
+                r.context_menu(|ui| {
+                    if ui.button("✖ Anular este cobro…").clicked() {
+                        cancel = Some(*id);
+                        ui.close();
+                    }
+                });
+            }
         }
         if movs.is_empty() {
             empty_state(ui, "Sin movimientos");
+        } else {
+            muted(ui, "Clic derecho en un cobro para anularlo (si se registró por error).");
+        }
+        if let Some(d) = cancel.and_then(|id| cobros::PayDraft::cancel(app, id)) {
+            app.dialog = Dialog::Payment(d);
         }
     });
     ui.add_space(10.0);
@@ -927,17 +972,9 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                     });
                 }
             });
-            if let Some(i) = pay_idx {
-                let amount = plan.installment(i, total);
-                app.db.add_payment(pid, amount, "Financiación", &format!("Cuota {} plan presupuesto #{bid}", i + 1));
-                if let Some(b) = app.db.budgets.iter_mut().find(|b| b.id == bid) && let Some(pl) = &mut b.plan {
-                    if pl.paid.len() < pl.installments as usize {
-                        pl.paid.resize(pl.installments as usize, false);
-                    }
-                    pl.paid[i as usize] = true;
-                }
-                app.changed();
-                app.notify(format!("Cuota {} cobrada: {}", i + 1, money(amount)));
+            // se elige cómo la paga (si es en efectivo, entra en la caja)
+            if let Some(d) = pay_idx.and_then(|i| cobros::PayDraft::installment(app, bid, i)) {
+                app.dialog = Dialog::Payment(d);
             }
         });
     }

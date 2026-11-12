@@ -130,6 +130,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         }
                     }
                 }
+                // copias de seguridad que fallan o que no se hacen (solo Dirección)
+                if let Some(w) = app.backup_warning() {
+                    any = true;
+                    if aviso(ui, DANGER, w) {
+                        crate::screens::config::open(app, crate::screens::config::CfgTab::Copias);
+                    }
+                }
                 if app.db.open_cash().is_none() {
                     any = true;
                     if aviso(ui, DANGER, "La caja está cerrada: ábrala para cobrar en efectivo") {

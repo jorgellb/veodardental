@@ -11,12 +11,45 @@ pub struct PayDraft {
     pub amount: f64,
     pub method: String,
     pub concept: String,
+    pub kind: PayKind,
+}
+
+/// Qué se hace en el diálogo de cobro.
+#[derive(Clone, Copy, PartialEq)]
+pub enum PayKind {
+    /// Cobro a cuenta (lo normal).
+    Cobro,
+    /// Cuota de un plan: (presupuesto, nº de cuota desde 0).
+    Cuota(u32, u32),
+    /// Devolver dinero que el paciente tiene a favor.
+    Devolucion,
+    /// Anular un cobro equivocado.
+    Anulacion(u32),
 }
 
 impl PayDraft {
     pub fn new(app: &App, pid: u32) -> Self {
         let bal = app.db.patient_balance(pid).max(0.0);
-        PayDraft { patient_id: pid, amount: bal, method: "Tarjeta".into(), concept: "Pago a cuenta".into() }
+        PayDraft { patient_id: pid, amount: bal, method: "Tarjeta".into(), concept: "Pago a cuenta".into(), kind: PayKind::Cobro }
+    }
+
+    /// Cobro en la clínica de una cuota (con el importe de la cuota).
+    pub fn installment(app: &App, budget: u32, i: u32) -> Option<Self> {
+        let b = app.db.budgets.iter().find(|b| b.id == budget)?;
+        let amount = b.plan.as_ref()?.installment(i, b.total());
+        Some(PayDraft { patient_id: b.patient_id, amount, method: "Tarjeta".into(), concept: format!("Cuota {} plan presupuesto #{budget}", i + 1), kind: PayKind::Cuota(budget, i) })
+    }
+
+    /// Devolución del saldo a favor del paciente.
+    pub fn refund(app: &App, pid: u32) -> Self {
+        let credit = (-app.db.patient_balance(pid)).max(0.0);
+        PayDraft { patient_id: pid, amount: credit, method: "Efectivo".into(), concept: String::new(), kind: PayKind::Devolucion }
+    }
+
+    /// Anulación de un cobro.
+    pub fn cancel(app: &App, payment: u32) -> Option<Self> {
+        let p = app.db.payments.iter().find(|p| p.id == payment)?;
+        Some(PayDraft { patient_id: p.patient_id, amount: p.amount, method: p.method.clone(), concept: String::new(), kind: PayKind::Anulacion(payment) })
     }
 }
 
@@ -24,36 +57,74 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
     let mut open = true;
     let mut save = false;
     let bal = app.db.patient_balance(d.patient_id);
+    let (head, button) = match d.kind {
+        PayKind::Cobro => ("Registrar cobro", "Cobrar"),
+        PayKind::Cuota(..) => ("Cobrar cuota", "Cobrar"),
+        PayKind::Devolucion => ("Devolver dinero al paciente", "Devolver"),
+        PayKind::Anulacion(_) => ("Anular cobro", "Anular el cobro"),
+    };
     crate::theme::modal("pay_dlg").show(ctx, |ui| {
         ui.set_width(460.0);
-        title(ui, "Registrar cobro", &app.db.patient_name(d.patient_id));
-        ui.label(if bal > 0.005 {
-            RichText::new(format!("Pendiente de cobro: {}", money(bal))).color(DANGER).family(crate::theme::sb())
-        } else {
-            RichText::new(format!("Cuenta al día (saldo {}). El cobro quedará como anticipo.", money(-bal))).color(OK)
-        });
-        let planned = app.db.patient_planned(d.patient_id);
-        if planned > 0.0 {
-            muted(ui, format!("Tratamientos previstos por realizar: {}", money(planned)));
+        title(ui, head, &app.db.patient_name(d.patient_id));
+        match d.kind {
+            PayKind::Cobro => {
+                ui.label(if bal > 0.005 {
+                    RichText::new(format!("Pendiente de cobro: {}", money(bal))).color(DANGER).family(crate::theme::sb())
+                } else {
+                    RichText::new(format!("Cuenta al día (saldo {}). El cobro quedará como anticipo.", money(-bal))).color(OK)
+                });
+                let planned = app.db.patient_planned(d.patient_id);
+                if planned > 0.0 {
+                    muted(ui, format!("Tratamientos previstos por realizar: {}", money(planned)));
+                }
+            }
+            PayKind::Cuota(_, i) => {
+                ui.label(RichText::new(format!("Cuota {} · {}", i + 1, money(d.amount))).family(crate::theme::sb()));
+                muted(ui, "Elija cómo la paga: si es en efectivo, entra en la caja.");
+            }
+            PayKind::Devolucion => {
+                ui.label(RichText::new(format!("Tiene a favor: {}", money((-bal).max(0.0)))).color(OK).family(crate::theme::sb()));
+            }
+            PayKind::Anulacion(pid) => {
+                if let Some(p) = app.db.payments.iter().find(|p| p.id == pid) {
+                    ui.label(RichText::new(format!("Recibo {} · {} · {} · {}", p.receipt_no, fmt_date(p.date.date()), money(p.amount), p.method)).family(crate::theme::sb()));
+                    muted(ui, format!("{}. Se apunta un cobro en negativo con la misma forma de pago{}.", p.concept, if p.method == "Efectivo" { " (sale de la caja abierta)" } else { "" }));
+                }
+            }
         }
         ui.add_space(8.0);
+        let fixed = matches!(d.kind, PayKind::Cuota(..) | PayKind::Anulacion(_));
         ui.horizontal(|ui| {
             ui.label("Importe");
-            ui.add(egui::DragValue::new(&mut d.amount).range(0.0..=100000.0).speed(1.0).suffix(" €"));
-            if bal > 0.005 && ui.small_button("Todo lo pendiente").clicked() {
+            ui.add_enabled(!fixed, egui::DragValue::new(&mut d.amount).range(0.0..=100000.0).speed(1.0).suffix(" €"));
+            if d.kind == PayKind::Cobro && bal > 0.005 && ui.small_button("Todo lo pendiente").clicked() {
                 d.amount = bal;
             }
         });
-        ui.label(RichText::new("Forma de pago").size(13.5).color(MUTED));
-        ui.horizontal_wrapped(|ui| {
-            for m in PAY_METHODS {
-                let sel = d.method == m;
-                if ui.add(egui::Button::new(RichText::new(m).color(if sel { Color32::WHITE } else { TEXT })).fill(if sel { ACCENT } else { Color32::from_rgb(236, 240, 245) })).clicked() {
-                    d.method = m.into();
+        if !matches!(d.kind, PayKind::Anulacion(_)) {
+            ui.label(RichText::new(if d.kind == PayKind::Devolucion { "Cómo se devuelve" } else { "Forma de pago" }).size(13.5).color(MUTED));
+            ui.horizontal_wrapped(|ui| {
+                for m in PAY_METHODS {
+                    // la financiación la usa la financiera, no el paciente que paga su cuota
+                    if m == "Financiación" && d.kind != PayKind::Cobro {
+                        continue;
+                    }
+                    let sel = d.method == m;
+                    if ui.add(egui::Button::new(RichText::new(m).color(if sel { Color32::WHITE } else { TEXT })).fill(if sel { ACCENT } else { Color32::from_rgb(236, 240, 245) })).clicked() {
+                        d.method = m.into();
+                    }
                 }
+            });
+        }
+        match d.kind {
+            PayKind::Cobro => {
+                field(ui, "Concepto", &mut d.concept, 420.0);
             }
-        });
-        field(ui, "Concepto", &mut d.concept, 420.0);
+            PayKind::Cuota(..) => {}
+            PayKind::Devolucion | PayKind::Anulacion(_) => {
+                field(ui, "Motivo", &mut d.concept, 420.0);
+            }
+        }
         if d.method == "Efectivo" && app.db.open_cash().is_none() {
             ui.label(RichText::new("⚠ No hay caja abierta: el efectivo no se asignará a ninguna caja.").color(WARN));
         }
@@ -61,7 +132,8 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
         muted(ui, format!("Recibo nº {}", app.db.peek_receipt()));
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.add_enabled(d.amount > 0.0, egui::Button::new(RichText::new("Cobrar").color(Color32::WHITE)).fill(ACCENT)).clicked() {
+            let fill = if matches!(d.kind, PayKind::Anulacion(_) | PayKind::Devolucion) { DANGER } else { ACCENT };
+            if ui.add_enabled(d.amount > 0.0, egui::Button::new(RichText::new(button).color(Color32::WHITE)).fill(fill)).clicked() {
                 save = true;
             }
             if ui.button("Cancelar").clicked() {
@@ -70,10 +142,25 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
         });
     });
     if save {
-        app.db.add_payment(d.patient_id, d.amount, &d.method, &d.concept);
-        app.changed();
-        app.notify(format!("Cobro registrado: {} ({})", money(d.amount), d.method));
-        return app.dialog_take_or_none();
+        let done = match d.kind {
+            PayKind::Cobro => Ok(app.db.add_payment(d.patient_id, d.amount, &d.method, &d.concept)),
+            PayKind::Cuota(b, i) => app.db.pay_installment(b, i, &d.method),
+            PayKind::Devolucion => app.db.refund(d.patient_id, d.amount, &d.method, &d.concept),
+            PayKind::Anulacion(id) => app.db.cancel_payment(id, &d.concept),
+        };
+        match done {
+            Ok(_) => {
+                app.changed();
+                app.notify(match d.kind {
+                    PayKind::Cobro => format!("Cobro registrado: {} ({})", money(d.amount), d.method),
+                    PayKind::Cuota(_, i) => format!("Cuota {} cobrada: {} ({})", i + 1, money(d.amount), d.method),
+                    PayKind::Devolucion => format!("Devolución registrada: {} ({})", money(d.amount), d.method),
+                    PayKind::Anulacion(_) => format!("Cobro anulado: {}", money(d.amount)),
+                });
+                return app.dialog_take_or_none();
+            }
+            Err(e) => app.warn(e),
+        }
     }
     if open { Dialog::Payment(d) } else { app.dialog_take_or_none() }
 }

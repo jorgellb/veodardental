@@ -169,7 +169,7 @@ pub fn doc_html(db: &Db, d: &PatientDoc) -> String {
         None => String::new(),
     };
     format!(
-        "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>{title}</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:760px;margin:40px auto;color:#222;line-height:1.55;padding:0 20px}}h1{{font-size:20px;letter-spacing:.5px}}.head{{border-bottom:2px solid #0e9688;padding-bottom:10px;margin-bottom:24px}}.body{{white-space:pre-wrap}}.firmas{{display:flex;gap:60px;margin-top:40px;flex-wrap:wrap}}.box{{border-top:1px solid #999;padding-top:6px;font-size:13px;color:#555}}.ev{{background:#f4f8fb;border-radius:8px;padding:10px 12px;margin-top:20px;font-size:12.5px;color:#334155}}code{{font-size:11px;word-break:break-all}}@media print{{body{{margin:20mm}}}}</style></head><body><div class='head'><b>{clinic}</b><br><small>{addr} · {phone} · NIF {nif}</small></div><h1>{title_up}</h1><p><small>Paciente: {pname} · Nº historia {hist} · NIF {pnif} · Fecha {date}</small></p><div class='body'>{body}</div><div class='firmas'><div>{sig}<div class='box'>Firma del paciente: {signer}{when}</div></div><div><div style='height:120px'></div><div class='box'>{doc} · Nº colegiado {lic}</div></div></div>{evidence}</body></html>",
+        "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>{title}</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:760px;margin:40px auto;color:#222;line-height:1.55;padding:0 20px}}h1{{font-size:20px;letter-spacing:.5px}}.head{{border-bottom:2px solid #0e9688;padding-bottom:10px;margin-bottom:24px}}.body{{white-space:pre-wrap}}.firmas{{display:flex;gap:60px;margin-top:40px;flex-wrap:wrap}}.box{{border-top:1px solid #999;padding-top:6px;font-size:13px;color:#555}}.ev{{background:#f4f8fb;border-radius:8px;padding:10px 12px;margin-top:20px;font-size:12.5px;color:#334155}}code{{font-size:11px;word-break:break-all}}@media print{{body{{margin:20mm}}}}</style></head><body><div class='head'><b>{clinic}</b><br><small>{addr} · {phone} · NIF {nif}</small></div><h1>{title_up}</h1><p><small>Paciente: {pname} · Nº historia {hist} · NIF {pnif} · Fecha {date}</small></p><div class='body'>{body}</div><div class='firmas'><div>{sig}<div class='box'>{sig_label}: {signer}{when}</div></div><div><div style='height:120px'></div><div class='box'>{doc} · Nº colegiado {lic}</div></div></div>{evidence}</body></html>",
         title = esc(&d.title),
         clinic = esc(&db.config.name),
         addr = esc(&db.config.address),
@@ -182,6 +182,8 @@ pub fn doc_html(db: &Db, d: &PatientDoc) -> String {
         date = fmt_date(d.date),
         body = esc(&d.body),
         signer = esc(if d.signed { &d.signer } else { "(sin firmar)" }),
+        // si firmó otra persona (el padre de un menor…), en representación del paciente
+        sig_label = if d.signed && fold(d.signer.trim()) != fold(&p.full_name()) { "Firma en representación del paciente" } else { "Firma del paciente" },
         when = d.signed_at.map(|t| format!(" · {}", t.format("%d/%m/%Y %H:%M"))).unwrap_or_default(),
         doc = esc(&doctor.as_ref().map(|c| c.name.clone()).unwrap_or_default()),
         lic = esc(&doctor.as_ref().map(|c| c.license.clone()).unwrap_or_default()),

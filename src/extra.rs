@@ -706,6 +706,28 @@ impl Db {
     }
 
     /// Marca la cuota `i` del plan del presupuesto como pagada (o no).
+    /// Cobra en la clínica una cuota de un plan (con la forma de pago que use
+    /// el paciente: si es efectivo, cuenta en la caja). Devuelve el cobro.
+    pub fn pay_installment(&mut self, budget_id: u32, i: u32, method: &str) -> Result<u32, String> {
+        let b = self.budgets.iter().find(|b| b.id == budget_id).cloned().ok_or("El presupuesto ya no existe.")?;
+        let plan = b.plan.clone().ok_or("El presupuesto no tiene plan de cuotas.")?;
+        if i >= plan.installments {
+            return Err("Esa cuota no existe.".into());
+        }
+        if plan.paid.get(i as usize).copied().unwrap_or(false) {
+            return Err(format!("La cuota {} ya está pagada.", i + 1));
+        }
+        if let Some(rid) = self.installment_remittance(budget_id, i) {
+            return Err(format!("La cuota {} va en la remesa #{rid} que se ha enviado al banco: si el banco la devuelve, regístrelo en Remesas SEPA y se podrá cobrar aquí.", i + 1));
+        }
+        let id = self.add_payment(b.patient_id, plan.installment(i, b.total()), method, &format!("Cuota {} plan presupuesto #{budget_id}", i + 1));
+        if let Some(p) = self.payments.iter_mut().find(|p| p.id == id) {
+            p.installment = Some((budget_id, i));
+        }
+        self.set_installment_paid(budget_id, i, true);
+        Ok(id)
+    }
+
     pub fn set_installment_paid(&mut self, budget_id: u32, i: u32, paid: bool) {
         if let Some(b) = self.budgets.iter_mut().find(|b| b.id == budget_id) && let Some(pl) = &mut b.plan {
             if pl.paid.len() < pl.installments as usize {
@@ -850,6 +872,31 @@ mod tests {
         let pl = b.plan.as_ref().unwrap();
         let sum: f64 = due.iter().map(|x| x.amount).sum();
         assert!((sum + pl.down_payment - b.total()).abs() < 0.001, "las cuotas suman {sum} y el total es {}", b.total());
+    }
+
+    #[test]
+    fn an_installment_paid_in_cash_counts_in_the_cash() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let cash = db.open_cash().unwrap().clone();
+        let before = db.cash_expected(&cash);
+        let total = db.budgets.iter().find(|b| b.id == bid).unwrap().total();
+        let each = db.budgets.iter().find(|b| b.id == bid).unwrap().plan.clone().unwrap().installment(0, total);
+        let pay = db.pay_installment(bid, 0, "Efectivo").unwrap();
+        let p = db.payments.iter().find(|p| p.id == pay).unwrap().clone();
+        assert_eq!((p.amount, p.method.as_str(), p.installment), (each, "Efectivo", Some((bid, 0))));
+        assert!((db.cash_expected(db.open_cash().unwrap()) - (before + each)).abs() < 0.005, "el efectivo de la cuota está en la caja");
+        assert!(db.budgets.iter().find(|b| b.id == bid).unwrap().plan.as_ref().unwrap().paid[0]);
+        assert!(db.pay_installment(bid, 0, "Efectivo").unwrap_err().contains("pagada"), "no se cobra dos veces");
+        // una cuota que ya va en una remesa al banco no se cobra en la clínica
+        let due = db.due_installments(d() + Duration::days(400));
+        let rid = db.create_remittance(&due, d() + Duration::days(5)).unwrap();
+        let item = db.remittances.iter().find(|r| r.id == rid).unwrap().items[0].clone();
+        assert!(db.pay_installment(item.budget_id, item.installment, "Tarjeta").unwrap_err().contains("remesa"));
+        // anular el cobro de una cuota la deja otra vez por pagar
+        db.cancel_payment(pay, "se equivocó de cuota").unwrap();
+        assert!(!db.budgets.iter().find(|b| b.id == bid).unwrap().plan.as_ref().unwrap().paid[0]);
     }
 
     #[test]

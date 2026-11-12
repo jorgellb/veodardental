@@ -552,6 +552,8 @@ struct State {
     journal_lines: usize,
     journal_bytes: usize,
     last_backup_day: Option<chrono::NaiveDate>,
+    /// Cómo fue la última copia diaria (se enseña en los puestos a Dirección).
+    backup: crate::tools::BackupStatus,
     /// Sesiones abiertas, por la huella (SHA-256) de su código.
     sessions: HashMap<String, Session>,
     sessions_saved: Instant,
@@ -694,6 +696,7 @@ impl State {
             journal_lines: 0,
             journal_bytes: 0,
             last_backup_day: None,
+            backup: crate::tools::BackupStatus::from_dir(&crate::tools::backup_dir()),
             sessions,
             sessions_saved: Instant::now(),
             pending: HashMap::new(),
@@ -748,9 +751,11 @@ impl State {
         // copia de seguridad diaria en el servidor
         let today = crate::model::today();
         if self.last_backup_day != Some(today) && crate::tools::needs_daily(today) {
-            if let Ok(db) = self.snap.to_db() {
-                let _ = crate::tools::create_backup(&db, "automatica (servidor)");
+            let done = self.snap.to_db().and_then(|db| crate::tools::create_backup(&db, "automatica (servidor)"));
+            if let Err(e) = &done {
+                eprintln!("Copia de seguridad: {e}");
             }
+            self.backup.record(&done, crate::model::now());
             self.last_backup_day = Some(today);
         }
         Ok(())
@@ -1060,7 +1065,7 @@ impl State {
     fn since(&self, since: u64, also: &[(String, Option<String>)], view: View) -> Response {
         let rev = self.rev();
         if since < rev && self.log.front().is_none_or(|(first, _)| *first > since + 1) {
-            return reply(200, json!({ "rev": rev, "completo": true }));
+            return reply(200, json!({ "rev": rev, "completo": true, "copia": self.backup }));
         }
         let mut seen = std::collections::HashSet::new();
         let mut out = vec![];
@@ -1078,7 +1083,7 @@ impl State {
             };
             out.push(Change { field: field.clone(), key: key.clone(), before: None, after });
         }
-        reply(200, json!({ "rev": rev, "cambios": out }))
+        reply(200, json!({ "rev": rev, "cambios": out, "copia": self.backup }))
     }
 
     fn register(&mut self, name: &str) -> Result<u32, String> {
@@ -1457,6 +1462,8 @@ pub struct Remote {
     /// Una sola prueba a la vez.
     verifying: Arc<Mutex<()>>,
     agent: ureq::Agent,
+    /// Cómo van las copias de seguridad del servidor (lo último que ha dicho).
+    pub backup: Arc<Mutex<Option<crate::tools::BackupStatus>>>,
 }
 
 /// Lo que el servidor da antes de entrar: la clínica y sus usuarios.
@@ -1477,6 +1484,9 @@ pub struct Delta {
     /// El puesto está demasiado atrasado: tiene que pedir los datos enteros.
     #[serde(rename = "completo", default)]
     pub full: bool,
+    /// Cómo van las copias de seguridad del servidor.
+    #[serde(rename = "copia", default)]
+    pub backup: Option<crate::tools::BackupStatus>,
 }
 
 /// Lo que ha cambiado en el puesto respecto al servidor. El usuario y el
@@ -1607,7 +1617,7 @@ impl Remote {
         if let Ok(tls) = client_tls(pin.clone(), seen.clone()) {
             b = b.tls_config(tls);
         }
-        Remote { base: format!("https://{addr}"), key, station, session: String::new(), pin, seen, verifying: Arc::new(Mutex::new(())), agent: b.build() }
+        Remote { base: format!("https://{addr}"), key, station, session: String::new(), pin, seen, verifying: Arc::new(Mutex::new(())), agent: b.build(), backup: Arc::new(Mutex::new(None)) }
     }
 
     /// Clave pública (hexadecimal) del servidor que ha visto esta conexión, aunque
@@ -1750,7 +1760,18 @@ impl Remote {
 
     /// Lo que ha cambiado en el servidor desde la revisión `since`.
     pub fn pull(&self, since: u64) -> Result<Delta, String> {
-        serde_json::from_str(&self.get(&format!("/cambios?desde={since}"))?).map_err(|e| format!("Respuesta no válida del servidor: {e}"))
+        let d: Delta = serde_json::from_str(&self.get(&format!("/cambios?desde={since}"))?).map_err(|e| format!("Respuesta no válida del servidor: {e}"))?;
+        self.note_backup(&d);
+        Ok(d)
+    }
+
+    /// Apunta lo que dice el servidor de sus copias de seguridad.
+    fn note_backup(&self, d: &Delta) {
+        if let Some(b) = &d.backup
+            && let Ok(mut x) = self.backup.lock()
+        {
+            *x = Some(b.clone());
+        }
     }
 
     /// Envía al servidor lo que ha cambiado en el puesto (si no ha cambiado
@@ -1764,6 +1785,7 @@ impl Remote {
         }
         let body = json!({ "cambios": changes }).to_string();
         let delta: Delta = serde_json::from_str(&self.post(&format!("/cambios?base={}", db.rev), &body)?).map_err(|e| format!("Respuesta no válida del servidor: {e}"))?;
+        self.note_backup(&delta);
         // lo enviado ya está en el servidor (y lo que haya cambiado al combinar, llega en la respuesta)
         for ch in &changes {
             synced.set(&ch.field, ch.key.as_deref(), ch.after.clone());
@@ -2448,6 +2470,10 @@ mod tests {
         ra.push(&mut c2, &mut sc2).unwrap();
         let disk = crate::sync::on_disk(&path);
         assert!((disk.product(4).unwrap().stock - (want + 1.0)).abs() < 1e-9, "una vez cada movimiento: {}", disk.product(4).unwrap().stock);
+        // con cada respuesta, el servidor dice cómo van sus copias de seguridad
+        assert!(ra.backup.lock().unwrap().is_some());
+        let _ = rb.pull(b.rev).unwrap();
+        assert!(rb.backup.lock().unwrap().is_some());
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

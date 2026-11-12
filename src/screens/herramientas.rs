@@ -39,7 +39,7 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Copias de seguridad");
-        muted(ui, "Se hace una copia automática cada día al abrir el programa y se guardan las 30 últimas. Elija también una carpeta fuera de este ordenador (disco USB, carpeta en la nube…) para tener una segunda copia por si se estropea el disco.");
+        muted(ui, "Se hace una copia automática cada día al abrir el programa. Se guardan todas las de las dos últimas semanas, una por semana de los últimos tres meses y una por mes del último año; de las manuales, las 10 últimas. Elija también una carpeta fuera de este ordenador (disco USB, carpeta en la nube…) para tener una segunda copia por si se estropea el disco.");
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             let before = app.db.config.backup_extra.clone();

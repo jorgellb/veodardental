@@ -179,6 +179,46 @@ pub struct Patient {
     pub sepa_mandate: String,
     #[serde(default)]
     pub sepa_date: Option<NaiveDate>,
+    /// Quien paga y a cuyo nombre van las facturas (el padre, la madre o el
+    /// tutor de un menor, o un familiar). Vacío: el propio paciente.
+    #[serde(default, skip_serializing_if = "Payer::is_empty")]
+    pub payer: Payer,
+}
+
+/// Persona responsable de un paciente: paga, recibe las facturas y, si el
+/// paciente es menor, firma por él.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Payer {
+    pub name: String,
+    pub nif: String,
+    /// Dirección para la factura (vacía: la del paciente).
+    pub address: String,
+    /// Padre, madre, tutor legal…
+    pub relation: String,
+}
+
+impl Payer {
+    pub fn is_empty(&self) -> bool {
+        self.name.trim().is_empty() && self.nif.trim().is_empty()
+    }
+}
+
+impl Db {
+    /// Si el paciente es menor de 16 años, por él consiente y firma su
+    /// representante: su nombre (con el parentesco), o vacío si no consta.
+    /// `None` si firma el propio paciente.
+    pub fn representative(&self, pid: u32, today: NaiveDate) -> Option<String> {
+        let p = self.patient(pid)?;
+        if !p.age(today).is_some_and(|a| a < 16) {
+            return None;
+        }
+        let name = p.payer.name.trim();
+        Some(match (name.is_empty(), p.payer.relation.trim()) {
+            (true, _) => String::new(),
+            (false, "") => name.to_string(),
+            (false, r) => format!("{name} ({})", r.to_lowercase()),
+        })
+    }
 }
 
 impl Patient {
@@ -372,6 +412,12 @@ pub struct Payment {
     pub cash_session: Option<u32>,
     #[serde(default)]
     pub center_id: u32,
+    /// Cobro que anula este (en las anulaciones, que van en negativo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancels: Option<u32>,
+    /// Cuota que paga: (presupuesto, nº de cuota desde 0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installment: Option<(u32, u32)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1015,6 +1061,9 @@ pub struct Invoice {
     pub client_name: String,
     pub client_nif: String,
     pub client_address: String,
+    /// Paciente atendido, cuando la factura va a otra persona (el padre de un menor…).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub patient_name: String,
     pub lines: Vec<InvoiceLine>,
     /// Si es rectificativa, factura que rectifica.
     pub rectifies: Option<u32>,
@@ -1546,6 +1595,8 @@ impl Db {
             user: self.config.current_user.clone(),
             cash_session: cash,
             center_id: cid(self.config.current_center),
+            cancels: None,
+            installment: None,
         });
         id
     }
@@ -1954,8 +2005,18 @@ impl Db {
         if let Some(last) = self.invoices.iter().filter(|i| i.series == format!("F{}", date.year())).map(|i| i.date).max() && date < last {
             return Err(format!("La fecha no puede ser anterior a la última factura de la serie ({}).", fmt_date(last)));
         }
-        if p.nif.trim().is_empty() && entries.iter().map(|e| e.amount()).sum::<f64>() > 400.0 {
-            return Err("Para facturas de más de 400 € el paciente debe tener NIF (factura completa).".into());
+        // a nombre del responsable (el padre o la madre de un menor…) si lo tiene
+        let payer = (!p.payer.is_empty()).then(|| p.payer.clone());
+        let (client_name, client_nif, client_address) = match &payer {
+            Some(x) => (x.name.trim().to_string(), x.nif.trim().to_string(), if x.address.trim().is_empty() { format!("{}, {} {}", p.address, p.zip, p.city) } else { x.address.trim().to_string() }),
+            None => (p.full_name(), p.nif.clone(), format!("{}, {} {}", p.address, p.zip, p.city)),
+        };
+        if client_nif.trim().is_empty() && entries.iter().map(|e| e.amount()).sum::<f64>() > 400.0 {
+            return Err(if payer.is_some() {
+                "Para facturas de más de 400 € hace falta el NIF de la persona a cuyo nombre va la factura (ficha del paciente › Filiación).".into()
+            } else {
+                "Para facturas de más de 400 € hace falta un NIF: el del paciente o, si es menor, el de su padre, madre o tutor (ficha del paciente › Filiación › Factura a nombre de).".into()
+            });
         }
         let series = format!("F{}", date.year());
         let id = self.new_id();
@@ -1967,9 +2028,12 @@ impl Db {
             date,
             created: stamp.naive_local(),
             patient_id: pid,
-            client_name: p.full_name(),
-            client_nif: p.nif.clone(),
-            client_address: format!("{}, {} {}", p.address, p.zip, p.city),
+            patient_name: if payer.is_some() { p.full_name() } else { String::new() },
+            // sin NIF, factura simplificada
+            tipo: if client_nif.trim().is_empty() { "F2".into() } else { "F1".into() },
+            client_name,
+            client_nif,
+            client_address,
             lines: entries
                 .iter()
                 .map(|e| InvoiceLine {
@@ -1990,8 +2054,6 @@ impl Db {
             hash: String::new(),
             user: self.config.current_user.clone(),
             gen_ts: stamp.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
-            // sin NIF del paciente, factura simplificada
-            tipo: if p.nif.trim().is_empty() { "F2".into() } else { "F1".into() },
             issuer_nif: self.config.nif.clone(),
             aeat: Default::default(),
         };

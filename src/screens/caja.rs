@@ -75,6 +75,14 @@ fn open(app: &mut App, ui: &mut Ui, s: CashSession) {
         ui.add_space(4.0);
         kpi(ui, w, "Efectivo esperado", &money(expected), "fondo + efectivo ± movimientos", ACCENT);
     });
+    // lo que se ha anulado o devuelto en la sesión, a la vista de quien cierra
+    let back: Vec<&Payment> = pays.iter().filter(|p| p.amount < 0.0).collect();
+    if !back.is_empty() {
+        ui.add_space(6.0);
+        let total: f64 = back.iter().map(|p| p.amount).sum();
+        let cash: f64 = back.iter().filter(|p| p.method == "Efectivo").map(|p| p.amount).sum();
+        ui.label(RichText::new(format!("↩ {} anulaciones y devoluciones en esta sesión: {} (en efectivo, {})", back.len(), money(total), money(cash))).color(WARN));
+    }
     ui.add_space(10.0);
     ui.columns(2, |cols| {
         card(&mut cols[0], |ui| {

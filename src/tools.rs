@@ -33,7 +33,7 @@ fn write_whole(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Guarda una copia completa de los datos en `dir`, cifrada si se da la clave.
-fn backup_in(db: &Db, dir: &Path, reason: &str, keep: usize, key: Option<&crate::cifrado::BackupKey>) -> Result<PathBuf, String> {
+fn backup_in(db: &Db, dir: &Path, reason: &str, key: Option<&crate::cifrado::BackupKey>) -> Result<PathBuf, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("No se puede crear la carpeta de copias: {e}"))?;
     let txt = serde_json::to_string(db).map_err(|e| e.to_string())?;
     let (path, bytes) = match key {
@@ -41,14 +41,14 @@ fn backup_in(db: &Db, dir: &Path, reason: &str, keep: usize, key: Option<&crate:
         None => (dir.join(backup_name(now(), reason, "json")), txt.into_bytes()),
     };
     write_whole(&path, &bytes)?;
-    prune(dir, keep);
+    prune(dir, now());
     Ok(path)
 }
 
 /// Guarda una copia completa de los datos en `dir` (para las pruebas).
 #[cfg(test)]
-pub fn create_backup_in(db: &Db, dir: &Path, reason: &str, keep: usize) -> Result<PathBuf, String> {
-    backup_in(db, dir, reason, keep, None)
+pub fn create_backup_in(db: &Db, dir: &Path, reason: &str) -> Result<PathBuf, String> {
+    backup_in(db, dir, reason, None)
 }
 
 /// Copia en la carpeta de copias de este ordenador y, si está configurada, la
@@ -59,9 +59,9 @@ pub fn create_backup(db: &Db, reason: &str) -> Result<PathBuf, String> {
 }
 
 pub fn create_backup_to(db: &Db, local: &Path, extra: &str, key: Option<&crate::cifrado::BackupKey>, reason: &str) -> Result<PathBuf, String> {
-    let p = backup_in(db, local, reason, 30, None)?;
+    let p = backup_in(db, local, reason, None)?;
     if !extra.is_empty() {
-        backup_in(db, Path::new(extra), reason, 30, key).map_err(|e| format!("Copia local hecha, pero falló la segunda copia: {e}"))?;
+        backup_in(db, Path::new(extra), reason, key).map_err(|e| format!("Copia local hecha, pero falló la segunda copia: {e}"))?;
     }
     Ok(p)
 }
@@ -87,9 +87,87 @@ pub fn list_backups(dir: &Path) -> Vec<BackupInfo> {
     v
 }
 
-fn prune(dir: &Path, keep: usize) {
-    for b in list_backups(dir).into_iter().skip(keep) {
+/// Copias que se guardan. Las automáticas, escalonadas: todas las de los
+/// últimos 14 días, la última de cada semana de los últimos 3 meses y la
+/// última de cada mes del último año (así, un error que se descubre tarde aún
+/// tiene arreglo). Las demás (manuales, «antes de importar»…), las 10 últimas,
+/// aparte, para que no echen a las automáticas.
+const KEEP_DAYS: i64 = 14;
+const KEEP_WEEKS_DAYS: i64 = 91;
+const KEEP_MONTHS_DAYS: i64 = 366;
+const KEEP_OTHERS: usize = 10;
+
+/// Copia hecha sola cada día (en un puesto o en el servidor).
+fn is_automatic(b: &BackupInfo) -> bool {
+    b.path.file_name().map(|n| n.to_string_lossy().to_string()).and_then(|n| n.get(24..).map(|r| r.starts_with("automatica"))).unwrap_or(false)
+}
+
+/// Las copias de `list` (de la más nueva a la más antigua) que se quedan.
+fn to_keep(list: &[BackupInfo], now: NaiveDateTime) -> std::collections::HashSet<PathBuf> {
+    let mut keep = std::collections::HashSet::new();
+    let (mut weeks, mut months) = (std::collections::HashSet::new(), std::collections::HashSet::new());
+    for b in list.iter().filter(|b| is_automatic(b)) {
+        let age = (now - b.when).num_days();
+        let week = (b.when.date().iso_week().year(), b.when.date().iso_week().week());
+        let month = (b.when.year(), b.when.month());
+        let fresh_week = weeks.insert(week);
+        let fresh_month = months.insert(month);
+        if age <= KEEP_DAYS || (age <= KEEP_WEEKS_DAYS && fresh_week) || (age <= KEEP_MONTHS_DAYS && fresh_month) {
+            keep.insert(b.path.clone());
+        }
+    }
+    keep.extend(list.iter().filter(|b| !is_automatic(b)).take(KEEP_OTHERS).map(|b| b.path.clone()));
+    keep
+}
+
+fn prune(dir: &Path, now: NaiveDateTime) {
+    let list = list_backups(dir);
+    let keep = to_keep(&list, now);
+    for b in list.into_iter().filter(|b| !keep.contains(&b.path)) {
         let _ = std::fs::remove_file(b.path);
+    }
+}
+
+/// Cómo van las copias de seguridad automáticas (en red, las del servidor).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BackupStatus {
+    /// La última copia que hay.
+    #[serde(rename = "ultima", default)]
+    pub last_ok: Option<NaiveDateTime>,
+    /// Si la última copia automática falló, por qué.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+impl BackupStatus {
+    /// La última copia que hay en `dir`.
+    pub fn from_dir(dir: &Path) -> Self {
+        BackupStatus { last_ok: list_backups(dir).first().map(|b| b.when), error: None }
+    }
+
+    /// Apunta cómo ha ido una copia.
+    pub fn record(&mut self, r: &Result<PathBuf, String>, when: NaiveDateTime) {
+        match r {
+            Ok(_) => {
+                self.last_ok = Some(when);
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e.clone()),
+        }
+    }
+
+    /// Aviso para Dirección (`None` si las copias van bien).
+    pub fn warning(&self, now: NaiveDateTime) -> Option<String> {
+        let last = self.last_ok.map(|t| format!(" La última copia es del {}.", t.format("%d/%m/%Y %H:%M"))).unwrap_or_else(|| " No hay ninguna copia.".into());
+        if let Some(e) = &self.error {
+            return Some(format!("La copia de seguridad ha fallado: {e}.{last}"));
+        }
+        match self.last_ok {
+            None => Some("No hay ninguna copia de seguridad de los datos.".into()),
+            // se hace cada día que se trabaja: tres días sin copia (más que un fin de semana) es raro
+            Some(t) if (now - t).num_days() > 3 => Some(format!("Hace {} días que no se hace copia de seguridad.{last}", (now - t).num_days())),
+            _ => None,
+        }
     }
 }
 
@@ -347,18 +425,55 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ds_bk_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let db = Db::sample(d());
-        let p = create_backup_in(&db, &dir, "manual", 3).unwrap();
+        let p = create_backup_in(&db, &dir, "manual").unwrap();
         let back = read_backup(&p, None).unwrap();
         assert_eq!(back.patients.len(), db.patients.len());
         assert_eq!(summary(&back), summary(&db));
-        // archivos extra con nombres de fechas antiguas → se conservan solo 3
-        for i in 0..4 {
-            std::fs::write(dir.join(format!("clinica_2020010{}_000000_x.json", i + 1)), "{}").unwrap();
-        }
-        prune(&dir, 3);
-        assert_eq!(list_backups(&dir).len(), 3);
-        assert!(read_backup(&dir.join("clinica_20200104_000000_x.json"), None).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn automatic_copies_are_kept_staggered_for_a_year() {
+        let dir = std::env::temp_dir().join(format!("ds_bk_keep_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let now = d().and_hms_opt(20, 0, 0).unwrap();
+        // dos años de copias diarias y 15 manuales
+        for i in 0..730 {
+            let day = d() - chrono::Duration::days(i);
+            std::fs::write(dir.join(format!("clinica_{}_090000_automatica.json", day.format("%Y%m%d"))), "{}").unwrap();
+        }
+        for i in 0..15 {
+            std::fs::write(dir.join(format!("clinica_{}_1000{i:02}_antes_de_importar.json", d().format("%Y%m%d"))), "{}").unwrap();
+        }
+        prune(&dir, now);
+        let left = list_backups(&dir);
+        let auto: Vec<NaiveDate> = left.iter().filter(|b| is_automatic(b)).map(|b| b.when.date()).collect();
+        assert_eq!(left.iter().filter(|b| !is_automatic(b)).count(), 10, "las 10 últimas manuales");
+        for i in 0..=14 {
+            assert!(auto.contains(&(d() - chrono::Duration::days(i))), "las de los últimos 14 días: falta la de hace {i}");
+        }
+        // de hace 1 a 3 meses, una por semana; de 3 a 12, una por mes; de hace más de un año, ninguna
+        let between = |a: i64, b: i64| auto.iter().filter(|x| (d() - **x).num_days() > a && (d() - **x).num_days() <= b).count();
+        assert!((10..=14).contains(&between(14, 91)), "{}", between(14, 91));
+        assert!((8..=10).contains(&between(91, 366)), "{}", between(91, 366));
+        assert_eq!(between(366, 10_000), 0);
+        assert!(auto.len() < 45, "se guardan {} copias automáticas", auto.len());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_or_old_backup_is_warned() {
+        let now = d().and_hms_opt(20, 0, 0).unwrap();
+        let mut s = BackupStatus { last_ok: Some(now - chrono::Duration::hours(5)), error: None };
+        assert_eq!(s.warning(now), None);
+        s.record(&Err("no se encuentra el disco USB".into()), now);
+        let w = s.warning(now).unwrap();
+        assert!(w.contains("disco USB") && w.contains(&(now - chrono::Duration::hours(5)).format("%d/%m/%Y").to_string()), "{w}");
+        s.record(&Ok(PathBuf::from("x")), now);
+        assert_eq!(s.warning(now), None, "la siguiente sale bien: sin aviso");
+        assert!(s.warning(now + chrono::Duration::days(5)).unwrap().contains("5 días"));
+        assert!(BackupStatus::default().warning(now).is_some());
     }
 
     fn key(pw: &str) -> crate::cifrado::BackupKey {
@@ -399,7 +514,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ds_bk_rekey_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let db = Db::sample(d());
-        create_backup_in(&db, &dir, "vieja sin cifrar", 30).unwrap();
+        create_backup_in(&db, &dir, "vieja sin cifrar").unwrap();
         std::fs::write(dir.join("clinica_20200101_000000_ajena.json"), "{\"no\": \"es una copia\"}").unwrap();
         let first = key("Primera-clave");
         // la primera vez: se cifran las que había sin cifrar (las que no son copias se dejan)

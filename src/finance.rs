@@ -219,6 +219,54 @@ pub fn rx_warnings(p: &Patient, items: &[RxItem], drugs: &[Drug]) -> Vec<String>
 }
 
 impl Db {
+    /// Anula un cobro equivocado: un cobro en negativo con la misma forma de
+    /// pago (si es efectivo, sale de la caja abierta) y el motivo. Si pagaba una
+    /// cuota, la cuota vuelve a estar por pagar. Devuelve la anulación.
+    pub fn cancel_payment(&mut self, id: u32, reason: &str) -> Result<u32, String> {
+        let p = self.payments.iter().find(|p| p.id == id).cloned().ok_or("El cobro ya no existe.")?;
+        if reason.trim().is_empty() {
+            return Err("Escriba el motivo de la anulación.".into());
+        }
+        if p.amount <= 0.0 || p.cancels.is_some() {
+            return Err("Solo se anulan cobros (no anulaciones ni devoluciones).".into());
+        }
+        if self.payments.iter().any(|x| x.cancels == Some(id)) {
+            return Err(format!("El recibo {} ya está anulado.", p.receipt_no));
+        }
+        if p.method == "Domiciliación" {
+            return Err("Los cobros de una remesa se corrigen en Cobros › Remesas SEPA (recibo devuelto).".into());
+        }
+        let back = self.add_payment(p.patient_id, -p.amount, &p.method, &format!("Anulación del recibo {}: {}", p.receipt_no, reason.trim()));
+        if let Some(x) = self.payments.iter_mut().find(|x| x.id == back) {
+            x.cancels = Some(id);
+        }
+        if let Some((bid, i)) = p.installment {
+            self.set_installment_paid(bid, i, false);
+        }
+        let who = self.patient_name(p.patient_id);
+        self.audit("Anular cobro", &format!("{} · recibo {} · {} · {}", who, p.receipt_no, money(p.amount), reason.trim()));
+        Ok(back)
+    }
+
+    /// Devuelve al paciente dinero que tiene a favor (anticipos de un
+    /// tratamiento que no se hace, por ejemplo). Devuelve el movimiento.
+    pub fn refund(&mut self, pid: u32, amount: f64, method: &str, reason: &str) -> Result<u32, String> {
+        let credit = round2(-self.patient_balance(pid));
+        if amount <= 0.0 {
+            return Err("Indique el importe que se devuelve.".into());
+        }
+        if amount > credit + 0.005 {
+            return Err(format!("El paciente tiene {} a favor: no se le puede devolver más.", money(credit.max(0.0))));
+        }
+        if reason.trim().is_empty() {
+            return Err("Escriba el motivo de la devolución.".into());
+        }
+        let id = self.add_payment(pid, -round2(amount), method, &format!("Devolución de saldo a favor: {}", reason.trim()));
+        let who = self.patient_name(pid);
+        self.audit("Devolver dinero", &format!("{} · {} · {} · {}", who, money(amount), method, reason.trim()));
+        Ok(id)
+    }
+
     pub fn expenses_between(&self, from: NaiveDate, to: NaiveDate) -> Vec<&Expense> {
         self.expenses.iter().filter(|e| e.date >= from && e.date <= to).collect()
     }
@@ -301,6 +349,44 @@ pub fn sample_finance(db: &mut Db, today: NaiveDate) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wrong_payment_is_cancelled_and_leaves_the_cash_balanced() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(d);
+        let cash = db.open_cash().unwrap().clone();
+        let before = db.cash_expected(&cash);
+        let bal = db.patient_balance(110);
+        // se tecleó 1000 en vez de 100
+        let wrong = db.add_payment(110, 1000.0, "Efectivo", "Pago a cuenta");
+        assert!(db.cancel_payment(wrong, " ").unwrap_err().contains("motivo"));
+        let back = db.cancel_payment(wrong, "Importe mal tecleado").unwrap();
+        let b = db.payments.iter().find(|p| p.id == back).unwrap().clone();
+        assert_eq!((b.amount, b.method.as_str(), b.cancels), (-1000.0, "Efectivo", Some(wrong)));
+        assert!(b.concept.contains("Importe mal tecleado") && b.concept.contains(&db.payments.iter().find(|p| p.id == wrong).unwrap().receipt_no));
+        assert!((db.patient_balance(110) - bal).abs() < 0.005, "el saldo queda como estaba");
+        assert!((db.cash_expected(db.open_cash().unwrap()) - before).abs() < 0.005, "y la caja también");
+        assert!(db.cancel_payment(wrong, "otra vez").unwrap_err().contains("anulado"), "no se anula dos veces");
+        assert!(db.cancel_payment(back, "x").is_err(), "una anulación no se anula");
+        assert!(db.audit_log.iter().any(|a| a.action == "Anular cobro"));
+    }
+
+    #[test]
+    fn credit_is_refunded_up_to_what_the_patient_has_in_favour() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(d);
+        let pid = 110;
+        let bal = db.patient_balance(pid);
+        db.add_payment(pid, bal + 300.0, "Tarjeta", "Anticipo implante");
+        let credit = -db.patient_balance(pid);
+        assert!((credit - 300.0).abs() < 0.005);
+        assert!(db.refund(pid, credit + 1.0, "Tarjeta", "No sigue el tratamiento").unwrap_err().contains("a favor"));
+        assert!(db.refund(pid, 100.0, "Tarjeta", "").unwrap_err().contains("motivo"));
+        let r = db.refund(pid, credit, "Transferencia", "No sigue el tratamiento").unwrap();
+        assert_eq!(db.payments.iter().find(|p| p.id == r).unwrap().amount, -300.0);
+        assert!(db.patient_balance(pid).abs() < 0.005);
+        assert!(db.audit_log.iter().any(|a| a.action == "Devolver dinero"));
+    }
 
     #[test]
     fn allergy_and_anticoagulant_warnings() {

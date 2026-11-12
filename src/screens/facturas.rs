@@ -218,6 +218,9 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 ui.label(&f.client_name);
                 muted(ui, if f.client_nif.is_empty() { "Sin NIF (factura simplificada)".to_string() } else { format!("NIF {}", f.client_nif) });
                 muted(ui, &f.client_address);
+                if !f.patient_name.is_empty() {
+                    muted(ui, format!("Paciente: {}", f.patient_name));
+                }
             });
         });
         ui.add_space(6.0);
@@ -337,7 +340,11 @@ fn export_txt(app: &App, f: &Invoice) -> Result<String, String> {
     let c = &app.db.config;
     let mut s = format!("{}\nNIF {}\n{}\n\n", c.name, c.nif, c.address);
     s.push_str(&format!("{} {}   Fecha: {}\n", if f.rectifies.is_some() { "FACTURA RECTIFICATIVA" } else { "FACTURA" }, f.code(), fmt_date(f.date)));
-    s.push_str(&format!("Cliente: {}   NIF: {}\n{}\n\n", f.client_name, f.client_nif, f.client_address));
+    s.push_str(&format!("Cliente: {}   NIF: {}\n{}\n", f.client_name, f.client_nif, f.client_address));
+    if !f.patient_name.is_empty() {
+        s.push_str(&format!("Paciente: {}\n", f.patient_name));
+    }
+    s.push('\n');
     for l in &f.lines {
         let teeth: Vec<String> = l.teeth.iter().map(|t| t.to_string()).collect();
         s.push_str(&format!("{:<6} {:<40} {:<10} {:>3} x {:>12}  {:>14}\n", l.code, l.description, teeth.join("-"), l.units, money(l.price), money(l.base())));

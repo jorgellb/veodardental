@@ -129,7 +129,8 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
             ui.horizontal(|ui| {
                 // firma del paciente
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Firma del paciente").size(13.0).color(MUTED));
+                    let rep = app.db.representative(d.patient_id, app.today);
+                    ui.label(RichText::new(if rep.is_some() { "Firma del padre, madre o tutor (paciente menor de 16 años)" } else { "Firma del paciente" }).size(13.0).color(MUTED));
                     let (rect, resp) = ui.allocate_exact_size(vec2(320.0, 120.0), Sense::drag());
                     let p = ui.painter();
                     p.rect_filled(rect, CornerRadius::same(8), if d.signed { Color32::WHITE } else { Color32::from_rgb(248, 250, 253) });
@@ -177,9 +178,17 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
         ui.set_width(ui.available_width());
         ui.horizontal_wrapped(|ui| {
             if !d.signed {
-                let def = app.db.patient_name(d.patient_id);
+                // un menor de 16 años no firma: firma su representante
+                let rep = app.db.representative(d.patient_id, app.today);
+                let def = match &rep {
+                    Some(r) => r.clone(),
+                    None => app.db.patient_name(d.patient_id),
+                };
                 if app.docs.signer.is_empty() {
                     app.docs.signer = def;
+                }
+                if rep.as_deref() == Some("") {
+                    ui.label(RichText::new("Es menor de 16 años: firma su padre, madre o tutor (anótelo en Filiación › Responsable).").color(WARN));
                 }
                 ui.label(RichText::new("Firmante").color(MUTED));
                 ui.add_sized([220.0, 34.0], egui::TextEdit::singleline(&mut app.docs.signer));
