@@ -467,7 +467,9 @@ fn grid(app: &mut App, ui: &mut Ui) {
         let name = app.db.appt_name(a);
         let alert = a.patient_id.and_then(|id| app.db.patient(id)).map(|p| !p.alerts.is_empty() || !p.allergies.is_empty()).unwrap_or(false);
         let tc = if cancelled { MUTED } else { TEXT };
-        let mut line1 = format!("{} {}", hm(a.start), name);
+        // en un carril estrecho (citas solapadas), primero el nombre: la hora ya
+        // se ve por dónde empieza la cita
+        let mut line1 = if r.width() < 150.0 { format!("{name} · {}", hm(a.start)) } else { format!("{} {}", hm(a.start), name) };
         if alert {
             line1 = format!("⚠ {line1}");
         }
