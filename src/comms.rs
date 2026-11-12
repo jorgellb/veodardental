@@ -100,6 +100,13 @@ pub struct Message {
     pub attempts: u32,
 }
 
+/// Clave de un recordatorio de los que se generan solos (de cita, de revisión,
+/// de cumpleaños, de presupuesto): dos con la misma clave son el mismo aviso.
+pub fn auto_message_key(m: &Message) -> Option<String> {
+    let auto = matches!(m.kind, MsgKind::RecordatorioCita | MsgKind::Recall | MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente);
+    (auto && m.related.is_some()).then(|| format!("{:?}:{}:{}", m.kind, m.related.unwrap_or(0), m.patient_id))
+}
+
 pub fn default_msg_templates() -> Vec<MsgTemplate> {
     let t = |id, name: &str, kind, channel, days, subject: &str, text: &str| MsgTemplate { id, name: name.into(), kind, channel, days, subject: subject.into(), text: text.into(), active: true };
     vec![
@@ -198,6 +205,25 @@ impl Db {
             return s;
         }
         s.replace("[FECHA]", &long_date(today())).replace("[DOCTOR]", &self.doctor(p.doctor_id).map(|d| d.name.clone()).unwrap_or_default())
+    }
+
+    /// Recordatorios y tareas que crean solos todos los puestos al arrancar:
+    /// si dos puestos los crearon a la vez, sobran los repetidos (los que no
+    /// cumplen `keep`; si ninguno, el más antiguo se queda). Devuelve cuántos.
+    pub fn drop_auto_duplicates(&mut self, keep: impl Fn(u32) -> bool) -> usize {
+        let before = self.messages.len() + self.tasks.len();
+        // primero los que se quedan (`keep`), luego los más antiguos
+        let mut order: Vec<&Message> = self.messages.iter().collect();
+        order.sort_by_key(|m| (!keep(m.id), m.id));
+        let mut seen = std::collections::HashSet::new();
+        let drop_msgs: std::collections::HashSet<u32> = order.into_iter().filter(|m| auto_message_key(m).is_some_and(|k| !seen.insert(k))).map(|m| m.id).collect();
+        self.messages.retain(|m| !drop_msgs.contains(&m.id));
+        let mut tasks: Vec<&crate::tasks::Task> = self.tasks.iter().filter(|t| !t.auto.is_empty()).collect();
+        tasks.sort_by_key(|t| (!keep(t.id), t.id));
+        let mut seen_tasks = std::collections::HashSet::new();
+        let drop_tasks: std::collections::HashSet<u32> = tasks.into_iter().filter(|t| !seen_tasks.insert(t.auto.clone())).map(|t| t.id).collect();
+        self.tasks.retain(|t| !drop_tasks.contains(&t.id));
+        before - self.messages.len() - self.tasks.len()
     }
 
     fn has_msg(&self, kind: MsgKind, related: Option<u32>, pid: u32) -> bool {
@@ -428,6 +454,34 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reminders_generated_twice_are_left_once() {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 6).unwrap();
+        let mut a = Db::sample(day);
+        let mut b = a.clone();
+        a.station = 1;
+        b.station = 2;
+        let (n, _) = a.generate_messages(day);
+        b.generate_messages(day);
+        assert!(n > 0);
+        // lo que queda al juntar los dos: los de A (ya guardados) y los de B
+        let theirs: std::collections::HashSet<u32> = a.messages.iter().map(|m| m.id).collect();
+        let mut both = a.clone();
+        let extra: Vec<Message> = b.messages.iter().filter(|m| !theirs.contains(&m.id)).cloned().collect();
+        both.messages.extend(extra);
+        assert_eq!(both.drop_auto_duplicates(|id| theirs.contains(&id)), n);
+        assert_eq!(both.messages.len(), a.messages.len());
+        assert!(both.messages.iter().all(|m| theirs.contains(&m.id)), "se quedan los ya guardados");
+        // los escritos a mano no se tocan aunque se parezcan
+        let mut m = both.messages[0].clone();
+        m.id = both.new_id();
+        m.kind = MsgKind::Libre;
+        both.messages.push(m.clone());
+        let id = both.new_id();
+        both.messages.push(Message { id, ..m });
+        assert_eq!(both.drop_auto_duplicates(|_| false), 0);
+    }
 
     fn d() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()

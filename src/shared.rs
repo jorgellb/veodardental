@@ -312,6 +312,9 @@ pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl F
             // con el siguiente número de historia libre
             let on_disk: std::collections::HashSet<u32> = d["patients"].as_array().into_iter().flatten().filter_map(|p| p["id"].as_u64()).map(|i| i as u32).collect();
             db.fix_history_numbers(|id| on_disk.contains(&id));
+            // recordatorios y tareas que este puesto y otro generaron a la vez: los del otro
+            let msgs: std::collections::HashSet<u32> = ["messages", "tasks"].iter().flat_map(|f| d[*f].as_array().into_iter().flatten()).filter_map(|m| m["id"].as_u64()).map(|i| i as u32).collect();
+            db.drop_auto_duplicates(|id| msgs.contains(&id));
             Synced::Merged(conflicts)
         }
         _ => {

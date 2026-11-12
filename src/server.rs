@@ -886,6 +886,7 @@ impl State {
                 return Err("Número de historia no válido.".into());
             }
         }
+        self.drop_auto_duplicates(&mut changes);
         let existed: std::collections::HashSet<String> = changes.iter().filter(|c| c.field == "patients").filter_map(|c| c.key.clone()).filter(|k| self.snap.get("patients", Some(k)).is_some()).collect();
         let applied = sync::apply(&mut self.snap, &changes)?;
         let (mut touched, mut previous) = (applied.touched, applied.previous);
@@ -920,6 +921,32 @@ impl State {
             return Err(e);
         }
         Ok(sent)
+    }
+
+    /// Recordatorios y tareas automáticas nuevos que ya existen (otro puesto
+    /// los generó a la vez): se descartan, y el puesto, al recibir la
+    /// respuesta, se queda sin ellos.
+    fn drop_auto_duplicates(&self, changes: &mut Vec<Change>) {
+        let is_new = |c: &Change| c.before.is_none() && c.after.is_some() && self.snap.get(&c.field, c.key.as_deref()).is_none();
+        let msg_key = |json: &str| serde_json::from_str::<crate::comms::Message>(json).ok().as_ref().and_then(crate::comms::auto_message_key);
+        let task_key = |json: &str| serde_json::from_str::<crate::tasks::Task>(json).ok().map(|t| t.auto).filter(|a| !a.is_empty());
+        let key_of = |c: &Change| match c.field.as_str() {
+            "messages" => c.after.as_deref().and_then(msg_key),
+            "tasks" => c.after.as_deref().and_then(task_key),
+            _ => None,
+        };
+        if !changes.iter().any(|c| is_new(c) && key_of(c).is_some()) {
+            return;
+        }
+        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        for (field, f) in [("messages", &msg_key as &dyn Fn(&str) -> Option<String>), ("tasks", &task_key)] {
+            for (_, json) in self.snap.records.get(field).into_iter().flat_map(|r| r.iter()) {
+                if let Some(k) = f(json) {
+                    seen.insert((field.to_string(), k));
+                }
+            }
+        }
+        changes.retain(|c| !is_new(c) || key_of(c).is_none_or(|k| seen.insert((c.field.clone(), k))));
     }
 
     /// Pacientes nuevos (`keys`) cuyo número de historia ya tiene otro: les da
@@ -2285,6 +2312,43 @@ mod tests {
         let after = crate::sync::on_disk(&path);
         assert!(after.patient(p.id).is_none() && after.patients[1].mobile == disk.patients[1].mobile);
         assert_eq!(rb.pull(0).unwrap().rev, rev, "ni una revisión más");
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn reminders_made_by_two_stations_at_once_are_sent_once() {
+        let (addr, path, h) = start("CLAVE11");
+        let ra = signed_in(&addr, "CLAVE11", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE11", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        let day = crate::model::today();
+        // los dos arrancan a la vez y generan los recordatorios y las tareas del día
+        let (na, _) = a.generate_messages(day);
+        let (nb, _) = b.generate_messages(day);
+        let (ta, tb) = (a.generate_tasks(day), b.generate_tasks(day));
+        assert!(na > 0 && na == nb && ta == tb, "{na} {nb} {ta} {tb}");
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let key = |m: &crate::comms::Message| (format!("{:?}", m.kind), m.related, m.patient_id);
+        let mut keys: Vec<_> = disk.messages.iter().filter(|m| m.related.is_some()).map(key).collect();
+        let n = keys.len();
+        keys.sort();
+        keys.dedup();
+        assert_eq!(keys.len(), n, "ningún recordatorio repetido");
+        let mut autos: Vec<&str> = disk.tasks.iter().filter(|t| !t.auto.is_empty()).map(|t| t.auto.as_str()).collect();
+        let n = autos.len();
+        autos.sort();
+        autos.dedup();
+        assert_eq!(autos.len(), n, "ninguna tarea repetida");
+        // y el segundo puesto se queda sin los suyos repetidos
+        assert_eq!(b.messages.len(), disk.messages.len());
+        assert_eq!(b.tasks.len(), disk.tasks.len());
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
