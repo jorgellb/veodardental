@@ -530,6 +530,9 @@ struct Session {
     last_used: chrono::NaiveDateTime,
 }
 
+/// Número de historia más alto que se admite (con ellos se nombran carpetas).
+const MAX_HISTORY_NO: u64 = 999_999_999;
+
 /// Revisiones de las que se recuerda qué se tocó (para dar a los puestos solo
 /// lo nuevo; un puesto más atrasado recibe los datos enteros).
 const LOG_REVS: usize = 5000;
@@ -792,9 +795,13 @@ impl State {
         if touched.is_empty() {
             return Ok(());
         }
-        let rev = self.rev() + 1;
+        let old = self.rev();
+        let rev = old + 1;
         self.snap.set_rev(rev);
-        self.persist(rev, &touched)?;
+        if let Err(e) = self.persist(rev, &touched) {
+            self.snap.set_rev(old);
+            return Err(e);
+        }
         self.log.push_back((rev, touched));
         while self.log.len() > LOG_REVS {
             self.log.pop_front();
@@ -808,11 +815,16 @@ impl State {
         let mut db = sync::partial_db(&self.snap, fields)?;
         let out = f(&mut db);
         let mut touched = vec![];
+        let mut previous = vec![];
         for ch in sync::changes_in(&self.snap, &db, fields) {
+            previous.push(sync::before(&self.snap, &ch.field, ch.key.as_deref()));
             self.snap.set(&ch.field, ch.key.as_deref(), ch.after);
             touched.push((ch.field, ch.key));
         }
-        self.commit(touched)?;
+        if let Err(e) = self.commit(touched) {
+            sync::undo(&mut self.snap, previous);
+            return Err(e);
+        }
         Ok(out)
     }
 
@@ -867,33 +879,52 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
+        // números de historia con sentido (con ellos se nombran carpetas)
+        for c in changes.iter().filter(|c| c.field == "patients") {
+            let n = c.after.as_deref().and_then(|a| serde_json::from_str::<Value>(a).ok()).and_then(|v| v["history_no"].as_u64());
+            if n.is_some_and(|n| n > MAX_HISTORY_NO) {
+                return Err("Número de historia no válido.".into());
+            }
+        }
         let existed: std::collections::HashSet<String> = changes.iter().filter(|c| c.field == "patients").filter_map(|c| c.key.clone()).filter(|k| self.snap.get("patients", Some(k)).is_some()).collect();
-        let mut touched = sync::apply(&mut self.snap, &changes)?.touched;
-        // dos puestos que dan de alta pacientes a la vez sacan el mismo número de
-        // historia (con él se nombra su carpeta de imágenes): el nuevo, el siguiente libre
-        let new_patients: Vec<String> = touched.iter().filter(|(f, k)| f == "patients" && k.as_ref().is_some_and(|k| !existed.contains(k))).filter_map(|(_, k)| k.clone()).collect();
-        if !new_patients.is_empty() {
-            for key in self.fix_history_numbers(&new_patients)? {
-                if !touched.iter().any(|(f, k)| f == "patients" && k.as_deref() == Some(&key)) {
-                    touched.push(("patients".into(), Some(key)));
+        let applied = sync::apply(&mut self.snap, &changes)?;
+        let (mut touched, mut previous) = (applied.touched, applied.previous);
+        // si algo falla a partir de aquí, se deshace todo
+        let rest = (|| -> Result<(), String> {
+            // dos puestos que dan de alta pacientes a la vez sacan el mismo número de
+            // historia (con él se nombra su carpeta de imágenes): el nuevo, el siguiente libre
+            let new_patients: Vec<String> = touched.iter().filter(|(f, k)| f == "patients" && k.as_ref().is_some_and(|k| !existed.contains(k))).filter_map(|(_, k)| k.clone()).collect();
+            if !new_patients.is_empty() {
+                for (key, old) in self.fix_history_numbers(&new_patients)? {
+                    previous.push(("patients".into(), Some(key.clone()), Some(old), None));
+                    if !touched.iter().any(|(f, k)| f == "patients" && k.as_deref() == Some(&key)) {
+                        touched.push(("patients".into(), Some(key)));
+                    }
                 }
             }
-        }
-        if station > 0 {
-            let key = station.to_string();
-            if let Some(mut s) = self.snap.get("stations", Some(&key)).and_then(|j| serde_json::from_str::<StationSeen>(j).ok()) {
-                s.last_seen = crate::model::now();
-                self.snap.set("stations", Some(&key), serde_json::to_string(&s).ok());
-                touched.push(("stations".into(), Some(key)));
+            if station > 0 {
+                let key = station.to_string();
+                if let Some(old) = self.snap.get("stations", Some(&key)).cloned()
+                    && let Ok(mut s) = serde_json::from_str::<StationSeen>(&old)
+                {
+                    s.last_seen = crate::model::now();
+                    self.snap.set("stations", Some(&key), serde_json::to_string(&s).ok());
+                    previous.push(("stations".into(), Some(key.clone()), Some(old), None));
+                    touched.push(("stations".into(), Some(key)));
+                }
             }
+            self.commit(touched)
+        })();
+        if let Err(e) = rest {
+            sync::undo(&mut self.snap, previous);
+            return Err(e);
         }
-        self.commit(touched)?;
         Ok(sent)
     }
 
     /// Pacientes nuevos (`keys`) cuyo número de historia ya tiene otro: les da
-    /// el siguiente libre. Devuelve los que ha cambiado.
-    fn fix_history_numbers(&mut self, keys: &[String]) -> Result<Vec<String>, String> {
+    /// el siguiente libre. Devuelve los que ha cambiado, con cómo estaban.
+    fn fix_history_numbers(&mut self, keys: &[String]) -> Result<Vec<(String, String)>, String> {
         let no = |json: &str| serde_json::from_str::<Value>(json).ok().and_then(|v| v["history_no"].as_u64());
         let Some(list) = self.snap.records.get("patients") else { return Ok(vec![]) };
         let mut used: HashMap<u64, usize> = HashMap::new();
@@ -910,13 +941,13 @@ impl State {
             if used.get(&n).copied().unwrap_or(0) <= 1 {
                 continue;
             }
-            next += 1;
+            next = next.checked_add(1).filter(|n| *n <= MAX_HISTORY_NO).ok_or("No quedan números de historia.")?;
             let mut v: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
             v["history_no"] = json!(next);
             self.snap.set("patients", Some(key), Some(canonical("patients", &v.to_string())?));
             *used.entry(n).or_default() -= 1;
             used.insert(next, 1);
-            fixed.push(key.clone());
+            fixed.push((key.clone(), json));
         }
         Ok(fixed)
     }
@@ -2239,6 +2270,21 @@ mod tests {
         all.sort();
         all.dedup();
         assert_eq!(all.len(), disk.patients.len());
+        // con un número de historia fuera de rango no se aplica nada (ni lo demás que venga)
+        let rev = rb.pull(0).unwrap().rev;
+        let mut p = disk.patients[0].clone();
+        p.id = 9_000_016;
+        p.history_no = u32::MAX;
+        let mut q = disk.patients[1].clone();
+        q.mobile = "699999999".into();
+        let body = json!({ "cambios": [
+            Change { field: "patients".into(), key: Some(p.id.to_string()), before: None, after: Some(serde_json::to_string(&p).unwrap()) },
+            Change { field: "patients".into(), key: Some(q.id.to_string()), before: Some(serde_json::to_string(&disk.patients[1]).unwrap()), after: Some(serde_json::to_string(&q).unwrap()) },
+        ] }).to_string();
+        assert!(rb.post(&format!("/cambios?base={rev}"), &body).unwrap_err().contains("historia"));
+        let after = crate::sync::on_disk(&path);
+        assert!(after.patient(p.id).is_none() && after.patients[1].mobile == disk.patients[1].mobile);
+        assert_eq!(rb.pull(0).unwrap().rev, rev, "ni una revisión más");
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

@@ -333,6 +333,17 @@ impl Records {
         self.order.iter().filter_map(|k| self.map.get(k).map(|v| (k, v)))
     }
 
+    fn position(&self, key: &str) -> Option<usize> {
+        self.map.contains_key(key).then(|| self.order.iter().position(|k| k == key)).flatten()
+    }
+
+    /// Pone el registro en el sitio `pos` de la lista (o lo cambia si ya está).
+    fn put_at(&mut self, key: &str, json: String, pos: usize) {
+        if self.map.insert(key.to_string(), json).is_none() {
+            self.order.insert(pos.min(self.order.len()), key.to_string());
+        }
+    }
+
     fn set(&mut self, key: &str, json: Option<String>) {
         match json {
             Some(j) => {
@@ -501,6 +512,29 @@ pub struct Outcome {
     pub touched: Touched,
     /// Datos que ambos lados cambiaron a la vez (gana el puesto que envía).
     pub conflicts: usize,
+    /// Cómo estaba cada cosa tocada (para deshacerlo si algo falla después).
+    pub previous: Undo,
+}
+
+/// Cómo estaba una cosa antes de tocarla: campo, clave, valor y, si era un
+/// registro, su sitio en la lista.
+pub type UndoEntry = (String, Option<String>, Option<String>, Option<usize>);
+pub type Undo = Vec<UndoEntry>;
+
+/// Cómo está ahora `field`/`key` (para poder volver a ello).
+pub fn before(cur: &Snapshot, field: &str, key: Option<&str>) -> UndoEntry {
+    let pos = key.and_then(|k| cur.records.get(field)?.position(k));
+    (field.to_string(), key.map(str::to_string), cur.get(field, key).cloned(), pos)
+}
+
+/// Deshace lo tocado (en orden inverso), con cada registro en su sitio.
+pub fn undo(cur: &mut Snapshot, previous: Undo) {
+    for (field, key, value, pos) in previous.into_iter().rev() {
+        match (&key, pos) {
+            (Some(k), Some(p)) if value.is_some() => cur.records.entry(field).or_default().put_at(k, value.unwrap_or_default(), p),
+            _ => cur.set(&field, key.as_deref(), value),
+        }
+    }
 }
 
 /// ¿Son coherentes los cambios? Cada registro tiene que llevar dentro la misma
@@ -578,6 +612,7 @@ pub fn apply(cur: &mut Snapshot, changes: &[Change]) -> Result<Outcome, String> 
         }
     }
     for (field, key, value) in results {
+        out.previous.push(before(cur, &field, key.as_deref()));
         cur.set(&field, key.as_deref(), value);
         out.touched.push((field, key));
     }
@@ -906,6 +941,25 @@ mod tests {
         l.token = "f".repeat(32);
         d2.appt_links.push(l);
         assert!(apply(&mut cur, &diff(&before, &Snapshot::from_db(&d2))).is_ok());
+    }
+
+    #[test]
+    fn what_was_applied_can_be_undone() {
+        let start = db();
+        let mut cur = Snapshot::from_db(&start);
+        let before = cur.clone();
+        let mut d = start.clone();
+        d.appointments[0].notes = "nota".into();
+        d.payments.remove(0);
+        let id = d.new_id();
+        let mut p = d.patients[0].clone();
+        p.id = id;
+        d.patients.push(p);
+        d.config.name = "Otra".into();
+        let o = apply(&mut cur, &diff(&before, &Snapshot::from_db(&d))).unwrap();
+        assert_ne!(cur, before);
+        undo(&mut cur, o.previous);
+        assert_eq!(cur, before, "todo como estaba");
     }
 
     #[test]
