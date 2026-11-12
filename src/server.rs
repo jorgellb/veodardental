@@ -1314,10 +1314,24 @@ fn old_server_answers(base: &str) -> bool {
     }
 }
 
-fn read_all(r: ureq::Response) -> Result<String, String> {
+/// Lo más que se lee de una respuesta del servidor (ya descomprimida): los
+/// datos enteros de una clínica grande caben de sobra; más, sería un servidor
+/// que no es el de la clínica (o una respuesta comprimida que no acaba nunca).
+const MAX_ANSWER: u64 = 1 << 30;
+/// La respuesta de la prueba de identidad son unos pocos bytes.
+const MAX_PROOF: u64 = 64 * 1024;
+
+fn read_limited(r: ureq::Response, max: u64) -> Result<String, String> {
     let mut s = String::new();
-    r.into_reader().read_to_string(&mut s).map_err(|e| e.to_string())?;
+    r.into_reader().take(max + 1).read_to_string(&mut s).map_err(|e| e.to_string())?;
+    if s.len() as u64 > max {
+        return Err("La respuesta del servidor es demasiado grande.".into());
+    }
     Ok(s)
+}
+
+fn read_all(r: ureq::Response) -> Result<String, String> {
+    read_limited(r, MAX_ANSWER)
 }
 
 fn parse(text: &str) -> Result<Value, String> {
@@ -1386,7 +1400,8 @@ impl Remote {
             .tls_config(tls)
             .build();
         // sin la clave de la clínica ni la sesión
-        let answer = probe.get(&format!("{}/prueba?reto={}", self.base, hex(&challenge))).call().map_err(err_text).and_then(read_all);
+        // sin comprimir y con poco límite: aún no se sabe si es el servidor bueno
+        let answer = probe.get(&format!("{}/prueba?reto={}", self.base, hex(&challenge))).set("Accept-Encoding", "identity").call().map_err(err_text).and_then(|r| read_limited(r, MAX_PROOF));
         drop(probe);
         let public = seen.lock().map(|s| s.clone()).unwrap_or_default();
         // para enseñar la huella que se ha visto, aunque no se acepte
@@ -2012,6 +2027,23 @@ mod tests {
             println!("{who} · puesto los lee y prepara: {:?}", t.elapsed());
             drop(synced);
         }
+    }
+
+    #[test]
+    fn answers_are_read_with_a_limit() {
+        // una «bomba» comprimida: pocos KB que se descomprimen en mucho más que el límite
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut tcp, _)) = listener.accept() {
+                let _ = read_head(&mut BufReader::new(&tcp), IpAddr::V4(Ipv4Addr::LOCALHOST));
+                let z = gzip(&vec![b' '; (MAX_PROOF * 4) as usize]);
+                let _ = write!(tcp, "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", z.len());
+                let _ = tcp.write_all(&z);
+            }
+        });
+        let r = ureq::get(&format!("http://127.0.0.1:{port}/")).call().unwrap();
+        assert_eq!(read_limited(r, MAX_PROOF).unwrap_err(), "La respuesta del servidor es demasiado grande.");
     }
 
     #[test]
