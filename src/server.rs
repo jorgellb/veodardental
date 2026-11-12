@@ -430,7 +430,8 @@ fn has_key(req: &Request, key: &str) -> bool {
     req.header("X-Clave").is_some_and(|k| ct_eq(k.trim().as_bytes(), key.as_bytes()))
 }
 
-fn write_response(w: &mut impl Write, resp: &Response) -> std::io::Result<()> {
+/// Escribe la respuesta; con `gzip` (si el puesto lo admite), las grandes van comprimidas.
+fn write_response(w: &mut impl Write, resp: &Response, gzip_ok: bool) -> std::io::Result<()> {
     let reason = match resp.code {
         200 => "OK",
         400 => "Bad Request",
@@ -444,9 +445,23 @@ fn write_response(w: &mut impl Write, resp: &Response) -> std::io::Result<()> {
         501 => "Not Implemented",
         _ => "Error",
     };
-    write!(w, "HTTP/1.1 {} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", resp.code, resp.body.len())?;
-    w.write_all(resp.body.as_bytes())?;
+    let packed = (gzip_ok && resp.body.len() > 64 * 1024).then(|| gzip(resp.body.as_bytes())).filter(|z| !z.is_empty());
+    let (body, encoding) = match &packed {
+        Some(z) => (z.as_slice(), "Content-Encoding: gzip\r\n"),
+        None => (resp.body.as_bytes(), ""),
+    };
+    write!(w, "HTTP/1.1 {} {reason}\r\nContent-Type: application/json; charset=utf-8\r\n{encoding}Content-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", resp.code, body.len())?;
+    w.write_all(body)?;
     w.flush()
+}
+
+/// Comprime con gzip (nivel rápido: el JSON de los datos ocupa unas diez veces menos).
+fn gzip(data: &[u8]) -> Vec<u8> {
+    let mut e = flate2::write::GzEncoder::new(Vec::with_capacity(data.len() / 6), flate2::Compression::fast());
+    if e.write_all(data).is_err() {
+        return vec![];
+    }
+    e.finish().unwrap_or_default()
 }
 
 struct Job {
@@ -471,7 +486,7 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
         if let Ok(Some(mut req)) = read_head(&mut r, peer) {
             let _ = read_body(&mut r, &mut req, 64 * 1024);
         }
-        let _ = write_response(&mut &tcp, &error(426, OLD_STATION));
+        let _ = write_response(&mut &tcp, &error(426, OLD_STATION), false);
         return;
     }
     let Ok(conn) = rustls::ServerConnection::new(tls) else { return };
@@ -484,6 +499,7 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
             other => other,
         }
     };
+    let gzip_ok = matches!(&read, Ok(Some(req)) if req.header("Accept-Encoding").is_some_and(|v| v.contains("gzip")));
     let resp = match read {
         Ok(None) => return,
         Err(r) => r,
@@ -498,7 +514,7 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
             }
         }
     };
-    let _ = write_response(&mut s, &resp);
+    let _ = write_response(&mut s, &resp, gzip_ok);
     s.conn.send_close_notify();
     let _ = s.flush();
 }
@@ -1972,6 +1988,46 @@ mod tests {
         let v: Value = serde_json::from_str(&st.since(40, &[("users".into(), Some("4".into()))], View::FULL).body).unwrap();
         assert_eq!(v["cambios"][0]["clave"], "4");
         assert!(v["cambios"][0]["ahora"].as_str().unwrap().contains(HIDDEN), "sin la contraseña");
+    }
+
+    /// Lo que cuesta entrar en un puesto con una clínica grande:
+    /// `cargo test big_clinic_login -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn big_clinic_login_costs() {
+        let db = crate::shared::big_clinic();
+        let st = State::new(&db, std::env::temp_dir().join("ds_big_login").join("clinica.json"), "K", vec![1; 32]);
+        drop(db);
+        for (who, view) in [("doctor", View::FULL), ("recepción", View::of(crate::users::Profile::Recepcion))] {
+            let t = Instant::now();
+            let body = st.snap.to_json_with(&|list, rec| State::outgoing(view, list, rec));
+            println!("{who} · servidor prepara los datos: {:?} · {} MB", t.elapsed(), body.len() / 1_000_000);
+            let t = Instant::now();
+            let z = gzip(body.as_bytes());
+            println!("{who} · comprimir: {:?} · {} MB", t.elapsed(), z.len() / 1_000_000);
+            let t = Instant::now();
+            let mut d: Db = serde_json::from_str(&body).unwrap();
+            let synced = Snapshot::from_db(&d);
+            sync::mark_synced(&mut d);
+            println!("{who} · puesto los lee y prepara: {:?}", t.elapsed());
+            drop(synced);
+        }
+    }
+
+    #[test]
+    fn big_answers_travel_compressed() {
+        let r = Response { code: 200, body: format!("{{\"x\": \"{}\"}}", "datos ".repeat(50_000)) };
+        let mut out = vec![];
+        write_response(&mut out, &r, true).unwrap();
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("Content-Encoding: gzip"));
+        assert!(out.len() < r.body.len() / 10, "{} de {}", out.len(), r.body.len());
+        let mut plain = vec![];
+        write_response(&mut plain, &r, false).unwrap();
+        assert!(!String::from_utf8_lossy(&plain).contains("gzip"), "si el puesto no lo admite, sin comprimir");
+        let mut small = vec![];
+        write_response(&mut small, &error(400, "no"), true).unwrap();
+        assert!(!String::from_utf8_lossy(&small).contains("gzip"), "lo pequeño, sin comprimir");
     }
 
     #[test]
