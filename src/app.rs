@@ -590,6 +590,7 @@ impl App {
     /// rompan la cadena de VERI*FACTU. Devuelve el id creado.
     pub fn chain_op(&mut self, op: ChainOp) -> Result<u32, String> {
         let user = self.db.config.current_user.clone();
+        let admin = self.can(crate::users::Perm::Configuracion);
         if let Some(r) = self.remote.clone() {
             // con el centro de este puesto (para la caja de los cobros)
             let mut v = op.json();
@@ -599,11 +600,11 @@ impl App {
             return Ok(id);
         }
         if crate::shared::shared() {
-            let (_, id) = crate::shared::save_synced_with(&mut self.db, &mut self.base, &Db::path(), |db| op.run(db, &user))?;
+            let (_, id) = crate::shared::save_synced_with(&mut self.db, &mut self.base, &Db::path(), |db| op.run(db, &user, admin))?;
             self.dirty = false;
             return id;
         }
-        let id = op.run(&mut self.db, &user)?;
+        let id = op.run(&mut self.db, &user, admin)?;
         self.changed();
         Ok(id)
     }
@@ -849,10 +850,17 @@ pub enum ChainOp {
     /// Cita pedida por internet: se apunta en la agenda (devuelve la cita) o se rechaza.
     Confirm { request: u32 },
     Reject { request: u32, why: String },
+    /// Cobro en la clínica de una cuota (devuelve el cobro).
+    PayInstallment { budget: u32, index: u32, method: String },
+    /// Anulación de un cobro equivocado (devuelve la anulación).
+    CancelPayment { payment: u32, reason: String },
+    /// Devolución al paciente de dinero que tiene a favor.
+    Refund { patient: u32, amount: f64, method: String, reason: String },
 }
 
 impl ChainOp {
-    pub(crate) fn run(&self, db: &mut Db, user: &str) -> Result<u32, String> {
+    /// Hace la operación con los datos al día. `admin`: la hace Dirección.
+    pub(crate) fn run(&self, db: &mut Db, user: &str, admin: bool) -> Result<u32, String> {
         match self {
             ChainOp::Issue { patient, entries, date } => db.issue_invoice(*patient, entries, *date),
             ChainOp::Rectify { invoice, reason } => db.rectify_invoice(*invoice, reason),
@@ -877,6 +885,9 @@ impl ChainOp {
             ChainOp::Reconcile => Ok(db.auto_reconcile() as u32),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
+            ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
+            ChainOp::CancelPayment { payment, reason } => db.cancel_payment(*payment, reason, admin),
+            ChainOp::Refund { patient, amount, method, reason } => db.refund(*patient, *amount, method, reason),
         }
     }
 
@@ -894,6 +905,9 @@ impl ChainOp {
             ChainOp::Reconcile => json!({ "accion": "conciliar" }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
+            ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
+            ChainOp::CancelPayment { payment, reason } => json!({ "accion": "anular_cobro", "cobro": payment, "motivo": reason }),
+            ChainOp::Refund { patient, amount, method, reason } => json!({ "accion": "devolver", "paciente": patient, "importe": amount, "forma": method, "motivo": reason }),
         }
     }
 
@@ -918,6 +932,9 @@ impl ChainOp {
             "conciliar" => ChainOp::Reconcile,
             "confirmar_cita" => ChainOp::Confirm { request: num("solicitud")? },
             "rechazar_cita" => ChainOp::Reject { request: num("solicitud")?, why: text("motivo") },
+            "cobrar_cuota" => ChainOp::PayInstallment { budget: num("presupuesto")?, index: num("cuota")?, method: pay_method(&text("forma"))? },
+            "anular_cobro" => ChainOp::CancelPayment { payment: num("cobro")?, reason: text("motivo") },
+            "devolver" => ChainOp::Refund { patient: num("paciente")?, amount: v["importe"].as_f64().filter(|a| a.is_finite()).ok_or("Falta «importe».")?, method: pay_method(&text("forma"))?, reason: text("motivo") },
             _ => return Err("Acción no válida.".into()),
         })
     }
@@ -931,14 +948,24 @@ impl ChainOp {
         const CLAIM: &[&str] = &["claims", "entries", "patients", "tariffs", "auths", "config", "audit_log", "next_id"];
         const BANK: &[&str] = &["bank_moves", "expenses", "remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
+        // el saldo del paciente sale de sus tratamientos y sus cobros
+        const PAY: &[&str] = &["payments", "budgets", "remittances", "entries", "patients", "cash", "config", "audit_log", "next_id"];
         match self {
             ChainOp::Issue { .. } | ChainOp::Rectify { .. } | ChainOp::Correct { .. } | ChainOp::Cancel { .. } => (Some(Facturacion), CHAIN),
             ChainOp::Remit { .. } | ChainOp::Collected { .. } | ChainOp::Returned { .. } => (Some(Economia), REMIT),
             ChainOp::Claim { .. } => (Some(Facturacion), CLAIM),
             ChainOp::Reconcile => (Some(Gastos), BANK),
             ChainOp::Confirm { .. } | ChainOp::Reject { .. } => (None, BOOKING),
+            ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
+            // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
+            ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),
         }
     }
+}
+
+/// Forma de pago de las que hay (las que llegan de un puesto se comprueban).
+fn pay_method(m: &str) -> Result<String, String> {
+    crate::model::PAY_METHODS.iter().find(|x| **x == m).map(|x| x.to_string()).ok_or_else(|| format!("Forma de pago no válida: «{m}»."))
 }
 
 /// Datos de un puesto conectado a un servidor antes de entrar: solo el nombre

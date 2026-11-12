@@ -884,7 +884,7 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                 if primary(ui, "💶 Registrar cobro").clicked() {
                     app.dialog = Dialog::Payment(cobros::PayDraft::new(app, pid));
                 }
-                if app.db.patient_balance(pid) < -0.005 && ui.button("↩ Devolver dinero").on_hover_text("Devolver lo que el paciente tiene a favor").clicked() {
+                if app.can(crate::users::Perm::Caja) && app.db.patient_balance(pid) < -0.005 && ui.button("↩ Devolver dinero").on_hover_text("Devolver lo que el paciente tiene a favor").clicked() {
                     app.dialog = Dialog::Payment(cobros::PayDraft::refund(app, pid));
                 }
             });
@@ -896,9 +896,11 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
             movs.push((e.date.and_hms_opt(0, 0, 0).unwrap(), format!("{} {}", e.description, teeth.join("-")), e.amount(), 0.0, None));
         }
         let cancelled: std::collections::HashSet<u32> = app.db.payments.iter().filter_map(|p| p.cancels).collect();
+        // anular es cosa de quien lleva la caja
+        let cashier = app.can(crate::users::Perm::Caja);
         for p in app.db.payments.iter().filter(|p| p.patient_id == pid) {
             let gone = if cancelled.contains(&p.id) { " (anulado)" } else { "" };
-            let can_cancel = p.amount > 0.0 && p.cancels.is_none() && !cancelled.contains(&p.id) && p.method != "Domiciliación";
+            let can_cancel = cashier && p.amount > 0.0 && p.cancels.is_none() && !cancelled.contains(&p.id) && p.method != "Domiciliación";
             movs.push((p.date, format!("{} {} · {} · {}{gone}", if p.amount < 0.0 { "Abono" } else { "Cobro" }, p.receipt_no, p.method, p.concept), 0.0, p.amount, can_cancel.then_some(p.id)));
         }
         movs.sort_by_key(|m| m.0);
@@ -927,8 +929,8 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
         }
         if movs.is_empty() {
             empty_state(ui, "Sin movimientos");
-        } else {
-            muted(ui, "Clic derecho en un cobro para anularlo (si se registró por error).");
+        } else if cashier {
+            muted(ui, "Clic derecho en un cobro para anularlo (si se registró por error; los de otro día o de una caja cerrada, solo Dirección).");
         }
         if let Some(d) = cancel.and_then(|id| cobros::PayDraft::cancel(app, id)) {
             app.dialog = Dialog::Payment(d);

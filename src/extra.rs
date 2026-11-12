@@ -895,7 +895,7 @@ mod tests {
         let item = db.remittances.iter().find(|r| r.id == rid).unwrap().items[0].clone();
         assert!(db.pay_installment(item.budget_id, item.installment, "Tarjeta").unwrap_err().contains("remesa"));
         // anular el cobro de una cuota la deja otra vez por pagar
-        db.cancel_payment(pay, "se equivocó de cuota").unwrap();
+        db.cancel_payment(pay, "se equivocó de cuota", false).unwrap();
         assert!(!db.budgets.iter().find(|b| b.id == bid).unwrap().plan.as_ref().unwrap().paid[0]);
     }
 

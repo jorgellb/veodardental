@@ -221,9 +221,16 @@ pub fn rx_warnings(p: &Patient, items: &[RxItem], drugs: &[Drug]) -> Vec<String>
 impl Db {
     /// Anula un cobro equivocado: un cobro en negativo con la misma forma de
     /// pago (si es efectivo, sale de la caja abierta) y el motivo. Si pagaba una
-    /// cuota, la cuota vuelve a estar por pagar. Devuelve la anulación.
-    pub fn cancel_payment(&mut self, id: u32, reason: &str) -> Result<u32, String> {
+    /// cuota, la cuota vuelve a estar por pagar. Los cobros de hoy (en efectivo,
+    /// de la caja que sigue abierta) los anula quien lleva la caja; los de otro
+    /// día o de una caja ya cerrada, solo Dirección (`admin`). Devuelve la anulación.
+    pub fn cancel_payment(&mut self, id: u32, reason: &str, admin: bool) -> Result<u32, String> {
         let p = self.payments.iter().find(|p| p.id == id).cloned().ok_or("El cobro ya no existe.")?;
+        let open = self.open_cashes().iter().map(|c| c.id).collect::<Vec<_>>();
+        let current = p.date.date() == today() && (p.method != "Efectivo" || p.cash_session.is_some_and(|s| open.contains(&s)));
+        if !admin && !current {
+            return Err("Solo Dirección puede anular un cobro de otro día o de una caja ya cerrada.".into());
+        }
         if reason.trim().is_empty() {
             return Err("Escriba el motivo de la anulación.".into());
         }
@@ -359,16 +366,22 @@ mod tests {
         let bal = db.patient_balance(110);
         // se tecleó 1000 en vez de 100
         let wrong = db.add_payment(110, 1000.0, "Efectivo", "Pago a cuenta");
-        assert!(db.cancel_payment(wrong, " ").unwrap_err().contains("motivo"));
-        let back = db.cancel_payment(wrong, "Importe mal tecleado").unwrap();
+        assert!(db.cancel_payment(wrong, " ", false).unwrap_err().contains("motivo"));
+        let back = db.cancel_payment(wrong, "Importe mal tecleado", false).unwrap();
         let b = db.payments.iter().find(|p| p.id == back).unwrap().clone();
         assert_eq!((b.amount, b.method.as_str(), b.cancels), (-1000.0, "Efectivo", Some(wrong)));
         assert!(b.concept.contains("Importe mal tecleado") && b.concept.contains(&db.payments.iter().find(|p| p.id == wrong).unwrap().receipt_no));
         assert!((db.patient_balance(110) - bal).abs() < 0.005, "el saldo queda como estaba");
         assert!((db.cash_expected(db.open_cash().unwrap()) - before).abs() < 0.005, "y la caja también");
-        assert!(db.cancel_payment(wrong, "otra vez").unwrap_err().contains("anulado"), "no se anula dos veces");
-        assert!(db.cancel_payment(back, "x").is_err(), "una anulación no se anula");
+        assert!(db.cancel_payment(wrong, "otra vez", true).unwrap_err().contains("anulado"), "no se anula dos veces");
+        assert!(db.cancel_payment(back, "x", true).is_err(), "una anulación no se anula");
         assert!(db.audit_log.iter().any(|a| a.action == "Anular cobro"));
+        // un cobro de otro día (o de una caja ya cerrada) solo lo anula Dirección
+        let old = db.payments.iter().find(|p| p.amount > 0.0 && p.date.date() < today() && p.method != "Domiciliación" && !db.payments.iter().any(|x| x.cancels == Some(p.id))).unwrap().id;
+        assert!(db.cancel_payment(old, "error", false).unwrap_err().contains("Dirección"));
+        db.cancel_payment(old, "error", true).unwrap();
+        let card = db.add_payment(110, 50.0, "Tarjeta", "hoy");
+        db.cancel_payment(card, "error", false).unwrap();
     }
 
     #[test]

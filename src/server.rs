@@ -1203,6 +1203,7 @@ impl State {
                 Some(Perm::Facturacion) => "Este usuario no puede facturar.",
                 Some(Perm::Economia) => "Este usuario no puede llevar los cobros.",
                 Some(Perm::Gastos) => "Este usuario no puede llevar el banco.",
+                Some(Perm::Caja) => "Este usuario no puede llevar la caja (anular cobros o devolver dinero).",
                 _ => "Este usuario no tiene permiso para hacerlo.",
             });
         };
@@ -1215,7 +1216,7 @@ impl State {
             if let Some(c) = center {
                 db.config.current_center = c;
             }
-            let out = op.run(db, &u.name);
+            let out = op.run(db, &u.name, u.profile == crate::users::Profile::Direccion);
             db.config.current_user = user;
             db.config.current_center = center_was;
             out
@@ -2474,6 +2475,47 @@ mod tests {
         assert!(ra.backup.lock().unwrap().is_some());
         let _ = rb.pull(b.rev).unwrap();
         assert!(rb.backup.lock().unwrap().is_some());
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE18");
+        let ra = signed_in(&addr, "CLAVE18", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE18", "Dirección", 1, "0000");
+        let rd = signed_in(&addr, "CLAVE18", "Gabinete", 3, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        a.station = ra.station;
+        let bid = a.budgets.iter().find(|x| x.patient_id == 101 && x.plan.is_some()).unwrap().id;
+        a.accept_budget(bid, crate::model::today());
+        ra.push(&mut a, &mut sa).unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        let (mut dr, mut sd) = rd.load().unwrap();
+        b.station = rb.station;
+        dr.station = rd.station;
+        // los dos cobran la primera cuota a la vez: el segundo recibe un aviso
+        let pay = ChainOp::PayInstallment { budget: bid, index: 0, method: "Efectivo".into() };
+        let id = ra.chain_op(&mut a, &mut sa, &pay.json()).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &pay.json()).unwrap_err().contains("pagada"));
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.payments.iter().filter(|p| p.installment == Some((bid, 0))).count(), 1, "una sola vez");
+        assert!(b.budgets.iter().find(|x| x.id == bid).unwrap().plan.as_ref().unwrap().paid[0], "y el segundo puesto lo ve");
+        // anular y devolver: con permiso de caja (un doctor, no)
+        let cancel = ChainOp::CancelPayment { payment: id, reason: "error".into() };
+        assert!(rd.chain_op(&mut dr, &mut sd, &cancel.json()).unwrap_err().contains("caja"));
+        ra.chain_op(&mut a, &mut sa, &cancel.json()).unwrap();
+        assert!(ra.chain_op(&mut a, &mut sa, &cancel.json()).unwrap_err().contains("anulado"), "no se anula dos veces");
+        let disk = crate::sync::on_disk(&path);
+        assert!(!disk.budgets.iter().find(|x| x.id == bid).unwrap().plan.as_ref().unwrap().paid[0], "la cuota vuelve a estar por pagar");
+        let credit = -disk.patient_balance(101);
+        if credit > 1.0 {
+            let refund = ChainOp::Refund { patient: 101, amount: 1.0, method: "Efectivo".into(), reason: "prueba".into() };
+            assert!(rd.chain_op(&mut dr, &mut sd, &refund.json()).unwrap_err().contains("caja"));
+            ra.chain_op(&mut a, &mut sa, &refund.json()).unwrap();
+        }
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

@@ -142,15 +142,20 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
         });
     });
     if save {
+        // la cuota, la anulación y la devolución, con los datos al día (en red las
+        // hace el servidor): así no se cobra dos veces ni se anula dos veces
         let done = match d.kind {
-            PayKind::Cobro => Ok(app.db.add_payment(d.patient_id, d.amount, &d.method, &d.concept)),
-            PayKind::Cuota(b, i) => app.db.pay_installment(b, i, &d.method),
-            PayKind::Devolucion => app.db.refund(d.patient_id, d.amount, &d.method, &d.concept),
-            PayKind::Anulacion(id) => app.db.cancel_payment(id, &d.concept),
+            PayKind::Cobro => {
+                let id = app.db.add_payment(d.patient_id, d.amount, &d.method, &d.concept);
+                app.changed();
+                Ok(id)
+            }
+            PayKind::Cuota(budget, index) => app.chain_op(crate::app::ChainOp::PayInstallment { budget, index, method: d.method.clone() }),
+            PayKind::Devolucion => app.chain_op(crate::app::ChainOp::Refund { patient: d.patient_id, amount: d.amount, method: d.method.clone(), reason: d.concept.clone() }),
+            PayKind::Anulacion(payment) => app.chain_op(crate::app::ChainOp::CancelPayment { payment, reason: d.concept.clone() }),
         };
         match done {
             Ok(_) => {
-                app.changed();
                 app.notify(match d.kind {
                     PayKind::Cobro => format!("Cobro registrado: {} ({})", money(d.amount), d.method),
                     PayKind::Cuota(_, i) => format!("Cuota {} cobrada: {} ({})", i + 1, money(d.amount), d.method),
