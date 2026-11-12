@@ -32,10 +32,8 @@ pub enum Perm {
     Informes,
     Configuracion,
     Almacen,
-    /// Datos clínicos (salud, periodontograma, imágenes). Los perfiles ya lo
-    /// tienen en cuenta, pero aún no se usa para ocultar pantallas: falta que la
-    /// clínica diga qué partes clínicas debe ver recepción.
-    #[allow(dead_code)]
+    /// Datos clínicos (salud, periodontograma, imágenes, recetas, ortodoncia y
+    /// notas clínicas): ver [`crate::vista`].
     Clinico,
     Gastos,
 }

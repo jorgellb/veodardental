@@ -76,14 +76,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             return;
         }
     };
-    if matches!(app.pat_tab, PatTab::Cuenta | PatTab::Presupuestos) && !app.can(crate::users::Perm::Economia) {
+    if !tab_allowed(app, app.pat_tab) {
         app.pat_tab = PatTab::Resumen;
     }
     header(app, ui, pid);
     ui.add_space(8.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
-        let tabs: Vec<(PatTab, &str)> = PatTab::ALL.iter().copied().filter(|(tab, _)| !(matches!(tab, PatTab::Cuenta | PatTab::Presupuestos) && !app.can(crate::users::Perm::Economia))).collect();
+        let tabs: Vec<(PatTab, &str)> = PatTab::ALL.iter().copied().filter(|(tab, _)| tab_allowed(app, *tab)).collect();
         // si las pestañas no caben (ventana estrecha) se aprietan: letra y márgenes algo menores
         let natural: f32 = tabs.iter().map(|(_, n)| ui.fonts_mut(|f| f.layout_no_wrap(n.to_string(), FontId::proportional(14.5), TEXT).size().x) + 24.0).sum();
         let (fs, pad) = if natural <= ui.available_width() { (14.5, 22.0) } else { (13.2, 12.0) };
@@ -116,11 +116,16 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         PatTab::Periodontograma => crate::screens::perio::show(app, ui, pid),
         PatTab::Imagenes => crate::screens::imagenes::patient_tab(app, ui, pid),
         PatTab::Documentos => {
+            // las recetas son datos clínicos (Recepción no las recibe)
+            let clinical = app.can(crate::users::Perm::Clinico);
+            if !clinical {
+                app.docs_mode = 0;
+            }
             ui.horizontal(|ui| {
                 if ui.selectable_label(app.docs_mode == 0, "Documentos y consentimientos").clicked() {
                     app.docs_mode = 0;
                 }
-                if ui.selectable_label(app.docs_mode == 1, "Recetas").clicked() {
+                if clinical && ui.selectable_label(app.docs_mode == 1, "Recetas").clicked() {
                     app.docs_mode = 1;
                 }
             });
@@ -146,11 +151,38 @@ fn avatar(ui: &mut Ui, p: &Patient, size: f32) {
     ui.painter().text(r.center(), Align2::CENTER_CENTER, ini, FontId::proportional(size * 0.4), col);
 }
 
+/// ¿Puede ver el usuario esta pestaña de la ficha? Cuenta y presupuestos,
+/// con el permiso de economía; salud, periodontograma e imágenes, con el
+/// clínico (Recepción no recibe esos datos: ver [`crate::vista`]).
+fn tab_allowed(app: &App, tab: PatTab) -> bool {
+    use crate::users::Perm;
+    match tab {
+        PatTab::Cuenta | PatTab::Presupuestos => app.can(Perm::Economia),
+        PatTab::Salud | PatTab::Periodontograma | PatTab::Imagenes => app.can(Perm::Clinico),
+        _ => true,
+    }
+}
+
 /// Botones de la cabecera de la ficha (lista, ficha, RX, cita, cobro).
 fn header_buttons(app: &mut App, ui: &mut Ui, pid: u32) {
     if ui.button("☰ Lista").on_hover_text("Volver a la lista de pacientes").clicked() {
         app.lists.patient_list_open = true;
     }
+    // historia clínica e imágenes: solo con el permiso clínico
+    if app.can(crate::users::Perm::Clinico) {
+        clinical_buttons(app, ui, pid);
+    }
+    if ui.button("📅 Nueva cita").clicked() {
+        let d = agenda::ApptDraft::new_at(app, app.today, None, Some(pid));
+        app.dialog = Dialog::Appointment(d);
+    }
+    if app.can(crate::users::Perm::Economia) && primary(ui, "💶 Cobrar").clicked() {
+        app.dialog = Dialog::Payment(cobros::PayDraft::new(app, pid));
+    }
+}
+
+/// Ficha clínica (imprimir, exportar) y programas de radiología.
+fn clinical_buttons(app: &mut App, ui: &mut Ui, pid: u32) {
     crate::screens::fichas::patient_menu(app, ui, pid);
     ui.menu_button("📷 RX / TAC", |ui| {
         let list: Vec<(u32, String)> = app.db.connectors.iter().filter(|c| c.enabled).map(|c| (c.id, c.name.clone())).collect();
@@ -166,13 +198,6 @@ fn header_buttons(app: &mut App, ui: &mut Ui, pid: u32) {
             ui.close();
         }
     });
-    if ui.button("📅 Nueva cita").clicked() {
-        let d = agenda::ApptDraft::new_at(app, app.today, None, Some(pid));
-        app.dialog = Dialog::Appointment(d);
-    }
-    if app.can(crate::users::Perm::Economia) && primary(ui, "💶 Cobrar").clicked() {
-        app.dialog = Dialog::Payment(cobros::PayDraft::new(app, pid));
-    }
 }
 
 /// Saldo del paciente como etiqueta de color.
@@ -249,7 +274,10 @@ fn header(app: &mut App, ui: &mut Ui, pid: u32) {
                     pill(ui, "Falta firma protección de datos", WARN);
                 }
                 if let Some(s) = app.db.health_status(pid, app.today) {
-                    if pill(ui, s, WARN).on_hover_text("Abrir el cuestionario de salud").interact(egui::Sense::click()).clicked() {
+                    if !app.can(crate::users::Perm::Clinico) {
+                        // Recepción no abre los cuestionarios: sabe que falta y lo pide
+                        pill(ui, s, WARN).on_hover_text("Pídale que lo rellene con el enlace de su cita, por internet, o en el gabinete.");
+                    } else if pill(ui, s, WARN).on_hover_text("Abrir el cuestionario de salud").interact(egui::Sense::click()).clicked() {
                         go_health = true;
                     }
                 }
@@ -476,6 +504,9 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
         muted(ui, "Doble clic en un tratamiento previsto para marcarlo como realizado · clic derecho para más opciones.");
     });
     ui.add_space(10.0);
+    if !app.can(crate::users::Perm::Clinico) {
+        return;
+    }
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Antecedentes y notas clínicas");

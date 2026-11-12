@@ -145,6 +145,8 @@ pub struct App {
     /// En red: cómo están los datos en el servidor (lo último recibido o
     /// enviado), registro a registro, para enviar solo lo que cambie.
     pub synced: crate::sync::Snapshot,
+    /// En red: para qué perfil son los datos recibidos (si entra otro, se recargan).
+    pub loaded_view: Option<crate::vista::View>,
     pub last_poll: f64,
     /// Conexión con el servidor de la clínica (puesto cliente).
     pub remote: Option<crate::server::Remote>,
@@ -251,6 +253,7 @@ impl App {
             save_error: err,
             base,
             synced: crate::sync::Snapshot::default(),
+            loaded_view: None,
             last_poll: 0.0,
             remote,
             offline,
@@ -538,12 +541,22 @@ impl App {
         let Some(r) = self.remote.as_mut() else { return Err("Sin servidor".into()) };
         r.session = session;
         let r = r.clone();
-        if self.awaiting_data || !self.dirty {
+        let view = self.db.user(id).map(|u| crate::vista::View::of(u.profile)).unwrap_or(crate::vista::View::FULL);
+        if self.awaiting_data || self.loaded_view != Some(view) {
+            // primera vez, o entra un perfil que ve otras cosas: los datos que le tocan
+            if !self.awaiting_data && self.dirty {
+                r.push(&mut self.db, &mut self.synced)?;
+            }
             let (d, synced) = r.load()?;
             self.db = crate::server::adopt(&self.db, d);
             self.synced = synced;
-        } else {
+            self.loaded_view = Some(view);
+        } else if self.dirty {
             r.push(&mut self.db, &mut self.synced)?;
+        } else {
+            // al volver a entrar, solo lo nuevo
+            let d = r.pull(self.db.rev)?;
+            r.receive(&mut self.db, &mut self.synced, d)?;
         }
         self.dirty = false;
         self.awaiting_data = false;
@@ -648,6 +661,7 @@ impl App {
                 self.db.station = r.station;
                 self.base = serde_json::Value::Null;
                 self.synced = crate::sync::Snapshot::default();
+                self.loaded_view = None;
                 self.remote = Some(r);
                 self.awaiting_data = true;
                 self.persist = false;
@@ -692,6 +706,7 @@ impl App {
         self.db.station = r.station;
         self.base = serde_json::Value::Null;
         self.synced = crate::sync::Snapshot::default();
+        self.loaded_view = None;
         self.remote = Some(r);
         self.awaiting_data = true;
         self.pending_start = true;
@@ -986,11 +1001,18 @@ impl App {
             Screen::Gastos | Screen::Bancos => self.can(Gastos),
             Screen::Config | Screen::Colaboradores | Screen::Tarifas => self.can(Configuracion),
             Screen::Almacen => self.can(Almacen),
+            // imágenes (y su análisis con IA) y ortodoncia son datos clínicos
+            Screen::Imagenes | Screen::Ortodoncia => self.can(Clinico),
             _ => true,
         }
     }
 
     fn lock(&mut self, reason: &str) {
+        // lo pendiente se envía con la sesión de quien lo hizo (si entra otro
+        // perfil, podría no tener permiso para guardarlo)
+        if self.remote.is_some() && self.persist && self.dirty && self.save_now().is_ok() {
+            self.dirty = false;
+        }
         self.second_factor = false;
         if let Some(u) = self.user_id.take() {
             self.db.logout(u, reason);

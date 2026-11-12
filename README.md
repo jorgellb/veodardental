@@ -64,6 +64,14 @@ demás se conectan con su dirección y la clave de la clínica.
   huellas de las contraseñas ni las claves del código del móvil; los fallos de
   acceso y los bloqueos los lleva el servidor. Solo Dirección puede cambiar
   los usuarios y activar o quitar el código del móvil.
+- **Cada perfil recibe lo que necesita.** Recepción no recibe los datos
+  clínicos que no usa (periodontogramas, imágenes y análisis de IA, recetas,
+  ortodoncia, las respuestas de los cuestionarios de salud, antecedentes y
+  notas clínicas) y no ve sus pantallas; de los cuestionarios solo sabe si los
+  hay, de cuándo son y si están firmados (para pedirlos). Sí recibe los
+  tratamientos con precio, las alertas y alergias y los documentos. Lo que no
+  ve no lo puede borrar ni cambiar. Doctores, higienistas y Dirección lo
+  reciben todo.
 - **Los registros solo crecen**: ningún puesto puede borrar entradas del
   registro de accesos ni de la auditoría.
 - Contraseñas con PBKDF2-HMAC-SHA256 (600 000 vueltas) y sal aleatoria; las

@@ -48,6 +48,7 @@ mod totp;
 mod tunnel;
 mod users;
 mod verifactu;
+mod vista;
 mod whatsapp;
 #[cfg(test)]
 mod ui_tests;

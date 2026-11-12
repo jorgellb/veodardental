@@ -44,6 +44,7 @@
 use crate::model::{Db, sha256_hex};
 use crate::shared::StationSeen;
 use crate::sync::{self, Change, Snapshot, canonical};
+use crate::vista::View;
 use crate::users::{LoginStep, Perm, ct_eq};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -779,6 +780,20 @@ impl State {
         self.user(id).is_some_and(|u| u.active && u.profile.can(Perm::Configuracion))
     }
 
+    /// Lo que ve el usuario de la sesión (según su perfil).
+    fn view_of(&self, id: u32) -> View {
+        self.user(id).map(|u| View::of(u.profile)).unwrap_or(View::of(crate::users::Profile::Recepcion))
+    }
+
+    /// Un registro tal como se le manda a un puesto: sin contraseñas y sin lo
+    /// que su perfil no ve.
+    fn outgoing(view: View, list: &str, json: &str) -> Option<String> {
+        if list == "users" {
+            return Some(strip_user_json(json));
+        }
+        view.show(list, json)
+    }
+
     /// Aplica los cambios de un puesto, combinándolos con los de los demás.
     /// Devuelve todo lo que mandó el puesto (también lo que no se ha aceptado,
     /// para que el puesto se quede con lo que de verdad hay en el servidor).
@@ -796,6 +811,18 @@ impl State {
             c.before = c.before.as_deref().map(|b| protect_user_json(b, current.as_ref())).transpose()?;
             c.after = c.after.as_deref().map(|a| protect_user_json(a, current.as_ref())).transpose()?;
         }
+        // lo que el perfil no ve: en las listas que no recibe solo puede añadir
+        // registros nuevos, y en los demás registros lo que no ve queda como está
+        let view = self.view_of(user);
+        if !view.is_full() {
+            let snap = &self.snap;
+            changes.retain(|c| !view.hides(&c.field) || (c.before.is_none() && snap.get(&c.field, c.key.as_deref()).is_none()));
+            for c in changes.iter_mut().filter(|c| c.key.is_some()) {
+                let current = self.snap.get(&c.field, c.key.as_deref()).cloned();
+                c.before = c.before.as_deref().map(|b| view.restore(&c.field, b, current.as_ref())).transpose()?;
+                c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
+            }
+        }
         let mut touched = sync::apply(&mut self.snap, &changes)?.touched;
         if station > 0 {
             let key = station.to_string();
@@ -811,7 +838,7 @@ impl State {
 
     /// Lo que ha cambiado desde la revisión `since`, más lo de `also` (o, si
     /// `since` es de hace mucho, que el puesto pida los datos enteros).
-    fn since(&self, since: u64, also: &[(String, Option<String>)]) -> Response {
+    fn since(&self, since: u64, also: &[(String, Option<String>)], view: View) -> Response {
         let rev = self.rev();
         if since < rev && self.log.front().is_none_or(|(first, _)| *first > since + 1) {
             return reply(200, json!({ "rev": rev, "completo": true }));
@@ -823,10 +850,13 @@ impl State {
             if !seen.insert((field.clone(), key.clone())) {
                 continue;
             }
-            let mut after = self.snap.get(field, key.as_deref()).cloned();
-            if field == "users" {
-                after = after.map(|u| strip_user_json(&u));
+            if view.hides(field) {
+                continue;
             }
+            let after = match (self.snap.get(field, key.as_deref()), key) {
+                (Some(rec), Some(_)) => Self::outgoing(view, field, rec),
+                (other, _) => other.cloned(),
+            };
             out.push(Change { field: field.clone(), key: key.clone(), before: None, after });
         }
         reply(200, json!({ "rev": rev, "cambios": out }))
@@ -1021,10 +1051,13 @@ impl State {
                 let param = |k: &str| req.param(k).and_then(|b| b.parse::<u64>().ok()).unwrap_or(0);
                 match (m, p) {
                     ("GET", "/estado") => reply(200, json!({ "rev": self.rev() })),
-                    ("GET", "/datos") => Response { code: 200, body: self.snap.to_json_with(&strip_user_json) },
-                    ("GET", "/cambios") => self.since(param("desde"), &[]),
+                    ("GET", "/datos") => {
+                        let view = self.view_of(me);
+                        Response { code: 200, body: self.snap.to_json_with(&|list, rec| Self::outgoing(view, list, rec)) }
+                    }
+                    ("GET", "/cambios") => self.since(param("desde"), &[], self.view_of(me)),
                     ("POST", "/cambios") => match serde_json::from_slice::<PushBody>(&req.body).map_err(|e| e.to_string()).and_then(|b| self.save(b.changes, station, me)) {
-                        Ok(sent) => self.since(param("base"), &sent),
+                        Ok(sent) => self.since(param("base"), &sent, self.view_of(me)),
                         Err(e) => error(400, &e),
                     },
                     ("POST", "/contrasena") => self.set_pin(req, me),
@@ -1685,6 +1718,82 @@ mod tests {
     }
 
     #[test]
+    fn reception_does_not_receive_clinical_data() {
+        let (addr, path, h) = start("CLAVE7");
+        let disk = || -> Db { crate::sync::on_disk(&path) };
+        // un doctor apunta antecedentes, notas y una nota clínica de un tratamiento
+        let doc = signed_in(&addr, "CLAVE7", "Gabinete", 3, "0000");
+        let (mut dd, mut sdd) = doc.load().unwrap();
+        dd.station = doc.station;
+        let pid = dd.patients[0].id;
+        dd.patients[0].background = "Hipertensión, anticoagulado".into();
+        dd.patients[0].notes = "Ansiedad en el sillón".into();
+        dd.entries[0].notes = "Sangrado al sondar".into();
+        doc.push(&mut dd, &mut sdd).unwrap();
+        let rec = signed_in(&addr, "CLAVE7", "Recepción", 2, "0000");
+        let full = disk();
+        assert!(!full.health.is_empty() && !full.perio.is_empty() && !full.images.is_empty() && !full.prescriptions.is_empty() && !full.ortho.is_empty());
+        assert_eq!(full.patient(pid).unwrap().background, "Hipertensión, anticoagulado");
+        let (mut d, mut sd) = rec.load().unwrap();
+        d.station = rec.station;
+        assert!(d.perio.is_empty() && d.images.is_empty() && d.ia_reports.is_empty() && d.prescriptions.is_empty() && d.ortho.is_empty(), "nada clínico");
+        // de los cuestionarios, solo si los hay, su fecha y si están firmados (para pedirlos)
+        assert_eq!(d.health.len(), full.health.len());
+        assert!(d.health.iter().all(|f| f.yes.is_empty() && f.details.is_empty() && f.notes.is_empty() && f.reason.is_empty()));
+        assert!(d.health.iter().zip(&full.health).all(|(a, b)| a.date == b.date && a.signed == b.signed));
+        assert!(d.patients.iter().all(|p| p.background.is_empty() && p.notes.is_empty()), "ni antecedentes ni notas");
+        assert!(d.entries.iter().all(|e| e.notes.is_empty()));
+        assert_eq!(d.entries.len(), full.entries.len(), "los tratamientos sí (para cobrar)");
+        assert_eq!(d.documents.len(), full.documents.len(), "los documentos sí (para firmar)");
+        assert!(d.patients.iter().zip(&full.patients).all(|(a, b)| a.alerts == b.alerts && a.allergies == b.allergies), "las alertas sí");
+        // cambia el teléfono de un paciente: sus antecedentes y notas siguen en el servidor
+        let p = d.patients.iter_mut().find(|p| p.id == pid).unwrap();
+        p.mobile = "600111222".into();
+        rec.push(&mut d, &mut sd).unwrap();
+        let after = disk();
+        let (before_p, after_p) = (full.patient(pid).unwrap(), after.patient(pid).unwrap());
+        assert_eq!(after_p.mobile, "600111222");
+        assert_eq!((after_p.background.as_str(), after_p.notes.as_str()), (before_p.background.as_str(), before_p.notes.as_str()));
+        // añade un cuestionario (el que manda un paciente por internet): se guarda
+        // entero, pero le vuelve sin las respuestas
+        let mut form = full.health[0].clone();
+        form.id = d.new_id();
+        form.notes = "Rellenado por internet".into();
+        form.yes.insert("diabetes".into(), true);
+        d.health.push(form.clone());
+        rec.push(&mut d, &mut sd).unwrap();
+        let saved = disk().health.into_iter().find(|f| f.id == form.id).unwrap();
+        assert_eq!((saved.notes.as_str(), saved.yes.get("diabetes")), ("Rellenado por internet", Some(&true)));
+        let (fresh, _) = rec.load().unwrap();
+        let back = fresh.health.iter().find(|f| f.id == form.id).unwrap();
+        assert!(back.notes.is_empty() && back.yes.is_empty());
+        // y si lo marca como firmado, las respuestas siguen en el servidor
+        let mut d = fresh;
+        let mut sd = Snapshot::from_db(&d);
+        crate::sync::mark_synced(&mut d);
+        d.station = rec.station;
+        d.health.iter_mut().find(|f| f.id == form.id).unwrap().signed = true;
+        rec.push(&mut d, &mut sd).unwrap();
+        let saved = disk().health.into_iter().find(|f| f.id == form.id).unwrap();
+        assert!(saved.signed && saved.notes == "Rellenado por internet" && saved.yes.get("diabetes") == Some(&true));
+        // no puede borrar ni cambiar lo que no ve
+        let perio = serde_json::to_string(&full.perio[0]).unwrap();
+        let key = full.perio[0].id.to_string();
+        let body = json!({ "cambios": [Change { field: "perio".into(), key: Some(key.clone()), before: Some(perio), after: None }] }).to_string();
+        rec.post(&format!("/cambios?base={}", d.rev), &body).unwrap();
+        assert!(disk().perio.iter().any(|c| c.id.to_string() == key));
+        assert_eq!(disk().entries[0].notes, "Sangrado al sondar");
+        // un doctor lo recibe todo
+        let (all, _) = doc.load().unwrap();
+        assert_eq!((all.perio.len(), all.health.len()), (full.perio.len(), full.health.len() + 1));
+        assert_eq!(all.patient(pid).unwrap().background, "Hipertensión, anticoagulado");
+        assert_eq!(all.entries[0].notes, "Sangrado al sondar");
+        doc.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn phone_code_needs_the_password_first() {
         let (addr, path, h) = start("CLAVE3");
         let dir = signed_in(&addr, "CLAVE3", "Despacho", 1, "0000");
@@ -1841,12 +1950,12 @@ mod tests {
         let mut db = Db::sample(crate::model::today());
         db.rev = 40;
         let st = State::new(&db, std::env::temp_dir().join("ds_since_test").join("clinica.json"), "K", vec![1; 32]);
-        let v: Value = serde_json::from_str(&st.since(12, &[]).body).unwrap();
+        let v: Value = serde_json::from_str(&st.since(12, &[], View::FULL).body).unwrap();
         assert_eq!((v["rev"].as_u64(), v["completo"].as_bool()), (Some(40), Some(true)));
-        let v: Value = serde_json::from_str(&st.since(40, &[]).body).unwrap();
+        let v: Value = serde_json::from_str(&st.since(40, &[], View::FULL).body).unwrap();
         assert_eq!(v["cambios"], json!([]), "al día: nada");
         // lo que mandó el puesto vuelve siempre, aunque no haya cambiado nada en el servidor
-        let v: Value = serde_json::from_str(&st.since(40, &[("users".into(), Some("4".into()))]).body).unwrap();
+        let v: Value = serde_json::from_str(&st.since(40, &[("users".into(), Some("4".into()))], View::FULL).body).unwrap();
         assert_eq!(v["cambios"][0]["clave"], "4");
         assert!(v["cambios"][0]["ahora"].as_str().unwrap().contains(HIDDEN), "sin la contraseña");
     }

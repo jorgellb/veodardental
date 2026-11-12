@@ -348,15 +348,18 @@ impl Records {
         }
     }
 
-    /// La lista como texto JSON, pasando cada registro por `f`.
-    fn to_json_with(&self, f: &dyn Fn(&str) -> String) -> String {
+    /// La lista como texto JSON, pasando cada registro por `f` (que puede quitarlo).
+    fn to_json_with(&self, f: &dyn Fn(&str) -> Option<String>) -> String {
         let mut s = String::with_capacity(self.map.values().map(|v| v.len() + 1).sum::<usize>() + 2);
         s.push('[');
-        for (i, (_, v)) in self.iter().enumerate() {
-            if i > 0 {
+        let mut first = true;
+        for (_, v) in self.iter() {
+            let Some(r) = f(v) else { continue };
+            if !first {
                 s.push(',');
             }
-            s.push_str(&f(v));
+            first = false;
+            s.push_str(&r);
         }
         s.push(']');
         s
@@ -378,10 +381,10 @@ impl Snapshot {
         }
     }
 
-    /// Los datos enteros como texto JSON; `users` pasa cada usuario por `f`
-    /// (para quitar las contraseñas al mandarlos a un puesto).
-    pub fn to_json_with(&self, users: &dyn Fn(&str) -> String) -> String {
-        let same = |s: &str| s.to_string();
+    /// Los datos enteros como texto JSON, pasando cada registro por `f(lista,
+    /// registro)`, que puede cambiarlo o quitarlo (para mandarlos a un puesto
+    /// sin contraseñas y sin lo que su perfil no ve).
+    pub fn to_json_with(&self, f: &dyn Fn(&str, &str) -> Option<String>) -> String {
         let mut out = String::from("{");
         let mut first = true;
         let mut put = |name: &str, value: String| {
@@ -393,13 +396,14 @@ impl Snapshot {
             out.push(':');
             out.push_str(&value);
         };
-        for f in RECORD_FIELDS {
-            let r = self.records.get(*f).cloned().unwrap_or_default();
-            put(f, r.to_json_with(if *f == "users" { users } else { &same }));
+        let empty = Records::default();
+        for name in RECORD_FIELDS {
+            let r = self.records.get(*name).unwrap_or(&empty);
+            put(name, r.to_json_with(&|rec| f(name, rec)));
         }
-        for f in PLAIN_FIELDS {
-            if let Some(v) = self.plain.get(*f) {
-                put(f, v.clone());
+        for name in PLAIN_FIELDS {
+            if let Some(v) = self.plain.get(*name) {
+                put(name, v.clone());
             }
         }
         out.push('}');
@@ -407,7 +411,7 @@ impl Snapshot {
     }
 
     pub fn to_json(&self) -> String {
-        self.to_json_with(&|s| s.to_string())
+        self.to_json_with(&|_, rec| Some(rec.to_string()))
     }
 
     pub fn to_db(&self) -> Result<Db, String> {
@@ -676,7 +680,7 @@ pub fn partial_db(snap: &Snapshot, fields: &[&str]) -> Result<Db, String> {
     let mut db = skeleton();
     for f in fields {
         let json = match snap.records.get(*f) {
-            Some(r) => r.to_json_with(&|s| s.to_string()),
+            Some(r) => r.to_json_with(&|s| Some(s.to_string())),
             None => match snap.plain.get(*f) {
                 Some(p) => p.clone(),
                 None => continue,

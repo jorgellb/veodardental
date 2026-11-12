@@ -155,6 +155,8 @@ fn detail(app: &mut App, ui: &mut Ui) {
         let mut goto = None;
         let mut order = None;
         let mut settings = false;
+        // las imágenes son datos clínicos (Recepción no las recibe)
+        let clinical = app.can(crate::users::Perm::Clinico);
         if let Some(w) = app.db.lab_works.iter_mut().find(|w| w.id == id) {
             let before = serde_json::to_string(w).unwrap_or_default();
             section(ui, &w.description.clone());
@@ -233,8 +235,11 @@ fn detail(app: &mut App, ui: &mut Ui) {
             }
             ui.add_space(2.0);
             ui.label(RichText::new("Adjuntar de la galería del paciente").size(13.5).color(MUTED));
-            let imgs: Vec<&PatientImage> = app.db.images.iter().filter(|i| i.patient_id == w.patient_id).collect();
-            if imgs.is_empty() {
+            if !clinical {
+                muted(ui, format!("Las imágenes las adjunta un doctor desde su puesto (este puesto no recibe imágenes){}.", if w.attachments.is_empty() { String::new() } else { format!("; esta orden lleva {}", w.attachments.len()) }));
+            }
+            let imgs: Vec<&PatientImage> = app.db.images.iter().filter(|i| clinical && i.patient_id == w.patient_id).collect();
+            if clinical && imgs.is_empty() {
                 muted(ui, "El paciente no tiene escaneados, fotos ni radiografías en su galería.");
             }
             for img in imgs {
@@ -338,6 +343,11 @@ fn order_action(app: &mut App, ctx: &egui::Context, id: u32, a: OrderAction) {
             }
         }
         OrderAction::Zip | OrderAction::Send => {
+            // las imágenes no están en este puesto: la orden saldría sin ellas
+            if !w.attachments.is_empty() && !app.can(crate::users::Perm::Clinico) {
+                app.stock.lab_msg = Some((id, false, format!("Esta orden lleva {} imágenes, que este puesto no recibe: prepárela o envíela desde el puesto de un doctor.", w.attachments.len())));
+                return;
+            }
             let (zip, warnings) = match crate::lab_order::package(&app.db, &w) {
                 Ok(x) => x,
                 Err(e) => {

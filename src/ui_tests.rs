@@ -1797,3 +1797,38 @@ fn station_signs_in_through_the_server() {
     server.join().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Recepción no ve las pestañas clínicas de la ficha ni las pantallas de
+/// imágenes y ortodoncia; un doctor, sí.
+#[test]
+fn reception_does_not_see_clinical_tabs() {
+    let mut h = harness();
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.profile == crate::users::Profile::Recepcion).map(|u| u.id);
+        a.screen = crate::app::Screen::Pacientes;
+        a.patient = a.db.patients.first().map(|p| p.id);
+        a.lists.patient_list_open = false;
+        a.pat_tab = crate::app::PatTab::Periodontograma;
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().pat_tab, crate::app::PatTab::Resumen, "no se queda en una pestaña clínica");
+    for tab in ["Salud", "Periodontograma", "Imágenes"] {
+        assert!(h.query_by_label(tab).is_none(), "Recepción ve la pestaña {tab}");
+    }
+    h.get_by_label("Filiación");
+    h.get_by_label("Documentos");
+    assert!(!h.state().allowed(crate::app::Screen::Imagenes) && !h.state().allowed(crate::app::Screen::Ortodoncia));
+    // un doctor sí
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.profile == crate::users::Profile::Doctor).map(|u| u.id);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Periodontograma");
+    assert!(h.state().allowed(crate::app::Screen::Imagenes));
+}
