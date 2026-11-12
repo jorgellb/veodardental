@@ -195,10 +195,10 @@ impl Db {
                     found = Some(Match::Remittance(r.id));
                 }
                 // cobro individual
-                if found.is_none() {
-                    if let Some(p) = self.payments.iter().find(|p| matches!(p.method.as_str(), "Transferencia" | "Bizum" | "Financiación") && (p.amount - m.amount).abs() < 0.005 && near(p.date.date(), 3) && !self.payment_used(p.id)) {
-                        found = Some(Match::Payments(vec![p.id]));
-                    }
+                if found.is_none()
+                    && let Some(p) = self.payments.iter().find(|p| matches!(p.method.as_str(), "Transferencia" | "Bizum" | "Financiación") && (p.amount - m.amount).abs() < 0.005 && near(p.date.date(), 3) && !self.payment_used(p.id))
+                {
+                    found = Some(Match::Payments(vec![p.id]));
                 }
                 // liquidación del datáfono: suma de cobros con tarjeta de un día
                 if found.is_none() {
@@ -216,10 +216,8 @@ impl Db {
                 found = Some(Match::Expense(e.id));
             }
             if let Some(f) = found {
-                if let Match::Expense(eid) = &f {
-                    if let Some(e) = self.expenses.iter_mut().find(|e| e.id == *eid) {
-                        e.paid = true;
-                    }
+                if let Match::Expense(eid) = &f && let Some(e) = self.expenses.iter_mut().find(|e| e.id == *eid) {
+                    e.paid = true;
                 }
                 if let Match::Remittance(rid) = &f {
                     let _ = self.remittance_collected(*rid);

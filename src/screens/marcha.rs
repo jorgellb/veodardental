@@ -14,10 +14,8 @@ pub struct MarchaUi {
 
 /// Lo que se sabe de este ordenador; se vuelve a leer cada 5 segundos.
 fn facts(app: &mut App, time: f64) -> Facts {
-    if let Some((t, f)) = &app.marcha.facts {
-        if time >= *t && time - *t < 5.0 {
-            return f.clone();
-        }
+    if let Some((t, f)) = &app.marcha.facts && time >= *t && time - *t < 5.0 {
+        return f.clone();
     }
     let remote = crate::shared::remote_mode();
     let extra = app.db.config.backup_extra.trim().to_string();
@@ -44,11 +42,9 @@ pub fn pending(app: &mut App, time: f64) -> usize {
 
 /// Vacía la clínica tras guardar una copia. Devuelve si se ha hecho.
 pub fn start_empty(app: &mut App) -> bool {
-    if app.persist {
-        if let Err(e) = crate::tools::create_backup(&app.db, "antes de vaciar la clinica") {
-            app.warn(format!("No se pudo guardar la copia de seguridad ({e}); no se ha borrado nada."));
-            return false;
-        }
+    if app.persist && let Err(e) = crate::tools::create_backup(&app.db, "antes de vaciar la clinica") {
+        app.warn(format!("No se pudo guardar la copia de seguridad ({e}); no se ha borrado nada."));
+        return false;
     }
     match app.db.start_empty() {
         Ok(n) => {

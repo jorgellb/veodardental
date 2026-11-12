@@ -273,10 +273,8 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             let before = app.imp.kind;
             ui.selectable_value(&mut app.imp.kind, ImportKind::Pacientes, "Pacientes");
             ui.selectable_value(&mut app.imp.kind, ImportKind::Tratamientos, "Tratamientos y precios");
-            if before != app.imp.kind {
-                if let Some(s) = &app.imp.sheet {
-                    app.imp.map = guess_mapping(app.imp.kind, &s.headers);
-                }
+            if before != app.imp.kind && let Some(s) = &app.imp.sheet {
+                app.imp.map = guess_mapping(app.imp.kind, &s.headers);
             }
             if app.imp.kind == ImportKind::Tratamientos {
                 ui.label("Precios de la tarifa");

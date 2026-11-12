@@ -139,11 +139,9 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
                         read.push(m.id);
                         reply = Some((m.from.clone(), "Un momento, ahora voy".into()));
                     }
-                    if let Some(pid) = m.patient_id {
-                        if ui.button("Ficha").clicked() {
-                            read.push(m.id);
-                            open_p = Some(pid);
-                        }
+                    if let Some(pid) = m.patient_id && ui.button("Ficha").clicked() {
+                        read.push(m.id);
+                        open_p = Some(pid);
                     }
                 });
             });

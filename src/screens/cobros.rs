@@ -95,10 +95,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         title(ui, "Hoja de cobros", "Cobros registrados por fecha y forma de pago");
         right_aligned(ui, |ui| {
-            if primary(ui, "＋ Cobrar al paciente activo").clicked() {
-                if let Some(pid) = app.patient {
-                    app.dialog = Dialog::Payment(PayDraft::new(app, pid));
-                }
+            if primary(ui, "＋ Cobrar al paciente activo").clicked() && let Some(pid) = app.patient {
+                app.dialog = Dialog::Payment(PayDraft::new(app, pid));
             }
             if ui.button("⬇ Exportar CSV").clicked() {
                 match export_csv(app) {

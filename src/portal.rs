@@ -312,12 +312,10 @@ pub fn health_from(b: &HealthBody) -> Result<HealthForm, String> {
     for q in QUESTIONS {
         let y = b.respuestas.get(q.key).copied().unwrap_or(false);
         yes.insert(q.key.to_string(), y);
-        if y && q.detail {
-            if let Some(d) = b.detalles.get(q.key) {
-                let d = clip(d, 200);
-                if !d.is_empty() {
-                    details.insert(q.key.to_string(), d);
-                }
+        if y && q.detail && let Some(d) = b.detalles.get(q.key) {
+            let d = clip(d, 200);
+            if !d.is_empty() {
+                details.insert(q.key.to_string(), d);
             }
         }
     }

@@ -171,7 +171,9 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
         }
     });
     let Some(a) = act else { return };
-    let (id, then): (u32, Box<dyn FnOnce(&mut App)>) = match a {
+    // qué hacer después de cerrar el aviso
+    type Then = Box<dyn FnOnce(&mut App)>;
+    let (id, then): (u32, Then) = match a {
         Act::Close(id) => (id, Box::new(|_| {})),
         Act::Open(id, pid) => (id, Box::new(move |app: &mut App| app.open_patient(pid, PatTab::Resumen))),
         Act::Appt(id, pid) => (

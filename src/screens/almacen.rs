@@ -347,8 +347,8 @@ fn orders(app: &mut App, ui: &mut Ui) {
                                 app.changed();
                             }
                         }
-                        OrderState::Enviado => {
-                            if primary(ui, "✔ Recibir mercancía").clicked() {
+                        OrderState::Enviado
+                            if primary(ui, "✔ Recibir mercancía").clicked() => {
                                 match app.db.receive_order(id) {
                                     Ok(()) => {
                                         app.changed();
@@ -357,7 +357,6 @@ fn orders(app: &mut App, ui: &mut Ui) {
                                     Err(e) => app.warn(e),
                                 }
                             }
-                        }
                         _ => {}
                     }
                     if matches!(o.state, OrderState::Borrador | OrderState::Enviado) && ui.button("Cancelar pedido").clicked() {

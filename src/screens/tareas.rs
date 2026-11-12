@@ -60,11 +60,9 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
             ui.label(text);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if let Some(pid) = t.patient_id {
-                    if ui.link(RichText::new(format!("👤 {}", app.db.patient_name(pid))).size(13.0)).clicked() {
-                        app.open_patient(pid, PatTab::Resumen);
-                        app.tasks.open = false;
-                    }
+                if let Some(pid) = t.patient_id && ui.link(RichText::new(format!("👤 {}", app.db.patient_name(pid))).size(13.0)).clicked() {
+                    app.open_patient(pid, PatTab::Resumen);
+                    app.tasks.open = false;
                 }
                 if let Some(d) = t.due {
                     let txt = if d == app.today { "hoy".to_string() } else { fmt_date(d) };

@@ -258,10 +258,8 @@ impl Db {
         }
         for l in &o.lines {
             self.stock_move(l.product_id, l.qty, MoveKind::Entrada, &format!("Pedido #{} · {}", o.id, self.supplier_name(o.supplier_id)), None, "");
-            if let Some(p) = self.products.iter_mut().find(|p| p.id == l.product_id) {
-                if l.cost > 0.0 {
-                    p.cost = l.cost;
-                }
+            if let Some(p) = self.products.iter_mut().find(|p| p.id == l.product_id) && l.cost > 0.0 {
+                p.cost = l.cost;
             }
         }
         if let Some(x) = self.orders.iter_mut().find(|x| x.id == id) {

@@ -258,10 +258,10 @@ fn messages(app: &mut App, ui: &mut Ui) {
                     if let Some(ob) = &app.comms.outbox {
                         ui.add(egui::Spinner::new().size(16.0));
                         ui.label(RichText::new(format!("Enviando correos: {} de {}…", ob.done, ob.total)).color(MUTED));
-                    } else if !emails.is_empty() && app.db.mail.ready() {
-                        if ui.add(egui::Button::new(RichText::new(format!("✉ Enviar por correo ({})", emails.len())).color(Color32::WHITE).font(sbf(14.0))).fill(channel_color(Channel::Email)).corner_radius(CornerRadius::same(10)).min_size(egui::vec2(0.0, 36.0))).on_hover_text("Envía ahora todos los correos pendientes desde el programa").clicked() {
-                            start_outbox(app, emails, false);
-                        }
+                    } else if !emails.is_empty() && app.db.mail.ready()
+                        && ui.add(egui::Button::new(RichText::new(format!("✉ Enviar por correo ({})", emails.len())).color(Color32::WHITE).font(sbf(14.0))).fill(channel_color(Channel::Email)).corner_radius(CornerRadius::same(10)).min_size(egui::vec2(0.0, 36.0))).on_hover_text("Envía ahora todos los correos pendientes desde el programa").clicked()
+                    {
+                        start_outbox(app, emails, false);
                     }
                     ui.add_space(8.0);
                     for (f, n) in [(Some(MsgState::Pendiente), "Pendientes"), (Some(MsgState::Enviado), "Enviados"), (Some(MsgState::Descartado), "Descartados"), (None, "Todos")] {

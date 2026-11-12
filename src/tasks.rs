@@ -82,10 +82,8 @@ impl Db {
         let tomorrow = today + Duration::days(1);
         for a in self.appointments.iter().filter(|a| (a.date == today || a.date == tomorrow) && !a.state.is_cancelled()) {
             let Some(pid) = a.patient_id else { continue };
-            if a.date == tomorrow {
-                if let Some(s) = self.health_status(pid, today) {
-                    new.push((format!("salud:{}", a.id), Some(pid), format!("{s}: pedirlo en la cita de mañana a las {}", a.start.format("%H:%M")), tomorrow));
-                }
+            if a.date == tomorrow && let Some(s) = self.health_status(pid, today) {
+                new.push((format!("salud:{}", a.id), Some(pid), format!("{s}: pedirlo en la cita de mañana a las {}", a.start.format("%H:%M")), tomorrow));
             }
             let bal = self.patient_balance(pid);
             if bal > 0.005 {

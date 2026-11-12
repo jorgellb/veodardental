@@ -172,7 +172,7 @@ pub fn hip_html(h: &HipHeader, list: &[RPrescripcion]) -> String {
             let dm = datamatrix_svg(&dm_content(h.id_repositorio, id_acc, &r.id_receta, prod, r.fecha_ini, r.fecha_fin, r.num_envases), 2.2).unwrap_or_default();
             rows.push_str(&format!(
                 "<tr><td class='dm'>{dm}</td><td><b>{what}</b><br>{forma}{via}<br>Posología: {pos}<br>Envases: <b>{env}</b> · Se puede recoger del <b>{ini}</b> al <b>{fin}</b>{plan}<br><small>ID.Rec: {idr}</small>{flags}{obs}</td></tr>",
-                forma = esc(&format!("{} {}", prod.forma, prod.dosificacion).trim().to_string()),
+                forma = esc(format!("{} {}", prod.forma, prod.dosificacion).trim()),
                 via = if prod.via.is_empty() { String::new() } else { format!(" · vía {}", esc(&prod.via)) },
                 pos = esc(&posologia(p)),
                 env = r.num_envases,

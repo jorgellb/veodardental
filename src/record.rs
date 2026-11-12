@@ -64,8 +64,8 @@ pub fn record_html(db: &Db, pid: u32, today: NaiveDate) -> String {
     b.push_str(&row("Fecha de nacimiento", &p.birth.map(|d| format!("{} ({} años)", fmt_date(d), p.age(today).unwrap_or(0))).unwrap_or_default()));
     b.push_str(&row("Teléfonos", &[p.mobile.as_str(), p.phone.as_str()].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · ")));
     b.push_str(&row("Email", &p.email));
-    b.push_str(&row("Dirección", &format!("{} {} {}", p.address, p.zip, p.city).trim().to_string()));
-    b.push_str(&row("Tarifa / póliza", &format!("{} {}", db.tariff_name(p.tariff_id), p.policy_no).trim().to_string()));
+    b.push_str(&row("Dirección", format!("{} {} {}", p.address, p.zip, p.city).trim()));
+    b.push_str(&row("Tarifa / póliza", format!("{} {}", db.tariff_name(p.tariff_id), p.policy_no).trim()));
     b.push_str(&row("Doctor habitual", &db.doctor(p.doctor_id).map(|d| d.name.clone()).unwrap_or_default()));
     b.push_str(&row("Alta", &p.registered.map(fmt_date).unwrap_or_default()));
     b.push_str(&row("Protección de datos", if p.accepts_gdpr { "Firmada" } else { "Pendiente de firma" }));

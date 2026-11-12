@@ -340,20 +340,18 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             if let Some(e) = s.error.as_ref().or(s.exited.as_ref()) {
                 ui.label(RichText::new(e).size(12.5).color(DANGER));
             }
-            if *mode == Mode::Quick {
-                if let Some(u) = &s.url {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("Dirección temporal:").size(12.5).color(MUTED));
-                        ui.label(RichText::new(u).size(12.5).color(ACCENT_DARK));
-                        if ui.small_button("Copiar").clicked() {
-                            ui.ctx().copy_text(u.clone());
-                        }
-                        if ui.small_button("Abrir").clicked() {
-                            ui.ctx().open_url(egui::OpenUrl::new_tab(u.clone()));
-                        }
-                    });
-                    ui.label(RichText::new("Cambia cada vez que se abre: no la use en enlaces que envíe a los pacientes.").size(12.0).color(WARN));
-                }
+            if *mode == Mode::Quick && let Some(u) = &s.url {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Dirección temporal:").size(12.5).color(MUTED));
+                    ui.label(RichText::new(u).size(12.5).color(ACCENT_DARK));
+                    if ui.small_button("Copiar").clicked() {
+                        ui.ctx().copy_text(u.clone());
+                    }
+                    if ui.small_button("Abrir").clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(u.clone()));
+                    }
+                });
+                ui.label(RichText::new("Cambia cada vez que se abre: no la use en enlaces que envíe a los pacientes.").size(12.0).color(WARN));
             }
             if !s.log.is_empty() {
                 egui::CollapsingHeader::new(RichText::new("Ver el registro de cloudflared").size(12.5)).id_salt("cf_log").show(ui, |ui| {
@@ -562,16 +560,14 @@ fn doc_action(app: &mut App, doc_id: u32, action: crate::doc_link::DocAction) {
                 app.notify(format!("{who} ha firmado por internet «{}».", d.title));
                 // copia firmada para el paciente
                 let email = app.db.patient(d.patient_id).map(|p| p.email.trim().to_string()).unwrap_or_default();
-                if app.db.mail.ready() && !email.is_empty() {
-                    if let Some(signed) = app.db.documents.iter().find(|x| x.id == doc_id).cloned() {
-                        let html = crate::doc_link::doc_html(&app.db, &signed);
-                        let c = &app.db.config;
-                        let subject = format!("{} firmado · {}", d.title, c.name);
-                        let text = format!("Hola:\n\nGracias por firmar «{}». Le adjuntamos su copia firmada.\n\nUn saludo,\n{}\n{}", d.title, c.name, c.phone);
-                        let name = format!("{}_firmado.html", fold(&d.title).replace(|ch: char| !ch.is_ascii_alphanumeric(), "_"));
-                        let files = vec![crate::mail::FileAttachment { name, mime: "text/html; charset=utf-8".into(), bytes: html.into_bytes() }];
-                        send_mail(app, who.clone(), email, subject, text, files);
-                    }
+                if app.db.mail.ready() && !email.is_empty() && let Some(signed) = app.db.documents.iter().find(|x| x.id == doc_id).cloned() {
+                    let html = crate::doc_link::doc_html(&app.db, &signed);
+                    let c = &app.db.config;
+                    let subject = format!("{} firmado · {}", d.title, c.name);
+                    let text = format!("Hola:\n\nGracias por firmar «{}». Le adjuntamos su copia firmada.\n\nUn saludo,\n{}\n{}", d.title, c.name, c.phone);
+                    let name = format!("{}_firmado.html", fold(&d.title).replace(|ch: char| !ch.is_ascii_alphanumeric(), "_"));
+                    let files = vec![crate::mail::FileAttachment { name, mime: "text/html; charset=utf-8".into(), bytes: html.into_bytes() }];
+                    send_mail(app, who.clone(), email, subject, text, files);
                 }
             }
             Err(e) => app.warn(format!("{who} intentó firmar por internet «{}», pero no se pudo registrar: {e} Llámele para firmarlo en la clínica.", d.title)),
@@ -736,14 +732,12 @@ fn budget_action(app: &mut App, bid: u32, action: crate::budget_link::BudgetActi
                 ));
                 // copia firmada para el paciente
                 let email = app.db.patient(b.patient_id).map(|p| p.email.trim().to_string()).unwrap_or_default();
-                if app.db.mail.ready() && !email.is_empty() {
-                    if let Some(html) = crate::budget_link::signed_html(&app.db, bid) {
-                        let c = &app.db.config;
-                        let subject = format!("Presupuesto nº {bid} aceptado · {}", c.name);
-                        let text = format!("Hola:\n\nGracias por aceptar el presupuesto nº {bid} ({}). Le adjuntamos la copia firmada. Le llamaremos para dar las citas.\n\nUn saludo,\n{}\n{}", b.title, c.name, c.phone);
-                        let files = vec![crate::mail::FileAttachment { name: format!("presupuesto_{bid}_firmado.html"), mime: "text/html; charset=utf-8".into(), bytes: html.into_bytes() }];
-                        send_mail(app, who.clone(), email, subject, text, files);
-                    }
+                if app.db.mail.ready() && !email.is_empty() && let Some(html) = crate::budget_link::signed_html(&app.db, bid) {
+                    let c = &app.db.config;
+                    let subject = format!("Presupuesto nº {bid} aceptado · {}", c.name);
+                    let text = format!("Hola:\n\nGracias por aceptar el presupuesto nº {bid} ({}). Le adjuntamos la copia firmada. Le llamaremos para dar las citas.\n\nUn saludo,\n{}\n{}", b.title, c.name, c.phone);
+                    let files = vec![crate::mail::FileAttachment { name: format!("presupuesto_{bid}_firmado.html"), mime: "text/html; charset=utf-8".into(), bytes: html.into_bytes() }];
+                    send_mail(app, who.clone(), email, subject, text, files);
                 }
             }
             Err(e) => app.warn(format!("{who} intentó aceptar por internet el presupuesto nº {bid}, pero no se pudo registrar: {e} Llámele para confirmarlo.")),
@@ -836,10 +830,10 @@ pub fn budget_link_row(app: &mut App, ui: &mut Ui, bid: u32) {
             ui.ctx().open_url(egui::OpenUrl::new_tab(crate::budget_link::link_url(&local_url(app), &t)));
         }
         4 => {
-            if let Some(html) = crate::budget_link::signed_html(&app.db, bid) {
-                if let Err(e) = crate::screens::centros::open_html(ui.ctx(), &format!("presupuesto_{bid}_firmado.html"), html) {
-                    app.warn(e);
-                }
+            if let Some(html) = crate::budget_link::signed_html(&app.db, bid)
+                && let Err(e) = crate::screens::centros::open_html(ui.ctx(), &format!("presupuesto_{bid}_firmado.html"), html)
+            {
+                app.warn(e);
             }
         }
         _ => {}
@@ -856,7 +850,7 @@ pub fn offer_freed_slot(app: &mut App, appt_id: u32) -> Result<String, String> {
 
 /// Crea la oferta, prepara los avisos y envía ya los de correo (los de WhatsApp o SMS quedan en Comunicaciones).
 pub fn offer_slot(app: &mut App, doctor: u32, date: chrono::NaiveDate, start: chrono::NaiveTime, minutes: u32, center: u32, source: Option<u32>) -> Result<String, String> {
-    let id = app.db.create_offer(doctor, date, start, minutes, center, source, now())?;
+    let id = app.db.create_offer(crate::slot_offer::FreeSlot { doctor, date, start, minutes, center }, source, now())?;
     let msgs = app.db.offer_messages(id);
     app.changed();
     let emails: Vec<u32> = msgs.iter().copied().filter(|m| app.db.messages.iter().any(|x| x.id == *m && x.channel == crate::comms::Channel::Email)).collect();
@@ -907,18 +901,16 @@ fn offer_action(app: &mut App, token: &str, action: crate::slot_offer::OfferActi
                 app.changed();
                 app.notify(format!("{who} se ha quedado el hueco libre del {when} (lista de espera): cita confirmada en la agenda."));
                 // confirmación por correo, con la cita para el calendario y su enlace
-                if app.db.mail.ready() && app.db.can_email(inv.patient_id) {
-                    if let Some(a) = app.db.appointments.iter().find(|a| a.id == appt).cloned() {
-                        let link = app.db.appt_link_url(appt).map(|u| format!("\n\nDesde este enlace puede confirmar, cambiar o anular la cita:\n{u}")).unwrap_or_default();
-                        let c = &app.db.config;
-                        let doctor = app.db.doctor(a.doctor_id).map(|d| d.alias.clone()).unwrap_or_default();
-                        let first = app.db.patient(inv.patient_id).map(|p| p.first_name.clone()).unwrap_or_default();
-                        let subject = format!("Cita confirmada en {}: {} a las {}", c.name, day_label(a.date), a.start.format("%H:%M"));
-                        let text = format!("Hola, {first}:\n\nEl hueco es suyo. Su cita queda confirmada:\n\n  {} a las {}\n  con {doctor}\n  {}{link}\n\nSi no puede venir, avísenos llamando al {}.\n\nUn saludo,\n{}", long_date(a.date), a.start.format("%H:%M"), c.address, c.phone, c.name);
-                        let ics = ics_event(a.id, &c.name, &c.address, &c.phone, a.date, a.start, a.minutes, &format!("Cita con {doctor}"));
-                        let to = app.db.patient(inv.patient_id).map(|p| p.email.clone()).unwrap_or_default();
-                        send_mail(app, who.clone(), to, subject, text, vec![crate::mail::FileAttachment { name: "cita.ics".into(), mime: "text/calendar; charset=utf-8".into(), bytes: ics.into_bytes() }]);
-                    }
+                if app.db.mail.ready() && app.db.can_email(inv.patient_id) && let Some(a) = app.db.appointments.iter().find(|a| a.id == appt).cloned() {
+                    let link = app.db.appt_link_url(appt).map(|u| format!("\n\nDesde este enlace puede confirmar, cambiar o anular la cita:\n{u}")).unwrap_or_default();
+                    let c = &app.db.config;
+                    let doctor = app.db.doctor(a.doctor_id).map(|d| d.alias.clone()).unwrap_or_default();
+                    let first = app.db.patient(inv.patient_id).map(|p| p.first_name.clone()).unwrap_or_default();
+                    let subject = format!("Cita confirmada en {}: {} a las {}", c.name, day_label(a.date), a.start.format("%H:%M"));
+                    let text = format!("Hola, {first}:\n\nEl hueco es suyo. Su cita queda confirmada:\n\n  {} a las {}\n  con {doctor}\n  {}{link}\n\nSi no puede venir, avísenos llamando al {}.\n\nUn saludo,\n{}", long_date(a.date), a.start.format("%H:%M"), c.address, c.phone, c.name);
+                    let ics = ics_event(a.id, &c.name, &c.address, &c.phone, a.date, a.start, a.minutes, &format!("Cita con {doctor}"));
+                    let to = app.db.patient(inv.patient_id).map(|p| p.email.clone()).unwrap_or_default();
+                    send_mail(app, who.clone(), to, subject, text, vec![crate::mail::FileAttachment { name: "cita.ics".into(), mime: "text/calendar; charset=utf-8".into(), bytes: ics.into_bytes() }]);
                 }
             }
             Err(e) => app.warn(format!("{who} quiso el hueco libre del {when}, pero no se pudo reservar: {e} Llámele para buscarle otro.")),

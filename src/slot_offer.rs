@@ -91,6 +91,17 @@ pub fn link_url(base: &str, token: &str) -> String {
     format!("{}/hueco/{token}", base.trim().trim_end_matches('/'))
 }
 
+/// Un hueco de la agenda: de qué profesional, qué día, a qué hora, cuántos
+/// minutos y en qué centro.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FreeSlot {
+    pub doctor: u32,
+    pub date: NaiveDate,
+    pub start: NaiveTime,
+    pub minutes: u32,
+    pub center: u32,
+}
+
 impl Db {
     /// Pacientes de la lista de espera a los que ofrecer el hueco, los que más llevan esperando primero.
     pub fn offer_candidates(&self, doctor: u32, date: NaiveDate, start: NaiveTime, minutes: u32, exclude: Option<u32>) -> Vec<WaitItem> {
@@ -110,7 +121,8 @@ impl Db {
     }
 
     /// Crea la oferta de un hueco libre. No envía nada: eso lo hace el programa con `offer_messages`.
-    pub fn create_offer(&mut self, doctor: u32, date: NaiveDate, start: NaiveTime, minutes: u32, center: u32, source: Option<u32>, now: NaiveDateTime) -> Result<u32, String> {
+    pub fn create_offer(&mut self, slot: FreeSlot, source: Option<u32>, now: NaiveDateTime) -> Result<u32, String> {
+        let FreeSlot { doctor, date, start, minutes, center } = slot;
         let end = start + Duration::minutes(minutes as i64);
         if date.and_time(start) < now + Duration::hours(self.booking.offer_min_hours as i64) {
             return Err("Ese hueco es demasiado pronto para avisar a la lista de espera.".into());
@@ -296,11 +308,9 @@ impl Db {
             } else {
                 None
             };
-            if let Some(s) = new {
-                if let Some(x) = self.slot_offers.iter_mut().find(|x| x.id == o.id) {
-                    x.state = s;
-                    changed = true;
-                }
+            if let Some(s) = new && let Some(x) = self.slot_offers.iter_mut().find(|x| x.id == o.id) {
+                x.state = s;
+                changed = true;
             }
         }
         changed
@@ -429,8 +439,8 @@ mod tests {
         let (d, s) = when(day, 10);
         // por la tarde no le encaja a Javier («Mañanas»)
         assert_eq!(db.offer_candidates(4, d, NaiveTime::from_hms_opt(17, 0, 0).unwrap(), 45, None).iter().map(|w| w.patient_id).collect::<Vec<_>>(), vec![102]);
-        let id = db.create_offer(4, d, s, 45, 1, None, now).unwrap();
-        assert!(db.create_offer(4, d, s, 45, 1, None, now).is_err(), "no se ofrece dos veces");
+        let id = db.create_offer(FreeSlot { doctor: 4, date: d, start: s, minutes: 45, center: 1 }, None, now).unwrap();
+        assert!(db.create_offer(FreeSlot { doctor: 4, date: d, start: s, minutes: 45, center: 1 }, None, now).is_err(), "no se ofrece dos veces");
         let o = db.slot_offers.iter().find(|o| o.id == id).unwrap().clone();
         assert_eq!(o.invites.iter().map(|i| i.patient_id).collect::<Vec<_>>(), vec![106, 102], "primero quien más lleva esperando");
         let msgs = db.offer_messages(id);
@@ -454,7 +464,7 @@ mod tests {
     fn offers_close_when_reception_fills_the_slot_or_time_passes() {
         let (mut db, now, day) = setup();
         let (d, s) = when(day, 9);
-        let id = db.create_offer(4, d, s, 45, 1, None, now).unwrap();
+        let id = db.create_offer(FreeSlot { doctor: 4, date: d, start: s, minutes: 45, center: 1 }, None, now).unwrap();
         assert!(!db.refresh_offers(now));
         // recepción da ese hueco por teléfono
         let aid = db.new_id();
@@ -464,11 +474,11 @@ mod tests {
         // y una oferta cuyo hueco ya llega caduca
         let (d2, s2) = when(workday(&db, day + Duration::days(7)), 11);
         db.appointments.retain(|a| !(a.date == d2 && a.doctor_id == 4));
-        let id2 = db.create_offer(4, d2, s2, 45, 1, None, now).unwrap();
+        let id2 = db.create_offer(FreeSlot { doctor: 4, date: d2, start: s2, minutes: 45, center: 1 }, None, now).unwrap();
         db.refresh_offers(d2.and_time(s2) - Duration::minutes(10));
         assert_eq!(db.slot_offers.iter().find(|o| o.id == id2).unwrap().state, OfferState::Caducada);
         // demasiado pronto o sin nadie en espera: no se ofrece
-        assert!(db.create_offer(4, today(), NaiveTime::from_hms_opt(9, 30, 0).unwrap(), 45, 1, None, now).is_err());
-        assert!(db.create_offer(3, d, s, 30, 1, None, now).is_err(), "nadie espera a la ortodoncista");
+        assert!(db.create_offer(FreeSlot { doctor: 4, date: today(), start: NaiveTime::from_hms_opt(9, 30, 0).unwrap(), minutes: 45, center: 1 }, None, now).is_err());
+        assert!(db.create_offer(FreeSlot { doctor: 3, date: d, start: s, minutes: 30, center: 1 }, None, now).is_err(), "nadie espera a la ortodoncista");
     }
 }

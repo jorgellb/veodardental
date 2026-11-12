@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub struct Adjust {
     pub brightness: i32,
     pub contrast: i32,
@@ -18,11 +19,6 @@ pub struct Adjust {
     pub rot: u8,
 }
 
-impl Default for Adjust {
-    fn default() -> Self {
-        Adjust { brightness: 0, contrast: 0, invert: false, rot: 0 }
-    }
-}
 
 pub struct ImgState {
     pub selected: Option<u32>,
@@ -385,10 +381,8 @@ impl ImgState {
     /// Textura de una imagen (con ajustes si `adjusted`), cacheada.
     fn texture(&mut self, ctx: &egui::Context, img: &PatientImage, adjusted: bool) -> Option<(egui::TextureId, [usize; 2])> {
         let a = if adjusted { self.adjust } else { Adjust::default() };
-        if let Some((t, s, aa)) = self.cache.get(&(img.id, adjusted)) {
-            if *aa == a {
-                return Some((t.id(), *s));
-            }
+        if let Some((t, s, aa)) = self.cache.get(&(img.id, adjusted)) && *aa == a {
+            return Some((t.id(), *s));
         }
         let base = if img.demo {
             demo_image(img)
@@ -762,10 +756,8 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                 if danger(ui, "Quitar").clicked() {
                     delete = true;
                 }
-                if matches!(m.kind, ImageKind::Tac | ImageKind::Escaneo3D) || file_kind(&m.path) != "img" {
-                    if ui.button("Abrir en visor 3D").clicked() {
-                        open_with = Some(m.kind);
-                    }
+                if (matches!(m.kind, ImageKind::Tac | ImageKind::Escaneo3D) || file_kind(&m.path) != "img") && ui.button("Abrir en visor 3D").clicked() {
+                    open_with = Some(m.kind);
                 }
             });
         });

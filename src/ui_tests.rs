@@ -829,7 +829,7 @@ fn ai_analysis_falls_back_and_adds_to_plan() {
         h.step();
     }
     assert_eq!(planned(h.state()), before + 1, "la obturación propuesta pasa al plan");
-    let last = h.state().db.entries.iter().filter(|e| e.patient_id == 101 && e.teeth == vec![47]).last().unwrap();
+    let last = h.state().db.entries.iter().rfind(|e| e.patient_id == 101 && e.teeth == vec![47]).unwrap();
     assert_eq!(last.odg, crate::model::OdgKind::Obturacion);
     assert_eq!(h.state().db.ia_reports[0].planned, vec![0]);
 }

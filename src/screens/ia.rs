@@ -19,6 +19,9 @@ pub struct Job {
     pub started: std::time::Instant,
 }
 
+/// Modelos del proveedor que se están pidiendo: (agente, respuesta cuando llegue).
+pub type ModelsJob = (u32, Receiver<Result<Vec<ia::ModelInfo>, String>>);
+
 #[derive(Default)]
 pub struct IaUi {
     pub job: Option<Job>,
@@ -29,7 +32,7 @@ pub struct IaUi {
     pub edit: Option<u32>,
     pub show_key: bool,
     pub models: Option<(u32, Result<Vec<ia::ModelInfo>, String>)>,
-    pub models_job: Option<(u32, Receiver<Result<Vec<ia::ModelInfo>, String>>)>,
+    pub models_job: Option<ModelsJob>,
     pub model_filter: String,
     pub all_models: bool,
     pub only_free: bool,
@@ -413,44 +416,42 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
         });
     }
     let mut pick: Option<(String, Option<bool>)> = None;
-    if let Some((mid, res)) = &app.ia.models {
-        if *mid == id {
-            match res {
-                Err(e) => {
-                    ui.label(RichText::new(format!("No se pudo obtener la lista: {e}")).color(DANGER));
-                }
-                Ok(list) => {
-                    ui.horizontal(|ui| {
-                        ui.add_sized([220.0, 32.0], egui::TextEdit::singleline(&mut app.ia.model_filter).hint_text("Filtrar modelos"));
-                        ui.checkbox(&mut app.ia.only_free, "Sólo gratuitos");
-                        ui.checkbox(&mut app.ia.all_models, "Mostrar también los que no admiten imágenes");
-                    });
-                    let f = fold(&app.ia.model_filter);
-                    let shown: Vec<&ia::ModelInfo> = list
-                        .iter()
-                        .filter(|m| f.is_empty() || fold(&m.id).contains(&f) || fold(&m.name).contains(&f))
-                        .filter(|m| !app.ia.only_free || m.free == Some(true))
-                        .filter(|m| app.ia.all_models || m.vision != Some(false))
-                        .collect();
-                    muted(ui, format!("{} modelos", shown.len()));
-                    egui::ScrollArea::vertical().id_salt(("ia_models", id)).max_height(220.0).show(ui, |ui| {
-                        for m in shown.iter().take(300) {
-                            ui.horizontal(|ui| {
-                                if ui.selectable_label(false, RichText::new(&m.id).font(mdf(13.0))).clicked() {
-                                    pick = Some((m.id.clone(), m.free));
-                                }
-                                match m.free {
-                                    Some(true) => pill(ui, "Gratuito", OK),
-                                    Some(false) => pill(ui, "De pago", INFO),
-                                    None => pill(ui, "Precio no indicado", MUTED),
-                                };
-                                if m.vision == Some(true) {
-                                    pill(ui, "Imágenes", ACCENT);
-                                }
-                            });
-                        }
-                    });
-                }
+    if let Some((mid, res)) = &app.ia.models && *mid == id {
+        match res {
+            Err(e) => {
+                ui.label(RichText::new(format!("No se pudo obtener la lista: {e}")).color(DANGER));
+            }
+            Ok(list) => {
+                ui.horizontal(|ui| {
+                    ui.add_sized([220.0, 32.0], egui::TextEdit::singleline(&mut app.ia.model_filter).hint_text("Filtrar modelos"));
+                    ui.checkbox(&mut app.ia.only_free, "Sólo gratuitos");
+                    ui.checkbox(&mut app.ia.all_models, "Mostrar también los que no admiten imágenes");
+                });
+                let f = fold(&app.ia.model_filter);
+                let shown: Vec<&ia::ModelInfo> = list
+                    .iter()
+                    .filter(|m| f.is_empty() || fold(&m.id).contains(&f) || fold(&m.name).contains(&f))
+                    .filter(|m| !app.ia.only_free || m.free == Some(true))
+                    .filter(|m| app.ia.all_models || m.vision != Some(false))
+                    .collect();
+                muted(ui, format!("{} modelos", shown.len()));
+                egui::ScrollArea::vertical().id_salt(("ia_models", id)).max_height(220.0).show(ui, |ui| {
+                    for m in shown.iter().take(300) {
+                        ui.horizontal(|ui| {
+                            if ui.selectable_label(false, RichText::new(&m.id).font(mdf(13.0))).clicked() {
+                                pick = Some((m.id.clone(), m.free));
+                            }
+                            match m.free {
+                                Some(true) => pill(ui, "Gratuito", OK),
+                                Some(false) => pill(ui, "De pago", INFO),
+                                None => pill(ui, "Precio no indicado", MUTED),
+                            };
+                            if m.vision == Some(true) {
+                                pill(ui, "Imágenes", ACCENT);
+                            }
+                        });
+                    }
+                });
             }
         }
     }
@@ -576,14 +577,12 @@ fn analyze_controls(app: &mut App, ui: &mut Ui, img: &PatientImage, ctx: &egui::
         } else if busy_other {
             muted(ui, "Hay otro análisis en marcha; espere a que termine.");
         }
-        if let Some((iid, e, attempts)) = &app.ia.error {
-            if *iid == img.id {
-                egui::Frame::new().fill(tint(DANGER, 0.06)).stroke(Stroke::new(1.0, tint(DANGER, 0.25))).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(RichText::new(e).font(sbf(13.5)).color(DANGER));
-                    attempts_list(ui, attempts);
-                });
-            }
+        if let Some((iid, e, attempts)) = &app.ia.error && *iid == img.id {
+            egui::Frame::new().fill(tint(DANGER, 0.06)).stroke(Stroke::new(1.0, tint(DANGER, 0.25))).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(e).font(sbf(13.5)).color(DANGER));
+                attempts_list(ui, attempts);
+            });
         }
     }
 }

@@ -128,11 +128,9 @@ pub fn patient_list(app: &mut App, ui: &mut Ui, pid: u32) {
                     app.dialog = Dialog::Budget(id);
                 }
                 let n = app.db.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto && e.budget_id.is_none()).count();
-                if n > 0 && ui.button(format!("Desde previstos del odontograma ({n})")).clicked() {
-                    if let Some(id) = app.db.budget_from_planned(pid) {
-                        app.changed();
-                        app.dialog = Dialog::Budget(id);
-                    }
+                if n > 0 && ui.button(format!("Desde previstos del odontograma ({n})")).clicked() && let Some(id) = app.db.budget_from_planned(pid) {
+                    app.changed();
+                    app.dialog = Dialog::Budget(id);
                 }
             });
         });
@@ -382,21 +380,19 @@ fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
         let tariff = b.tariff_id;
         crate::screens::treatment_picker(ui, &format!("bl_tto{}", b.id), &app.db, tariff, &mut st.0, 320.0, |t| t.odg != OdgKind::Ausente, |t| format!("{} · {} · {}", t.code, t.description, money(app.db.price_for(&t.code, tariff))));
         ui.add_sized([110.0, 32.0], egui::TextEdit::singleline(&mut st.1).hint_text("Piezas: 36 37"));
-        if ui.button("＋ Añadir").clicked() {
-            if let Some(t) = app.db.treatment(&st.0).filter(|t| app.db.treatment_offered(t, tariff)) {
-                let teeth: Vec<u8> = st.1.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).filter(|t| crate::screens::pacientes::valid_tooth(*t)).collect();
-                let units = if t.per_tooth { teeth.len().max(1) as u32 } else { 1 };
-                b.lines.push(BudgetLine {
-                    code: t.code.clone(),
-                    description: t.description.clone(),
-                    teeth,
-                    units,
-                    price: app.db.price_for(&t.code, b.tariff_id),
-                    discount_pct: app.db.patient(b.patient_id).map(|p| p.discount_pct).unwrap_or(0.0),
-                    odg: t.odg,
-                });
-                st.1.clear();
-            }
+        if ui.button("＋ Añadir").clicked() && let Some(t) = app.db.treatment(&st.0).filter(|t| app.db.treatment_offered(t, tariff)) {
+            let teeth: Vec<u8> = st.1.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).filter(|t| crate::screens::pacientes::valid_tooth(*t)).collect();
+            let units = if t.per_tooth { teeth.len().max(1) as u32 } else { 1 };
+            b.lines.push(BudgetLine {
+                code: t.code.clone(),
+                description: t.description.clone(),
+                teeth,
+                units,
+                price: app.db.price_for(&t.code, b.tariff_id),
+                discount_pct: app.db.patient(b.patient_id).map(|p| p.discount_pct).unwrap_or(0.0),
+                odg: t.odg,
+            });
+            st.1.clear();
         }
     });
     ui.data_mut(|d| d.insert_temp(key, st));

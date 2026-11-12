@@ -651,10 +651,8 @@ fn client_ip(req: &tiny_http::Request) -> String {
     if local {
         // detrás del túnel: la dirección real viene en la cabecera
         for h in ["CF-Connecting-IP", "X-Forwarded-For", "X-Real-IP"] {
-            if let Some(v) = req.headers().iter().find(|x| x.field.equiv(h)) {
-                if let Some(first) = v.value.as_str().split(',').next() {
-                    return first.trim().to_string();
-                }
+            if let Some(v) = req.headers().iter().find(|x| x.field.equiv(h)) && let Some(first) = v.value.as_str().split(',').next() {
+                return first.trim().to_string();
             }
         }
     }
@@ -1680,11 +1678,9 @@ mod tests {
             println!("presupuesto: http://127.0.0.1:18791/presupuesto/{t}");
         }
         // y un consentimiento para firmar
-        if let Some(tid) = db.doc_templates.iter().find(|t| t.name.contains("implantes")).map(|t| t.id) {
-            if let Some(doc) = db.new_document(101, tid, &[36]) {
-                let t = db.doc_token(doc);
-                println!("documento: http://127.0.0.1:18791/documento/{t}");
-            }
+        if let Some(tid) = db.doc_templates.iter().find(|t| t.name.contains("implantes")).map(|t| t.id) && let Some(doc) = db.new_document(101, tid, &[36]) {
+            let t = db.doc_token(doc);
+            println!("documento: http://127.0.0.1:18791/documento/{t}");
         }
         // y un hueco libre de la higienista ofrecido a la lista de espera
         let mut day = today + Duration::days(4);
@@ -1692,10 +1688,10 @@ mod tests {
             day += Duration::days(1);
         }
         db.appointments.retain(|a| !(a.date == day && a.doctor_id == 4));
-        if let Ok(id) = db.create_offer(4, day, NaiveTime::from_hms_opt(10, 0, 0).unwrap(), 45, 1, None, now()) {
-            if let Some(i) = db.slot_offers.iter().find(|o| o.id == id).and_then(|o| o.invites.first()) {
-                println!("hueco: http://127.0.0.1:18791/hueco/{}", i.token);
-            }
+        if let Ok(id) = db.create_offer(crate::slot_offer::FreeSlot { doctor: 4, date: day, start: NaiveTime::from_hms_opt(10, 0, 0).unwrap(), minutes: 45, center: 1 }, None, now())
+            && let Some(i) = db.slot_offers.iter().find(|o| o.id == id).and_then(|o| o.invites.first())
+        {
+            println!("hueco: http://127.0.0.1:18791/hueco/{}", i.token);
         }
         // y «Mis recetas» de Ana con una receta electrónica emitida
         let pid = db.patients[0].id;
@@ -1880,7 +1876,7 @@ mod tests {
         db.appointments.retain(|a| !(a.date == day && a.doctor_id == 4));
         let wid = db.new_id();
         db.waitlist.push(WaitItem { id: wid, patient_id: 102, doctor_id: 4, reason: "Limpieza".into(), since: today, preference: "Cualquier hora".into() });
-        let id = db.create_offer(4, day, NaiveTime::from_hms_opt(10, 0, 0).unwrap(), 45, 1, None, now()).unwrap();
+        let id = db.create_offer(crate::slot_offer::FreeSlot { doctor: 4, date: day, start: NaiveTime::from_hms_opt(10, 0, 0).unwrap(), minutes: 45, center: 1 }, None, now()).unwrap();
         let o = db.slot_offers.iter().find(|o| o.id == id).unwrap().clone();
         assert_eq!(o.invites.len(), 2);
         let (t1, t2) = (o.invites[0].token.clone(), o.invites[1].token.clone());

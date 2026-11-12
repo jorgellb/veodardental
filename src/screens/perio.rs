@@ -87,7 +87,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
         return;
     };
     let chart = app.db.perio.iter().find(|c| c.id == sel).cloned().unwrap();
-    let prev = app.db.patient_perio(pid).into_iter().filter(|c| (c.date, c.id) < (chart.date, chart.id)).last().cloned();
+    let prev = app.db.patient_perio(pid).into_iter().rfind(|c| (c.date, c.id) < (chart.date, chart.id)).cloned();
     let st = chart.stats();
     let pst = prev.as_ref().map(|p| p.stats());
     ui.add_space(8.0);
@@ -142,10 +142,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Notas del sondaje");
-        if let Some(c) = app.db.perio.iter_mut().find(|c| c.id == sel) {
-            if ui.add(egui::TextEdit::multiline(&mut c.notes).desired_rows(3).desired_width(f32::INFINITY)).changed() {
-                app.dirty = true;
-            }
+        if let Some(c) = app.db.perio.iter_mut().find(|c| c.id == sel) && ui.add(egui::TextEdit::multiline(&mut c.notes).desired_rows(3).desired_width(f32::INFINITY)).changed() {
+            app.dirty = true;
         }
     });
     if let (Some(t), Some(col)) = (app.lists.perio_tooth, anchor) {

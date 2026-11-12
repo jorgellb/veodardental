@@ -1136,7 +1136,7 @@ pub fn money(v: f64) -> String {
     let s = ent.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push('.');
         }
         out.push(c);
@@ -1460,12 +1460,8 @@ impl Db {
         let bid = self.entries.iter().find(|e| e.id == id).and_then(|e| e.budget_id);
         if let Some(bid) = bid {
             let pending = self.entries.iter().any(|e| e.budget_id == Some(bid) && e.state == TxState::Previsto);
-            if !pending {
-                if let Some(b) = self.budgets.iter_mut().find(|b| b.id == bid) {
-                    if b.state == BudgetState::Aceptado {
-                        b.state = BudgetState::Cerrado;
-                    }
-                }
+            if !pending && let Some(b) = self.budgets.iter_mut().find(|b| b.id == bid) && b.state == BudgetState::Aceptado {
+                b.state = BudgetState::Cerrado;
             }
         }
     }
@@ -1726,10 +1722,8 @@ impl Db {
         if entries.is_empty() {
             return Err("No hay tratamientos realizados pendientes de facturar.".into());
         }
-        if let Some(last) = self.invoices.iter().filter(|i| i.series == format!("F{}", date.year())).map(|i| i.date).max() {
-            if date < last {
-                return Err(format!("La fecha no puede ser anterior a la última factura de la serie ({}).", fmt_date(last)));
-            }
+        if let Some(last) = self.invoices.iter().filter(|i| i.series == format!("F{}", date.year())).map(|i| i.date).max() && date < last {
+            return Err(format!("La fecha no puede ser anterior a la última factura de la serie ({}).", fmt_date(last)));
         }
         if p.nif.trim().is_empty() && entries.iter().map(|e| e.amount()).sum::<f64>() > 400.0 {
             return Err("Para facturas de más de 400 € el paciente debe tener NIF (factura completa).".into());

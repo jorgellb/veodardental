@@ -304,10 +304,8 @@ impl Db {
                 }
             }
         }
-        if let Some(t) = self.tariffs.iter_mut().find(|t| t.id == 1) {
-            if !t.notes.contains(&marker(base.id)) {
-                t.notes = format!("{} {}", marker(base.id), t.notes.trim()).trim().to_string();
-            }
+        if let Some(t) = self.tariffs.iter_mut().find(|t| t.id == 1) && !t.notes.contains(&marker(base.id)) {
+            t.notes = format!("{} {}", marker(base.id), t.notes.trim()).trim().to_string();
         }
 
         // 2. el resto de tarifas
@@ -362,20 +360,18 @@ impl Db {
                         None => self.treatments.push(t),
                     }
                 }
-                if gt.inactivo == 0 {
-                    if let Some(t) = self.tariffs.iter_mut().find(|t| t.id == tid) {
-                        let price = round2(gt.precio.max(0.0));
-                        match t.prices.iter_mut().find(|p| p.code == code) {
-                            Some(p) => p.price = price,
-                            None => t.prices.push(TariffPrice { code: code.clone(), price, insurer_fee: 0.0 }),
-                        }
-                        r.tariff_prices += 1;
+                if gt.inactivo == 0 && let Some(t) = self.tariffs.iter_mut().find(|t| t.id == tid) {
+                    let price = round2(gt.precio.max(0.0));
+                    match t.prices.iter_mut().find(|p| p.code == code) {
+                        Some(p) => p.price = price,
+                        None => t.prices.push(TariffPrice { code: code.clone(), price, insurer_fee: 0.0 }),
                     }
+                    r.tariff_prices += 1;
                 }
             }
         }
         // grupos ordenados para las listas
-        self.treatments.sort_by(|a, b| (a.only_tariff.is_some(), fold(&a.group), fold(&a.description)).cmp(&(b.only_tariff.is_some(), fold(&b.group), fold(&b.description))));
+        self.treatments.sort_by_key(|a| (a.only_tariff.is_some(), fold(&a.group), fold(&a.description)));
         Ok(r)
     }
 }

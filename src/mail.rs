@@ -227,8 +227,11 @@ pub(crate) mod tests {
         (port, h)
     }
 
+    /// Correos recibidos por el servidor de prueba: (destinatarios, mensaje).
+    pub(crate) type Received = Vec<(Vec<String>, String)>;
+
     /// Como `fake_smtp`, pero acepta `n` correos (uno por conexión).
-    pub(crate) fn fake_smtp_many(n: usize) -> (u16, std::thread::JoinHandle<Vec<(Vec<String>, String)>>) {
+    pub(crate) fn fake_smtp_many(n: usize) -> (u16, std::thread::JoinHandle<Received>) {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         let h = std::thread::spawn(move || (0..n).map(|_| serve_one(l.accept().unwrap().0)).collect());

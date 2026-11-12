@@ -325,7 +325,7 @@ pub fn verify(db: &Db) -> Result<usize, String> {
 
 /// Último registro de una factura (el que manda su estado).
 pub fn latest(db: &Db, invoice_id: u32) -> Option<Item<'_>> {
-    chain(db).into_iter().filter(|i| i.invoice_id() == invoice_id).last()
+    chain(db).into_iter().rfind(|i| i.invoice_id() == invoice_id)
 }
 
 /// La factura se anuló (con un registro de anulación que la AEAT no rechazó).

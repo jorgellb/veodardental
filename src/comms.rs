@@ -245,10 +245,8 @@ impl Db {
         if ch == Channel::Email && subject.trim().is_empty() {
             subject = format!("Mensaje de {}", self.config.name);
         }
-        if let Some((label, url)) = link {
-            if self.booking.links_in_messages && ch != Channel::Sms && !url.is_empty() && !text.contains(&url) {
-                text = format!("{}\n\n{label}: {url}", text.trim_end());
-            }
+        if let Some((label, url)) = link && self.booking.links_in_messages && ch != Channel::Sms && !url.is_empty() && !text.contains(&url) {
+            text = format!("{}\n\n{label}: {url}", text.trim_end());
         }
         self.messages.push(Message { id, patient_id: pid, kind: t.kind, channel: ch, to, subject, text, created: now(), sent_at: None, state: MsgState::Pendiente, related, user: self.config.current_user.clone(), error: String::new(), attempts: 0 });
         true
@@ -388,13 +386,11 @@ impl Db {
         m.sent_at = Some(now());
         m.error.clear();
         let (kind, related, ch) = (m.kind, m.related, m.channel);
-        if kind == MsgKind::Recall {
-            if let Some(r) = self.recalls.iter_mut().find(|r| Some(r.id) == related) {
-                r.state = RecallState::Contactado;
-                r.channel = ch.label().into();
-                r.contacted_on = Some(today());
-                r.comment = format!("Aviso enviado por {}", ch.label());
-            }
+        if kind == MsgKind::Recall && let Some(r) = self.recalls.iter_mut().find(|r| Some(r.id) == related) {
+            r.state = RecallState::Contactado;
+            r.channel = ch.label().into();
+            r.contacted_on = Some(today());
+            r.comment = format!("Aviso enviado por {}", ch.label());
         }
     }
 
@@ -422,10 +418,8 @@ impl Db {
         d.signed_at = Some(now());
         d.signature = strokes;
         let (pid, tid) = (d.patient_id, d.template_id);
-        if self.doc_templates.iter().any(|t| t.id == tid && t.marks_gdpr) {
-            if let Some(p) = self.patient_mut(pid) {
-                p.accepts_gdpr = true;
-            }
+        if self.doc_templates.iter().any(|t| t.id == tid && t.marks_gdpr) && let Some(p) = self.patient_mut(pid) {
+            p.accepts_gdpr = true;
         }
         Ok(())
     }

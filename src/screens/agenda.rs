@@ -424,22 +424,20 @@ fn grid(app: &mut App, ui: &mut Ui) {
         if resp.drag_started() {
             app.agenda.drag = Some((a.id, egui::Vec2::ZERO));
         }
-        if let Some((did, off)) = &mut app.agenda.drag {
-            if *did == a.id {
-                if resp.dragged() {
-                    *off += resp.drag_delta();
+        if let Some((did, off)) = &mut app.agenda.drag && *did == a.id {
+            if resp.dragged() {
+                *off += resp.drag_delta();
+            }
+            r = r.translate(*off);
+            if resp.drag_stopped() {
+                let delta_min = ((off.y / ppm) / 15.0).round() as i64 * 15;
+                let dcol = (off.x / col_w).round() as i64;
+                let nci = (ci as i64 + dcol).clamp(0, cols.len() as i64 - 1) as usize;
+                let ns = a.start + Duration::minutes(delta_min);
+                if delta_min != 0 || nci != ci {
+                    drop = Some((a.id, cols[nci].date, cols[nci].doctor, ns));
                 }
-                r = r.translate(*off);
-                if resp.drag_stopped() {
-                    let delta_min = ((off.y / ppm) / 15.0).round() as i64 * 15;
-                    let dcol = (off.x / col_w).round() as i64;
-                    let nci = (ci as i64 + dcol).clamp(0, cols.len() as i64 - 1) as usize;
-                    let ns = a.start + Duration::minutes(delta_min);
-                    if delta_min != 0 || nci != ci {
-                        drop = Some((a.id, cols[nci].date, cols[nci].doctor, ns));
-                    }
-                    app.agenda.drag = None;
-                }
+                app.agenda.drag = None;
             }
         }
         let doc_col = app.db.doctor(a.doctor_id).map(|c| rgb(c.color)).unwrap_or(ACCENT);
@@ -550,31 +548,23 @@ fn grid(app: &mut App, ui: &mut Ui) {
         }
     }
     // clic en hueco vacío → nueva cita
-    if bg_resp.clicked() && open_dialog.is_none() {
-        if let Some(pp) = bg_resp.interact_pointer_pos() {
-            if let Some(slot) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols) {
-                let (date, doc, t) = slot;
-                let mut d = ApptDraft::new_at(app, date, Some((t, doc)), app.patient);
-                d.a.patient_id = None;
-                d.a.first_visit = false;
-                app.dialog = Dialog::Appointment(d);
-            }
-        }
+    if bg_resp.clicked() && open_dialog.is_none() && let Some(pp) = bg_resp.interact_pointer_pos() && let Some(slot) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols) {
+        let (date, doc, t) = slot;
+        let mut d = ApptDraft::new_at(app, date, Some((t, doc)), app.patient);
+        d.a.patient_id = None;
+        d.a.first_visit = false;
+        app.dialog = Dialog::Appointment(d);
     }
     if let Some(a) = open_dialog {
         app.dialog = Dialog::Appointment(ApptDraft::from(&a));
     }
-    if bg_resp.hovered() {
-        if let Some(pp) = bg_resp.hover_pos() {
-            if let Some((_, _, t)) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols) {
-                let ci = ((pp.x - rect.min.x - time_w) / col_w).floor();
-                let x = rect.min.x + time_w + ci * col_w;
-                let y = y_of(minutes_of(t));
-                let r = Rect::from_min_size(pos2(x + 4.0, y), vec2(col_w - 8.0, 15.0 * ppm));
-                p.rect_stroke(r, CornerRadius::same(4), Stroke::new(1.0, ACCENT), StrokeKind::Inside);
-                p.text(r.left_center() + vec2(6.0, 0.0), Align2::LEFT_CENTER, format!("＋ {}", hm(t)), FontId::proportional(12.5), ACCENT);
-            }
-        }
+    if bg_resp.hovered() && let Some(pp) = bg_resp.hover_pos() && let Some((_, _, t)) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols) {
+        let ci = ((pp.x - rect.min.x - time_w) / col_w).floor();
+        let x = rect.min.x + time_w + ci * col_w;
+        let y = y_of(minutes_of(t));
+        let r = Rect::from_min_size(pos2(x + 4.0, y), vec2(col_w - 8.0, 15.0 * ppm));
+        p.rect_stroke(r, CornerRadius::same(4), Stroke::new(1.0, ACCENT), StrokeKind::Inside);
+        p.text(r.left_center() + vec2(6.0, 0.0), Align2::LEFT_CENTER, format!("＋ {}", hm(t)), FontId::proportional(12.5), ACCENT);
     }
 }
 
@@ -727,13 +717,11 @@ fn side(app: &mut App, ui: &mut Ui) {
             app.db.waitlist.retain(|w| w.id != id);
             app.changed();
         }
-        if let Some(pid) = app.patient {
-            if ui.button(format!("＋ Añadir a {}", app.db.patient_name(pid))).clicked() {
-                let id = app.db.new_id();
-                let doc = app.db.patient(pid).map(|p| p.doctor_id).unwrap_or(1);
-                app.db.waitlist.push(WaitItem { id, patient_id: pid, doctor_id: doc, reason: "Adelantar cita".into(), since: app.today, preference: "Cualquier hora".into() });
-                app.changed();
-            }
+        if let Some(pid) = app.patient && ui.button(format!("＋ Añadir a {}", app.db.patient_name(pid))).clicked() {
+            let id = app.db.new_id();
+            let doc = app.db.patient(pid).map(|p| p.doctor_id).unwrap_or(1);
+            app.db.waitlist.push(WaitItem { id, patient_id: pid, doctor_id: doc, reason: "Adelantar cita".into(), since: app.today, preference: "Cualquier hora".into() });
+            app.changed();
         }
         // huecos que han quedado libres y los que ya se han ofrecido
         crate::screens::cita_online::offers_card(app, ui);
@@ -852,11 +840,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     let before = d.a.treatment_code.clone();
                     let tariff = d.a.patient_id.and_then(|pid| app.db.patient(pid)).map(|p| p.tariff_id).unwrap_or(1);
                     crate::screens::treatment_picker(ui, "dlg_tto", &app.db, tariff, &mut d.a.treatment_code, 260.0, |t| t.minutes > 0, |t| format!("{} ({} min)", t.description, t.minutes));
-                    if before != d.a.treatment_code {
-                        if let Some(t) = app.db.treatment(&d.a.treatment_code) {
-                            d.a.minutes = t.minutes;
-                            d.a.reason = t.description.clone();
-                        }
+                    if before != d.a.treatment_code && let Some(t) = app.db.treatment(&d.a.treatment_code) {
+                        d.a.minutes = t.minutes;
+                        d.a.reason = t.description.clone();
                     }
                 });
                 field(ui, "Motivo", &mut d.a.reason, 300.0);
@@ -902,10 +888,8 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     muted(ui, format!("· Terminó {}", hm(t)));
                 }
             });
-            if !d.is_new {
-                if let Some(t) = crate::screens::whatsapp::appt_line(&app.db, d.a.id) {
-                    ui.label(RichText::new(t).color(crate::screens::whatsapp::WA_GREEN));
-                }
+            if !d.is_new && let Some(t) = crate::screens::whatsapp::appt_line(&app.db, d.a.id) {
+                ui.label(RichText::new(t).color(crate::screens::whatsapp::WA_GREEN));
             }
             ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
             ui.add(egui::TextEdit::multiline(&mut d.a.notes).desired_rows(2).desired_width(f32::INFINITY));
@@ -953,11 +937,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
         app.open_patient(pid, PatTab::Resumen);
         return Dialog::None;
     }
-    if resched {
-        if let Some(n) = app.db.reschedule_draft(d.a.id) {
-            app.agenda.date = n.date;
-            return Dialog::Appointment(ApptDraft { a: n, is_new: true, search: String::new(), repeat: 0, repeat_count: 4, from_id: Some(d.a.id) });
-        }
+    if resched && let Some(n) = app.db.reschedule_draft(d.a.id) {
+        app.agenda.date = n.date;
+        return Dialog::Appointment(ApptDraft { a: n, is_new: true, search: String::new(), repeat: 0, repeat_count: 4, from_id: Some(d.a.id) });
     }
     if delete {
         return Dialog::Confirm { text: "¿Borrar definitivamente esta cita? (Si el paciente no viene, use mejor la situación «No acude».)".into(), action: ConfirmAction::DeleteAppointment(d.a.id) };
@@ -967,10 +949,8 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
         if d.is_new {
             d.a.id = app.db.new_id();
             app.db.appointments.push(d.a.clone());
-            if let Some(f) = d.from_id {
-                if let Some(o) = app.db.appointments.iter_mut().find(|o| o.id == f) {
-                    o.state = ApptState::Reprogramada;
-                }
+            if let Some(f) = d.from_id && let Some(o) = app.db.appointments.iter_mut().find(|o| o.id == f) {
+                o.state = ApptState::Reprogramada;
             }
             let rep = match d.repeat {
                 1 => Some(crate::agenda_extra::Repeat::Weekly(1)),

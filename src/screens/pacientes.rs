@@ -62,7 +62,7 @@ pub fn nif_problem(nif: &str) -> Option<&'static str> {
     };
     let Ok(n) = num_part.parse::<u32>() else { return Some("Formato de NIF no válido") };
     let expected = letters.chars().nth((n % 23) as usize).unwrap();
-    if s.chars().last() != Some(expected) {
+    if !s.ends_with(expected) {
         return Some("La letra del NIF no corresponde");
     }
     None
@@ -844,13 +844,11 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
             if let Some(i) = pay_idx {
                 let amount = plan.installment_amount(total);
                 app.db.add_payment(pid, amount, "Financiación", &format!("Cuota {} plan presupuesto #{bid}", i + 1));
-                if let Some(b) = app.db.budgets.iter_mut().find(|b| b.id == bid) {
-                    if let Some(pl) = &mut b.plan {
-                        if pl.paid.len() < pl.installments as usize {
-                            pl.paid.resize(pl.installments as usize, false);
-                        }
-                        pl.paid[i as usize] = true;
+                if let Some(b) = app.db.budgets.iter_mut().find(|b| b.id == bid) && let Some(pl) = &mut b.plan {
+                    if pl.paid.len() < pl.installments as usize {
+                        pl.paid.resize(pl.installments as usize, false);
                     }
+                    pl.paid[i as usize] = true;
                 }
                 app.changed();
                 app.notify(format!("Cuota {} cobrada: {}", i + 1, money(amount)));

@@ -164,11 +164,9 @@ impl Db {
             return Err("Esa forma de pago no está disponible.".into());
         }
         let when = now();
-        if installments > 0 {
-            if let Some(x) = self.budgets.iter_mut().find(|x| x.id == bid) {
-                let down = x.plan.as_ref().filter(|p| p.installments == installments).map(|p| p.down_payment).unwrap_or(0.0);
-                x.plan = Some(FinancePlan { down_payment: down, installments, first_date: add_months(today(), 1), every_months: 1, paid: vec![false; installments as usize] });
-            }
+        if installments > 0 && let Some(x) = self.budgets.iter_mut().find(|x| x.id == bid) {
+            let down = x.plan.as_ref().filter(|p| p.installments == installments).map(|p| p.down_payment).unwrap_or(0.0);
+            x.plan = Some(FinancePlan { down_payment: down, installments, first_date: add_months(today(), 1), every_months: 1, paid: vec![false; installments as usize] });
         }
         self.accept_budget(bid, today());
         let b = self.budgets.iter().find(|b| b.id == bid).cloned().unwrap_or(b);

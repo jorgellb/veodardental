@@ -446,7 +446,7 @@ pub fn parse_analysis(text: &str) -> Result<Analysis, String> {
         return Err("la respuesta está incompleta".into());
     }
     let v: Value = serde_json::from_str(&text[start..=end]).map_err(|_| "la respuesta no es un JSON válido".to_string())?;
-    let get = |k: &str| v.get(k).or_else(|| v.get(&k.replace("resumen", "summary")));
+    let get = |k: &str| v.get(k).or_else(|| v.get(k.replace("resumen", "summary")));
     let summary = get("resumen").map(text_of).unwrap_or_default();
     let quality = v.get("calidad").map(text_of).unwrap_or_default();
     let findings: Vec<Finding> = list_of(v.get("hallazgos"))
@@ -739,8 +739,7 @@ mod tests {
 
     #[test]
     fn chain_respects_mode_and_order() {
-        let mut cfg = IaConfig::default();
-        cfg.agents = vec![Agent::new(1, Provider::OpenRouter, "a:free", true), Agent::new(2, Provider::OpenAi, "b", false), Agent::new(3, Provider::Gemini, "c", true), Agent { enabled: false, ..Agent::new(4, Provider::Groq, "d", true) }];
+        let cfg = IaConfig { agents: vec![Agent::new(1, Provider::OpenRouter, "a:free", true), Agent::new(2, Provider::OpenAi, "b", false), Agent::new(3, Provider::Gemini, "c", true), Agent { enabled: false, ..Agent::new(4, Provider::Groq, "d", true) }], ..Default::default() };
         let ids = |m| chain(&cfg, m).iter().map(|a| a.id).collect::<Vec<_>>();
         assert_eq!(ids(Mode::FreeOnly), vec![1, 3]);
         assert_eq!(ids(Mode::PaidOnly), vec![2]);
@@ -792,13 +791,12 @@ mod tests {
     #[test]
     fn falls_back_to_next_free_agent_and_never_pays() {
         let (url, h) = fake_service(3);
-        let mut cfg = IaConfig::default();
-        cfg.agents = vec![
+        let cfg = IaConfig { agents: vec![
             agent(1, Provider::OpenRouter, &url, "saturado", true),
             agent(2, Provider::OpenRouter, &url, "roto", true),
             agent(3, Provider::Custom, &url, "bueno", true),
             agent(4, Provider::OpenAi, &url, "caro", false),
-        ];
+        ], ..Default::default() };
         let out = analyze(&cfg, Mode::FreeThenPaid, &request(), &|_| {});
         let (a, an) = out.result.unwrap();
         assert_eq!(a.id, 3, "responde el tercer agente gratuito");
@@ -812,8 +810,7 @@ mod tests {
     #[test]
     fn paid_agents_answer_when_free_ones_fail() {
         let (url, h) = fake_service(3);
-        let mut cfg = IaConfig::default();
-        cfg.agents = vec![agent(1, Provider::OpenRouter, &url, "saturado", true), agent(2, Provider::Anthropic, &url, "claude", false)];
+        let cfg = IaConfig { agents: vec![agent(1, Provider::OpenRouter, &url, "saturado", true), agent(2, Provider::Anthropic, &url, "claude", false)], ..Default::default() };
         // sólo gratuitos: falla y no se toca el de pago
         let out = analyze(&cfg, Mode::FreeOnly, &request(), &|_| {});
         assert!(out.result.is_err());
@@ -844,8 +841,7 @@ mod tests {
 
     #[test]
     fn agent_without_key_is_skipped_without_calling() {
-        let mut cfg = IaConfig::default();
-        cfg.agents = vec![Agent { base_url: "http://127.0.0.1:9/v1".into(), ..Agent::new(1, Provider::OpenRouter, "x:free", true) }];
+        let cfg = IaConfig { agents: vec![Agent { base_url: "http://127.0.0.1:9/v1".into(), ..Agent::new(1, Provider::OpenRouter, "x:free", true) }], ..Default::default() };
         let out = analyze(&cfg, Mode::FreeOnly, &request(), &|_| {});
         assert!(out.result.is_err());
         assert_eq!(out.attempts[0].message, "falta la clave");

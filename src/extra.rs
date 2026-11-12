@@ -41,11 +41,9 @@ pub fn read_table(path: &str) -> Result<Sheet, String> {
     // Normalizar cabeceras combinadas de GESDEN (ej. "Nº Historial / Paciente" con celda adyacente vacía)
     for i in 0..headers.len() {
         let hl = fold(&headers[i]);
-        if hl.contains("historial") && hl.contains("paciente") {
-            if i + 1 < headers.len() && headers[i + 1].trim().is_empty() {
-                headers[i] = "Nº Historial".to_string();
-                headers[i + 1] = "Paciente / Nombre".to_string();
-            }
+        if hl.contains("historial") && hl.contains("paciente") && i + 1 < headers.len() && headers[i + 1].trim().is_empty() {
+            headers[i] = "Nº Historial".to_string();
+            headers[i + 1] = "Paciente / Nombre".to_string();
         }
     }
     Ok(Sheet { headers, rows: raw })
@@ -131,10 +129,8 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
         }
     }
     // número de serie de Excel
-    if let Ok(n) = s.parse::<f64>() {
-        if (1000.0..80000.0).contains(&n) {
-            return NaiveDate::from_ymd_opt(1899, 12, 30).map(|b| b + Duration::days(n as i64));
-        }
+    if let Ok(n) = s.parse::<f64>() && (1000.0..80000.0).contains(&n) {
+        return NaiveDate::from_ymd_opt(1899, 12, 30).map(|b| b + Duration::days(n as i64));
     }
     None
 }
@@ -658,14 +654,12 @@ impl Db {
         for it in &r.items {
             let pid = it.patient_id;
             self.add_payment(pid, it.amount, "Domiciliación", &format!("Cuota {} remesa SEPA #{}", it.installment + 1, rid));
-            if let Some(b) = self.budgets.iter_mut().find(|b| b.id == it.budget_id) {
-                if let Some(pl) = &mut b.plan {
-                    if pl.paid.len() < pl.installments as usize {
-                        pl.paid.resize(pl.installments as usize, false);
-                    }
-                    if let Some(x) = pl.paid.get_mut(it.installment as usize) {
-                        *x = true;
-                    }
+            if let Some(b) = self.budgets.iter_mut().find(|b| b.id == it.budget_id) && let Some(pl) = &mut b.plan {
+                if pl.paid.len() < pl.installments as usize {
+                    pl.paid.resize(pl.installments as usize, false);
+                }
+                if let Some(x) = pl.paid.get_mut(it.installment as usize) {
+                    *x = true;
                 }
             }
         }

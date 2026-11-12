@@ -90,10 +90,8 @@ fn main() -> eframe::Result<()> {
     // Aviso de llamada desde la centralita: si VeodarDental ya está abierto en
     // este ordenador se le pasa el número y no se abre otra ventana.
     let call_arg = arg("--llamada");
-    if let Some(n) = &call_arg {
-        if shot.is_none() && phone::forward(n, phone::CALL_PORT).is_ok() {
-            return Ok(());
-        }
+    if let Some(n) = &call_arg && shot.is_none() && phone::forward(n, phone::CALL_PORT).is_ok() {
+        return Ok(());
     }
     let login_flag = args.iter().any(|x| x == "--login");
     let recetas_flag = args.iter().any(|x| x == "--recetas");
@@ -162,14 +160,13 @@ fn main() -> eframe::Result<()> {
                 a.db.verifactu.since = None;
                 a.db.verifactu.installation = "VD-DEMO".into();
                 // con «--verifactu rechazada», la primera factura aparece rechazada (para ver la corrección)
-                if arg("--verifactu").as_deref() == Some("rechazada") {
-                    if let Some(id) = verifactu::chain_order(&a.db).first().map(|i| i.id) {
-                        if let Some(inv) = a.db.invoices.iter_mut().find(|i| i.id == id) {
-                            inv.aeat.state = "Incorrecto".into();
-                            inv.aeat.code = "1104".into();
-                            inv.aeat.message = "El NIF del destinatario no está identificado en el censo de la AEAT.".into();
-                        }
-                    }
+                if arg("--verifactu").as_deref() == Some("rechazada")
+                    && let Some(id) = verifactu::chain_order(&a.db).first().map(|i| i.id)
+                    && let Some(inv) = a.db.invoices.iter_mut().find(|i| i.id == id)
+                {
+                    inv.aeat.state = "Incorrecto".into();
+                    inv.aeat.code = "1104".into();
+                    inv.aeat.message = "El NIF del destinatario no está identificado en el censo de la AEAT.".into();
                 }
             }
             if dark_flag {
@@ -199,32 +196,28 @@ fn main() -> eframe::Result<()> {
                     a.db.appointments.retain(|x| !(x.date == d && x.doctor_id == doc && x.start < start + chrono::Duration::minutes(mins as i64) && start < x.end()));
                     let id = a.db.new_id();
                     a.db.appointments.push(model::Appointment { id, date: d, start, minutes: mins, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: doc, box_id: doc, reason: "Revisión".into(), treatment_code: String::new(), state: model::ApptState::Anulada, notes: "Anulada por el paciente".into(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
-                    if doc == 4 {
-                        if let Ok(o) = a.db.create_offer(doc, d, start, mins, 1, Some(id), model::now()) {
-                            a.db.offer_messages(o);
-                        }
+                    if doc == 4 && let Ok(o) = a.db.create_offer(slot_offer::FreeSlot { doctor: doc, date: d, start, minutes: mins, center: 1 }, Some(id), model::now()) {
+                        a.db.offer_messages(o);
                     }
                 }
                 a.agenda.date = d;
             }
             // código del móvil: «--doble-factor» abre su activación para la Dra. Ruiz;
             // «--doble-factor entrar», el segundo paso de la pantalla de acceso
-            if std::env::args().any(|x| x == "--doble-factor") {
-                if let Some(id) = a.db.users.iter().find(|u| u.name.starts_with("Dra. Ruiz")).map(|u| u.id) {
-                    let secret = totp::new_secret().unwrap_or_default();
-                    if arg("--doble-factor").as_deref() == Some("entrar") {
-                        if let Some(u) = a.db.users.iter_mut().find(|u| u.id == id) {
-                            u.totp_secret = secret;
-                        }
-                        a.user_id = None;
-                        a.login.selected = Some(id);
-                        a.login.pending_code = Some(id);
-                    } else {
-                        a.screen = app::Screen::Config;
-                        a.lists.cfg_tab = screens::config::CfgTab::Usuarios;
-                        a.login.edit_user = Some(id);
-                        a.login.enroll = Some((id, secret, String::new()));
+            if std::env::args().any(|x| x == "--doble-factor") && let Some(id) = a.db.users.iter().find(|u| u.name.starts_with("Dra. Ruiz")).map(|u| u.id) {
+                let secret = totp::new_secret().unwrap_or_default();
+                if arg("--doble-factor").as_deref() == Some("entrar") {
+                    if let Some(u) = a.db.users.iter_mut().find(|u| u.id == id) {
+                        u.totp_secret = secret;
                     }
+                    a.user_id = None;
+                    a.login.selected = Some(id);
+                    a.login.pending_code = Some(id);
+                } else {
+                    a.screen = app::Screen::Config;
+                    a.lists.cfg_tab = screens::config::CfgTab::Usuarios;
+                    a.login.edit_user = Some(id);
+                    a.login.enroll = Some((id, secret, String::new()));
                 }
             }
             if recetas_flag {

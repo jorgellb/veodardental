@@ -191,10 +191,8 @@ impl Db {
 pub fn sample_insurer(db: &mut Db) {
     let fees: [(u32, &str, f64); 7] = [(2, "0101", 12.0), (2, "0102", 10.0), (2, "0201", 18.0), (2, "0501", 25.0), (2, "0103", 15.0), (3, "0101", 10.0), (3, "0201", 20.0)];
     for (tid, code, fee) in fees {
-        if let Some(t) = db.tariffs.iter_mut().find(|t| t.id == tid) {
-            if let Some(p) = t.prices.iter_mut().find(|p| p.code == code) {
-                p.insurer_fee = fee;
-            }
+        if let Some(t) = db.tariffs.iter_mut().find(|t| t.id == tid) && let Some(p) = t.prices.iter_mut().find(|p| p.code == code) {
+            p.insurer_fee = fee;
         }
     }
 }

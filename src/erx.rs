@@ -348,10 +348,8 @@ pub fn transfer_text(db: &Db, r: &Prescription) -> String {
     s.push_str(&format!("PACIENTE: {}\n", p.map(|p| p.full_name()).unwrap_or_default()));
     s.push_str(&format!("DNI/NIE: {}\n", p.map(|p| p.nif.clone()).unwrap_or_default()));
     s.push_str(&format!("Fecha de nacimiento: {}\n", p.and_then(|p| p.birth).map(fmt_date).unwrap_or_default()));
-    if let Some(p) = p {
-        if !p.allergies.trim().is_empty() {
-            s.push_str(&format!("Alergias: {}\n", p.allergies));
-        }
+    if let Some(p) = p && !p.allergies.trim().is_empty() {
+        s.push_str(&format!("Alergias: {}\n", p.allergies));
     }
     s.push_str(&format!("PRESCRIPTOR: {} · Nº colegiado {}\n", d.map(|d| d.name.clone()).unwrap_or_default(), d.map(|d| d.license.clone()).unwrap_or_default()));
     if !r.diagnosis.trim().is_empty() {

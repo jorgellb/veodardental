@@ -30,11 +30,16 @@ pub struct RxState {
     /// Última prueba del circuito con la farmacia simulada (cuándo y resultado).
     pub circuit: Option<(chrono::NaiveDateTime, Vec<crate::srep_cert::Step>)>,
     pub show_controls: bool,
-    /// Dentistas que recetan: (nombre, nº de colegiado, certificado elegido), y cuándo se miró.
-    pub prescribers: Option<(f64, Vec<(String, bool, bool)>)>,
-    /// Envío de la hoja del paciente por correo: (receta, destinatario, resultado).
-    pub mail_job: Option<(u32, String, std::sync::mpsc::Receiver<Result<(), String>>)>,
+    pub prescribers: Option<PrescriberCheck>,
+    pub mail_job: Option<MailJob>,
 }
+
+/// Dentistas que recetan, y cuándo se miró: (cuándo, [(nombre, tiene nº de
+/// colegiado, tiene certificado elegido)]).
+pub type PrescriberCheck = (f64, Vec<(String, bool, bool)>);
+
+/// Envío de la hoja del paciente por correo: (receta, destinatario, resultado).
+pub type MailJob = (u32, String, std::sync::mpsc::Receiver<Result<(), String>>);
 
 /// Recoge el resultado del envío de la hoja por correo (se llama en cada fotograma).
 pub fn poll(app: &mut App, ctx: &egui::Context) {
@@ -65,16 +70,14 @@ fn ensure_nomen(app: &mut App) {
         app.rx.nomen_tried = true;
         app.rx.nomen = crate::nomenclator::load();
     }
-    if let Some(rx) = &app.rx.nomen_job {
-        if let Ok(res) = rx.try_recv() {
-            app.rx.nomen_job = None;
-            match res {
-                Ok(n) => {
-                    app.rx.nomen_msg = format!("Lista oficial cargada: {} medicamentos comercializados (lista del {}).", n.medicines.len(), n.date);
-                    app.rx.nomen = Some(n);
-                }
-                Err(e) => app.rx.nomen_msg = e,
+    if let Some(rx) = &app.rx.nomen_job && let Ok(res) = rx.try_recv() {
+        app.rx.nomen_job = None;
+        match res {
+            Ok(n) => {
+                app.rx.nomen_msg = format!("Lista oficial cargada: {} medicamentos comercializados (lista del {}).", n.medicines.len(), n.date);
+                app.rx.nomen = Some(n);
             }
+            Err(e) => app.rx.nomen_msg = e,
         }
     }
 }
@@ -287,10 +290,8 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
                         ui.selectable_value(&mut app.rx.drug, d.name.clone(), &d.name);
                     }
                 });
-                if primary(ui, "Añadir").clicked() {
-                    if let Some(d) = drugs.iter().find(|d| d.name == app.rx.drug) {
-                        rm.items.push(rx_item_from_drug(d));
-                    }
+                if primary(ui, "Añadir").clicked() && let Some(d) = drugs.iter().find(|d| d.name == app.rx.drug) {
+                    rm.items.push(rx_item_from_drug(d));
                 }
             });
             ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
@@ -639,7 +640,7 @@ fn refresh(app: &mut App, id: u32) {
                 .map(|a| {
                     let what = s.issued.iter().find(|p| p.recetas.iter().any(|x| x.id_receta == a.id_receta)).map(|p| p.producto.denominacion.clone()).unwrap_or_default();
                     let extra = match a.accion {
-                        1 | 2 | 3 => format!(" · {} envase(s)", a.envases),
+                        1..=3 => format!(" · {} envase(s)", a.envases),
                         0 => format!(" · {}", a.causa.map(crate::srep::causa_bloqueo_texto).unwrap_or("")),
                         _ => String::new(),
                     };
@@ -795,10 +796,8 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
 /// Dentistas que recetan: (nombre, tiene nº de colegiado, tiene certificado elegido
 /// en este ordenador). Se mira cada pocos segundos (el certificado está en un fichero).
 fn prescribers(app: &mut App, time: f64) -> Vec<(String, bool, bool)> {
-    if let Some((t, v)) = &app.rx.prescribers {
-        if time >= *t && time - *t < 5.0 {
-            return v.clone();
-        }
+    if let Some((t, v)) = &app.rx.prescribers && time >= *t && time - *t < 5.0 {
+        return v.clone();
     }
     let v: Vec<(String, bool, bool)> = app.db.collaborators.iter().filter(|c| c.active && c.license.trim() != "-").map(|c| (c.alias.clone(), !c.license.trim().is_empty(), !crate::erx::cert_path(c.id).trim().is_empty())).collect();
     app.rx.prescribers = Some((time, v.clone()));

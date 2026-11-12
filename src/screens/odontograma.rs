@@ -448,7 +448,8 @@ fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveD
         }
     }
     let code = app.odg.code.clone();
-    let date = if state == TxState::Previsto { today } else { today };
+    // previsto o realizado, con la fecha de hoy (la de cuando se apunta)
+    let date = today;
     let id = app.db.add_entry(pid, &code, teeth.clone(), faces, state, doc, date);
     app.changed();
     let e = app.db.entries.iter().find(|e| e.id == id).cloned();
@@ -551,12 +552,10 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
         });
         ui.add_space(6.0);
         ui.add_enabled_ui(unbudgeted > 0, |ui| {
-            if primary(ui, &format!("Crear presupuesto con previstos ({unbudgeted})")).clicked() {
-                if let Some(bid) = app.db.budget_from_planned(pid) {
-                    app.changed();
-                    app.dialog = crate::app::Dialog::Budget(bid);
-                    app.notify("Presupuesto creado a partir de los tratamientos previstos.");
-                }
+            if primary(ui, &format!("Crear presupuesto con previstos ({unbudgeted})")).clicked() && let Some(bid) = app.db.budget_from_planned(pid) {
+                app.changed();
+                app.dialog = crate::app::Dialog::Budget(bid);
+                app.notify("Presupuesto creado a partir de los tratamientos previstos.");
             }
         });
     });

@@ -209,8 +209,19 @@ pub fn occl_base(p: &Painter, t: u8, occl: Rect, v: &ToothView, look: &teeth::Lo
     }
 }
 
+/// Cómo se dibuja la vista oclusal: líneas guía de las caras (con su color),
+/// separación entre piezas y si la pieza se une con la de su izquierda y la
+/// de su derecha (puentes, férulas).
+#[derive(Clone, Copy)]
+pub struct OcclStyle {
+    pub guides: Option<Color32>,
+    pub gap: f32,
+    pub links: (bool, bool),
+}
+
 /// Tratamientos sobre la vista oclusal.
-pub fn occl_marks(p: &Painter, t: u8, occl: Rect, v: &ToothView, look: &teeth::Look, guides: Option<Color32>, gap: f32, links: (bool, bool)) {
+pub fn occl_marks(p: &Painter, t: u8, occl: Rect, v: &ToothView, look: &teeth::Look, style: OcclStyle) {
+    let OcclStyle { guides, gap, links } = style;
     let present = !gone(v) || v.implant.is_some();
     let r = occl.width().min(occl.height());
     if present {
@@ -350,7 +361,7 @@ pub fn arch(ui: &mut Ui, teeth_list: &[u8], upper: bool, views: &std::collection
         let links = (linked(i.checked_sub(1)), linked(Some(i + 1)));
         side_marks(&p, &teeth::Pose::new(c.t, c.side), &c.v, look, gap, links);
         let guides = if c.hovered || sel == Some(c.t) { Some(sk.guide) } else { None };
-        occl_marks(&p, c.t, c.occl, &c.v, look, guides, gap, links);
+        occl_marks(&p, c.t, c.occl, &c.v, look, OcclStyle { guides, gap, links });
     }
     // 5) números
     for c in &cells {
@@ -430,7 +441,7 @@ pub fn tool_icon(p: &Painter, k: OdgKind, rect: Rect, dark: bool) {
     if k.uses_faces() {
         let sq = Rect::from_center_size(rect.center(), vec2(rect.height() * 0.92, rect.height() * 0.92));
         occl_base(p, t, sq, &v, look);
-        occl_marks(p, t, sq, &v, look, None, 0.0, (false, false));
+        occl_marks(p, t, sq, &v, look, OcclStyle { guides: None, gap: 0.0, links: (false, false) });
         return;
     }
     // los iconos van siempre con la corona arriba

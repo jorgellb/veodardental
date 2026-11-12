@@ -61,10 +61,8 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
                 }
                 app.tools.extra_info = None;
             }
-            if ui.button("📂 Abrir carpeta de copias").clicked() {
-                if let Err(e) = crate::screens::imagenes::open_folder(&backup_dir()) {
-                    app.warn(e);
-                }
+            if ui.button("📂 Abrir carpeta de copias").clicked() && let Err(e) = crate::screens::imagenes::open_folder(&backup_dir()) {
+                app.warn(e);
             }
             muted(ui, backup_dir().display().to_string());
         });

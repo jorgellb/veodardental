@@ -55,13 +55,9 @@ impl Drop for Tunnel {
 
 impl Tunnel {
     pub fn snapshot(&mut self) -> State {
-        if let Ok(Some(st)) = self.child.try_wait() {
-            if let Ok(mut g) = self.state.lock() {
-                if g.exited.is_none() {
-                    g.exited = Some(format!("cloudflared se ha cerrado ({st})."));
-                    g.connections = 0;
-                }
-            }
+        if let Ok(Some(st)) = self.child.try_wait() && let Ok(mut g) = self.state.lock() && g.exited.is_none() {
+            g.exited = Some(format!("cloudflared se ha cerrado ({st})."));
+            g.connections = 0;
         }
         self.state.lock().map(|g| g.clone()).unwrap_or_default()
     }

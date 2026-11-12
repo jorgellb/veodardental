@@ -37,13 +37,11 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         title(ui, "Ortodoncia", "Casos en tratamiento, controles periódicos e higiene");
         right_aligned(ui, |ui| {
-            if primary(ui, "＋ Nuevo caso para el paciente activo").clicked() {
-                if let Some(pid) = app.patient {
-                    let id = app.db.new_id();
-                    app.db.ortho.push(OrthoCase { id, patient_id: pid, doctor_id: 3, start: today, months: 18, appliance: APPLIANCES[0].into(), arches: "Ambas arcadas".into(), class: "Clase I".into(), diagnosis: String::new(), objectives: String::new(), state: OrthoState::Estudio, fee: 0.0, visits: vec![] });
-                    app.ortho.selected = Some(id);
-                    app.changed();
-                }
+            if primary(ui, "＋ Nuevo caso para el paciente activo").clicked() && let Some(pid) = app.patient {
+                let id = app.db.new_id();
+                app.db.ortho.push(OrthoCase { id, patient_id: pid, doctor_id: 3, start: today, months: 18, appliance: APPLIANCES[0].into(), arches: "Ambas arcadas".into(), class: "Clase I".into(), diagnosis: String::new(), objectives: String::new(), state: OrthoState::Estudio, fee: 0.0, visits: vec![] });
+                app.ortho.selected = Some(id);
+                app.changed();
             }
         });
     });

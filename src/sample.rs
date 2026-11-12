@@ -290,7 +290,9 @@ impl Db {
 
         let past = |n: i64| today - Duration::days(n);
         use TxState::*;
-        let ex: Vec<(u32, &str, Vec<u8>, Vec<&str>, TxState, u32, i64)> = vec![
+        // (paciente, código, piezas, caras, estado, doctor, hace cuántos días)
+        type Done<'a> = (u32, &'a str, Vec<u8>, Vec<&'a str>, TxState, u32, i64);
+        let ex: Vec<Done> = vec![
             (100, "0101", vec![], vec![], Realizado, 1, 120),
             (100, "0201", vec![], vec![], Realizado, 4, 118),
             (100, "0302", vec![16], vec!["O", "M"], Realizado, 1, 90),
@@ -397,7 +399,9 @@ impl Db {
         }
 
         use ApptState::*;
-        let mut plan: Vec<(i64, u32, u32, u32, u32, Option<u32>, &str, &str, ApptState)> = vec![
+        // (días desde hoy, doctor, hora, minuto, duración, paciente, motivo, código, estado)
+        type Planned<'a> = (i64, u32, u32, u32, u32, Option<u32>, &'a str, &'a str, ApptState);
+        let mut plan: Vec<Planned> = vec![
             (0, 1, 9, 0, 30, Some(100), "Obturación 47", "0301", Finalizada),
             (0, 1, 9, 30, 60, Some(107), "Prueba corona 21", "0802", Finalizada),
             (0, 1, 10, 45, 30, Some(112), "Revisión", "0102", EnConsulta),
@@ -616,7 +620,7 @@ impl Db {
                         let h = (i as u32 * 7 + s as u32 * 13 + seed) % 11;
                         let molar = t % 10 >= 6;
                         d[s] = 2 + (h % 3) as u8 + if molar && (s == 0 || s == 2 || s == 3 || s == 5) { worse } else { 0 };
-                        b[s] = d[s] >= 4 && h % 2 == 0;
+                        b[s] = d[s] >= 4 && h.is_multiple_of(2);
                     }
                     PerioTooth {
                         tooth: t,

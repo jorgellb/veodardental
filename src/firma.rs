@@ -110,9 +110,12 @@ fn read(input: &[u8]) -> Result<(u8, &[u8], &[u8]), String> {
     Ok((tag, &input[hdr..hdr + len], &input[hdr + len..]))
 }
 
+/// Un elemento DER: (etiqueta, contenido, codificación completa).
 #[cfg(test)]
-fn children(mut content: &[u8]) -> Result<Vec<(u8, &[u8], &[u8])>, String> {
-    // (etiqueta, contenido, codificación completa)
+type Element<'a> = (u8, &'a [u8], &'a [u8]);
+
+#[cfg(test)]
+fn children(mut content: &[u8]) -> Result<Vec<Element<'_>>, String> {
     let mut out = vec![];
     while !content.is_empty() {
         let (t, c, rest) = read(content)?;
@@ -199,8 +202,11 @@ pub struct Signer {
 }
 
 /// Clave privada (PKCS#8), cadena de certificados (el del titular primero) y
-/// nombre del titular de un .p12/.pfx, para identificarse en conexiones seguras.
-pub fn load_p12_der(bytes: &[u8], password: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>, String), String> {
+/// nombre del titular de un certificado .p12/.pfx.
+pub type P12Der = (Vec<u8>, Vec<Vec<u8>>, String);
+
+/// Lo que hace falta de un .p12/.pfx para identificarse en conexiones seguras.
+pub fn load_p12_der(bytes: &[u8], password: &str) -> Result<P12Der, String> {
     let s = load_p12(bytes, password)?;
     use p12_keystore::{KeyStore, Pkcs12ImportPolicy};
     let ks = KeyStore::from_pkcs12(bytes, password, Pkcs12ImportPolicy::Relaxed).map_err(|e| e.to_string())?;

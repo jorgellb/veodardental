@@ -276,7 +276,7 @@ pub struct WaMessage {
 
 /// Parte propia de un identificador de mensaje: WAHA usa «true_<chat>_<id>».
 pub fn core_id(s: &str) -> &str {
-    s.splitn(4, '_').nth(2).unwrap_or(s)
+    s.split('_').nth(2).unwrap_or(s)
 }
 
 /// ¿Es el mismo mensaje aunque venga escrito de otra forma?
@@ -447,12 +447,10 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let (Some(h), Some(l)) = (hexd(b[i + 1]), hexd(b[i + 2])) {
-                out.push(h * 16 + l);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%' && i + 2 < b.len() && let (Some(h), Some(l)) = (hexd(b[i + 1]), hexd(b[i + 2])) {
+            out.push(h * 16 + l);
+            i += 3;
+            continue;
         }
         out.push(if b[i] == b'+' { b' ' } else { b[i] });
         i += 1;
@@ -592,10 +590,8 @@ impl Db {
 
     /// Identificador oculto de WhatsApp (@lid) del paciente, para reconocer sus respuestas.
     pub fn wa_set_user(&mut self, log_id: u32, user_id: &str) {
-        if let Some(m) = self.whatsapp.iter_mut().find(|m| m.id == log_id) {
-            if !user_id.is_empty() {
-                m.user_id = user_id.to_string();
-            }
+        if let Some(m) = self.whatsapp.iter_mut().find(|m| m.id == log_id) && !user_id.is_empty() {
+            m.user_id = user_id.to_string();
         }
     }
 
@@ -611,19 +607,15 @@ impl Db {
     }
 
     fn wa_find(&self, ev_context: &str, user_id: &str, from: &str, today: NaiveDate) -> Option<usize> {
-        if !ev_context.is_empty() {
-            if let Some(i) = self.whatsapp.iter().position(|m| same_msg_id(&m.wamid, ev_context)) {
-                return Some(i);
-            }
+        if !ev_context.is_empty() && let Some(i) = self.whatsapp.iter().position(|m| same_msg_id(&m.wamid, ev_context)) {
+            return Some(i);
         }
         let open = |m: &WaMessage| {
             (m.state.waiting() || matches!(m.state, WaState::Confirmada | WaState::NoViene | WaState::Respuesta))
                 && self.appointments.iter().find(|a| a.id == m.appt_id).is_some_and(|a| a.date >= today)
         };
-        if !user_id.is_empty() {
-            if let Some((i, _)) = self.whatsapp.iter().enumerate().filter(|(_, m)| m.user_id == user_id && open(m)).max_by_key(|(_, m)| m.id) {
-                return Some(i);
-            }
+        if !user_id.is_empty() && let Some((i, _)) = self.whatsapp.iter().enumerate().filter(|(_, m)| m.user_id == user_id && open(m)).max_by_key(|(_, m)| m.id) {
+            return Some(i);
         }
         let num = intl(from)?;
         self.whatsapp.iter().enumerate().filter(|(_, m)| m.to == num && open(m)).max_by_key(|(_, m)| m.id).map(|(i, _)| i)
@@ -722,10 +714,8 @@ impl Db {
                             }
                             _ => false,
                         };
-                        if restore {
-                            if let Some(x) = self.appointments.iter_mut().find(|x| x.id == appt_id) {
-                                x.state = ApptState::Confirmada;
-                            }
+                        if restore && let Some(x) = self.appointments.iter_mut().find(|x| x.id == appt_id) {
+                            x.state = ApptState::Confirmada;
                         }
                         if prev == WaState::NoViene {
                             let extra = if taken { ", pero su hueco ya está ocupado: llamar para darle otro" } else { ": su cita vuelve a estar confirmada" };
@@ -739,14 +729,13 @@ impl Db {
                         }
                     }
                     Some(false) => {
-                        if s.cancel_on_no {
-                            if let Some(x) = self.appointments.iter_mut().find(|x| x.id == appt_id) {
-                                if matches!(x.state, ApptState::Planificada | ApptState::Confirmada) {
-                                    x.state = ApptState::Anulada;
-                                    let note = format!("Anulada por el paciente por WhatsApp el {}", now.format("%d/%m %H:%M"));
-                                    x.notes = if x.notes.trim().is_empty() { note } else { format!("{}\n{note}", x.notes) };
-                                }
-                            }
+                        if s.cancel_on_no
+                            && let Some(x) = self.appointments.iter_mut().find(|x| x.id == appt_id)
+                            && matches!(x.state, ApptState::Planificada | ApptState::Confirmada)
+                        {
+                            x.state = ApptState::Anulada;
+                            let note = format!("Anulada por el paciente por WhatsApp el {}", now.format("%d/%m %H:%M"));
+                            x.notes = if x.notes.trim().is_empty() { note } else { format!("{}\n{note}", x.notes) };
                         }
                         if prev != new {
                             self.add_task(today, "WhatsApp", "", Some(pid), &format!("{who} no puede venir el {when} (avisó por WhatsApp): llamar para darle otra cita"), Some(today));

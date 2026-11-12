@@ -933,23 +933,21 @@ impl App {
                 }
             }
             ui.add_space(if tier == 2 { 4.0 } else { 8.0 });
-            if let Some(pid) = self.patient {
-                if let Some(p) = self.db.patient(pid).cloned() {
-                    let alert = !p.alerts.is_empty() || !p.allergies.is_empty();
-                    let short: String = format!("{} {}", p.first_name, p.last_name.split_whitespace().next().unwrap_or("")).chars().take([20, 12, 0][tier]).collect();
-                    let txt = if tier == 2 { format!("      {}", if alert { "⚠" } else { "" }) } else { format!("        {}{}", short.trim(), if alert { "  ⚠" } else { "" }) };
-                    let col = if alert { DANGER } else { ACCENT };
-                    let b = egui::Button::new(RichText::new(txt).font(theme::mdf(14.0)).color(if alert { DANGER } else { HEADING }))
-                        .fill(tint(col, 0.09))
-                        .stroke(Stroke::new(1.0, tint(col, 0.25)))
-                        .corner_radius(CornerRadius::same(19))
-                        .min_size(vec2(0.0, 38.0));
-                    let r = ui.add(b);
-                    theme::avatar(ui.painter(), r.rect.left_center() + vec2(19.0, 0.0), 13.0, &p.full_name(), col);
-                    let r = if alert { r.on_hover_text(format!("{}\nAlertas: {} {}", p.full_name(), p.alerts, p.allergies)) } else { r.on_hover_text(format!("Paciente activo: {}", p.full_name())) };
-                    if r.clicked() {
-                        self.open_patient(pid, self.pat_tab);
-                    }
+            if let Some(pid) = self.patient && let Some(p) = self.db.patient(pid).cloned() {
+                let alert = !p.alerts.is_empty() || !p.allergies.is_empty();
+                let short: String = format!("{} {}", p.first_name, p.last_name.split_whitespace().next().unwrap_or("")).chars().take([20, 12, 0][tier]).collect();
+                let txt = if tier == 2 { format!("      {}", if alert { "⚠" } else { "" }) } else { format!("        {}{}", short.trim(), if alert { "  ⚠" } else { "" }) };
+                let col = if alert { DANGER } else { ACCENT };
+                let b = egui::Button::new(RichText::new(txt).font(theme::mdf(14.0)).color(if alert { DANGER } else { HEADING }))
+                    .fill(tint(col, 0.09))
+                    .stroke(Stroke::new(1.0, tint(col, 0.25)))
+                    .corner_radius(CornerRadius::same(19))
+                    .min_size(vec2(0.0, 38.0));
+                let r = ui.add(b);
+                theme::avatar(ui.painter(), r.rect.left_center() + vec2(19.0, 0.0), 13.0, &p.full_name(), col);
+                let r = if alert { r.on_hover_text(format!("{}\nAlertas: {} {}", p.full_name(), p.alerts, p.allergies)) } else { r.on_hover_text(format!("Paciente activo: {}", p.full_name())) };
+                if r.clicked() {
+                    self.open_patient(pid, self.pat_tab);
                 }
             }
             theme::right_aligned(ui, |ui| {

@@ -763,10 +763,8 @@ impl RepoStore {
             if p.recetas.iter().any(|r| r.id_receta.len() != 32 || r.num_envases == 0 || r.fecha_fin < r.fecha_ini) {
                 return Err("Hay una receta con datos no válidos.".into());
             }
-            if let Some(old) = self.prescripciones.iter().find(|x| x.id_prescripcion == p.id_prescripcion) {
-                if old.documento != p.documento {
-                    return Err("Ya existe otra prescripción con ese identificador.".into());
-                }
+            if let Some(old) = self.prescripciones.iter().find(|x| x.id_prescripcion == p.id_prescripcion) && old.documento != p.documento {
+                return Err("Ya existe otra prescripción con ese identificador.".into());
             }
         }
         let mut n = 0;
@@ -931,12 +929,10 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%' && i + 2 < b.len() && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+            out.push(v);
+            i += 3;
+            continue;
         }
         out.push(if b[i] == b'+' { b' ' } else { b[i] });
         i += 1;

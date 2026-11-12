@@ -141,11 +141,9 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                         if resp.drag_started() {
                             app.docs.strokes.push(vec![]);
                         }
-                        if resp.dragged() {
-                            if let (Some(pp), Some(last)) = (resp.interact_pointer_pos(), app.docs.strokes.last_mut()) {
-                                let q = [((pp.x - rect.min.x) / rect.width()).clamp(0.0, 1.0), ((pp.y - rect.min.y) / rect.height()).clamp(0.0, 1.0)];
-                                last.push(q);
-                            }
+                        if resp.dragged() && let (Some(pp), Some(last)) = (resp.interact_pointer_pos(), app.docs.strokes.last_mut()) {
+                            let q = [((pp.x - rect.min.x) / rect.width()).clamp(0.0, 1.0), ((pp.y - rect.min.y) / rect.height()).clamp(0.0, 1.0)];
+                            last.push(q);
                         }
                         draw_strokes(p, rect, &app.docs.strokes, Color32::from_rgb(20, 40, 110));
                         if app.docs.strokes.is_empty() {
