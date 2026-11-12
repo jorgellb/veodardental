@@ -734,6 +734,36 @@ mod tests {
     }
 
     #[test]
+    fn each_budget_line_gets_its_own_treatment() {
+        let mut db = Db::sample(d());
+        let pid = db.patients[3].id;
+        db.entries.retain(|e| !(e.patient_id == pid && e.state == TxState::Previsto));
+        db.add_entry(pid, "0201", vec![], vec![], TxState::Previsto, 1, d());
+        db.add_entry(pid, "0201", vec![], vec![], TxState::Previsto, 1, d());
+        let bid = db.budget_from_planned(pid).unwrap();
+        // como un presupuesto escrito a mano: sin tratamientos previstos detrás
+        db.entries.retain(|e| e.budget_id != Some(bid));
+        let total = db.budgets.iter().find(|b| b.id == bid).unwrap().total();
+        db.accept_budget(bid, d());
+        let linked: Vec<f64> = db.entries.iter().filter(|e| e.budget_id == Some(bid)).map(|e| e.amount()).collect();
+        assert_eq!(linked.len(), 2, "dos líneas, dos tratamientos");
+        assert!((linked.iter().sum::<f64>() - total).abs() < 0.01, "el total del presupuesto");
+        // y si había un previsto igual, se aprovecha uno y se crea el otro
+        let mut db2 = Db::sample(d());
+        db2.entries.retain(|e| !(e.patient_id == pid && e.state == TxState::Previsto));
+        db2.add_entry(pid, "0201", vec![], vec![], TxState::Previsto, 1, d());
+        db2.add_entry(pid, "0201", vec![], vec![], TxState::Previsto, 1, d());
+        let bid2 = db2.budget_from_planned(pid).unwrap();
+        let keep = db2.entries.iter().find(|e| e.budget_id == Some(bid2)).unwrap().id;
+        db2.entries.retain(|e| e.budget_id != Some(bid2) || e.id == keep);
+        db2.entries.iter_mut().find(|e| e.id == keep).unwrap().budget_id = None;
+        db2.accept_budget(bid2, d());
+        let ids: Vec<u32> = db2.entries.iter().filter(|e| e.budget_id == Some(bid2)).map(|e| e.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&keep));
+    }
+
+    #[test]
     fn receipts_are_unique_per_station() {
         let mut db = Db::sample(d());
         // un solo ordenador: el contador de la configuración

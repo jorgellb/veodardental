@@ -1579,6 +1579,9 @@ impl Db {
         if b.state == BudgetState::Aceptado || b.state == BudgetState::Cerrado {
             return;
         }
+        // cada línea, su tratamiento: dos líneas iguales (dos limpiezas) no se
+        // quedan en uno
+        let mut used: Vec<u32> = vec![];
         for l in &b.lines {
             let linked = self.entries.iter_mut().find(|e| {
                 e.patient_id == b.patient_id
@@ -1586,15 +1589,18 @@ impl Db {
                     && e.code == l.code
                     && e.teeth == l.teeth
                     && (e.budget_id.is_none() || e.budget_id == Some(bid))
+                    && !used.contains(&e.id)
             });
             if let Some(e) = linked {
                 e.budget_id = Some(bid);
                 e.price = l.price;
                 e.units = l.units;
                 e.discount_pct = l.discount_pct;
+                used.push(e.id);
                 continue;
             }
             let id = self.new_id();
+            used.push(id);
             self.entries.push(MedEntry {
                 id,
                 patient_id: b.patient_id,
