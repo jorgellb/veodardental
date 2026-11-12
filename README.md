@@ -2,7 +2,8 @@
 
 Programa de gestión de clínicas dentales escrito en Rust (interfaz con egui/eframe).
 Pacientes, agenda, odontograma y periodontograma, presupuestos, cobros y caja,
-facturas (VeriFactu), mutuas y tarifas, recalls, almacén, laboratorio,
+facturas (VeriFactu), mutuas y tarifas, recalls, almacén (con lote y
+caducidad de implantes y demás productos sanitarios), laboratorio,
 comunicaciones (WhatsApp, SMS, email), telefonía, trabajo en red entre puestos,
 receta electrónica y más.
 

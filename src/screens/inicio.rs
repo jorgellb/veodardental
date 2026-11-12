@@ -156,6 +156,21 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         app.screen = Screen::Almacen;
                     }
                 }
+                let lots = app.db.expiring_lots(today + chrono::Duration::days(crate::screens::almacen::EXPIRY_DAYS));
+                let expiring = lots.len();
+                if expiring > 0 {
+                    any = true;
+                    let gone = lots.iter().any(|(_, l)| l.expiry.is_some_and(|e| e < today));
+                    let text = match (expiring, gone) {
+                        (1, true) => "1 lote caducado en el almacén".to_string(),
+                        (n, true) => format!("{n} lotes del almacén caducados o a punto de caducar"),
+                        (1, false) => format!("1 lote del almacén caduca en menos de {} días", crate::screens::almacen::EXPIRY_DAYS),
+                        (n, false) => format!("{n} lotes del almacén caducan en menos de {} días", crate::screens::almacen::EXPIRY_DAYS),
+                    };
+                    if aviso(ui, WARN, text) {
+                        app.screen = Screen::Almacen;
+                    }
+                }
                 let late = app.db.lab_works.iter().filter(|w| w.overdue(today)).count();
                 if late > 0 {
                     any = true;

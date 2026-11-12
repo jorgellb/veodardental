@@ -141,6 +141,11 @@ fn main() -> eframe::Result<()> {
                 a.lists.fact_tab = t;
                 a.lists.inv_from = a.today - chrono::Duration::days(365);
             }
+            // pestaña del almacén («--almacen 1» = pedidos, con el que está en camino abierto)
+            if let Some(t) = arg("--almacen").and_then(|s| s.parse::<usize>().ok()) {
+                a.stock.tab = t;
+                a.stock.order = a.db.orders.iter().find(|o| o.state == stock::OrderState::Enviado).map(|o| o.id);
+            }
             if let Some(t) = arg("--pieza").and_then(|s| s.parse::<u8>().ok()) {
                 a.lists.perio_tooth = Some(t);
                 a.odg.selected_tooth = Some(t);

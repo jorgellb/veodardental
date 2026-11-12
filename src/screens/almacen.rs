@@ -15,6 +15,8 @@ pub struct StockState {
     pub qty: f64,
     pub reason: String,
     pub lot: String,
+    /// Caducidad del lote que entra (como en la caja: 03/2029).
+    pub expiry: String,
     pub order: Option<u32>,
     pub supplier: Option<u32>,
     pub cons_code: String,
@@ -38,6 +40,7 @@ impl Default for StockState {
             qty: 1.0,
             reason: String::new(),
             lot: String::new(),
+            expiry: String::new(),
             order: None,
             supplier: Some(1),
             cons_code: "0301".into(),
@@ -69,6 +72,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         ui.add_space(4.0);
         kpi(ui, w, "Pedidos en curso", &pend_orders.to_string(), "borradores y enviados", WARN);
     });
+    expiring(app, ui);
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         for (i, n) in ["Productos", "Pedidos", "Proveedores", "Consumos por tratamiento"].iter().enumerate() {
@@ -86,6 +90,37 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Lotes que caducan en los próximos 60 días (o ya caducados) con existencias.
+fn expiring(app: &mut App, ui: &mut Ui) {
+    let list = app.db.expiring_lots(app.today + chrono::Duration::days(EXPIRY_DAYS));
+    if list.is_empty() {
+        return;
+    }
+    ui.add_space(8.0);
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, &format!("Caducan en los próximos {EXPIRY_DAYS} días"));
+        let mut pick = None;
+        for (pid, l) in &list {
+            let name = app.db.product(*pid).map(|p| p.name.clone()).unwrap_or_default();
+            let gone = l.expiry.is_some_and(|e| e < app.today);
+            ui.horizontal(|ui| {
+                pill(ui, if gone { "Caducado" } else { "Caduca pronto" }, if gone { DANGER } else { WARN });
+                if ui.link(format!("{name} · lote {} · {} · quedan {}", l.lot, l.expiry.map(fmt_expiry).unwrap_or_default(), qty(l.qty))).clicked() {
+                    pick = Some(*pid);
+                }
+            });
+        }
+        if let Some(p) = pick {
+            app.stock.product = Some(p);
+            app.stock.tab = 0;
+        }
+    });
+}
+
+/// Días antes de la caducidad en los que se avisa.
+pub const EXPIRY_DAYS: i64 = 60;
+
 fn products(app: &mut App, ui: &mut Ui) {
     let avail = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 6.0);
     let side = 380.0;
@@ -100,7 +135,7 @@ fn products(app: &mut App, ui: &mut Ui) {
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Producto").clicked() {
                             let id = app.db.new_id();
-                            app.db.products.push(Product { id, code: format!("P{id:03}"), name: "Nuevo producto".into(), family: "General".into(), unit: "unidad".into(), stock: 0.0, min_stock: 1.0, cost: 0.0, supplier_id: app.db.suppliers.first().map(|s| s.id).unwrap_or(0), location: String::new(), active: true });
+                            app.db.products.push(Product { id, code: format!("P{id:03}"), name: "Nuevo producto".into(), family: "General".into(), unit: "unidad".into(), stock: 0.0, min_stock: 1.0, cost: 0.0, supplier_id: app.db.suppliers.first().map(|s| s.id).unwrap_or(0), location: String::new(), active: true, traced: false });
                             app.stock.product = Some(id);
                             app.changed();
                         }
@@ -108,13 +143,15 @@ fn products(app: &mut App, ui: &mut Ui) {
                 });
                 ui.add_space(6.0);
                 let q = fold(&app.stock.filter);
-                let tbl = Table::new("prods", vec![("Código", 80.0), ("Producto", 230.0), ("Familia", 120.0), ("Stock", 80.0), ("Mínimo", 70.0), ("Pedido", 70.0), ("Coste", 80.0), ("Ubicación", 130.0)]);
+                let tbl = Table::new("prods", vec![("Código", 70.0), ("Producto", 230.0), ("Familia", 105.0), ("Stock", 70.0), ("Mínimo", 62.0), ("Pedido", 62.0), ("Coste", 76.0), ("Caduca", 76.0), ("Ubicación", 105.0)]);
                 tbl.header(ui);
+                // también por lote (si el fabricante retira uno, se busca aquí)
+                let by_lot: std::collections::HashSet<u32> = if q.len() >= 3 { app.db.stock_moves.iter().filter(|m| fold(&m.lot).contains(&q)).map(|m| m.product_id).collect() } else { Default::default() };
                 let list: Vec<Product> = app
                     .db
                     .products
                     .iter()
-                    .filter(|p| q.is_empty() || fold(&p.name).contains(&q) || fold(&p.family).contains(&q) || fold(&p.code).contains(&q))
+                    .filter(|p| q.is_empty() || fold(&p.name).contains(&q) || fold(&p.family).contains(&q) || fold(&p.code).contains(&q) || by_lot.contains(&p.id))
                     .filter(|p| !app.stock.only_low || p.stock <= p.min_stock)
                     .cloned()
                     .collect();
@@ -123,6 +160,12 @@ fn products(app: &mut App, ui: &mut Ui) {
                     for (i, p) in list.iter().enumerate() {
                         let low = p.stock <= p.min_stock;
                         let ord = app.db.on_order(p.id);
+                        let exp = if p.traced { app.db.next_expiry(p.id) } else { None };
+                        let exp_col = match exp {
+                            Some(e) if e < app.today => DANGER,
+                            Some(e) if e <= app.today + chrono::Duration::days(EXPIRY_DAYS) => WARN,
+                            _ => TEXT,
+                        };
                         let cells = [
                             cell(&p.code),
                             cellc(&p.name, if p.active { TEXT } else { MUTED }),
@@ -131,6 +174,7 @@ fn products(app: &mut App, ui: &mut Ui) {
                             cell(qty(p.min_stock)),
                             cellc(if ord > 0.0 { qty(ord) } else { String::new() }, INFO),
                             cell(money(p.cost)),
+                            cellc(exp.map(fmt_expiry).unwrap_or_default(), exp_col),
                             cell(&p.location),
                         ];
                         if tbl.row(ui, i, app.stock.product == Some(p.id), &cells).clicked() {
@@ -181,6 +225,7 @@ fn product_panel(app: &mut App, ui: &mut Ui) {
             ui.add(egui::DragValue::new(&mut p.cost).range(0.0..=100000.0).speed(0.1).suffix(" €"));
             ui.checkbox(&mut p.active, "Activo");
         });
+        ui.checkbox(&mut p.traced, "Lleva lote (implantes, pilares, injertos…)").on_hover_text("Se apunta el lote y la caducidad al recibirlo, y el lote que lleva cada paciente al colocárselo");
         ui.horizontal(|ui| {
             ui.label("Proveedor");
             let cur = sups.iter().find(|s| s.0 == p.supplier_id).map(|s| s.1.clone()).unwrap_or_else(|| "—".into());
@@ -195,13 +240,19 @@ fn product_panel(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.add_space(8.0);
+    let traced = app.db.product(id).is_some_and(|p| p.traced);
+    if traced {
+        lots_card(app, ui, id);
+        ui.add_space(8.0);
+    }
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Movimiento de almacén");
         ui.horizontal(|ui| {
             ui.label("Cantidad");
             ui.add(egui::DragValue::new(&mut app.stock.qty).range(0.0..=100000.0).speed(0.5));
-            ui.add_sized([130.0, 34.0], egui::TextEdit::singleline(&mut app.stock.lot).hint_text("Lote (opcional)"));
+            ui.add_sized([110.0, 34.0], egui::TextEdit::singleline(&mut app.stock.lot).hint_text(if traced { "Lote" } else { "Lote (opcional)" }));
+            ui.add_sized([90.0, 34.0], egui::TextEdit::singleline(&mut app.stock.expiry).hint_text("Caduca")).on_hover_text("Como en la caja: 03/2029");
         });
         ui.add_sized([ui.available_width(), 34.0], egui::TextEdit::singleline(&mut app.stock.reason).hint_text("Motivo (p. ej. caducado, regularización)"));
         ui.horizontal(|ui| {
@@ -220,11 +271,17 @@ fn product_panel(app: &mut App, ui: &mut Ui) {
                 if q.abs() < 1e-9 {
                     app.warn("Indique una cantidad.");
                 } else {
-                    let reason = if app.stock.reason.trim().is_empty() { k.label().to_string() } else { std::mem::take(&mut app.stock.reason) };
-                    let lot = std::mem::take(&mut app.stock.lot);
-                    app.db.stock_move(id, q, k, &reason, None, &lot);
-                    app.changed();
-                    app.notify(format!("{}: {} unidades", k.label(), qty(q)));
+                    let (reason, lot, expiry) = (app.stock.reason.clone(), app.stock.lot.clone(), app.stock.expiry.clone());
+                    match app.db.manual_move(id, q, k, &reason, &lot, &expiry) {
+                        Ok(()) => {
+                            app.stock.reason.clear();
+                            app.stock.lot.clear();
+                            app.stock.expiry.clear();
+                            app.changed();
+                            app.notify(format!("{}: {} unidades", k.label(), qty(q)));
+                        }
+                        Err(e) => app.warn(e),
+                    }
                 }
             }
         });
@@ -246,6 +303,62 @@ fn product_panel(app: &mut App, ui: &mut Ui) {
             });
         }
     });
+}
+
+/// Lotes de un producto: lo que queda de cada uno, su caducidad y los
+/// pacientes que lo llevan.
+fn lots_card(app: &mut App, ui: &mut Ui, id: u32) {
+    let mut open = None;
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Lotes");
+        let mut lots = app.db.lots(id);
+        if lots.is_empty() {
+            muted(ui, "Aún no hay lotes: se apuntan al recibir los pedidos o en las entradas a mano.");
+            return;
+        }
+        // primero los que quedan, del que antes caduca
+        lots.sort_by_key(|l| (l.qty <= 1e-9, l.expiry.unwrap_or(chrono::NaiveDate::MAX)));
+        for l in lots {
+            let who: Vec<(u32, String, String)> = app
+                .db
+                .lot_patients(&l.lot)
+                .iter()
+                .filter(|m| m.product_id == id && m.lot == l.lot)
+                .filter_map(|m| {
+                    let teeth = m.entry_id.and_then(|e| app.db.entries.iter().find(|x| x.id == e)).map(|e| e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-")).unwrap_or_default();
+                    m.patient_id.map(|p| (p, app.db.patient_name(p), format!("{}{}", fmt_date(m.when.date()), if teeth.is_empty() { String::new() } else { format!(" · {teeth}") })))
+                })
+                .collect();
+            let gone = l.expiry.is_some_and(|e| e < app.today);
+            let soon = l.expiry.is_some_and(|e| e <= app.today + chrono::Duration::days(EXPIRY_DAYS));
+            let head = format!(
+                "{} · quedan {}{} · {} paciente{}",
+                l.lot,
+                qty(l.qty),
+                l.expiry.map(|e| format!(" · caduca {}", fmt_expiry(e))).unwrap_or_default(),
+                who.len(),
+                if who.len() == 1 { "" } else { "s" }
+            );
+            let col = if gone && l.qty > 1e-9 { DANGER } else if soon && l.qty > 1e-9 { WARN } else { TEXT };
+            egui::CollapsingHeader::new(RichText::new(head).size(13.5).color(col)).id_salt(("lot", id, l.lot.clone())).show(ui, |ui| {
+                if who.is_empty() {
+                    muted(ui, "Ningún paciente lo lleva.");
+                }
+                for (pid, name, when) in who {
+                    ui.horizontal(|ui| {
+                        if ui.link(&name).clicked() {
+                            open = Some(pid);
+                        }
+                        muted(ui, when);
+                    });
+                }
+            });
+        }
+    });
+    if let Some(p) = open {
+        app.open_patient(p, crate::app::PatTab::Historial);
+    }
 }
 
 fn orders(app: &mut App, ui: &mut Ui) {
@@ -305,25 +418,58 @@ fn orders(app: &mut App, ui: &mut Ui) {
                 section(ui, &format!("Pedido #{} · {}", o.id, app.db.supplier_name(o.supplier_id)));
                 muted(ui, format!("{} · {}", fmt_date(o.date), o.state.label()));
                 let editable = o.state == OrderState::Borrador;
+                // al recibir se ajusta lo que llega de verdad, con su lote
+                let receiving = o.state == OrderState::Enviado;
                 let mut remove = None;
-                let prods: Vec<(u32, String)> = app.db.products.iter().map(|p| (p.id, p.name.clone())).collect();
+                let mut split = None;
+                let mut touched = false;
+                let prods: Vec<(u32, String, bool)> = app.db.products.iter().map(|p| (p.id, p.name.clone(), p.traced)).collect();
+                if receiving && o.lines.iter().any(|l| prods.iter().any(|p| p.0 == l.product_id && p.2)) {
+                    muted(ui, "Al recibir, escriba el lote y la caducidad que vienen en la caja. Si llegan dos lotes del mismo producto, use «＋ otro lote».");
+                }
                 if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
                     for (i, l) in om.lines.iter_mut().enumerate() {
+                        let traced = prods.iter().any(|p| p.0 == l.product_id && p.2);
                         ui.horizontal(|ui| {
                             lab(ui, 230.0, prods.iter().find(|p| p.0 == l.product_id).map(|p| p.1.clone()).unwrap_or_default());
-                            ui.add_enabled_ui(editable, |ui| {
-                                ui.add(egui::DragValue::new(&mut l.qty).range(0.0..=100000.0));
-                                ui.add(egui::DragValue::new(&mut l.cost).range(0.0..=100000.0).speed(0.1).suffix(" €"));
+                            ui.add_enabled_ui(editable || receiving, |ui| {
+                                touched |= ui.add(egui::DragValue::new(&mut l.qty).range(0.0..=100000.0)).on_hover_text(if receiving { "Cantidad que llega" } else { "Cantidad" }).changed();
+                                touched |= ui.add(egui::DragValue::new(&mut l.cost).range(0.0..=100000.0).speed(0.1).suffix(" €")).changed();
                             });
                             lab(ui, 90.0, RichText::new(money(l.qty * l.cost)).family(sb()));
                             if editable && ui.small_button("✖").clicked() {
                                 remove = Some(i);
                             }
                         });
+                        if (receiving && traced) || !l.lot.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.add_space(12.0);
+                                ui.add_enabled_ui(receiving, |ui| {
+                                    touched |= ui.add_sized([130.0, 30.0], egui::TextEdit::singleline(&mut l.lot).hint_text("Lote")).changed();
+                                    touched |= ui.add_sized([90.0, 30.0], egui::TextEdit::singleline(&mut l.expiry).hint_text("Caduca")).on_hover_text("Como en la caja: 03/2029").changed();
+                                });
+                                if receiving && l.qty > 1.0 && ui.small_button("＋ otro lote").on_hover_text("Separa una unidad en otra línea con su lote").clicked() {
+                                    split = Some(i);
+                                }
+                            });
+                        }
                     }
                     if let Some(i) = remove {
                         om.lines.remove(i);
+                        touched = true;
                     }
+                    if let Some(i) = split {
+                        om.lines[i].qty -= 1.0;
+                        let mut n = om.lines[i].clone();
+                        n.qty = 1.0;
+                        n.lot.clear();
+                        n.expiry.clear();
+                        om.lines.insert(i + 1, n);
+                        touched = true;
+                    }
+                }
+                if touched {
+                    app.dirty = true;
                 }
                 ui.label(RichText::new(format!("Total {}", money(app.db.orders.iter().find(|x| x.id == id).map(|x| x.total()).unwrap_or(0.0)))).size(18.0).family(sb()).color(ACCENT));
                 ui.add_space(6.0);
@@ -377,14 +523,14 @@ fn orders(app: &mut App, ui: &mut Ui) {
                     ui.horizontal(|ui| {
                         let cur = prods.iter().find(|p| p.0 == sel).map(|p| p.1.clone()).unwrap_or_default();
                         crate::theme::combo("ord_add").width(240.0).selected_text(cur).show_ui(ui, |ui| {
-                            for (pid, n) in &prods {
+                            for (pid, n, _) in &prods {
                                 ui.selectable_value(&mut sel, *pid, n);
                             }
                         });
                         if ui.button("＋ Añadir línea").clicked() {
                             let cost = app.db.product(sel).map(|p| p.cost).unwrap_or(0.0);
                             if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
-                                om.lines.push(OrderLine { product_id: sel, qty: 1.0, cost });
+                                om.lines.push(OrderLine { product_id: sel, qty: 1.0, cost, lot: String::new(), expiry: String::new() });
                             }
                             app.changed();
                         }

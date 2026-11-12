@@ -504,6 +504,7 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
         muted(ui, "Doble clic en un tratamiento previsto para marcarlo como realizado · clic derecho para más opciones.");
     });
     ui.add_space(10.0);
+    implants(app, ui, pid);
     if !app.can(crate::users::Perm::Clinico) {
         return;
     }
@@ -520,6 +521,81 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
             }
         }
     });
+}
+
+/// Implantes, pilares y demás productos con lote que lleva el paciente, con
+/// el lote corregible y la hoja para dárselo.
+fn implants(app: &mut App, ui: &mut Ui, pid: u32) {
+    struct Row {
+        id: u32,
+        when: String,
+        name: String,
+        lot: String,
+        expiry: Option<NaiveDate>,
+        options: Vec<String>,
+    }
+    let rows: Vec<Row> = app
+        .db
+        .patient_lots(pid)
+        .iter()
+        .map(|m| {
+            let teeth = m.entry_id.and_then(|e| app.db.entries.iter().find(|x| x.id == e)).map(|e| e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-")).unwrap_or_default();
+            let name = app.db.product(m.product_id).map(|p| p.name.clone()).unwrap_or_default();
+            let options = app.db.lots(m.product_id).into_iter().map(|l| l.lot).collect();
+            Row { id: m.id, when: format!("{} · {}", fmt_date(m.when.date()), if teeth.is_empty() { "—".to_string() } else { teeth }), name, lot: m.lot.clone(), expiry: m.expiry, options }
+        })
+        .collect();
+    if rows.is_empty() {
+        return;
+    }
+    let mut set: Option<(u32, String)> = None;
+    let mut print = false;
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            section(ui, "Implantes y productos con lote");
+            right_aligned(ui, |ui| {
+                if ui.button("🖨 Hoja para el paciente").on_hover_text("Lista de lo que lleva con su lote, para guardarla con la tarjeta de implante").clicked() {
+                    print = true;
+                }
+            });
+        });
+        ui.horizontal(|ui| {
+            for (t, w) in [("FECHA · PIEZA", 150.0), ("PRODUCTO", 260.0), ("LOTE", 180.0), ("CADUCA", 90.0)] {
+                lab(ui, w, RichText::new(t).size(12.0).color(MUTED));
+            }
+        });
+        for Row { id: mid, when, name, lot, expiry, options } in rows.iter() {
+            ui.horizontal(|ui| {
+                lab(ui, 150.0, when.as_str());
+                lab(ui, 260.0, name.as_str());
+                let shown = if lot.is_empty() { RichText::new("sin apuntar").color(DANGER) } else { RichText::new(lot) };
+                crate::theme::combo(("impl_lot", *mid)).width(180.0).selected_text(shown).show_ui(ui, |ui| {
+                    for o in options {
+                        if ui.selectable_label(o == lot, o).clicked() {
+                            set = Some((*mid, o.clone()));
+                        }
+                    }
+                    if options.is_empty() {
+                        ui.label(RichText::new("No hay lotes de este producto en el almacén").color(MUTED));
+                    }
+                });
+                lab(ui, 90.0, expiry.map(crate::stock::fmt_expiry).unwrap_or_default());
+            });
+        }
+        muted(ui, "Se apunta solo al realizar el tratamiento (del lote que antes caduca); si se usó otro, cámbielo aquí.");
+    });
+    ui.add_space(10.0);
+    if let Some((mid, lot)) = set {
+        app.db.set_move_lot(mid, &lot);
+        app.changed();
+    }
+    if print {
+        match crate::screens::centros::open_html(ui.ctx(), &format!("implantes_{pid}.html"), app.db.implant_card_html(pid)) {
+            Ok(_) => app.notify("Hoja de implantes abierta para imprimir."),
+            Err(e) => app.warn(format!("No se pudo crear la hoja: {e}")),
+        }
+    }
 }
 
 fn add_entry_row(app: &mut App, ui: &mut Ui, pid: u32) {

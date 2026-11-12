@@ -1889,3 +1889,51 @@ fn recall_appointment_uses_the_clinic_catalog() {
     let d = crate::screens::recalls::appointment_for(&a, &r);
     assert_eq!(d.a.doctor_id, 1);
 }
+
+/// Recibir en Almacén › Pedidos unos implantes que llegan en dos lotes.
+#[test]
+fn receive_implants_in_two_lots_from_the_orders_screen() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Almacen;
+        a.stock.tab = 1;
+        a.stock.order = a.db.orders.iter().find(|o| o.state == crate::stock::OrderState::Enviado).map(|o| o.id);
+        a
+    });
+    for _ in 0..5 {
+        h.step();
+    }
+    let oid = h.state().stock.order.unwrap();
+    let before = h.state().db.product(9).unwrap().stock;
+    // sin lote no entra
+    h.get_by_label_contains("Recibir mercancía").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.orders.iter().find(|o| o.id == oid).unwrap().state, crate::stock::OrderState::Enviado);
+    // llegan 3 de un lote y 1 de otro
+    h.get_by_label("＋ otro lote").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    {
+        let o = h.state_mut().db.orders.iter_mut().find(|o| o.id == oid).unwrap();
+        assert_eq!(o.lines.iter().map(|l| l.qty).collect::<Vec<_>>(), vec![3.0, 1.0]);
+        o.lines[0].lot = "A111".into();
+        o.lines[0].expiry = "05/2030".into();
+        o.lines[1].lot = "B222".into();
+        o.lines[1].expiry = "09/2031".into();
+    }
+    h.step();
+    h.get_by_label_contains("Recibir mercancía").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let db = &h.state().db;
+    assert_eq!(db.orders.iter().find(|o| o.id == oid).unwrap().state, crate::stock::OrderState::Recibido);
+    assert!((db.product(9).unwrap().stock - (before + 4.0)).abs() < 1e-6);
+    let lots: Vec<(String, f64)> = db.lots(9).into_iter().filter(|l| l.lot == "A111" || l.lot == "B222").map(|l| (l.lot, l.qty)).collect();
+    assert_eq!(lots, vec![("A111".to_string(), 3.0), ("B222".to_string(), 1.0)]);
+}
