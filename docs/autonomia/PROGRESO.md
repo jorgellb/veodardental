@@ -26,7 +26,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A8: IA de radiografías | E-014 | `6e2a560` |
 | Revisión de seguridad del área 8 | E-015 | `802798a` |
 | T-F1-A9: cita online y portales | E-016 | `80670ec` |
-| T-F1-A10: telefonía y laboratorio digital | E-017 | (este lote) |
+| T-F1-A10: telefonía y laboratorio digital | E-017 | `4c09bf7` |
 
 ## Siguiente acción
 1. T-F1-11: una prueba que recorra todas las pantallas a 1280×720 y 1280×800 y falle si algo se sale; arreglos y capturas.
