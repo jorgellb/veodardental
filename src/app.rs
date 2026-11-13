@@ -903,6 +903,12 @@ pub enum ChainOp {
         method: String,
         reason: String,
     },
+    /// Fusión de dos fichas del mismo paciente (solo Dirección): todo lo de
+    /// `remove`, también lo firmado, pasa a `keep`.
+    MergePatients {
+        keep: u32,
+        remove: u32,
+    },
 }
 
 impl ChainOp {
@@ -935,6 +941,12 @@ impl ChainOp {
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
             ChainOp::CancelPayment { payment, reason } => db.cancel_payment(*payment, reason, admin),
             ChainOp::Refund { patient, amount, method, reason } => db.refund(*patient, *amount, method, reason),
+            ChainOp::MergePatients { keep, remove } => {
+                if !admin {
+                    return Err("Solo Dirección puede fusionar pacientes.".into());
+                }
+                db.merge_patients(*keep, *remove).map(|_| *keep)
+            }
         }
     }
 
@@ -955,6 +967,7 @@ impl ChainOp {
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
             ChainOp::CancelPayment { payment, reason } => json!({ "accion": "anular_cobro", "cobro": payment, "motivo": reason }),
             ChainOp::Refund { patient, amount, method, reason } => json!({ "accion": "devolver", "paciente": patient, "importe": amount, "forma": method, "motivo": reason }),
+            ChainOp::MergePatients { keep, remove } => json!({ "accion": "fusionar", "conservar": keep, "eliminar": remove }),
         }
     }
 
@@ -982,6 +995,7 @@ impl ChainOp {
             "cobrar_cuota" => ChainOp::PayInstallment { budget: num("presupuesto")?, index: num("cuota")?, method: pay_method(&text("forma"))? },
             "anular_cobro" => ChainOp::CancelPayment { payment: num("cobro")?, reason: text("motivo") },
             "devolver" => ChainOp::Refund { patient: num("paciente")?, amount: v["importe"].as_f64().filter(|a| a.is_finite()).ok_or("Falta «importe».")?, method: pay_method(&text("forma"))?, reason: text("motivo") },
+            "fusionar" => ChainOp::MergePatients { keep: num("conservar")?, remove: num("eliminar")? },
             _ => return Err("Acción no válida.".into()),
         })
     }
@@ -997,6 +1011,37 @@ impl ChainOp {
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
         // el saldo del paciente sale de sus tratamientos y sus cobros
         const PAY: &[&str] = &["payments", "budgets", "remittances", "entries", "patients", "cash", "config", "audit_log", "next_id"];
+        const MERGE: &[&str] = &[
+            "patients",
+            "entries",
+            "budgets",
+            "payments",
+            "recalls",
+            "waitlist",
+            "invoices",
+            "perio",
+            "images",
+            "messages",
+            "documents",
+            "lab_works",
+            "prescriptions",
+            "ortho",
+            "health",
+            "ia_reports",
+            "whatsapp",
+            "rx_links",
+            "appointments",
+            "stock_moves",
+            "tasks",
+            "chat",
+            "booking_requests",
+            "remittances",
+            "claims",
+            "slot_offers",
+            "calls",
+            "config",
+            "audit_log",
+        ];
         match self {
             ChainOp::Issue { .. } | ChainOp::Rectify { .. } | ChainOp::Correct { .. } | ChainOp::Cancel { .. } => (Some(Facturacion), CHAIN),
             ChainOp::Remit { .. } | ChainOp::Collected { .. } | ChainOp::Returned { .. } => (Some(Economia), REMIT),
@@ -1006,6 +1051,8 @@ impl ChainOp {
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
             ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),
+            // Dirección (se comprueba al hacerla); todo lo que puede ser de un paciente
+            ChainOp::MergePatients { .. } => (Some(Configuracion), MERGE),
         }
     }
 }

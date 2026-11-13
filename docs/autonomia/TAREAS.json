@@ -2713,6 +2713,25 @@
    "estado": "BLOQUEADA_EXTERNA",
    "evidencia": [],
    "bloqueo": "B-21"
+  },
+  {
+   "id": "T-SEC-01",
+   "requisitos": [
+    "R7-2",
+    "R7-5"
+   ],
+   "fase": "transversal",
+   "titulo": "Corregir los hallazgos de la revisión de seguridad de los commits de las áreas 1 y 2",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A1-FIX",
+    "T-F1-A2-FIX"
+   ],
+   "criterio": "Recetas no des-emitibles, revisión de avisos comprobada en el servidor y fusión de pacientes como operación del servidor, con pruebas de regresión",
+   "estado": "HECHA",
+   "evidencia": [
+    "E-008"
+   ]
   }
  ]
 }

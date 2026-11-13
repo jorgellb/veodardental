@@ -803,6 +803,18 @@ impl State {
         serde_json::from_str(self.snap.get("users", Some(&id.to_string()))?).ok()
     }
 
+    /// ¿Puede recetar este colaborador? (ver `Db::prescriber_problem`)
+    fn can_prescribe(&self, doctor: u32) -> bool {
+        self.snap.get("collaborators", Some(&doctor.to_string())).and_then(|j| serde_json::from_str::<crate::model::Collaborator>(j).ok()).is_some_and(|c| crate::finance::collaborator_problem(&c).is_none())
+    }
+
+    /// Nombre del usuario de la sesión si es un profesional que puede recetar.
+    fn prescriber_name(&self, id: u32) -> Option<String> {
+        let u = self.user(id).filter(|u| u.active)?;
+        let d = u.doctor_id?;
+        self.can_prescribe(d).then_some(u.name)
+    }
+
     fn is_admin(&self, id: u32) -> bool {
         self.user(id).is_some_and(|u| u.active && u.profile.can(Perm::Configuracion))
     }
@@ -850,13 +862,38 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
-        // lo firmado (documentos, cuestionarios) no se cambia ni se borra: solo
-        // se anota la revocación o pasa a la ficha que se conserva al fusionar
-        let removed: std::collections::HashSet<u32> = changes.iter().filter(|c| c.field == "patients" && c.after.is_none()).filter_map(|c| c.key.as_deref()?.parse().ok()).collect();
+        // lo firmado (documentos, cuestionarios) y las recetas emitidas no se
+        // cambian ni se borran ni pasan a otro paciente: solo se anota la
+        // revocación o el estado en las farmacias (fusionar pacientes es una
+        // operación del servidor, `ChainOp::MergePatients`)
         for c in changes.iter_mut().filter(|c| matches!(c.field.as_str(), "documents" | "health" | "prescriptions")) {
             let Some(cur) = c.key.as_deref().and_then(|k| self.snap.get(&c.field, Some(k))).cloned() else { continue };
-            if let Some(kept) = crate::firmado::protect_json(&c.field, &cur, c.after.as_deref(), &removed) {
+            if let Some(kept) = crate::firmado::protect_json(&c.field, &cur, c.after.as_deref()) {
                 c.after = Some(kept);
+            }
+        }
+        // recetas: la revisión de sus avisos solo la da quien puede recetar,
+        // con su nombre; y el prescriptor tiene que poder recetar
+        let reviewer = self.prescriber_name(user);
+        for c in changes.iter_mut().filter(|c| c.field == "prescriptions") {
+            let Some(after) = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::finance::Prescription>(a).ok()) else { continue };
+            let cur = c.key.as_deref().and_then(|k| self.snap.get("prescriptions", Some(k))).and_then(|j| serde_json::from_str::<crate::finance::Prescription>(j).ok());
+            let mut fixed = after.clone();
+            let (was_w, was_by, was_at) = cur.as_ref().map(|r| (r.reviewed_warnings.clone(), r.reviewed_by.clone(), r.reviewed_at)).unwrap_or_default();
+            if (after.reviewed_warnings != was_w || after.reviewed_by != was_by || after.reviewed_at != was_at) && !after.reviewed_warnings.is_empty() {
+                match &reviewer {
+                    Some(name) => fixed.reviewed_by = name.clone(),
+                    None => (fixed.reviewed_warnings, fixed.reviewed_by, fixed.reviewed_at) = (was_w, was_by, was_at),
+                }
+            }
+            if let Some(cur) = &cur
+                && after.doctor_id != cur.doctor_id
+                && !self.can_prescribe(after.doctor_id)
+            {
+                fixed.doctor_id = cur.doctor_id;
+            }
+            if fixed != after {
+                c.after = serde_json::to_string(&fixed).ok();
             }
         }
         // números de historia con sentido (con ellos se nombran carpetas)
@@ -1202,6 +1239,7 @@ impl State {
                     Some(Perm::Economia) => "Este usuario no puede llevar los cobros.",
                     Some(Perm::Gastos) => "Este usuario no puede llevar el banco.",
                     Some(Perm::Caja) => "Este usuario no puede llevar la caja (anular cobros o devolver dinero).",
+                    Some(Perm::Configuracion) => "Solo Dirección puede hacerlo (por ejemplo, fusionar pacientes).",
                     _ => "Este usuario no tiene permiso para hacerlo.",
                 },
             );
@@ -2517,6 +2555,75 @@ mod tests {
         let r = disk.documents.iter().find(|d| d.id == d1).unwrap();
         assert!(r.revoked_at.is_some() && r.revoke_reason == "Prefiere no operarse" && r.body == orig.body);
         rd.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    /// Un puesto no puede pasar lo firmado a otro paciente borrando el suyo en
+    /// la misma tanda: fusionar pacientes lo hace el servidor, y solo Dirección.
+    #[test]
+    fn signed_records_only_change_patient_through_a_merge_on_the_server() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE20");
+        let rd = signed_in(&addr, "CLAVE20", "Gabinete", 3, "0000");
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        let tid = a.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let doc = a.new_document(102, tid, &[38]).unwrap();
+        a.sign_document(doc, "Laura Fernández Ortiz", vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect()]).unwrap();
+        rd.push(&mut a, &mut sa).unwrap();
+        // borra al paciente 102 y pasa su consentimiento firmado al 103
+        a.patients.retain(|p| p.id != 102);
+        a.documents.iter_mut().find(|d| d.id == doc).unwrap().patient_id = 103;
+        rd.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.documents.iter().find(|d| d.id == doc).unwrap().patient_id, 102, "no se pasa a otro paciente");
+        // fusionar de verdad: en el servidor, solo Dirección
+        let merge = ChainOp::MergePatients { keep: 104, remove: 105 };
+        let (mut b, mut sb) = rd.load().unwrap();
+        let doc2 = b.new_document(105, tid, &[48]).unwrap();
+        b.sign_document(doc2, "Sofía Romero Navas", vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect()]).unwrap();
+        b.station = rd.station;
+        rd.push(&mut b, &mut sb).unwrap();
+        assert!(rd.chain_op(&mut b, &mut sb, &merge.json()).unwrap_err().contains("Dirección"));
+        let dir = signed_in(&addr, "CLAVE20", "Despacho", 1, "0000");
+        let (mut c, mut sc) = dir.load().unwrap();
+        c.station = dir.station;
+        dir.chain_op(&mut c, &mut sc, &merge.json()).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!(disk.patient(105).is_none());
+        assert_eq!(disk.documents.iter().find(|d| d.id == doc2).unwrap().patient_id, 104, "la fusión sí lo pasa");
+        assert_eq!(disk.doc_integrity(doc2), crate::firmado::Integrity::Intact, "y la firma sigue valiendo");
+        dir.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    /// Dar por revisados los avisos de una receta solo lo acepta el servidor de
+    /// quien puede recetar, y con su nombre (no el que mande el puesto).
+    #[test]
+    fn only_a_prescriber_marks_prescription_warnings_reviewed() {
+        let (addr, path, h) = start("CLAVE21");
+        let hyg = signed_in(&addr, "CLAVE21", "Higiene", 5, "0000");
+        let (mut a, mut sa) = hyg.load().unwrap();
+        a.station = hyg.station;
+        a.patient_mut(101).unwrap().allergies = "Penicilina".into();
+        let id = a.new_prescription(101, 1);
+        let amox = a.drugs.iter().find(|d| d.name.starts_with("Amoxicilina 500")).cloned().unwrap();
+        a.prescriptions.iter_mut().find(|r| r.id == id).unwrap().items.push(crate::finance::rx_item_from_drug(&amox));
+        a.review_rx_warnings(id, "Dra. Ruiz");
+        hyg.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let r = disk.prescriptions.iter().find(|r| r.id == id).unwrap();
+        assert!(r.reviewed_warnings.is_empty() && r.reviewed_by.is_empty() && r.reviewed_at.is_none(), "la higienista no los revisa");
+        let doc = signed_in(&addr, "CLAVE21", "Gabinete", 3, "0000");
+        let (mut b, mut sb) = doc.load().unwrap();
+        b.station = doc.station;
+        b.review_rx_warnings(id, "Otro nombre");
+        doc.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let r = disk.prescriptions.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(r.reviewed_by, "Dra. Ruiz", "con el nombre de quien entró");
+        assert!(!r.reviewed_warnings.is_empty());
+        doc.stop().unwrap();
         h.join().unwrap();
     }
 

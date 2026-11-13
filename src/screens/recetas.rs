@@ -788,14 +788,25 @@ fn official_card(app: &mut App, ui: &mut Ui, id: u32) {
         });
         if !r.erx_code.is_empty() {
             muted(ui, format!("Emitida el {} en {}. La farmacia la valida con el código de verificación.", r.erx_date.map(fmt_date).unwrap_or_default(), r.erx_platform));
-            if ui.button("Quitar el código (se emitió por error)").clicked() {
-                if let Some(x) = app.db.prescriptions.iter_mut().find(|x| x.id == id) {
-                    x.erx_code.clear();
-                    x.erx_date = None;
+            // el código se corrige por otro, nunca se quita: la receta emitida se queda como está
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Corregir el código").color(MUTED));
+                ui.add_sized([200.0, 32.0], egui::TextEdit::singleline(&mut app.rx.cve).hint_text("El código correcto"));
+                if ui.button("Corregir").clicked() {
+                    let code = app.rx.cve.trim().to_uppercase();
+                    if !crate::erx::cve_valid(&code) {
+                        app.warn("El código de verificación no parece válido (mínimo 8 letras o números).");
+                    } else {
+                        let old = r.erx_code.clone();
+                        if let Some(x) = app.db.prescriptions.iter_mut().find(|x| x.id == id) {
+                            x.erx_code = code.clone();
+                        }
+                        app.db.audit("Receta electrónica: código corregido", &format!("receta {id} · {old} → {code}"));
+                        app.rx.cve.clear();
+                        app.changed();
+                    }
                 }
-                app.db.audit("Receta electrónica: código retirado", &format!("receta {id}"));
-                app.changed();
-            }
+            });
             return;
         }
         let pending: Vec<(&str, bool, &str)> = crate::erx::doctor_readiness(&app.db, r.doctor_id);

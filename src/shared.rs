@@ -586,6 +586,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Carpeta compartida: pasar lo firmado a otro paciente borrando el suyo no
+    /// vale; la fusión de pacientes (con el fichero bloqueado) sí lo pasa.
+    #[test]
+    fn signed_records_change_patient_only_through_a_merge_in_the_shared_folder() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_merge_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        prepare_folder(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        a.station = 1;
+        let tid = a.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let doc = a.new_document(105, tid, &[38]).unwrap();
+        a.sign_document(doc, "Sofía Romero Navas", vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect()]).unwrap();
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        a.patients.retain(|p| p.id != 105);
+        a.documents.iter_mut().find(|d| d.id == doc).unwrap().patient_id = 103;
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        let (disk, _) = load();
+        assert_eq!(disk.documents.iter().find(|d| d.id == doc).unwrap().patient_id, 105, "no se pasa a otro paciente");
+        // la fusión, con el fichero bloqueado
+        let (mut b, mut base_b) = load();
+        b.station = 2;
+        let doc2 = b.new_document(106, tid, &[48]).unwrap();
+        b.sign_document(doc2, "Lucía Jiménez Prieto", vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect()]).unwrap();
+        save_synced(&mut b, &mut base_b, &path).unwrap();
+        save_synced_with(&mut b, &mut base_b, &path, |db| db.merge_patients(104, 106)).unwrap().1.unwrap();
+        let (disk, _) = load();
+        assert_eq!(disk.documents.iter().find(|d| d.id == doc2).unwrap().patient_id, 104);
+        assert_eq!(disk.doc_integrity(doc2), crate::firmado::Integrity::Intact);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn stock_moves_made_by_two_stations_at_once_are_all_counted() {
         let dir = std::env::temp_dir().join(format!("ds_shared_stock_{}", std::process::id()));

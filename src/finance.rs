@@ -206,6 +206,24 @@ pub fn default_drugs() -> Vec<Drug> {
     ]
 }
 
+/// Por qué no puede recetar este colaborador (`None`: puede). Solo recetan
+/// médicos, odontólogos y podólogos (RD 1718/2010, art. 1; RDL 1/2015, art.
+/// 79.1), de alta y con su número de colegiado.
+pub fn collaborator_problem(c: &Collaborator) -> Option<String> {
+    let spec = fold(&c.specialty);
+    if ["higien", "auxiliar", "protes", "recepc", "administ"].iter().any(|k| spec.contains(k)) {
+        return Some(format!("{} no puede recetar: solo recetan odontólogos, médicos y podólogos.", c.name));
+    }
+    if !c.active {
+        return Some(format!("{} está de baja.", c.name));
+    }
+    let lic = c.license.trim();
+    if lic.is_empty() || lic == "-" {
+        return Some(format!("Falta el nº de colegiado de {} (Colaboradores).", c.name));
+    }
+    None
+}
+
 /// Avisos de seguridad de una receta según las alergias y alertas del paciente.
 pub fn rx_warnings(p: &Patient, items: &[RxItem], drugs: &[Drug]) -> Vec<String> {
     let alg = fold(&p.allergies);
@@ -406,18 +424,7 @@ impl Db {
     /// 1/2015, art. 79.1), y con su número de colegiado.
     pub fn prescriber_problem(&self, doctor_id: u32) -> Option<String> {
         let Some(c) = self.doctor(doctor_id) else { return Some("Elija quién receta.".into()) };
-        let spec = fold(&c.specialty);
-        if ["higien", "auxiliar", "protes", "recepc", "administ"].iter().any(|k| spec.contains(k)) {
-            return Some(format!("{} no puede recetar: solo recetan odontólogos, médicos y podólogos.", c.name));
-        }
-        if !c.active {
-            return Some(format!("{} está de baja.", c.name));
-        }
-        let lic = c.license.trim();
-        if lic.is_empty() || lic == "-" {
-            return Some(format!("Falta el nº de colegiado de {} (Colaboradores).", c.name));
-        }
-        None
+        collaborator_problem(c)
     }
 
     /// Profesionales que pueden recetar.
@@ -629,9 +636,29 @@ mod tests {
         let cur = serde_json::to_string(db.prescriptions.iter().find(|r| r.id == id).unwrap()).unwrap();
         let mut changed: Prescription = serde_json::from_str(&cur).unwrap();
         changed.items[0].days = 30;
-        let kept = crate::firmado::protect_json("prescriptions", &cur, Some(&serde_json::to_string(&changed).unwrap()), &Default::default()).expect("se corrige");
+        let kept = crate::firmado::protect_json("prescriptions", &cur, Some(&serde_json::to_string(&changed).unwrap())).expect("se corrige");
         assert_eq!(serde_json::from_str::<Prescription>(&kept).unwrap().items[0].days, db.drugs[7].days);
-        assert!(crate::firmado::protect_json("prescriptions", &cur, None, &Default::default()).is_some(), "no se borra");
+        assert!(crate::firmado::protect_json("prescriptions", &cur, None).is_some(), "no se borra");
+    }
+
+    /// Una receta emitida no deja de estarlo: un puesto no puede borrar su
+    /// código (y después cambiarla); solo corregirlo por otro.
+    #[test]
+    fn an_issued_prescription_cannot_be_un_issued() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(d);
+        let id = db.new_prescription(101, 1);
+        let r = db.prescriptions.iter_mut().find(|r| r.id == id).unwrap();
+        r.items.push(rx_item_from_drug(&default_drugs()[7]));
+        r.erx_code = "AB12CD34EF".into();
+        let cur = serde_json::to_string(r).unwrap();
+        let mut cleared: Prescription = serde_json::from_str(&cur).unwrap();
+        cleared.erx_code.clear();
+        let kept: Prescription = serde_json::from_str(&crate::firmado::protect_json("prescriptions", &cur, Some(&serde_json::to_string(&cleared).unwrap())).expect("se corrige")).unwrap();
+        assert_eq!(kept.erx_code, "AB12CD34EF", "el código no se borra");
+        let mut fixed: Prescription = serde_json::from_str(&cur).unwrap();
+        fixed.erx_code = "ZZ98YY76XX".into();
+        assert_eq!(crate::firmado::protect_json("prescriptions", &cur, Some(&serde_json::to_string(&fixed).unwrap())), None, "corregirlo por otro sí");
     }
 
     #[test]

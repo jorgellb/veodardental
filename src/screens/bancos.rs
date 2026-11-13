@@ -257,8 +257,9 @@ pub fn duplicates_panel(app: &mut App, ui: &mut Ui) {
         }
         if let Some((k, r)) = merge {
             let _ = crate::tools::create_backup(&app.db, "antes de fusionar");
-            match app.db.merge_patients(k, r) {
-                Ok(()) => {
+            // en el servidor (o con el fichero compartido bloqueado): solo Dirección
+            match app.chain_op(crate::app::ChainOp::MergePatients { keep: k, remove: r }) {
+                Ok(_) => {
                     if app.patient == Some(r) {
                         app.patient = Some(k);
                     }

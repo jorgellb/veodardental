@@ -14,7 +14,7 @@ use crate::health::HealthForm;
 use crate::model::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 /// Estado de lo firmado.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,20 +83,18 @@ pub fn doc_integrity(d: &PatientDoc) -> Integrity {
 }
 
 /// Lo que queda de un documento firmado cuando un puesto manda otra versión
-/// o lo borra: el firmado tal cual, con la revocación si la anota y, si su
-/// paciente desaparece porque se fusionó con otro (`may_move`), en la ficha
-/// que se conserva.
-pub fn keep_signed_doc(current: &PatientDoc, proposed: Option<&PatientDoc>, may_move: bool) -> PatientDoc {
+/// o lo borra: el firmado tal cual, con la revocación si la anota. Pasarlo a
+/// otro paciente solo lo hace la fusión de pacientes, que es una operación
+/// del servidor (o con el fichero compartido bloqueado), no un cambio suelto.
+pub fn keep_signed_doc(current: &PatientDoc, proposed: Option<&PatientDoc>) -> PatientDoc {
     let mut out = current.clone();
-    if let Some(p) = proposed {
-        if out.revoked_at.is_none() && p.revoked_at.is_some() {
-            out.revoked_at = p.revoked_at;
-            out.revoked_by = p.revoked_by.clone();
-            out.revoke_reason = p.revoke_reason.clone();
-        }
-        if may_move {
-            out.patient_id = p.patient_id;
-        }
+    if let Some(p) = proposed
+        && out.revoked_at.is_none()
+        && p.revoked_at.is_some()
+    {
+        out.revoked_at = p.revoked_at;
+        out.revoked_by = p.revoked_by.clone();
+        out.revoke_reason = p.revoke_reason.clone();
     }
     out
 }
@@ -156,35 +154,31 @@ pub fn health_integrity(f: &HealthForm) -> Integrity {
 }
 
 /// Las respuestas firmadas de un cuestionario no cambian; las observaciones
-/// del profesional sí, y pasa a la ficha que se conserva al fusionar.
-pub fn keep_signed_health(current: &HealthForm, proposed: Option<&HealthForm>, may_move: bool) -> HealthForm {
+/// del profesional sí.
+pub fn keep_signed_health(current: &HealthForm, proposed: Option<&HealthForm>) -> HealthForm {
     let mut out = current.clone();
     if let Some(p) = proposed {
         out.notes = p.notes.clone();
-        if may_move {
-            out.patient_id = p.patient_id;
-        }
     }
     out
 }
 
 // ───────────────────────────── recetas emitidas ─────────────────────────────
 
-/// Una receta emitida es el registro de lo prescrito: no cambia. Sí se
-/// actualiza lo que pasa después (su estado en las farmacias, el código de la
-/// plataforma que se anotó por error) y pasa a la ficha que se conserva al
-/// fusionar.
-pub fn keep_issued_rx(current: &Prescription, proposed: Option<&Prescription>, may_move: bool) -> Prescription {
+/// Una receta emitida es el registro de lo prescrito: no cambia ni deja de
+/// estar emitida. Sí se actualiza su estado en las farmacias y se puede
+/// corregir el código de la plataforma por otro (nunca borrarlo: después se
+/// podría cambiar la receta).
+pub fn keep_issued_rx(current: &Prescription, proposed: Option<&Prescription>) -> Prescription {
     let mut out = current.clone();
     if let Some(p) = proposed {
-        (out.erx_code, out.erx_platform, out.erx_date) = (p.erx_code.clone(), p.erx_platform.clone(), p.erx_date);
+        if !p.erx_code.trim().is_empty() {
+            (out.erx_code, out.erx_platform, out.erx_date) = (p.erx_code.clone(), p.erx_platform.clone(), p.erx_date.or(out.erx_date));
+        }
         if let (Some(o), Some(n)) = (out.srep.as_mut(), p.srep.as_ref()) {
             o.status = n.status.clone();
             o.checked_at = n.checked_at;
             o.events = n.events.clone();
-        }
-        if may_move {
-            out.patient_id = p.patient_id;
         }
     }
     out
@@ -193,27 +187,26 @@ pub fn keep_issued_rx(current: &Prescription, proposed: Option<&Prescription>, m
 // ───────────────────────── protección en red y en carpeta ─────────────────────────
 
 /// Servidor: versión que se acepta de un registro firmado de `documents` o
-/// `health` (`current`) cuando un puesto manda `after` (`None`: lo borra).
-/// Devuelve `None` si no hay nada que corregir (no estaba firmado, o el
-/// cambio está permitido tal cual). `removed` son los pacientes que se
-/// eliminan en la misma tanda (fusión).
-pub fn protect_json(field: &str, current: &str, after: Option<&str>, removed: &HashSet<u32>) -> Option<String> {
-    fn fix<T: serde::de::DeserializeOwned + Serialize + PartialEq>(current: &str, after: Option<&str>, signed: impl Fn(&T) -> bool, pid: impl Fn(&T) -> u32, keep: impl Fn(&T, Option<&T>, bool) -> T, removed: &HashSet<u32>) -> Option<String> {
+/// `health`, o de una receta emitida de `prescriptions` (`current`), cuando un
+/// puesto manda `after` (`None`: lo borra). Devuelve `None` si no hay nada que
+/// corregir (no estaba firmado, o el cambio está permitido tal cual).
+pub fn protect_json(field: &str, current: &str, after: Option<&str>) -> Option<String> {
+    fn fix<T: serde::de::DeserializeOwned + Serialize + PartialEq>(current: &str, after: Option<&str>, signed: impl Fn(&T) -> bool, keep: impl Fn(&T, Option<&T>) -> T) -> Option<String> {
         let cur: T = serde_json::from_str(current).ok()?;
         if !signed(&cur) {
             return None;
         }
         let proposed: Option<T> = after.and_then(|a| serde_json::from_str(a).ok());
-        let kept = keep(&cur, proposed.as_ref(), removed.contains(&pid(&cur)));
+        let kept = keep(&cur, proposed.as_ref());
         if proposed.as_ref() == Some(&kept) {
             return None;
         }
         serde_json::to_string(&kept).ok()
     }
     match field {
-        "documents" => fix::<PatientDoc>(current, after, |d| d.signed, |d| d.patient_id, keep_signed_doc, removed),
-        "health" => fix::<HealthForm>(current, after, |f| f.signed, |f| f.patient_id, keep_signed_health, removed),
-        "prescriptions" => fix::<Prescription>(current, after, |r| r.issued(), |r| r.patient_id, keep_issued_rx, removed),
+        "documents" => fix::<PatientDoc>(current, after, |d| d.signed, keep_signed_doc),
+        "health" => fix::<HealthForm>(current, after, |f| f.signed, keep_signed_health),
+        "prescriptions" => fix::<Prescription>(current, after, |r| r.issued(), keep_issued_rx),
         _ => None,
     }
 }
@@ -246,36 +239,27 @@ impl Db {
         self.health.iter().find(|h| h.id == id).map(health_integrity).unwrap_or(Integrity::NotSigned)
     }
 
-    /// Carpeta compartida: lo firmado del fichero se queda como estaba (con la
-    /// revocación que anote este puesto y la fusión de fichas permitidas).
+    /// Carpeta compartida: lo firmado y lo emitido del fichero se queda como
+    /// estaba (con la revocación o el estado en farmacias que anote este
+    /// puesto). La fusión de pacientes va aparte, con el fichero bloqueado.
     pub fn keep_signed(&mut self, disk: &SignedOnDisk) {
-        let alive: HashSet<u32> = self.patients.iter().map(|p| p.id).collect();
-        for cur in &disk.docs {
-            let ours = self.documents.iter().position(|d| d.id == cur.id);
-            let kept = keep_signed_doc(cur, ours.map(|i| &self.documents[i]), !alive.contains(&cur.patient_id));
+        fn restore<T: Clone + PartialEq>(list: &mut Vec<T>, cur: &T, same: impl Fn(&T) -> bool, keep: impl Fn(&T, Option<&T>) -> T) {
+            let ours = list.iter().position(&same);
+            let kept = keep(cur, ours.map(|i| &list[i]));
             match ours {
-                Some(i) if self.documents[i] != kept => self.documents[i] = kept,
+                Some(i) if list[i] != kept => list[i] = kept,
                 Some(_) => {}
-                None => self.documents.push(kept),
+                None => list.push(kept),
             }
+        }
+        for cur in &disk.docs {
+            restore(&mut self.documents, cur, |d| d.id == cur.id, keep_signed_doc);
         }
         for cur in &disk.rx {
-            let ours = self.prescriptions.iter().position(|r| r.id == cur.id);
-            let kept = keep_issued_rx(cur, ours.map(|i| &self.prescriptions[i]), !alive.contains(&cur.patient_id));
-            match ours {
-                Some(i) if self.prescriptions[i] != kept => self.prescriptions[i] = kept,
-                Some(_) => {}
-                None => self.prescriptions.push(kept),
-            }
+            restore(&mut self.prescriptions, cur, |r| r.id == cur.id, keep_issued_rx);
         }
         for cur in &disk.health {
-            let ours = self.health.iter().position(|f| f.id == cur.id);
-            let kept = keep_signed_health(cur, ours.map(|i| &self.health[i]), !alive.contains(&cur.patient_id));
-            match ours {
-                Some(i) if self.health[i] != kept => self.health[i] = kept,
-                Some(_) => {}
-                None => self.health.push(kept),
-            }
+            restore(&mut self.health, cur, |f| f.id == cur.id, keep_signed_health);
         }
     }
 
