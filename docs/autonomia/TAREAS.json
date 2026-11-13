@@ -1242,8 +1242,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area1.md",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-006"
+   ]
   },
   {
    "id": "T-F1-A1-FIX",
@@ -1257,8 +1259,10 @@
     "T-F1-A1-REV"
    ],
    "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-006"
+   ]
   },
   {
    "id": "T-F1-A2-REV",

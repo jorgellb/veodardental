@@ -39,10 +39,13 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
     };
     let female = app.db.patient(pid).map(|p| p.sex == "F").unwrap_or(true);
     let mut f = orig.clone();
+    // firmado: las respuestas quedan como se firmaron (para cambiarlas, «Nueva revisión»)
+    let locked = orig.signed;
     // cabecera
     card(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
+        // título y estado; los botones, en la misma línea si caben (en otra si no)
+        ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Cuestionario de salud").size(19.0).family(sb()));
             pill(ui, &format!("del {}", fmt_date(f.date)), INFO);
             if f.signed {
@@ -53,7 +56,8 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
             if app.db.health_status(pid, app.today).is_some_and(|s| s.contains("caducado")) {
                 pill(ui, "Caducado", WARN).on_hover_text("Tiene más de un año: conviene una nueva revisión");
             }
-            right_aligned(ui, |ui| {
+            ui.add_space(12.0);
+            {
                 if ui.button("🖨 En blanco").clicked() {
                     print(app, ui.ctx(), pid, false);
                 }
@@ -66,14 +70,23 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                     app.changed();
                     app.notify("Nueva revisión del cuestionario creada: repase las respuestas con el paciente.");
                 }
+            }
+        });
+        // los campos a lo ancho que haya (field() los hace un 10 % más anchos)
+        let w = (ui.available_width() - 40.0) / 1.1;
+        ui.horizontal(|ui| {
+            ui.add_enabled_ui(!locked, |ui| {
+                field(ui, "Cumplimentado por", &mut f.filled_by, (w * 0.4).min(240.0));
+                field(ui, "Motivo de la consulta", &mut f.reason, (w * 0.6).min(360.0));
             });
         });
-        ui.horizontal(|ui| {
-            field(ui, "Cumplimentado por", &mut f.filled_by, 240.0);
-            field(ui, "Motivo de la consulta", &mut f.reason, 360.0);
-            ui.add_space(10.0);
+        if locked {
+            let integrity = app.db.health_integrity(orig.id);
+            let col = if integrity == crate::firmado::Integrity::Modified { DANGER } else { MUTED };
+            ui.label(RichText::new(integrity.label()).font(mdf(12.3)).color(col));
+        } else {
             ui.checkbox(&mut f.signed, "Revisado y firmado por el paciente");
-        });
+        }
         let alerts = f.alerts();
         let allergies = f.allergies();
         let interests = f.interests();
@@ -103,6 +116,9 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         for (col, (part, name)) in cols.iter_mut().zip([(Part::General, "Salud general"), (Part::Dental, "Salud bucodental")]) {
             card(col, |ui| {
                 ui.set_width(ui.available_width());
+                if locked {
+                    ui.disable();
+                }
                 section(ui, name);
                 for q in QUESTIONS.iter().filter(|q| q.part == part && (female || !q.female)) {
                     let mut yes = f.is(q.key);
@@ -129,9 +145,9 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                 if part == Part::Dental {
                     ui.add_space(8.0);
                     ui.separator();
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label("Última visita al dentista");
-                        crate::theme::combo("hf_visit").selected_text(LAST_VISIT[f.last_visit.min(4)]).show_ui(ui, |ui| {
+                        crate::theme::combo("hf_visit").width(150.0).selected_text(LAST_VISIT[f.last_visit.min(4)]).show_ui(ui, |ui| {
                             for (i, t) in LAST_VISIT.iter().enumerate() {
                                 ui.selectable_value(&mut f.last_visit, i, *t);
                             }
@@ -168,10 +184,21 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
             muted(ui, format!("Revisiones anteriores: {}", older.iter().map(|o| format!("{}{}", fmt_date(o.1), if o.2 { " (firmada)" } else { "" })).collect::<Vec<_>>().join(" · ")));
         }
     });
+    if locked {
+        // de un cuestionario firmado solo cambian las observaciones del profesional
+        let notes = std::mem::take(&mut f.notes);
+        f = orig.clone();
+        f.notes = notes;
+    }
     if f != orig {
         let id = f.id;
+        let sign = f.signed && !orig.signed;
+        f.signed = orig.signed;
         if let Some(h) = app.db.health.iter_mut().find(|h| h.id == id) {
             *h = f;
+        }
+        if sign && let Err(e) = app.db.sign_health(id) {
+            app.warn(e);
         }
         if app.db.apply_health(id) {
             app.notify("Avisos de salud añadidos a la ficha del paciente.");

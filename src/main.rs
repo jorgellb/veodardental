@@ -16,6 +16,7 @@ mod erx;
 mod extra;
 mod finance;
 mod firma;
+mod firmado;
 mod gesden;
 mod golive;
 mod health;

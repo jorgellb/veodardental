@@ -2233,3 +2233,70 @@ fn the_vat_exemption_for_new_invoices_is_chosen_in_the_settings() {
     assert!(a.db.audit_log.iter().any(|x| x.action == "Cambiar la exención de IVA" && x.detail.contains("20.Uno.5º")));
     assert_eq!(a.db.invoices.iter().map(|i| i.exemption).collect::<Vec<_>>(), before, "las emitidas no cambian");
 }
+
+/// Ficha › Documentos: revocar un consentimiento firmado desde la pantalla. El
+/// documento y su firma se quedan y la revocación queda anotada.
+#[test]
+fn a_signed_consent_is_revoked_from_the_patient_file() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Recep")).map(|u| u.id);
+        let tid = a.db.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let id = a.db.new_document(101, tid, &[38]).unwrap();
+        a.db.sign_document(id, "Carlos Martínez Sanz", vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect()]).unwrap();
+        a.open_patient(101, crate::app::PatTab::Documentos);
+        a.docs_mode = 0;
+        a.docs.selected = Some(id);
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    let id = h.state().docs.selected.unwrap();
+    h.get_by_label_contains("sin cambios desde que se firmó");
+    h.get_by_label("Revocar…").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.state_mut().docs.revoke.as_mut().unwrap().2 = "Prefiere no operarse".into();
+    h.step();
+    h.get_by_label("Anotar revocación").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let d = h.state().db.documents.iter().find(|d| d.id == id).unwrap().clone();
+    assert_eq!((d.revoked_by.as_str(), d.revoke_reason.as_str()), ("Carlos Martínez Sanz", "Prefiere no operarse"));
+    assert!(d.signed && !d.signature.is_empty());
+    h.get_by_label_contains("Revocado el");
+}
+
+/// Ficha › Salud: con el cuestionario firmado, las respuestas no se pueden
+/// cambiar (para eso está «Nueva revisión»); las observaciones sí.
+#[test]
+fn a_signed_health_form_cannot_be_edited_in_the_file() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1600.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let today = a.today;
+        let id = a.db.new_health(101, today, "El propio paciente");
+        a.db.health.iter_mut().find(|f| f.id == id).unwrap().yes.insert("diabetes".into(), false);
+        a.db.sign_health(id).unwrap();
+        a.open_patient(101, crate::app::PatTab::Salud);
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    let form = h.state().db.latest_health(101).unwrap().clone();
+    assert!(form.signed);
+    h.get_by_label("¿Es diabético/a?").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let after = h.state().db.latest_health(101).unwrap().clone();
+    assert_eq!(after.yes, form.yes, "las respuestas firmadas no cambian");
+    assert_eq!(h.state().db.health_integrity(form.id), crate::firmado::Integrity::Intact);
+    h.get_by_label_contains("sin cambios desde que se firmó");
+}

@@ -149,7 +149,7 @@ pub struct DocTemplate {
     pub marks_gdpr: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PatientDoc {
     pub id: u32,
     pub patient_id: u32,
@@ -164,6 +164,21 @@ pub struct PatientDoc {
     pub signed_at: Option<NaiveDateTime>,
     /// Trazos de la firma manuscrita (coordenadas 0..1 en el recuadro).
     pub signature: Vec<Vec<[f32; 2]>>,
+    /// Paciente para quien se firmó (al fusionar fichas, `patient_id` pasa a la que se conserva).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_patient: Option<u32>,
+    /// Huella del contenido firmado y sello con firmante, fecha y trazo (ver `firmado`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub content_hash: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub seal: String,
+    /// Revocación del consentimiento (el documento y su firma se conservan).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<NaiveDateTime>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub revoked_by: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub revoke_reason: String,
 }
 
 pub fn default_doc_templates() -> Vec<DocTemplate> {
@@ -478,7 +493,21 @@ impl Db {
         let extra = [("[PIEZAS]", if teeth.is_empty() { "indicada".to_string() } else { fmt_teeth(teeth) })];
         let body = self.fill(&t.body, pid, &extra);
         let id = self.new_id();
-        self.documents.push(PatientDoc { id, patient_id: pid, template_id, title: t.name.clone(), category: t.category.clone(), date: today(), body, doctor_id: doctor, signed: false, signer: String::new(), signed_at: None, signature: vec![] });
+        self.documents.push(PatientDoc {
+            id,
+            patient_id: pid,
+            template_id,
+            title: t.name.clone(),
+            category: t.category.clone(),
+            date: today(),
+            body,
+            doctor_id: doctor,
+            signed: false,
+            signer: String::new(),
+            signed_at: None,
+            signature: vec![],
+            ..Default::default()
+        });
         Some(id)
     }
 
@@ -494,6 +523,7 @@ impl Db {
         d.signer = signer.to_string();
         d.signed_at = Some(now());
         d.signature = strokes;
+        crate::firmado::seal_doc(d);
         let (pid, tid) = (d.patient_id, d.template_id);
         if self.doc_templates.iter().any(|t| t.id == tid && t.marks_gdpr)
             && let Some(p) = self.patient_mut(pid)

@@ -95,6 +95,10 @@ impl Db {
         if !(3..=80).contains(&signer.chars().count()) {
             return Err("Falta el nombre de quien firma.".into());
         }
+        // un menor de 16 años no firma: firma su padre, madre o tutor
+        if self.representative(d.patient_id, today()).is_some() && fold(signer) == fold(&self.patient_name(d.patient_id)) {
+            return Err("El paciente es menor de 16 años: tiene que firmar su padre, madre o tutor, con su propio nombre.".into());
+        }
         self.sign_document(doc_id, signer, strokes)?;
         let when = self.documents.iter().find(|d| d.id == doc_id).and_then(|d| d.signed_at);
         if let Some(l) = self.dlink_mut(doc_id) {
@@ -164,8 +168,20 @@ pub fn doc_html(db: &Db, d: &PatientDoc) -> String {
         ),
         None => String::new(),
     };
+    // lo firmado no ha cambiado (o sí), y la revocación si la hay
+    let check = match crate::firmado::doc_integrity(d) {
+        crate::firmado::Integrity::Intact => format!("<div class='ev'>Huella del contenido firmado (SHA-256): <code>{}</code>. Comprobada: sin cambios desde la firma.</div>", esc(&d.content_hash)),
+        crate::firmado::Integrity::Modified => "<div class='ev bad'>⚠ El texto de este documento ha cambiado después de firmarse: la firma no corresponde a este contenido.</div>".to_string(),
+        crate::firmado::Integrity::Unsealed => "<div class='ev'>Firmado antes de que el programa guardara la huella del contenido: no se puede comprobar.</div>".to_string(),
+        crate::firmado::Integrity::NotSigned => String::new(),
+    };
+    let revoked = match d.revoked_at {
+        Some(t) => format!("<div class='ev bad'>Revocado el {} por {}. Motivo: {}.</div>", t.format("%d/%m/%Y a las %H:%M"), esc(&d.revoked_by), esc(&d.revoke_reason)),
+        None => String::new(),
+    };
+    let evidence = format!("{evidence}{check}{revoked}");
     format!(
-        "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>{title}</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:760px;margin:40px auto;color:#222;line-height:1.55;padding:0 20px}}h1{{font-size:20px;letter-spacing:.5px}}.head{{border-bottom:2px solid #0e9688;padding-bottom:10px;margin-bottom:24px}}.body{{white-space:pre-wrap}}.firmas{{display:flex;gap:60px;margin-top:40px;flex-wrap:wrap}}.box{{border-top:1px solid #999;padding-top:6px;font-size:13px;color:#555}}.ev{{background:#f4f8fb;border-radius:8px;padding:10px 12px;margin-top:20px;font-size:12.5px;color:#334155}}code{{font-size:11px;word-break:break-all}}@media print{{body{{margin:20mm}}}}</style></head><body><div class='head'><b>{clinic}</b><br><small>{addr} · {phone} · NIF {nif}</small></div><h1>{title_up}</h1><p><small>Paciente: {pname} · Nº historia {hist} · NIF {pnif} · Fecha {date}</small></p><div class='body'>{body}</div><div class='firmas'><div>{sig}<div class='box'>{sig_label}: {signer}{when}</div></div><div><div style='height:120px'></div><div class='box'>{doc} · Nº colegiado {lic}</div></div></div>{evidence}</body></html>",
+        "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>{title}</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:760px;margin:40px auto;color:#222;line-height:1.55;padding:0 20px}}h1{{font-size:20px;letter-spacing:.5px}}.head{{border-bottom:2px solid #0e9688;padding-bottom:10px;margin-bottom:24px}}.body{{white-space:pre-wrap}}.firmas{{display:flex;gap:60px;margin-top:40px;flex-wrap:wrap}}.box{{border-top:1px solid #999;padding-top:6px;font-size:13px;color:#555}}.ev{{background:#f4f8fb;border-radius:8px;padding:10px 12px;margin-top:20px;font-size:12.5px;color:#334155}}.bad{{background:#fdecec;color:#8a1c1c}}code{{font-size:11px;word-break:break-all}}@media print{{body{{margin:20mm}}}}</style></head><body><div class='head'><b>{clinic}</b><br><small>{addr} · {phone} · NIF {nif}</small></div><h1>{title_up}</h1><p><small>Paciente: {pname} · Nº historia {hist} · NIF {pnif} · Fecha {date}</small></p><div class='body'>{body}</div><div class='firmas'><div>{sig}<div class='box'>{sig_label}: {signer}{when}</div></div><div><div style='height:120px'></div><div class='box'>{doc} · Nº colegiado {lic}</div></div></div>{evidence}</body></html>",
         title = esc(&d.title),
         clinic = esc(&db.config.name),
         addr = esc(&db.config.address),
@@ -203,6 +219,9 @@ pub struct PubDoc {
     pub signed_by: String,
     pub signed_at: Option<NaiveDateTime>,
     pub viewed: bool,
+    /// Paciente menor de 16 años: firma su representante (su nombre, si consta).
+    pub minor: bool,
+    pub representative: String,
 }
 
 pub fn publish_docs(db: &Db) -> HashMap<String, PubDoc> {
@@ -234,6 +253,8 @@ pub fn publish_docs(db: &Db) -> HashMap<String, PubDoc> {
                 signed_by: if d.signed { d.signer.clone() } else { String::new() },
                 signed_at: if d.signed { d.signed_at } else { None },
                 viewed: l.viewed.is_some(),
+                minor: db.representative(d.patient_id, today()).is_some(),
+                representative: db.representative(d.patient_id, today()).unwrap_or_default(),
             },
         );
     }
@@ -249,6 +270,7 @@ pub fn doc_json(p: &crate::booking::Published, d: &PubDoc) -> serde_json::Value 
         "estado": d.state, "huella": d.hash,
         "firmado_por": d.signed_by,
         "firmado_el": d.signed_at.map(|t| t.format("%d/%m/%Y %H:%M").to_string()),
+        "menor": d.minor, "representante": d.representative,
     })
 }
 
@@ -284,6 +306,75 @@ mod tests {
         let id = db.new_document(101, tid, &[38]).unwrap();
         db.doc_token(id);
         id
+    }
+
+    /// Al firmar se guarda la huella de lo firmado: si el texto, el firmante o
+    /// la firma cambian después, se nota.
+    #[test]
+    fn a_signed_document_detects_later_changes() {
+        use crate::firmado::Integrity;
+        let mut db = Db::sample(today());
+        let id = consent(&mut db);
+        assert_eq!(db.doc_integrity(id), Integrity::NotSigned);
+        db.sign_document(id, "Carlos Martínez Sanz", sig()).unwrap();
+        assert_eq!(db.doc_integrity(id), Integrity::Intact);
+        let d = db.documents.iter_mut().find(|d| d.id == id).unwrap();
+        d.body.push_str(" Y renuncia a reclamar.");
+        assert_eq!(db.doc_integrity(id), Integrity::Modified);
+        // la hoja impresa lo dice
+        let d = db.documents.iter().find(|d| d.id == id).unwrap().clone();
+        assert!(doc_html(&db, &d).contains("ha cambiado después de firmarse"));
+        // documentos firmados antes de existir la huella: sin huella guardada
+        let id2 = consent(&mut db);
+        db.sign_document(id2, "Carlos Martínez Sanz", sig()).unwrap();
+        let d2 = db.documents.iter_mut().find(|d| d.id == id2).unwrap();
+        (d2.content_hash, d2.seal) = (String::new(), String::new());
+        assert_eq!(db.doc_integrity(id2), Integrity::Unsealed);
+    }
+
+    /// Revocar un consentimiento firmado: queda el documento con su firma y la
+    /// revocación al lado; el de protección de datos quita la autorización.
+    #[test]
+    fn a_signed_consent_can_be_revoked_without_losing_it() {
+        use crate::firmado::Integrity;
+        let mut db = Db::sample(today());
+        let tid = db.doc_templates.iter().find(|t| t.marks_gdpr).map(|t| t.id).unwrap();
+        let id = db.new_document(101, tid, &[]).unwrap();
+        assert!(db.revoke_document(id, "Carlos Martínez Sanz", "Ya no quiere").is_err(), "sin firmar no se revoca");
+        db.sign_document(id, "Carlos Martínez Sanz", sig()).unwrap();
+        assert!(db.patient(101).unwrap().accepts_gdpr);
+        assert!(db.revoke_document(id, "Carlos Martínez Sanz", "  ").is_err(), "hace falta el motivo");
+        db.revoke_document(id, "Carlos Martínez Sanz", "No quiere recibir mensajes").unwrap();
+        let d = db.documents.iter().find(|d| d.id == id).unwrap().clone();
+        assert!(d.signed && !d.signature.is_empty() && d.revoked_at.is_some());
+        assert_eq!((d.revoked_by.as_str(), d.revoke_reason.as_str()), ("Carlos Martínez Sanz", "No quiere recibir mensajes"));
+        assert_eq!(db.doc_integrity(id), Integrity::Intact, "revocar no toca lo firmado");
+        assert!(!db.patient(101).unwrap().accepts_gdpr);
+        assert!(db.audit_log.iter().any(|a| a.action == "Revocar consentimiento" && a.detail.contains("No quiere recibir mensajes")));
+        assert!(db.revoke_document(id, "Carlos Martínez Sanz", "otra vez").is_err(), "ya revocado");
+        assert!(doc_html(&db, &d).contains("Revocado el"));
+        assert!(db.docs_to_sign(101).iter().all(|(t, _)| db.doc_links.iter().find(|l| &l.token == t).map(|l| l.doc_id) != Some(id)));
+    }
+
+    /// Un menor de 16 años no firma él mismo por internet: firma su representante.
+    #[test]
+    fn a_minor_does_not_sign_their_own_document_online() {
+        let mut db = Db::sample(today());
+        let kid = db.patients.iter().find(|p| p.age(today()).is_some_and(|a| a < 16)).map(|p| p.id).unwrap();
+        let tid = db.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let id = db.new_document(kid, tid, &[85]).unwrap();
+        db.doc_token(id);
+        let d = db.documents.iter().find(|d| d.id == id).unwrap().clone();
+        let hash = doc_hash(&d);
+        let own = db.patient(kid).unwrap().full_name();
+        let e = db.doc_remote_sign(id, &own, "", sig(), &hash, "1.2.3.4").unwrap_err();
+        assert!(e.contains("menor"), "{e}");
+        // la página lo sabe y lo explica
+        let published = publish_docs(&db);
+        let pubdoc = published.values().find(|p| p.title == d.title && p.minor).expect("marcado como menor");
+        assert!(pubdoc.minor);
+        db.doc_remote_sign(id, "Laura Romero Navas", "12345678Z", sig(), &hash, "1.2.3.4").unwrap();
+        assert!(db.documents.iter().find(|d| d.id == id).unwrap().signed);
     }
 
     #[test]

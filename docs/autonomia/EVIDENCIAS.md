@@ -49,3 +49,27 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 306 pasan, 0 fallan, 10 ignoradas |
+
+## E-006 Área 1: documentos, consentimientos y cuestionarios
+- Revisión en `docs/autonomia/revision/area1.md`: 5 defectos demostrados (D1 a D5).
+- **Pruebas nuevas**, que antes no compilaban porque no existía la función:
+  - `doc_link::tests::a_signed_document_detects_later_changes`
+  - `doc_link::tests::a_signed_consent_can_be_revoked_without_losing_it`
+  - `doc_link::tests::a_minor_does_not_sign_their_own_document_online`
+  - `health::tests::a_signed_health_form_is_sealed`
+  - `server::tests::signed_documents_and_forms_cannot_be_changed_by_a_station` (en red, con TLS y sesiones de verdad)
+  - `shared::tests::a_station_cannot_change_signed_records_in_the_shared_folder` (con y sin cambios de otros puestos a la vez)
+  - `ui_tests::a_signed_consent_is_revoked_from_the_patient_file`
+  - `ui_tests::a_signed_health_form_cannot_be_edited_in_the_file`
+- **Invariante:** la fusión de pacientes sigue pasando lo firmado a la ficha que se conserva. Lo comprueba `bank::tests::merging_moves_everything_of_the_removed_patient`, que pasa. El servidor y la carpeta compartida permiten el cambio de paciente solo cuando ese paciente se elimina en la misma tanda.
+- **Capturas sintéticas a 1280×800:**
+  - `docs/autonomia/capturas/f1_area1_salud_1280x800.png`
+  - `docs/autonomia/capturas/f1_area1_salud_respuestas_1280x800.png`
+  - `docs/autonomia/capturas/f1_area1_documentos_1280x800.png`
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 314 pasan, 0 fallan, 10 ignoradas |

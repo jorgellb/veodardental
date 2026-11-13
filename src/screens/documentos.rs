@@ -14,11 +14,13 @@ pub struct DocsState {
     pub new_teeth: String,
     pub strokes: Vec<Vec<[f32; 2]>>,
     pub signer: String,
+    /// Revocación que se está anotando: documento, quién revoca y motivo.
+    pub revoke: Option<(u32, String, String)>,
 }
 
 impl Default for DocsState {
     fn default() -> Self {
-        DocsState { selected: None, new_template: 1, new_teeth: String::new(), strokes: vec![], signer: String::new() }
+        DocsState { selected: None, new_template: 1, new_teeth: String::new(), strokes: vec![], signer: String::new(), revoke: None }
     }
 }
 
@@ -81,7 +83,15 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                     );
                     p.with_clip_rect(rect.shrink(4.0)).text(rect.min + vec2(12.0, 10.0), egui::Align2::LEFT_TOP, &d.title, sbf(14.5), TEXT);
                     p.text(rect.min + vec2(12.0, 34.0), egui::Align2::LEFT_TOP, format!("{} · {}", fmt_date(d.date), d.category), egui::FontId::proportional(12.5), MUTED);
-                    let (t, c) = if d.signed { ("Firmado", OK) } else { ("Sin firmar", WARN) };
+                    let (t, c) = if d.revoked_at.is_some() {
+                        ("Revocado", DANGER)
+                    } else if crate::firmado::doc_integrity(d) == crate::firmado::Integrity::Modified {
+                        ("⚠ Cambiado tras firmar", DANGER)
+                    } else if d.signed {
+                        ("Firmado", OK)
+                    } else {
+                        ("Sin firmar", WARN)
+                    };
                     p.text(rect.right_top() + vec2(-12.0, 36.0), egui::Align2::RIGHT_TOP, t, sbf(12.5), c);
                     if resp.clicked() {
                         app.docs.selected = Some(d.id);
@@ -170,6 +180,17 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                     ui.add_space(8.0);
                     ui.label(RichText::new(format!("✔ Firmado por {}", d.signer)).color(OK).family(sb()));
                     muted(ui, d.signed_at.map(|t| t.format("%d/%m/%Y %H:%M").to_string()).unwrap_or_default());
+                    let integrity = app.db.doc_integrity(id);
+                    let col = match integrity {
+                        crate::firmado::Integrity::Modified => DANGER,
+                        crate::firmado::Integrity::Intact => OK,
+                        _ => MUTED,
+                    };
+                    ui.label(RichText::new(integrity.label()).font(mdf(12.3)).color(col));
+                    if let Some(t) = d.revoked_at {
+                        ui.label(RichText::new(format!("Revocado el {} por {}", t.format("%d/%m/%Y %H:%M"), d.revoked_by)).color(DANGER).family(sb()));
+                        muted(ui, format!("Motivo: {}", d.revoke_reason));
+                    }
                 }
             });
         });
@@ -235,7 +256,40 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                 app.docs.selected = None;
                 app.changed();
             }
+            // el paciente (o su representante) retira un consentimiento firmado
+            if d.signed && d.revoked_at.is_none() && app.docs.revoke.as_ref().is_none_or(|r| r.0 != id) && ui.button("Revocar…").on_hover_text("El paciente retira este consentimiento: el documento y su firma se conservan").clicked() {
+                let by = app.db.representative(d.patient_id, app.today).filter(|r| !r.is_empty()).unwrap_or_else(|| app.db.patient_name(d.patient_id));
+                app.docs.revoke = Some((id, by, String::new()));
+            }
         });
+        if let Some((rid, by, reason)) = app.docs.revoke.as_mut()
+            && *rid == id
+        {
+            ui.add_space(6.0);
+            let mut go = false;
+            let mut cancel = false;
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Revoca").color(MUTED));
+                ui.add_sized([200.0, 32.0], egui::TextEdit::singleline(by));
+                ui.label(RichText::new("Motivo").color(MUTED));
+                ui.add_sized([260.0, 32.0], egui::TextEdit::singleline(reason).hint_text("Lo que indica el paciente"));
+                go = primary(ui, "Anotar revocación").clicked();
+                cancel = ui.button("Cancelar").clicked();
+            });
+            if go {
+                let (b, r) = (by.clone(), reason.clone());
+                match app.db.revoke_document(id, &b, &r) {
+                    Ok(()) => {
+                        app.docs.revoke = None;
+                        app.changed();
+                        app.notify("Revocación anotada: el documento y su firma se conservan.");
+                    }
+                    Err(e) => app.warn(e),
+                }
+            } else if cancel {
+                app.docs.revoke = None;
+            }
+        }
     });
 }
 

@@ -204,7 +204,7 @@ impl Db {
             hash
         );
         let doc = self.new_id();
-        self.documents.push(crate::comms::PatientDoc {
+        let mut signed_doc = crate::comms::PatientDoc {
             id: doc,
             patient_id: b.patient_id,
             template_id: 0,
@@ -217,7 +217,10 @@ impl Db {
             signer: signer.trim().to_string(),
             signed_at: Some(when),
             signature: strokes.clone(),
-        });
+            ..Default::default()
+        };
+        crate::firmado::seal_doc(&mut signed_doc);
+        self.documents.push(signed_doc);
         if let Some(l) = self.blink_mut(bid) {
             l.decided = Some(when);
             l.accepted = true;

@@ -88,6 +88,11 @@ pub struct HealthForm {
     pub aids: Vec<String>,
     pub signed: bool,
     pub notes: String,
+    /// Paciente para quien se firmó y huella de las respuestas firmadas (ver `firmado`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_patient: Option<u32>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub signed_hash: String,
 }
 
 impl HealthForm {
@@ -184,10 +189,14 @@ impl Db {
             aids: vec!["Cepillo manual".into()],
             signed: false,
             notes: String::new(),
+            signed_patient: None,
+            signed_hash: String::new(),
         });
         f.id = id;
         f.date = today;
         f.signed = false;
+        f.signed_patient = None;
+        f.signed_hash.clear();
         f.filled_by = by.to_string();
         self.health.push(f);
         id
@@ -294,6 +303,27 @@ mod tests {
 
     fn d() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 5).unwrap()
+    }
+
+    /// Un cuestionario firmado guarda la huella de sus respuestas: cambiarlas
+    /// después se nota (para cambiarlas se hace una revisión nueva).
+    #[test]
+    fn a_signed_health_form_is_sealed() {
+        use crate::firmado::Integrity;
+        let mut db = Db::sample(d());
+        let id = db.new_health(101, d(), "El propio paciente");
+        assert_eq!(db.health_integrity(id), Integrity::NotSigned);
+        db.sign_health(id).unwrap();
+        let f = db.health.iter().find(|h| h.id == id).unwrap();
+        assert!(f.signed && !f.signed_hash.is_empty());
+        assert_eq!(db.health_integrity(id), Integrity::Intact);
+        db.health.iter_mut().find(|h| h.id == id).unwrap().yes.insert("diabetes".into(), true);
+        assert_eq!(db.health_integrity(id), Integrity::Modified);
+        assert!(db.sign_health(id).is_err(), "ya firmado");
+        // la revisión nueva parte de sus respuestas, sin firmar ni huella
+        let next = db.new_health(101, d(), "El propio paciente");
+        let n = db.health.iter().find(|h| h.id == next).unwrap();
+        assert!(!n.signed && n.signed_hash.is_empty());
     }
 
     #[test]

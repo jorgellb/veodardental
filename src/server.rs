@@ -850,6 +850,15 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
+        // lo firmado (documentos, cuestionarios) no se cambia ni se borra: solo
+        // se anota la revocación o pasa a la ficha que se conserva al fusionar
+        let removed: std::collections::HashSet<u32> = changes.iter().filter(|c| c.field == "patients" && c.after.is_none()).filter_map(|c| c.key.as_deref()?.parse().ok()).collect();
+        for c in changes.iter_mut().filter(|c| c.field == "documents" || c.field == "health") {
+            let Some(cur) = c.key.as_deref().and_then(|k| self.snap.get(&c.field, Some(k))).cloned() else { continue };
+            if let Some(kept) = crate::firmado::protect_json(&c.field, &cur, c.after.as_deref(), &removed) {
+                c.after = Some(kept);
+            }
+        }
         // números de historia con sentido (con ellos se nombran carpetas)
         for c in changes.iter().filter(|c| c.field == "patients") {
             let n = c.after.as_deref().and_then(|a| serde_json::from_str::<Value>(a).ok()).and_then(|v| v["history_no"].as_u64());
@@ -2464,6 +2473,51 @@ mod tests {
         ra.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Lo firmado no lo cambia ni lo borra un puesto: el servidor conserva el
+    /// documento y el cuestionario tal como se firmaron; solo acepta que se
+    /// anote la revocación.
+    #[test]
+    fn signed_documents_and_forms_cannot_be_changed_by_a_station() {
+        let (addr, path, h) = start("CLAVE19");
+        let rd = signed_in(&addr, "CLAVE19", "Gabinete", 3, "0000");
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        let tid = a.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let (d1, d2) = (a.new_document(101, tid, &[38]).unwrap(), a.new_document(101, tid, &[48]).unwrap());
+        let strokes = vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect::<Vec<_>>()];
+        a.sign_document(d1, "Carlos Martínez Sanz", strokes.clone()).unwrap();
+        a.sign_document(d2, "Carlos Martínez Sanz", strokes).unwrap();
+        let hid = a.new_health(101, crate::model::today(), "El propio paciente");
+        a.sign_health(hid).unwrap();
+        rd.push(&mut a, &mut sa).unwrap();
+        let signed = crate::sync::on_disk(&path);
+        let orig = signed.documents.iter().find(|d| d.id == d1).unwrap().clone();
+        let orig_form = signed.health.iter().find(|f| f.id == hid).unwrap().clone();
+        // el puesto cambia el texto de uno, borra el otro y cambia una respuesta
+        a.documents.iter_mut().find(|d| d.id == d1).unwrap().body = "Otro texto".into();
+        a.documents.retain(|d| d.id != d2);
+        a.health.iter_mut().find(|f| f.id == hid).unwrap().yes.insert("diabetes".into(), true);
+        rd.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.documents.iter().find(|d| d.id == d1).map(|d| d.body.clone()), Some(orig.body.clone()), "el texto firmado no cambia");
+        assert!(disk.documents.iter().any(|d| d.id == d2), "un documento firmado no se borra");
+        assert_eq!(disk.health.iter().find(|f| f.id == hid), Some(&orig_form), "el cuestionario firmado no cambia");
+        assert_eq!(disk.doc_integrity(d1), crate::firmado::Integrity::Intact);
+        // y el puesto recibe lo que hay en el servidor
+        let (back, _) = rd.load().unwrap();
+        assert_eq!(back.documents.iter().find(|d| d.id == d1).unwrap().body, orig.body);
+        // revocarlo sí se puede (y queda anotado en el servidor)
+        let (mut b, mut sb) = rd.load().unwrap();
+        b.station = rd.station;
+        b.revoke_document(d1, "Carlos Martínez Sanz", "Prefiere no operarse").unwrap();
+        rd.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let r = disk.documents.iter().find(|d| d.id == d1).unwrap();
+        assert!(r.revoked_at.is_some() && r.revoke_reason == "Prefiere no operarse" && r.body == orig.body);
+        rd.stop().unwrap();
+        h.join().unwrap();
     }
 
     #[test]

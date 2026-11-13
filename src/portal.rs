@@ -327,6 +327,8 @@ pub fn health_from(b: &HealthBody) -> Result<HealthForm, String> {
         aids: b.ayudas.iter().filter(|a| AIDS.contains(&a.as_str())).cloned().collect(),
         signed: false,
         notes: String::new(),
+        signed_patient: None,
+        signed_hash: String::new(),
     })
 }
 

@@ -305,6 +305,8 @@ pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl F
         Ok(t) => Some(serde_json::from_str(&t).map_err(|e| format!("El fichero de datos compartido está dañado: {e}"))?),
         Err(_) => None,
     };
+    // lo firmado del fichero se queda como está (ver `firmado`)
+    let signed = disk.as_ref().map(crate::firmado::SignedOnDisk::read);
     let outcome = match disk {
         Some(d) if rev_of(&d) != rev_of(base) => {
             let ours = serde_json::to_value(&*db).map_err(|e| e.to_string())?;
@@ -335,6 +337,9 @@ pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl F
             Synced::Saved
         }
     };
+    if let Some(s) = &signed {
+        db.keep_signed(s);
+    }
     let out = f(db);
     let ours = serde_json::to_value(&*db).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");
@@ -527,6 +532,58 @@ mod tests {
         assert!((m["products"][0]["stock"].as_f64().unwrap() - 4.55).abs() < 1e-9, "{m}");
         assert_eq!(m["products"][0]["name"], "Composite A2");
         assert_eq!(c, 0, "no es un conflicto");
+    }
+
+    /// Carpeta compartida: un puesto que cambia o borra lo firmado no lo pisa
+    /// en el fichero (haya o no cambios de otros puestos); revocar sí se guarda.
+    #[test]
+    fn a_station_cannot_change_signed_records_in_the_shared_folder() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_signed_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        prepare_folder(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        a.station = 1;
+        let tid = a.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let (d1, d2) = (a.new_document(101, tid, &[38]).unwrap(), a.new_document(101, tid, &[48]).unwrap());
+        let strokes = vec![(0..24).map(|i| [i as f32 / 24.0, 0.5]).collect::<Vec<_>>()];
+        a.sign_document(d1, "Carlos Martínez Sanz", strokes.clone()).unwrap();
+        a.sign_document(d2, "Carlos Martínez Sanz", strokes).unwrap();
+        let hid = a.new_health(101, NaiveDate::from_ymd_opt(2026, 11, 6).unwrap(), "El propio paciente");
+        a.sign_health(hid).unwrap();
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        let (orig, _) = load();
+        // sin cambios de otros puestos
+        a.documents.iter_mut().find(|d| d.id == d1).unwrap().body = "Otro texto".into();
+        a.health.iter_mut().find(|f| f.id == hid).unwrap().yes.insert("diabetes".into(), true);
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        // y con cambios de otro puesto a la vez
+        let (mut b, mut base_b) = load();
+        b.station = 2;
+        b.documents.retain(|d| d.id != d2);
+        let (mut c, mut base_c) = load();
+        c.station = 3;
+        c.patient_mut(102).unwrap().mobile = "600000000".into();
+        save_synced(&mut c, &mut base_c, &path).unwrap();
+        save_synced(&mut b, &mut base_b, &path).unwrap();
+        let (disk, _) = load();
+        let same = |id: u32| disk.documents.iter().find(|d| d.id == id).map(|d| d.body.clone()) == orig.documents.iter().find(|d| d.id == id).map(|d| d.body.clone());
+        assert!(same(d1) && same(d2), "lo firmado sigue igual y no se borra");
+        assert_eq!(disk.health.iter().find(|f| f.id == hid), orig.health.iter().find(|f| f.id == hid));
+        assert_eq!(disk.patient(102).unwrap().mobile, "600000000", "lo demás se combina como siempre");
+        // revocar sí
+        let (mut e, mut base_e) = load();
+        e.station = 4;
+        e.revoke_document(d1, "Carlos Martínez Sanz", "Prefiere no operarse").unwrap();
+        save_synced(&mut e, &mut base_e, &path).unwrap();
+        let (disk, _) = load();
+        assert!(disk.documents.iter().find(|d| d.id == d1).unwrap().revoked_at.is_some());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

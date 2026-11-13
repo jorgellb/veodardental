@@ -18,6 +18,7 @@ h1{font-size:22px;margin:0;color:var(--hd)} .sub{color:var(--mu);font-size:14px;
 .card{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:22px;box-shadow:0 10px 30px rgba(15,23,42,.06);margin-bottom:14px}
 h2{font-size:18px;margin:0 0 4px;color:var(--hd)} h3{font-size:15px;margin:0 0 10px;color:var(--hd)}
 .hint{color:var(--mu);font-size:14px;margin:0 0 12px;line-height:1.5}
+.warn{color:#8a4b00;background:#fff4e0;border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 12px;line-height:1.5}
 .paper{background:#fffdf8;border:1px solid #efe8da;border-radius:14px;padding:18px 18px;margin-top:12px}
 .paper .tt{font-size:15px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--hd);margin-bottom:10px}
 .paper .tx{white-space:pre-wrap;font-size:15.5px;line-height:1.65;color:#2b2f36}
@@ -90,7 +91,9 @@ footer{text-align:center;color:var(--mu);font-size:13px;margin-top:20px;line-hei
     var d=D,c=el('div',{cls:'card'});
     c.appendChild(el('h3',{text:'Firma'}));
     c.appendChild(el('p',{cls:'hint',text:'Si tiene alguna duda, pregúntenos antes de firmar con el botón «Tengo una pregunta». Si firma en nombre del paciente (padre, madre, tutor), escriba su propio nombre.'}));
+    if(d.menor)c.appendChild(el('p',{cls:'warn',text:'El paciente es menor de 16 años: tiene que firmar su padre, madre o tutor legal, con su propio nombre.'}));
     var name=el('input',{type:'text',placeholder:'Nombre y apellidos de quien firma',autocomplete:'name'}), nif=el('input',{type:'text',placeholder:'NIF (opcional)'});
+    if(d.menor&&d.representante)name.value=d.representante.replace(/ \(.*\)$/,'');
     c.appendChild(el('div',{cls:'row'},[name,nif]));
     var cv=el('canvas'),ph=el('div',{cls:'ph',text:'Firme aquí con el dedo o el ratón'}),pad=el('div',{cls:'pad'},[el('div',{cls:'ln'}),cv,ph]);
     c.appendChild(el('label',{cls:'f',text:'Su firma'}));c.appendChild(pad);
