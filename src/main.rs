@@ -271,6 +271,14 @@ fn main() -> eframe::Result<()> {
                     screens::config::open(&mut a, *t);
                 }
             }
+            // fichero ya leído en Configuración › Importar («--ajustes importar --importar pacientes.csv»)
+            if let Some(f) = arg("--importar")
+                && let Ok(s) = extra::read_table(&f)
+            {
+                a.imp.map = extra::guess_mapping(a.imp.kind, &s.headers);
+                a.imp.path = f;
+                a.imp.sheet = Some(s);
+            }
             if let Some(n) = call_arg {
                 screens::llamadas::incoming(&mut a, &n);
             }

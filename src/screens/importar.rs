@@ -107,14 +107,15 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
         ui.add_space(4.0);
         let busy = app.imp.sql_busy.is_some();
         let s = &mut app.imp.sql;
-        ui.horizontal_wrapped(|ui| {
-            field(ui, "Servidor (p. ej. SERVIDOR\\GESDEN o 192.168.1.10,1433)", &mut s.server, 300.0);
-            field(ui, "Base de datos", &mut s.database, 140.0);
-            field(ui, if s.windows_auth { "Usuario de Windows (DOMINIO\\usuario)" } else { "Usuario" }, &mut s.user, 170.0);
-            ui.vertical(|ui| {
-                ui.label(RichText::new("Contraseña").size(13.5).color(MUTED));
-                ui.add_sized([150.0, 32.0], egui::TextEdit::singleline(&mut s.password).password(true));
-            });
+        // los cuatro campos caben en la tarjeta (si no, la ensanchan y todo
+        // lo de debajo se sale por la derecha)
+        let w = ui.available_width() - 3.0 * ui.spacing().item_spacing.x - 2.0;
+        ui.horizontal(|ui| {
+            sql_field(ui, "Servidor", "SERVIDOR\\GESDEN o 192.168.1.10", &mut s.server, w * 0.37, false);
+            sql_field(ui, "Base de datos", "", &mut s.database, w * 0.19, false);
+            let (label, hint) = if s.windows_auth { ("Usuario de Windows", "DOMINIO\\usuario") } else { ("Usuario", "") };
+            sql_field(ui, label, hint, &mut s.user, w * 0.24, false);
+            sql_field(ui, "Contraseña", "", &mut s.password, w * 0.20, true);
         });
         let mut connect = false;
         ui.horizontal_wrapped(|ui| {
@@ -192,6 +193,16 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
         ui.add_space(10.0);
         gesden_panel(app, ui);
     }
+}
+
+/// Campo de la conexión con SQL Server: rótulo encima y un ejemplo dentro.
+fn sql_field(ui: &mut Ui, label: &str, hint: &str, value: &mut String, width: f32, password: bool) {
+    ui.vertical(|ui| {
+        ui.set_width(width);
+        ui.label(RichText::new(label).font(crate::theme::mdf(12.8)).color(MUTED));
+        ui.add_space(-3.0);
+        ui.add_sized([width, 36.0], egui::TextEdit::singleline(value).password(password).hint_text(hint).margin(egui::vec2(10.0, 8.0)));
+    });
 }
 
 /// Tarjeta «Catálogo de GESDEN»: resumen de lo leído y botón para importarlo.
@@ -336,29 +347,44 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         if cols.is_empty() {
             muted(ui, "Elija al menos una columna.");
         } else {
+            // con muchas columnas la vista previa se mueve de lado dentro de la tarjeta
             let w = (ui.available_width() / cols.len() as f32).max(90.0);
-            let tbl = Table::new("imp_prev", cols.iter().map(|(n, _)| (n.as_str(), w)).collect());
-            tbl.header(ui);
-            for (i, row) in sheet.rows.iter().take(5).enumerate() {
-                let cells: Vec<(String, egui::Color32)> = cols.iter().map(|(_, c)| cell(row.get(*c).cloned().unwrap_or_default())).collect();
-                tbl.row(ui, i, false, &cells);
-            }
+            egui::ScrollArea::horizontal().id_salt("imp_prev_scroll").show(ui, |ui| {
+                let tbl = Table::new("imp_prev", cols.iter().map(|(n, _)| (n.as_str(), w)).collect());
+                tbl.header(ui);
+                for (i, row) in sheet.rows.iter().take(5).enumerate() {
+                    let cells: Vec<(String, egui::Color32)> = cols.iter().map(|(_, c)| cell(row.get(*c).cloned().unwrap_or_default())).collect();
+                    tbl.row(ui, i, false, &cells);
+                }
+            });
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if primary(ui, &format!("Importar {} filas", sheet.rows.len())).clicked() {
+                // una importación no se puede deshacer: antes, copia de seguridad
+                let backup = if app.persist {
+                    match crate::tools::create_backup(&app.db, "antes de importar") {
+                        Ok(p) => format!(" Copia de seguridad previa: {}", p.display()),
+                        Err(e) => {
+                            app.imp.result = format!("No se ha importado nada: no se pudo hacer la copia de seguridad previa ({e}).");
+                            return;
+                        }
+                    }
+                } else {
+                    String::new()
+                };
                 let r = match app.imp.kind {
                     ImportKind::Pacientes => app.db.import_patients(&sheet, &app.imp.map),
                     ImportKind::Tratamientos => app.db.import_treatments(&sheet, &app.imp.map, app.imp.tariff),
                 };
-                app.imp.result = format!("Importación terminada: {} nuevos, {} actualizados, {} filas omitidas.", r.added, r.updated, r.skipped);
+                let summary = format!("Importación terminada: {}", r.summary());
+                app.imp.result = format!("{summary}{backup}");
                 app.imp.sheet = None;
-                let msg = app.imp.result.clone();
-                app.db.audit("Importación", &msg);
+                app.db.audit("Importación", &summary);
                 app.changed();
-                app.notify(app.imp.result.clone());
+                app.notify(summary);
             }
-            muted(ui, "Los pacientes que ya existen (mismo NIF o Nº de historial) no se duplican: solo se completan sus datos vacíos.");
         });
+        muted(ui, "Antes de importar se hace una copia de seguridad. Los pacientes que ya están (mismo nº de historial o NIF y mismo nombre, o mismo nombre y fecha de nacimiento o móvil) no se duplican: solo se completan sus datos vacíos.");
     });
 }

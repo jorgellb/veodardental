@@ -2060,3 +2060,43 @@ fn a_plan_with_a_paid_installment_is_locked_in_the_budget() {
     let b = h.state().db.budgets.iter().find(|b| b.id == bid).unwrap().clone();
     assert!(b.plan.is_some_and(|p| p.paid[0]), "el plan sigue, con su cuota cobrada");
 }
+
+/// Importar pacientes desde un CSV en Configuración › Importar: una nota de
+/// varias líneas no crea pacientes de más y otra persona con un nº de
+/// historial ya usado recibe su propia ficha.
+#[test]
+fn import_patients_from_a_csv_in_the_settings_screen() {
+    let dir = std::env::temp_dir().join("veodardental_ui_import");
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("pacientes.csv");
+    std::fs::write(&csv, "Nº historial;Apellidos;Nombre;Teléfono;Notas\n1001;Martínez Ruiz;Pedro;612 345 678;\"Alérgico a la penicilina\nTomar antibiótico antes\"\n9001;Puig;Núria;;\n").unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        crate::screens::config::open(&mut a, crate::screens::config::CfgTab::Importar);
+        a.imp.path = csv.to_string_lossy().into_owned();
+        a
+    });
+    for _ in 0..3 {
+        h.step();
+    }
+    let ana = h.state().db.patients.iter().find(|p| p.history_no == 1001).unwrap().clone();
+    let n = h.state().db.patients.len();
+    h.get_by_label("Leer fichero").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Importar 2 filas").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.get_all_by_label_contains("ya era de otra persona").count() > 0, "el resumen lo explica");
+    let a = h.state();
+    assert_eq!(a.db.patients.len(), n + 2);
+    let pedro = a.db.patients.iter().find(|p| p.full_name() == "Pedro Martínez Ruiz").unwrap();
+    assert_ne!(pedro.history_no, 1001);
+    assert_eq!((pedro.mobile.as_str(), pedro.notes.as_str()), ("612 345 678", "Alérgico a la penicilina\nTomar antibiótico antes"));
+    let now = a.db.patients.iter().find(|p| p.id == ana.id).unwrap();
+    assert_eq!((now.full_name(), &now.mobile, &now.notes), (ana.full_name(), &ana.mobile, &ana.notes));
+}

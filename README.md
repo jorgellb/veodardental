@@ -124,6 +124,15 @@ Configuración › Importar datos:
   cualquier otro programa se elige una tabla o una consulta SELECT y se asignan
   las columnas.
 - **Excel / CSV** (xlsx, xls, ods, csv) con el mismo asistente de columnas.
+  El CSV puede venir en UTF-8, UTF-16 («Texto Unicode» de Excel) o con la
+  codificación de Windows, y sus notas pueden tener varias líneas.
+
+Antes de importar pacientes se hace una copia de seguridad. Los que ya están
+(mismo nº de historial o NIF y el mismo nombre, o mismo nombre y fecha de
+nacimiento o móvil) no se duplican: se completan sus datos vacíos. Otra persona
+con un nº de historial que ya es de alguien recibe el siguiente libre, y un
+móvil apuntado como teléfono pasa a «Móvil» para que le lleguen los
+recordatorios.
 
 ## Receta electrónica privada (conexión directa)
 
