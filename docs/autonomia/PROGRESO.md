@@ -47,7 +47,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F4-05: retirada de la carpeta compartida con paso al servidor; bloqueo en el servidor y exportación sin ficheros ajenos (revisión de seguridad) | E-034 | `952fa58` |
 | T-F4-06: registro de jornada (fichar, correcciones trazables, acceso por rol, exportación; en red lo hace cumplir el servidor) | E-035 | `e7d3b06` |
 | Revisión de seguridad de la jornada en red | E-036 | `41c80cb` |
-| T-F4-07: libros registro en el formato común de la AEAT | E-037 | (pendiente) |
+| T-F4-07: libros registro en el formato común de la AEAT | E-037 | `9309580` |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
