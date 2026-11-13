@@ -2846,6 +2846,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// Dos gabinetes registran a la vez un control del mismo caso de
+    /// ortodoncia: quedan los dos (antes, el segundo borraba el primero).
+    #[test]
+    fn two_ortho_controls_recorded_at_once_are_both_kept() {
+        let (addr, path, h) = start("CLAVE35");
+        let ra = signed_in(&addr, "CLAVE35", "Gabinete 1", 1, "0000");
+        let rb = signed_in(&addr, "CLAVE35", "Gabinete 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        let case = a.ortho.iter().find(|c| c.state == crate::extra::OrthoState::Activo).unwrap().id;
+        let n = a.ortho.iter().find(|c| c.id == case).unwrap().visits.len();
+        let today = crate::model::today();
+        let visit = |work: &str| crate::extra::OrthoVisit { date: today, work: work.into(), wire: String::new(), hygiene_ok: true, next_weeks: 4, notes: String::new() };
+        a.add_ortho_visit(case, visit("Cambio de arco")).unwrap();
+        b.add_ortho_visit(case, visit("Elásticos")).unwrap();
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let works: Vec<String> = disk.ortho.iter().find(|c| c.id == case).unwrap().visits.iter().map(|v| v.work.clone()).collect();
+        assert_eq!(works.len(), n + 2, "{works:?}");
+        assert!(works.contains(&"Cambio de arco".to_string()) && works.contains(&"Elásticos".to_string()));
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
     #[test]
     fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
         use crate::app::ChainOp;

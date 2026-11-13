@@ -671,7 +671,33 @@ pub struct OrthoCase {
     pub objectives: String,
     pub state: OrthoState,
     pub fee: f64,
+    /// Controles. Solo se añaden: dos gabinetes que registran a la vez
+    /// conservan los dos (ver `shared::APPEND_ONLY`).
     pub visits: Vec<OrthoVisit>,
+    /// Cambios de fase (estudio, activo, retención…), con fecha y usuario.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phases: Vec<OrthoPhase>,
+    /// Presupuesto (con su plan de cuotas) con el que se cobra el caso.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_id: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OrthoPhase {
+    pub date: NaiveDate,
+    pub state: OrthoState,
+    pub user: String,
+}
+
+/// Cobro del caso con su presupuesto.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrthoBilling {
+    pub total: f64,
+    /// Cobrado del presupuesto (cuotas y otros cobros que lo citan).
+    pub paid_installments: u32,
+    pub installments: u32,
+    /// La próxima cuota sin pagar: (índice desde 0, importe, vencimiento).
+    pub next: Option<(u32, f64, NaiveDate)>,
 }
 
 impl OrthoCase {
@@ -690,19 +716,88 @@ impl OrthoCase {
     }
 }
 
+/// Motivo de los recalls que programa un caso de ortodoncia.
+pub const ORTHO_RECALL: &str = "Control de ortodoncia";
+
 impl Db {
-    /// Registra un control de ortodoncia y programa el recall del siguiente.
-    pub fn add_ortho_visit(&mut self, case_id: u32, v: OrthoVisit) {
+    /// Caso nuevo para el paciente, en estudio. Lo lleva el ortodoncista de la
+    /// clínica (el primero activo con esa especialidad) o, si no hay, el doctor
+    /// del paciente.
+    pub fn new_ortho_case(&mut self, pid: u32, today: NaiveDate) -> u32 {
+        let orthodontist = self.collaborators.iter().find(|c| c.active && fold(&c.specialty).contains("ortodon")).map(|c| c.id);
+        let doctor = orthodontist.or_else(|| self.patient(pid).map(|p| p.doctor_id)).unwrap_or(1);
+        let id = self.new_id();
+        let user = self.config.current_user.clone();
+        self.ortho.push(OrthoCase {
+            id,
+            patient_id: pid,
+            doctor_id: doctor,
+            start: today,
+            months: 18,
+            appliance: APPLIANCES[0].into(),
+            arches: "Ambas arcadas".into(),
+            class: "Clase I".into(),
+            diagnosis: String::new(),
+            objectives: String::new(),
+            state: OrthoState::Estudio,
+            fee: 0.0,
+            visits: vec![],
+            phases: vec![OrthoPhase { date: today, state: OrthoState::Estudio, user }],
+            budget_id: None,
+        });
+        id
+    }
+
+    /// Cambia la fase del caso y lo apunta en su historia. Al finalizarlo o
+    /// abandonarlo se quitan los recalls de control pendientes, para que no
+    /// se le sigan recordando.
+    pub fn set_ortho_state(&mut self, case_id: u32, state: OrthoState, today: NaiveDate) {
+        let user = self.config.current_user.clone();
         let Some(c) = self.ortho.iter_mut().find(|c| c.id == case_id) else { return };
+        if c.state == state {
+            return;
+        }
+        c.state = state;
+        c.phases.push(OrthoPhase { date: today, state, user });
+        let pid = c.patient_id;
+        if matches!(state, OrthoState::Finalizado | OrthoState::Abandonado) {
+            // (si el paciente tiene otro caso abierto, sus controles siguen)
+            let other_open = self.ortho.iter().any(|o| o.patient_id == pid && o.id != case_id && matches!(o.state, OrthoState::Estudio | OrthoState::Activo | OrthoState::Retencion));
+            if !other_open {
+                self.recalls.retain(|r| !(r.patient_id == pid && r.reason == ORTHO_RECALL && r.state == RecallState::Pendiente));
+            }
+        }
+    }
+
+    /// Cuotas del presupuesto con el que se cobra el caso.
+    pub fn ortho_billing(&self, case_id: u32) -> Option<OrthoBilling> {
+        let c = self.ortho.iter().find(|c| c.id == case_id)?;
+        let b = self.budgets.iter().find(|b| Some(b.id) == c.budget_id)?;
+        let total = b.total();
+        let Some(plan) = &b.plan else { return Some(OrthoBilling { total, paid_installments: 0, installments: 0, next: None }) };
+        let paid = |i: u32| plan.paid.get(i as usize).copied().unwrap_or(false);
+        let paid_installments = (0..plan.installments).filter(|i| paid(*i)).count() as u32;
+        let next = (0..plan.installments).find(|i| !paid(*i)).map(|i| (i, plan.installment(i, total), plan.due_date(i)));
+        Some(OrthoBilling { total, paid_installments, installments: plan.installments, next })
+    }
+
+    /// Registra un control de ortodoncia y programa el recall del siguiente.
+    /// En un caso finalizado o abandonado, no (hay que reabrirlo antes).
+    pub fn add_ortho_visit(&mut self, case_id: u32, v: OrthoVisit) -> Result<(), String> {
+        let Some(c) = self.ortho.iter().find(|c| c.id == case_id) else { return Err("El caso ya no existe.".into()) };
+        if matches!(c.state, OrthoState::Finalizado | OrthoState::Abandonado) {
+            return Err(format!("El caso está {}: cámbielo de fase para registrar un control.", c.state.label().to_lowercase()));
+        }
+        if c.state == OrthoState::Estudio {
+            self.set_ortho_state(case_id, OrthoState::Activo, v.date);
+        }
+        let Some(c) = self.ortho.iter_mut().find(|c| c.id == case_id) else { return Err("El caso ya no existe.".into()) };
         let pid = c.patient_id;
         let doc = c.doctor_id;
         let due = v.date + Duration::weeks(v.next_weeks as i64);
-        if c.state == OrthoState::Estudio {
-            c.state = OrthoState::Activo;
-        }
         c.visits.push(v);
         c.visits.sort_by_key(|x| x.date);
-        match self.recalls.iter_mut().find(|r| r.patient_id == pid && r.reason == "Control de ortodoncia" && r.state == RecallState::Pendiente) {
+        match self.recalls.iter_mut().find(|r| r.patient_id == pid && r.reason == ORTHO_RECALL && r.state == RecallState::Pendiente) {
             Some(r) => r.date = due,
             None => {
                 let id = self.new_id();
@@ -710,7 +805,7 @@ impl Db {
                     id,
                     patient_id: pid,
                     date: due,
-                    reason: "Control de ortodoncia".into(),
+                    reason: ORTHO_RECALL.into(),
                     doctor_id: doc,
                     state: RecallState::Pendiente,
                     channel: String::new(),
@@ -720,6 +815,7 @@ impl Db {
                 });
             }
         }
+        Ok(())
     }
 }
 
@@ -1048,6 +1144,8 @@ pub fn sample_extra(db: &mut Db, today: NaiveDate) {
             state: OrthoState::Activo,
             fee,
             visits: visits.iter().map(|(ago, work, wire, hy)| OrthoVisit { date: today - Duration::days(*ago), work: (*work).into(), wire: (*wire).into(), hygiene_ok: *hy, next_weeks: 5, notes: String::new() }).collect(),
+            phases: vec![],
+            budget_id: None,
         });
     };
     mk(
@@ -1077,6 +1175,8 @@ pub fn sample_extra(db: &mut Db, today: NaiveDate) {
         state: OrthoState::Estudio,
         fee: 1800.0,
         visits: vec![],
+        phases: vec![],
+        budget_id: None,
     });
     // datos SEPA de ejemplo (IBAN de prueba válido)
     db.config.creditor_id = "ES12000B00000000".into();
@@ -1470,11 +1570,61 @@ mod tests {
         assert_eq!(db.installment_remittance(bid, i), None, "devuelta: se puede cobrar");
     }
 
+    /// El caso guarda sus fases con fecha y usuario. Finalizado, ya no se le
+    /// recuerdan controles ni se registran (hasta reabrirlo). Lo lleva el
+    /// ortodoncista de la clínica, no un número fijo.
+    #[test]
+    fn ortho_phases_are_kept_and_a_finished_case_stops_its_controls() {
+        let mut db = Db::sample(d());
+        db.config.current_user = "Dra. Ruiz".into();
+        let ortho = db.collaborators.iter().find(|c| fold(&c.specialty).contains("ortodon")).map(|c| c.id);
+        let id = db.new_ortho_case(110, d());
+        let c = db.ortho.iter().find(|c| c.id == id).unwrap().clone();
+        assert_eq!(Some(c.doctor_id), ortho.or(db.patient(110).map(|p| p.doctor_id)));
+        assert_eq!(c.phases, vec![OrthoPhase { date: d(), state: OrthoState::Estudio, user: "Dra. Ruiz".into() }]);
+        let visit = |date| OrthoVisit { date, work: "Colocación de aparatología".into(), wire: String::new(), hygiene_ok: true, next_weeks: 5, notes: String::new() };
+        db.add_ortho_visit(id, visit(d())).unwrap();
+        assert!(db.recalls.iter().any(|r| r.patient_id == 110 && r.reason == ORTHO_RECALL && r.state == RecallState::Pendiente));
+        db.set_ortho_state(id, OrthoState::Retencion, d() + Duration::days(400));
+        db.set_ortho_state(id, OrthoState::Finalizado, d() + Duration::days(700));
+        let c = db.ortho.iter().find(|c| c.id == id).unwrap().clone();
+        let states: Vec<OrthoState> = c.phases.iter().map(|p| p.state).collect();
+        assert_eq!(states, vec![OrthoState::Estudio, OrthoState::Activo, OrthoState::Retencion, OrthoState::Finalizado]);
+        assert!(!db.recalls.iter().any(|r| r.patient_id == 110 && r.reason == ORTHO_RECALL && r.state == RecallState::Pendiente), "finalizado: sin controles pendientes");
+        assert!(db.add_ortho_visit(id, visit(d() + Duration::days(701))).unwrap_err().contains("finalizado"));
+        // reabierto, vuelve a registrar controles
+        db.set_ortho_state(id, OrthoState::Retencion, d() + Duration::days(720));
+        db.add_ortho_visit(id, visit(d() + Duration::days(720))).unwrap();
+        assert_eq!(db.ortho.iter().find(|c| c.id == id).unwrap().visits.len(), 2, "la historia sigue entera");
+    }
+
+    /// El caso se cobra con su presupuesto: cuotas pagadas, la próxima, y
+    /// cobrarla dos veces no se puede.
+    #[test]
+    fn an_ortho_case_is_charged_through_its_budget_installments() {
+        let mut db = Db::sample(d());
+        let bid = db.budgets.iter().find(|b| b.patient_id == 101 && b.plan.is_some()).unwrap().id;
+        db.accept_budget(bid, d());
+        let id = db.new_ortho_case(101, d());
+        assert_eq!(db.ortho_billing(id), None, "sin presupuesto");
+        db.ortho.iter_mut().find(|c| c.id == id).unwrap().budget_id = Some(bid);
+        let b = db.ortho_billing(id).unwrap();
+        let (i, amount, _) = b.next.unwrap();
+        assert_eq!((b.paid_installments, i), (0, 0));
+        let total = db.budgets.iter().find(|x| x.id == bid).unwrap().total();
+        assert!((b.total - total).abs() < 0.005);
+        db.pay_installment(bid, 0, "Tarjeta").unwrap();
+        assert!(db.pay_installment(bid, 0, "Tarjeta").is_err(), "no se cobra dos veces");
+        let b = db.ortho_billing(id).unwrap();
+        assert_eq!((b.paid_installments, b.next.map(|n| n.0)), (1, Some(1)));
+        assert!(db.payments.iter().any(|p| p.installment == Some((bid, 0)) && (p.amount - amount).abs() < 0.005));
+    }
+
     #[test]
     fn ortho_visit_schedules_recall() {
         let mut db = Db::sample(d());
         let cid = db.ortho.iter().find(|c| c.state == OrthoState::Estudio).unwrap().id;
-        db.add_ortho_visit(cid, OrthoVisit { date: d(), work: "Cementado".into(), wire: String::new(), hygiene_ok: true, next_weeks: 4, notes: String::new() });
+        db.add_ortho_visit(cid, OrthoVisit { date: d(), work: "Cementado".into(), wire: String::new(), hygiene_ok: true, next_weeks: 4, notes: String::new() }).unwrap();
         let c = db.ortho.iter().find(|c| c.id == cid).unwrap();
         assert_eq!(c.state, OrthoState::Activo);
         assert!(db.recalls.iter().any(|r| r.patient_id == c.patient_id && r.reason == "Control de ortodoncia" && r.date == d() + Duration::weeks(4)));

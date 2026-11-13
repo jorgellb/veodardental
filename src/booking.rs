@@ -2202,7 +2202,8 @@ mod tests {
         assert!(info["motivos"].as_array().unwrap().len() >= 5);
         assert!(!get("/api/datos").contains("García"), "no se publica ningún paciente");
         let days: serde_json::Value = serde_json::from_str(&get("/api/huecos?motivo=0&profesional=0")).unwrap();
-        let d0 = &days["dias"][0];
+        // el primer día con al menos dos horas libres (a última hora, hoy puede quedar una sola)
+        let d0 = days["dias"].as_array().unwrap().iter().find(|d| d["horas"].as_array().is_some_and(|h| h.len() >= 2)).expect("sin días con huecos");
         let (fecha, hora) = (d0["fecha"].as_str().unwrap().to_string(), d0["horas"][0]["hora"].as_str().unwrap().to_string());
         let post = |v: serde_json::Value| match ureq::post(&format!("{base}/api/reservar")).set("Content-Type", "application/json").send_string(&v.to_string()) {
             Ok(r) => (r.status(), r.into_string().unwrap()),

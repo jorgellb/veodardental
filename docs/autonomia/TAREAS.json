@@ -1452,8 +1452,10 @@
     "T-F1-A6-REV"
    ],
    "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area7.md",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-013"
+   ]
   },
   {
    "id": "T-F1-A7-FIX",
@@ -1467,8 +1469,10 @@
     "T-F1-A7-REV"
    ],
    "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-013"
+   ]
   },
   {
    "id": "T-F1-A8-REV",

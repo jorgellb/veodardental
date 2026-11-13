@@ -22,18 +22,21 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A4: bancos y conciliación | E-010 | `d6f2e0a` |
 | T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `7fd53f0` |
 | T-F1-A6: comunicaciones | E-012 | `cdddd05` |
+| T-F1-A7: ortodoncia | E-013 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-A7: ortodoncia.
-   - Controles, evolución, fases, cuotas y retención.
-   - Permisos y fechas.
-   - Modificaciones y cobros sin duplicación ni pérdida de historia.
-2. Después, áreas 8 a 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+1. T-F1-A8: IA de radiografías.
+   - Qué datos salen de la aplicación; minimización y metadatos.
+   - Autorización, tiempos máximos, errores y respuestas incompletas.
+   - Límites de coste y trazabilidad del modelo.
+   - Revisión del profesional antes de incorporar el resultado al historial.
+2. Después, áreas 9 y 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir
 - Los totales económicos se calculan en `src/informes.rs` (`Filter` y `report_*`). Las pantallas no deben sumar por su cuenta.
 - Las operaciones que no deben hacerse dos veces van como `ChainOp` en src/app.rs, con `run`, `json`, `from_json` y `needs`; el servidor las ejecuta con los datos al día. El banco ya va así (D-09).
+- Hay pruebas que dependen de la hora: a última hora del día quedan pocos huecos libres hoy. Las que piden «la segunda hora del primer día» deben buscar el primer día con dos horas.
 - Si la compilación falla al enlazar con «undefined hidden symbol» (caché incremental dañada por un corte), basta con `tools/aislado.sh cargo clean -p veodardental`.
 - `src/firmado.rs` protege lo firmado y lo emitido en el servidor (`protect_json`, para los campos «documents», «health» y «prescriptions») y en la carpeta compartida (`Db::keep_signed`). Si aparecen más registros inmutables, hay que añadirlos ahí.
 - Capturas: `tools/aislado.sh ./target/debug/veodardental --screenshot $PWD/docs/autonomia/capturas/X.png --user dir --screen pacientes --patient 101 --tab <pestaña> --size 1280x800 [--bajar N]`.

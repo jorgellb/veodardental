@@ -269,3 +269,25 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 362 pasan, 0 fallan, 10 ignoradas |
+
+## E-013 Área 7: ortodoncia
+- Revisión en `docs/autonomia/revision/area7.md`: 6 defectos demostrados (T1 a T6).
+- **T1, demostrado en rojo antes del arreglo:** `server::tests::two_ortho_controls_recorded_at_once_are_both_kept` daba `left: 5, right: 6`. Se perdía el control del primer gabinete.
+- **Por lectura del código anterior (`586a838`):**
+  - T2: `c.state = s` sin registro.
+  - T3: los recalls no se tocaban al finalizar.
+  - T4: `doctor_id: 3` fijo.
+  - T5: `fee` sin enlace.
+- **Pruebas nuevas:**
+  - `server::tests::two_ortho_controls_recorded_at_once_are_both_kept`
+  - `extra::tests::ortho_phases_are_kept_and_a_finished_case_stops_its_controls`
+  - `extra::tests::an_ortho_case_is_charged_through_its_budget_installments`
+- **Prueba ajustada** por depender de la hora: `booking::tests::web_page_books_a_free_slot`. Falló a las 19:40 y pasa tras el ajuste, sin cambiar sus comprobaciones.
+- **Capturas sintéticas:** `f1_area7_ortodoncia_1280x{800,720}.png` y `f1_area7_ortodoncia_cobro_1280x800.png`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 365 pasan, 0 fallan, 10 ignoradas |

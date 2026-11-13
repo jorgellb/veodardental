@@ -146,11 +146,14 @@ fn index(arr: &[Value]) -> HashMap<String, &Value> {
     m
 }
 
-/// Listas a las que solo se añade (registros de accesos, de auditoría, de
-/// programas abiertos y de WhatsApp ya leídos), con su tamaño máximo. Al
-/// combinar se juntan las entradas nuevas de los dos puestos, ninguno puede
+/// Listas a las que solo se añade, con su tamaño máximo:
+/// - registros de accesos, de auditoría, de programas abiertos y de WhatsApp
+///   ya leídos;
+/// - controles y fases de cada caso de ortodoncia.
+///
+/// Al combinar se juntan las entradas nuevas de los dos puestos, ninguno puede
 /// borrar las del otro y se quitan las más antiguas si pasan del máximo.
-const APPEND_ONLY: [(&str, usize); 4] = [("access_log", 2000), ("audit_log", 5000), ("launches", 300), ("wa_seen", 3000)];
+const APPEND_ONLY: [(&str, usize); 6] = [("access_log", 2000), ("audit_log", 5000), ("launches", 300), ("wa_seen", 3000), ("visits", 1000), ("phases", 200)];
 
 /// Dato de los productos del almacén que se combina sumando lo que cambió
 /// cada puesto (es el único `stock` de los datos).
