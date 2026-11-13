@@ -3114,6 +3114,42 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Un apagón a mitad de escribir el diario deja la última línea cortada:
+    /// se recupera todo hasta el último cambio entero. Y una línea dañada en
+    /// medio no deja aplicar lo de después (quedaría un hueco sin avisar).
+    #[test]
+    fn a_cut_or_damaged_journal_never_applies_changes_out_of_order() {
+        let dir = std::env::temp_dir().join(format!("ds_server_journal_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let mut st = State::new(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), path.clone(), "CLAVE43", vec![]);
+        st.rewrite().unwrap();
+        let rev0 = st.rev();
+        let mut ids = vec![];
+        for amount in [10.0, 20.0] {
+            let before = st.snap.clone();
+            let mut db = st.snap.to_db().unwrap();
+            ids.push(db.add_payment(101, amount, "Tarjeta", "Pago"));
+            st.save(crate::sync::diff(&before, &Snapshot::from_db(&db)), 1, 1).unwrap();
+        }
+        let journal = crate::sync::journal_path(&path);
+        let text = std::fs::read_to_string(&journal).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        // la segunda línea, cortada a la mitad
+        std::fs::write(&journal, format!("{}\n{}", lines[0], &lines[1][..lines[1].len() / 2])).unwrap();
+        let db = crate::sync::on_disk(&path);
+        assert_eq!(db.rev, rev0 + 1);
+        assert!(db.payments.iter().any(|p| p.id == ids[0]) && !db.payments.iter().any(|p| p.id == ids[1]));
+        // la primera dañada y la segunda entera: no se aplica la segunda sin la primera
+        std::fs::write(&journal, format!("{}\n{}\n", lines[0].replace('"', "#"), lines[1])).unwrap();
+        let db = crate::sync::on_disk(&path);
+        assert_eq!(db.rev, rev0, "se queda en el último cambio entero");
+        assert!(!db.payments.iter().any(|p| ids.contains(&p.id)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
         use crate::app::ChainOp;

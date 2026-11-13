@@ -34,11 +34,17 @@ pub struct Claim {
     pub paid: f64,
     pub paid_on: Option<NaiveDate>,
     pub notes: String,
+    /// Anulada (fecha y motivo): se conserva, pero sus actos vuelven a estar
+    /// pendientes de liquidar y no cuenta como pendiente de cobro.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancelled: Option<(NaiveDate, String)>,
 }
 
 impl Claim {
     pub fn state(&self) -> &'static str {
-        if self.paid + 0.005 >= self.total {
+        if self.cancelled.is_some() {
+            "Anulada"
+        } else if self.paid + 0.005 >= self.total {
             "Cobrada"
         } else if self.paid > 0.005 {
             "Cobro parcial"
@@ -47,6 +53,9 @@ impl Claim {
         }
     }
     pub fn pending(&self) -> f64 {
+        if self.cancelled.is_some() {
+            return 0.0;
+        }
         round2((self.total - self.paid).max(0.0))
     }
 }
@@ -73,7 +82,7 @@ impl Db {
     }
 
     pub(crate) fn claimed(&self, entry_id: u32) -> bool {
-        self.claims.iter().any(|c| c.lines.iter().any(|l| l.entry_id == entry_id))
+        self.claims.iter().any(|c| c.cancelled.is_none() && c.lines.iter().any(|l| l.entry_id == entry_id))
     }
 
     /// Actos realizados en el periodo pendientes de liquidar a la compañía.
@@ -123,7 +132,7 @@ impl Db {
         let n = self.claims.iter().filter_map(|c| c.number.strip_prefix(&prefix)?.parse::<u32>().ok()).max().unwrap_or(0) + 1;
         let id = self.new_id();
         let total = round2(lines.iter().map(|l| l.fee).sum());
-        self.claims.push(Claim { id, number: format!("LIQ-{year}-{n:04}"), tariff_id, date: today, from, to, lines, total, paid: 0.0, paid_on: None, notes: String::new() });
+        self.claims.push(Claim { id, number: format!("LIQ-{year}-{n:04}"), tariff_id, date: today, from, to, lines, total, paid: 0.0, paid_on: None, notes: String::new(), cancelled: None });
         Some(id)
     }
 
@@ -134,9 +143,21 @@ impl Db {
         }
     }
 
-    /// Anula una liquidación: sus actos vuelven a estar pendientes.
-    pub fn delete_claim(&mut self, id: u32) {
-        self.claims.retain(|c| c.id != id);
+    /// Anula una liquidación: queda guardada como anulada, con fecha y
+    /// motivo, y sus actos vuelven a estar pendientes de liquidar. Con algo
+    /// cobrado, no se anula. Su número no se vuelve a usar.
+    pub fn cancel_claim(&mut self, id: u32, reason: &str, today: NaiveDate) -> Result<(), String> {
+        let c = self.claims.iter_mut().find(|c| c.id == id).ok_or("La liquidación ya no existe.")?;
+        if c.cancelled.is_some() {
+            return Err("Esa liquidación ya está anulada.".into());
+        }
+        if c.paid > 0.005 {
+            return Err("Tiene cobros apuntados: no se puede anular.".into());
+        }
+        c.cancelled = Some((today, reason.trim().to_string()));
+        let number = c.number.clone();
+        self.audit("Liquidación anulada", &format!("{number} · {}", reason.trim()));
+        Ok(())
     }
 
     /// Pendiente de liquidar (todo el histórico) y pendiente de cobro, por compañía.
@@ -244,7 +265,8 @@ mod tests {
         assert!(db.claim_html(id).contains(&c.number));
         assert_eq!(db.claim_csv(id).lines().count(), c.lines.len() + 1);
         // anularla devuelve los actos a pendientes
-        db.delete_claim(id);
+        db.claims.iter_mut().find(|c| c.id == id).unwrap().paid = 0.0;
+        db.cancel_claim(id, "prueba", d()).unwrap();
         assert_eq!(db.claimable(2, from, d()).len(), pend.len());
     }
 
@@ -278,11 +300,35 @@ mod tests {
         let mid = d() - chrono::Duration::days(60);
         let a = db.create_claim(2, from, mid, d()).unwrap();
         let b = db.create_claim(2, mid + chrono::Duration::days(1), d(), d()).unwrap();
-        db.delete_claim(a);
+        db.cancel_claim(a, "prueba", d()).unwrap();
         db.add_entry(db.claimable(2, from, d())[0].patient_id, "0101", vec![], vec![], TxState::Realizado, 1, d());
         let c = db.create_claim(2, from, d(), d()).unwrap();
         let num = |id: u32| db.claims.iter().find(|x| x.id == id).unwrap().number.clone();
         assert_ne!(num(b), num(c));
+    }
+
+    /// Anular una liquidación no la borra: queda anulada, con fecha y motivo
+    /// (sus actos vuelven a pendientes), no cuenta como pendiente de cobro ni
+    /// como liquidado, y su número no se vuelve a usar aunque fuera la última.
+    #[test]
+    fn a_cancelled_claim_stays_on_record_and_its_number_is_not_reused() {
+        let mut db = Db::sample(d());
+        let from = d() - chrono::Duration::days(365);
+        let pend = db.claimable(2, from, d()).len();
+        let a = db.create_claim(2, from, d(), d()).unwrap();
+        let number = db.claims.iter().find(|c| c.id == a).unwrap().number.clone();
+        db.cancel_claim(a, "error en el periodo", d()).unwrap();
+        let c = db.claims.iter().find(|c| c.id == a).expect("sigue guardada").clone();
+        assert_eq!((c.state(), c.pending()), ("Anulada", 0.0));
+        assert_eq!(c.cancelled, Some((d(), "error en el periodo".to_string())));
+        assert_eq!(db.claimable(2, from, d()).len(), pend, "sus actos vuelven a pendientes");
+        assert!(db.cancel_claim(a, "otra vez", d()).is_err());
+        assert!(db.audit_log.iter().any(|x| x.action == "Liquidación anulada" && x.detail.contains(&number)));
+        let b = db.create_claim(2, from, d(), d()).unwrap();
+        assert_ne!(db.claims.iter().find(|c| c.id == b).unwrap().number, number, "otro número");
+        // una con cobros no se anula
+        db.claim_paid(b, 1.0, d());
+        assert!(db.cancel_claim(b, "x", d()).is_err());
     }
 
     #[test]

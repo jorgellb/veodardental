@@ -676,7 +676,9 @@ pub fn replay_journal(db: &mut Db, data: &std::path::Path) -> Result<usize, Stri
     let Ok(text) = std::fs::read_to_string(journal_path(data)) else { return Ok(0) };
     let mut n = 0;
     for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        let Ok(j) = serde_json::from_str::<JournalLine>(line) else { continue };
+        // una línea que no se lee es la última, cortada por un apagón, o un
+        // daño: lo de después no se aplica (quedaría un hueco sin avisar)
+        let Ok(j) = serde_json::from_str::<JournalLine>(line) else { break };
         if j.rev <= db.rev {
             continue;
         }

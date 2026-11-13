@@ -414,3 +414,41 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 384 pasan, 0 fallan, 10 ignoradas |
+
+## E-020 Reglas transversales T-R7-2, T-R7-3 y T-R7-4
+- **T-R7-2. Autoridad del servidor: numeración, cadena, permisos y operaciones irrepetibles con reintento.**
+  - Numeración y cadena:
+    - `server::tests::invoices_from_two_stations_keep_their_numbers_and_the_chain`
+    - `two_new_patients_never_share_a_history_number`
+    - `sample::tests::receipts_are_unique_per_station`
+    - `shared::tests::each_computer_gets_its_own_station_number_in_the_shared_folder`
+  - Permisos de cada operación: el final de `server::tests::remittances_and_claims_made_by_two_stations_at_once_charge_once`, más los de banco, IA y receta.
+  - Operaciones irrepetibles: las de `docs/autonomia/concurrencia.md`. La segunda vez se rechaza y el puesto ve el estado real.
+  - Reintento tras respuesta perdida: `server::tests::a_push_resent_after_a_lost_answer_changes_nothing`.
+- **T-R7-3. Cada anulación conserva el original y su referencia.**
+  - **Defecto corregido:** anular una liquidación a mutua la borraba. Si era la última, su número se volvía a usar.
+    - **Ahora:** queda «Anulada» con fecha y motivo, y sus actos vuelven a pendientes (`cancel_claim`).
+    - **Prueba:** `insurer::tests::a_cancelled_claim_stays_on_record_and_its_number_is_not_reused`.
+  - **El resto, con sus pruebas:**
+    - cobros: anulación con `cancels` (`finance::tests::a_wrong_payment_is_cancelled_and_leaves_the_cash_balanced`, `ui_tests::installment_paid_in_cash_and_cancelled_from_the_dialog`);
+    - facturas: rectificativa y anulación VERI*FACTU encadenadas (`verifactu::tests::corrections_and_cancellations_join_the_chain`);
+    - remesa cobrada por error: cobros anulados, no borrados (`bank::tests::undoing_a_remittance_match_uncollects_it`);
+    - recibos devueltos: `bank::tests::reconcile_a_remittance_with_a_returned_debit`;
+    - consentimientos revocados sin perderlos: `doc_link::tests::a_signed_consent_can_be_revoked_without_losing_it`;
+    - tratamiento vuelto a previsto con su material: `stock::tests::a_treatment_marked_done_by_mistake_goes_back_to_planned`;
+    - análisis con IA revisados que no se borran: E-015.
+- **T-R7-4. Escritura interrumpida, sin espacio y diario truncado.**
+  - **Defecto corregido:** con una línea del diario dañada en medio, al abrir se aplicaban las de después y quedaba un hueco sin avisar.
+    - **Ahora:** se recupera hasta el último cambio entero (`sync::replay_journal`).
+    - **Prueba:** `server::tests::a_cut_or_damaged_journal_never_applies_changes_out_of_order`, en rojo antes del arreglo (`left: 2, right: 0`). Cubre también la última línea cortada por un apagón.
+  - **Ya cubierto:**
+    - `local::tests::saves_only_what_changed_and_comes_back_after_a_crash`
+    - `server::tests::a_failed_write_leaves_nothing_half_saved` (disco lleno o sin permiso)
+    - `server::tests::the_server_restarts_with_everything_and_stations_carry_on`
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 386 pasan, 0 fallan, 10 ignoradas |

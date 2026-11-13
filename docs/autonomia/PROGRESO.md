@@ -30,14 +30,18 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-11: todas las pantallas a 1280×720 y 1280×800 | E-018 | `84a667a` |
 | T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | `bcfa695` |
 | T-F1-13: informes con oráculo independiente (hecho en el área 5) | E-011 | `7fd53f0` |
+| T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-12a a T-F1-12d.
-   - Concurrencia por flujo: cada uno con su prueba de dos puestos. Ya están facturas, cuotas, devoluciones, remesas, stock, banco, correos, ortodoncia y laboratorio; falta inventariarlos y completar recibos, recordatorios y reservas.
-   - Desconexión, reenvío, reinicio y fallo de escritura.
-   - Protocolo del servidor con entradas inválidas.
-   - Fuzzing con semilla de la combinación de cambios, el protocolo, CSV y Norma 43.
-2. Después, el cierre de la fase 1 (T-F1-13) y la fase 2 (migraciones).
+La fase 1 está terminada (ingeniería). Toca la fase 2: migraciones.
+1. T-F2-01 a T-F2-09.
+   - Inventariar lo que ya hay: src/gesden.rs, src/mssql.rs, src/golive.rs, la pantalla Importar y las funciones `import_*` de src/extra.rs.
+   - Sobre eso, el motor con identificadores de origen e importación idempotente, el asistente (previsualización, simulacro, errores por fila, duplicados, copia previa, reanudación) y el informe de conciliación.
+   - Adaptadores GESDEN y Novaclinic: solo lo documentable, sin inventar esquemas.
+   - Perfiles de Excel/CSV.
+2. Después:
+   - transversales pendientes: T-R7-1, T-R7-5, T-R7-6, T-R7-7, T-INI-06, T-INI-07, T-INI-08;
+   - fases 3 a 6.
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir

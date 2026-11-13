@@ -1014,8 +1014,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de numeración, cadena, permisos y operaciones irrepetibles con reintento tras respuesta perdida",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-020"
+   ]
   },
   {
    "id": "T-R7-3",
@@ -1028,8 +1030,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Cada anulación conserva el original y su referencia; pruebas",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-020"
+   ]
   },
   {
    "id": "T-R7-4",
@@ -1042,8 +1046,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de escritura interrumpida, sin espacio y diario truncado sin pérdida ni corrupción",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-020"
+   ]
   },
   {
    "id": "T-R7-5",

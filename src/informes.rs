@@ -224,7 +224,7 @@ impl Db {
     /// Mutuas en el periodo (ver el módulo).
     pub fn report_insurers(&self, f: &Filter) -> Insurers {
         let mut out = Insurers::default();
-        for c in self.claims.iter() {
+        for c in self.claims.iter().filter(|c| c.cancelled.is_none()) {
             if f.day(c.date) {
                 out.claimed += Cents::from_eur(c.total);
             }

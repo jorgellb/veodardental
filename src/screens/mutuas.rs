@@ -165,9 +165,11 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             });
         }
         if let Some(id) = del {
-            app.db.delete_claim(id);
-            app.db.audit("Liquidación anulada", &id.to_string());
-            app.changed();
+            let reason = format!("Anulada por {}", app.db.config.current_user);
+            match app.db.cancel_claim(id, &reason, app.today) {
+                Ok(()) => app.changed(),
+                Err(e) => app.warn(e),
+            }
         }
     });
 }
