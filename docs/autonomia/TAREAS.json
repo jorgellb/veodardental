@@ -1977,8 +1977,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de fallo entre pasos sin dejar la clínica a medias ni perder datos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-023"
+   ]
   },
   {
    "id": "T-F3-03",

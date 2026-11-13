@@ -121,6 +121,38 @@ mod tests {
         d.join("clinica.json")
     }
 
+    /// T-F3-02. Datos de una versión más nueva del programa: se leen, pero ni
+    /// se reescriben ni se quita su diario (se perderían sus campos nuevos).
+    /// De una versión anterior: copia de seguridad antes de completarlos.
+    #[test]
+    fn newer_data_is_never_rewritten_and_older_data_is_backed_up_first() {
+        let path = dir("versiones");
+        let db = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 4).unwrap());
+        let mut v: serde_json::Value = serde_json::to_value(&db).unwrap();
+        v["data_version"] = (crate::model::DATA_VERSION + 1).into();
+        v["patients"][0]["campo_de_la_version_nueva"] = "no se pierde".into();
+        let text = serde_json::to_string(&v).unwrap();
+        std::fs::write(&path, &text).unwrap();
+        let journal = crate::sync::journal_path(&path);
+        std::fs::write(&journal, "").unwrap();
+        let (read, err) = Db::load_from(&path, true);
+        assert!(err.as_deref().is_some_and(|e| e.contains("versión más nueva")), "{err:?}");
+        assert_eq!(read.patients.len(), db.patients.len(), "se pueden ver");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text, "el fichero no se toca");
+        assert!(journal.exists(), "ni su diario");
+        // de una versión anterior: copia antes de completarlos
+        let mut old = serde_json::to_value(&db).unwrap();
+        old["data_version"] = 0.into();
+        std::fs::write(&path, serde_json::to_string(&old).unwrap()).unwrap();
+        let before: Vec<_> = crate::tools::list_backups(&crate::tools::backup_dir()).into_iter().map(|b| b.path).collect();
+        let (read, err) = Db::load_from(&path, true);
+        assert_eq!((err, read.data_version), (None, crate::model::DATA_VERSION));
+        let made: Vec<_> = crate::tools::list_backups(&crate::tools::backup_dir()).into_iter().filter(|b| !before.contains(&b.path) && b.path.to_string_lossy().contains("antes_de_actualizar")).collect();
+        assert_eq!(made.len(), 1, "una copia previa");
+        assert_eq!(crate::tools::read_backup(&made[0].path, None).unwrap().data_version, 0, "con los datos como estaban");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
     #[test]
     fn saves_only_what_changed_and_comes_back_after_a_crash() {
         let path = dir("save");
@@ -185,7 +217,16 @@ mod tests {
         let first = lock(&path).unwrap();
         assert_eq!(lock(&path).unwrap_err(), IN_USE);
         drop(first);
-        assert!(lock(&path).is_ok(), "al cerrarse la primera, se puede abrir");
+        // (otra prueba de este proceso puede estar lanzando un programa: hasta que
+        // arranca, el hijo tiene una copia de los ficheros abiertos, también este;
+        // fuera de las pruebas no pasa, pero aquí se espera un poco)
+        let reopened = (0..100).find_map(|_| {
+            lock(&path).ok().or_else(|| {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                None
+            })
+        });
+        assert!(reopened.is_some(), "al cerrarse la primera, se puede abrir");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

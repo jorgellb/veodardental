@@ -556,3 +556,50 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 403 pasan, 0 fallan, 10 ignoradas |
+
+## E-023 T-F3-02: actualizaciones coordinadas
+- **Defectos de pérdida de datos demostrados y corregidos.**
+  - **1. Programa antiguo con datos más nuevos.**
+    - **Qué pasaba:** los cargaba y, al guardar o al reescribir el diario, borraba los campos que no conocía.
+    - **Ahora:** los abre sin guardar, con el mensaje de actualizar; no reescribe el fichero ni quita el diario. El servidor no arranca con ellos.
+  - **2. Puesto antiguo con servidor nuevo (o al revés).**
+    - **Qué pasaba:** el puesto escribía registros sin los campos nuevos.
+    - **Ahora:** cada puesto manda su versión de los datos (`X-Datos`) y el servidor rechaza sus escrituras (426) si no es la misma, con un mensaje que dice qué actualizar. Leer sí puede.
+    - **Al conectar:** `/acceso` dice la versión del servidor, y el puesto avisa con las versiones de los dos.
+  - **3. Lo no enviado se perdía al cerrar el puesto.**
+    - **Qué pasaba:** lo que un puesto no podía enviar (sin conexión, o porque hay que actualizar) solo estaba en memoria.
+    - **Ahora:** va a una bandeja en su ordenador (`pendientes.json`, 0600), cuando falla un envío y al cerrar. Se envía en la sesión siguiente y se borra al llegar.
+- **Copia previa:**
+  - antes de completar datos de una versión anterior (`Db::load_from`);
+  - antes de cambiar el programa: si no se puede hacer, no se actualiza.
+- **Paquetes de versión (`src/actualizar.rs`):**
+  - manifiesto firmado con Ed25519 (`ring`), con versión, versión de datos y tamaño y SHA-256 de cada fichero;
+  - se rechazan: sin firma válida, con un fichero cambiado o de más, con nombres con ruta o si la versión no es más nueva;
+  - sin clave de firma configurada (`RELEASE_KEYS` vacía) no se acepta ninguna actualización. Es B-27: la clave la genera el responsable del producto.
+- **Aplicación por pasos con diario:**
+  1. Preparado.
+  2. Copia.
+  3. Cambio, con dos renombrados.
+  4. Comprobación de la versión nueva con `--comprobar`, que abre los datos sin escribir.
+  - Si la comprobación falla, vuelve sola a la anterior.
+  - `--volver-atras` vuelve a mano y dice si hay que restaurar la copia: solo si la versión nueva cambió la de los datos.
+  - Solo en una carpeta propia del programa; nunca en una instalación del sistema.
+- **Pruebas:**
+  - `local::tests::newer_data_is_never_rewritten_and_older_data_is_backed_up_first`
+  - `server::tests::stations_and_server_with_other_data_versions_do_not_write_to_each_other`
+  - `server::tests::unsent_changes_survive_in_the_outbox_and_reach_the_server_later` (reenviarla no cambia nada)
+  - `actualizar::tests::only_a_signed_complete_and_newer_package_is_accepted`
+  - `actualizar::tests::an_update_installs_checks_and_rolls_back_by_itself_if_the_new_version_fails`
+  - `actualizar::tests::a_cut_between_any_two_steps_leaves_the_previous_version_whole`: corte tras cada paso y entre los dos renombrados. Al arrancar queda la versión anterior entera, con los datos intactos, sin diario, y se puede volver a actualizar.
+  - `actualizar::tests::undoing_after_the_data_changed_says_what_to_restore`
+- **A mano:**
+  - `--comprobar`: «VeodarDental 0.1.0 · datos 1 · 18 pacientes», código 0.
+  - `--actualizar` en una instalación del sistema: lo rechaza, código 1.
+- **Prueba ajustada:** `local::tests::only_one_window_saves` falló una vez en la batería completa. Mientras otra prueba del mismo proceso lanza un programa (el ensayo de instalación lanza `lsblk`), el hijo tiene una copia del fichero de bloqueo hasta que arranca. Ahora espera hasta un segundo a que se libere; comprueba lo mismo. Después, dos baterías seguidas en verde.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` (dos veces) | 0 | 411 pasan, 0 fallan, 10 ignoradas |

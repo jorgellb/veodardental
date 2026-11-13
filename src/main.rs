@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod actualizar;
 mod agenda_extra;
 mod app;
 mod bank;
@@ -73,6 +74,47 @@ fn main() -> eframe::Result<()> {
         if n > 0 {
             eprintln!("{n} carpetas de {} pasadas a {}", brand::OLD_DIR, brand::NAME);
         }
+    }
+    // una actualización que quedó a medias (apagón): la versión anterior, entera
+    if let Some(dir) = actualizar::install_dir() {
+        match actualizar::recover(&dir) {
+            Ok(actualizar::Outcome::RolledBack(m)) => eprintln!("{m}"),
+            Err(e) => eprintln!("No se pudo revisar la última actualización: {e}"),
+            _ => {}
+        }
+    }
+    if args.iter().any(|a| a == "--comprobar") {
+        return match actualizar::self_check() {
+            Ok(m) => {
+                println!("{m}");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1)
+            }
+        };
+    }
+    if args.iter().any(|a| a == "--volver-atras") {
+        match actualizar::undo_cli() {
+            Ok(m) => println!("{m}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1)
+            }
+        }
+        return Ok(());
+    }
+    if let Some(i) = args.iter().position(|a| a == "--actualizar") {
+        let pkg = args.get(i + 1).map(std::path::PathBuf::from).unwrap_or_default();
+        match actualizar::run_cli(&pkg) {
+            Ok(m) => println!("{m}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1)
+            }
+        }
+        return Ok(());
     }
     if args.iter().any(|a| a == "--servidor") {
         if let Err(e) = server::run() {

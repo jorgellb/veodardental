@@ -238,3 +238,12 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Responsable: clínica y su asesoría laboral.
 - Paso para desbloquear: revisar el registro y la exportación con la asesoría.
 - Prueba posterior: conformidad de la asesoría.
+
+## B-27 Clave de firma de las versiones
+- Falta: el par de claves Ed25519 con que se firman las versiones. La privada va en un secreto de CI, nunca en el repositorio; la pública, en `actualizar::RELEASE_KEYS`.
+- Por qué: la clave es del responsable del producto, y una clave inventada aquí no daría autenticidad a nada.
+- Parte afectada: instalar versiones con `--actualizar`. Hasta entonces se instalan con su instalador.
+- Preparación terminada: T-F3-02 (manifiesto firmado, comprobación, copia previa, cambio por pasos, vuelta atrás y pruebas de corte entre pasos).
+- Responsable: propietario del producto.
+- Paso para desbloquear: generar la clave, guardar la privada como secreto y añadir al flujo de CI la firma del manifiesto.
+- Prueba posterior: un paquete firmado en CI se instala con `--actualizar` y uno cambiado se rechaza.

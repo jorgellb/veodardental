@@ -107,3 +107,13 @@ Con hoja de saldos, quien no aparece en ella debe 0 en el programa anterior. Si 
 Un documento del programa anterior con ruta de otro ordenador (`\\servidor\…` y sus variantes) solo se importa si está dentro de la carpeta de documentos que la clínica indica como suya. Abrir esa ruta, o solo mirarla, hace que Windows conecte con ese servidor y le dé las credenciales del usuario. Una exportación manipulada podría así llevar las credenciales de la clínica a un servidor ajeno.
 
 Las rutas locales se importan siempre, porque no salen del ordenador.
+
+## D-22 Actualizaciones: primero el servidor, versión de datos igual y vuelta atrás segura
+**Compatibilidad.** Se mide por la versión de los datos (`DATA_VERSION`), no por el número de versión del programa, porque es lo que decide si un puesto borraría campos al escribir.
+- Un puesto con otra versión de los datos puede leer, pero no escribe.
+- Lo suyo queda en la bandeja de su ordenador hasta que se actualiza.
+- **Orden:** primero el servidor y después los puestos.
+
+**Los datos no se tocan durante el cambio de programa.** Se completan cuando la versión nueva arranca de verdad, con su copia previa. Así, volver atrás tras un corte nunca necesita restaurar datos. Volver atrás a mano días después solo lo necesita si la versión nueva cambió la de los datos, y el programa lo dice.
+
+**Firma de las versiones.** Va con Ed25519, con la clave pública en el programa y la privada fuera del repositorio. Hasta que exista (B-27), las versiones se instalan con su instalador.

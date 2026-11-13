@@ -676,6 +676,14 @@ impl App {
             let d = r.pull(self.db.rev)?;
             r.receive(&mut self.db, &mut self.synced, d)?;
         }
+        // lo que quedó sin enviar en una sesión anterior (sin conexión o antes de actualizar)
+        let outbox = crate::server::outbox_path();
+        let pending = crate::server::load_outbox(&outbox);
+        if !pending.is_empty() {
+            let n = r.push_changes(&mut self.db, &mut self.synced, &pending)?;
+            let _ = std::fs::remove_file(&outbox);
+            self.notify(format!("Enviados al servidor {n} cambios que habían quedado en este puesto."));
+        }
         self.dirty = false;
         self.awaiting_data = false;
         self.persist = true;
@@ -684,6 +692,21 @@ impl App {
             self.db.config.current_user = name;
         }
         Ok(())
+    }
+
+    /// Guarda en la bandeja de este ordenador lo que el puesto no ha podido
+    /// enviar al servidor (para no perderlo al cerrar o al actualizar).
+    pub fn keep_unsent(&mut self) {
+        let Some(_) = self.remote.as_ref() else { return };
+        if self.awaiting_data {
+            return;
+        }
+        let changes = crate::server::unsent(&self.db, &self.synced);
+        if !changes.is_empty()
+            && let Err(e) = crate::server::save_outbox(&crate::server::outbox_path(), &changes)
+        {
+            self.save_error = Some(format!("No se pudo guardar en este ordenador lo pendiente de enviar: {e}"));
+        }
     }
 
     /// Antes de tener los datos: vuelve a pedir los usuarios (por si alguno ha quedado bloqueado).
@@ -759,8 +782,14 @@ impl App {
     /// Devuelve cuántos datos coincidieron con cambios de otro puesto.
     pub fn save_now(&mut self) -> Result<usize, String> {
         if let Some(r) = self.remote.clone() {
-            // solo lo que ha cambiado (si nada, no se envía nada)
-            r.push(&mut self.db, &mut self.synced)?;
+            // solo lo que ha cambiado (si nada, no se envía nada); si no se puede,
+            // a la bandeja de este ordenador, para no perderlo al cerrar
+            if let Err(e) = r.push(&mut self.db, &mut self.synced) {
+                self.keep_unsent();
+                return Err(e);
+            }
+            // enviado: lo de la bandeja (de esta sesión) ya está en el servidor
+            let _ = std::fs::remove_file(crate::server::outbox_path());
             return Ok(0);
         }
         // un solo ordenador: solo lo que ha cambiado, en el diario
@@ -1568,6 +1597,13 @@ impl App {
 }
 
 impl eframe::App for App {
+    /// Al cerrar: lo que no se haya podido enviar al servidor, a la bandeja.
+    fn on_exit(&mut self) {
+        if self.remote.is_some() {
+            self.keep_unsent();
+        }
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let time = ctx.input(|i| i.time);

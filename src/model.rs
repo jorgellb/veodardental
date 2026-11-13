@@ -1412,14 +1412,31 @@ impl Db {
         if let Ok(txt) = std::fs::read_to_string(&p) {
             return match serde_json::from_str::<Db>(&txt) {
                 Ok(mut db) => {
-                    // lo apuntado en el diario y que no llegó a reescribirse
-                    let err = match crate::sync::replay_journal(&mut db, &p) {
-                        Ok(n) if n > 0 && rewrite => Db::write_full(&db, &p).err(),
-                        Ok(_) => None,
-                        Err(e) => Some(format!("No se pudo leer el diario de cambios de {}: {e}", crate::sync::journal_path(&p).display())),
-                    };
+                    // lo apuntado en el diario y que no llegó a reescribirse (de momento, en memoria)
+                    let replayed = crate::sync::replay_journal(&mut db, &p);
+                    // de una versión más nueva del programa: se leen, pero no se guardan
+                    // (al guardar se perdería lo que esta versión no conoce)
+                    if db.data_version > DATA_VERSION {
+                        db.reset_hidden_credentials();
+                        let msg = format!("Estos datos son de una versión más nueva de VeodarDental (datos {}; este programa, {DATA_VERSION}). Se abren sin guardar: actualice el programa en este ordenador.", db.data_version);
+                        return (db, Some(msg));
+                    }
+                    let mut err = replayed.as_ref().err().map(|e| format!("No se pudo leer el diario de cambios de {}: {e}", crate::sync::journal_path(&p).display()));
+                    // de una versión anterior: copia de seguridad antes de completarlos con lo de esta
+                    if err.is_none()
+                        && rewrite
+                        && db.data_version < DATA_VERSION
+                        && let Err(e) = crate::tools::create_backup(&db, "antes de actualizar los datos")
+                    {
+                        err = Some(format!("No se pudo hacer la copia de seguridad previa a la actualización de los datos ({e}): se abren sin guardar."));
+                    }
                     if err.is_none() && rewrite {
-                        let _ = std::fs::remove_file(crate::sync::journal_path(&p));
+                        if replayed.as_ref().is_ok_and(|n| *n > 0) {
+                            err = Db::write_full(&db, &p).err();
+                        }
+                        if err.is_none() {
+                            let _ = std::fs::remove_file(crate::sync::journal_path(&p));
+                        }
                     }
                     db.upgrade();
                     db.reset_hidden_credentials();

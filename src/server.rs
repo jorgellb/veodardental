@@ -71,6 +71,57 @@ const SERVER_FIELDS: [&str; 6] = ["pin_hash", "salt", "totp_secret", "totp_last"
 /// Mensaje cuando la sesión del puesto ya no vale (el puesto vuelve a pedir el usuario).
 pub const SESSION_EXPIRED: &str = "La sesión con el servidor ha terminado: vuelva a entrar con su usuario.";
 const OLD_STATION: &str = "Este puesto tiene una versión anterior de VeodarDental: actualícelo para conectar con el servidor de la clínica.";
+/// Un puesto con otra versión de los datos no escribe en el servidor: uno
+/// anterior borraría lo que no conoce, y uno más nuevo escribiría lo que el
+/// servidor no entiende. Cada puesto la manda en esta cabecera.
+const DATA_HEADER: &str = "X-Datos";
+pub const UPDATE_STATION: &str = "Este puesto tiene una versión de VeodarDental anterior a la del servidor: actualícelo. Lo hecho aquí y no enviado se guarda en este ordenador y se envía al actualizar.";
+pub const UPDATE_SERVER: &str = "El servidor de la clínica tiene una versión de VeodarDental anterior a la de este puesto: actualice primero el servidor. Lo hecho aquí y no enviado se guarda en este ordenador.";
+
+/// Bandeja de este ordenador con lo que el puesto no ha podido enviar al
+/// servidor (sin conexión, o porque hay que actualizar uno de los dos): así
+/// no se pierde al cerrar el programa ni al actualizarlo. Solo para el
+/// usuario: lleva datos de pacientes.
+pub fn outbox_path() -> PathBuf {
+    crate::paths::config().join(crate::brand::DIR).join("pendientes.json")
+}
+
+/// Lo que hay en la bandeja.
+pub fn load_outbox(path: &std::path::Path) -> Vec<Change> {
+    std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// Añade a la bandeja lo que el puesto tiene sin enviar: de cada registro, el
+/// «antes» más antiguo y el «ahora» más reciente.
+pub fn save_outbox(path: &std::path::Path, changes: &[Change]) -> Result<(), String> {
+    let mut all = load_outbox(path);
+    for ch in changes {
+        match all.iter_mut().find(|x| x.field == ch.field && x.key == ch.key) {
+            Some(x) => x.after = ch.after.clone(),
+            None => all.push(ch.clone()),
+        }
+    }
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    crate::paths::write_private(&tmp, serde_json::to_string(&all).map_err(|e| e.to_string())?.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// Lo que el puesto tiene cambiado y sin enviar.
+pub fn unsent(db: &Db, synced: &Snapshot) -> Vec<Change> {
+    station_changes(db, synced)
+}
+
+/// ¿Puede escribir en el servidor el puesto de esta petición?
+fn data_mismatch(req: &Request) -> Option<&'static str> {
+    match req.header(DATA_HEADER).and_then(|v| v.trim().parse::<u32>().ok()) {
+        Some(v) if v == crate::model::DATA_VERSION => None,
+        Some(v) if v > crate::model::DATA_VERSION => Some(UPDATE_SERVER),
+        _ => Some(UPDATE_STATION),
+    }
+}
 const OLD_SERVER: &str = "El servidor de la clínica tiene una versión anterior de VeodarDental: actualice el programa en el ordenador servidor.";
 const WRONG_KEY: &str = "La clave de la clínica no es correcta (o ese ordenador no es el servidor de la clínica).";
 const NO_CONNECTION: &str = "No hay conexión con el servidor de la clínica.";
@@ -1181,7 +1232,7 @@ impl State {
         // su zona horaria: lo que hace el servidor (cobros de cuotas, remesas,
         // facturas) lleva su fecha local, y los informes agrupan por esa fecha
         let offset = chrono::Local::now().offset().local_minus_utc();
-        reply(200, json!({ "clinica": name, "usuarios": users, "rev": self.rev(), "desfase": offset }))
+        reply(200, json!({ "clinica": name, "usuarios": users, "rev": self.rev(), "desfase": offset, "datos": crate::model::DATA_VERSION, "version": env!("CARGO_PKG_VERSION") }))
     }
 
     fn new_session(&mut self, user: u32, station: u32) -> String {
@@ -1407,6 +1458,7 @@ impl State {
                         Response { code: 200, body: self.snap.to_json_with(&|list, rec| Self::outgoing(view, list, rec)) }
                     }
                     ("GET", "/cambios") => self.since(param("desde"), &[], self.view_of(me)),
+                    ("POST", "/cambios" | "/cadena") if data_mismatch(req).is_some() => error(426, data_mismatch(req).unwrap_or(UPDATE_STATION)),
                     ("POST", "/cambios") => match serde_json::from_slice::<PushBody>(&req.body).map_err(|e| e.to_string()).and_then(|b| self.save(b.changes, station, me)) {
                         Ok(sent) => self.since(param("base"), &sent, self.view_of(me)),
                         Err(e) => error(400, &e),
@@ -1561,6 +1613,23 @@ pub struct AccessInfo {
     /// Diferencia con UTC del servidor, en segundos (no la dan las versiones anteriores).
     #[serde(rename = "desfase", default)]
     pub utc_offset: Option<i32>,
+    /// Versión de los datos del servidor (no la dan las versiones anteriores).
+    #[serde(rename = "datos", default)]
+    pub data_version: Option<u32>,
+    /// Versión del programa en el servidor.
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+impl AccessInfo {
+    /// Si este puesto y el servidor no pueden trabajar juntos, qué hay que actualizar.
+    pub fn mismatch(&self) -> Option<&'static str> {
+        match self.data_version {
+            Some(v) if v == crate::model::DATA_VERSION => None,
+            Some(v) if v > crate::model::DATA_VERSION => Some(UPDATE_STATION),
+            _ => Some(UPDATE_SERVER),
+        }
+    }
 }
 
 /// Aviso si el servidor tiene otra zona horaria que el puesto: lo que hace
@@ -1783,7 +1852,7 @@ impl Remote {
     }
 
     fn request(&self, method: &str, path: &str) -> ureq::Request {
-        let mut r = self.agent.request(method, &format!("{}{}", self.base, path)).set("X-Clave", &self.key).set("X-Puesto", &self.station.to_string());
+        let mut r = self.agent.request(method, &format!("{}{}", self.base, path)).set("X-Clave", &self.key).set("X-Puesto", &self.station.to_string()).set(DATA_HEADER, &crate::model::DATA_VERSION.to_string());
         if !self.session.is_empty() {
             r = r.set("X-Sesion", &self.session);
         }
@@ -1894,6 +1963,20 @@ impl Remote {
         Ok(changes.len())
     }
 
+    /// Envía cambios guardados en la bandeja de este ordenador (de una sesión
+    /// anterior que no pudo enviarlos) y recoge lo que devuelve el servidor.
+    /// El servidor los combina con lo que tenga como cualquier otro cambio.
+    pub fn push_changes(&self, db: &mut Db, synced: &mut Snapshot, changes: &[Change]) -> Result<usize, String> {
+        if changes.is_empty() {
+            return Ok(0);
+        }
+        let body = json!({ "cambios": changes }).to_string();
+        let delta: Delta = serde_json::from_str(&self.post(&format!("/cambios?base={}", db.rev), &body)?).map_err(|e| format!("Respuesta no válida del servidor: {e}"))?;
+        self.note_backup(&delta);
+        self.receive(db, synced, delta)?;
+        Ok(changes.len())
+    }
+
     /// Una operación de la cadena de facturas (o una remesa, una liquidación…)
     /// en el servidor (ver [`ChainOp`]):
     /// antes se envía lo pendiente (los tratamientos recién hechos, los datos
@@ -1955,7 +2038,11 @@ pub fn connect(r: &mut Remote, name: &str, attempts: u32) -> Result<AccessInfo, 
         match r.register(name) {
             Ok(n) => {
                 r.station = n;
-                return r.access();
+                let info = r.access()?;
+                return match info.mismatch() {
+                    Some(e) => Err(format!("{e} (servidor: {}; este puesto: {})", info.version.as_deref().unwrap_or("versión anterior"), env!("CARGO_PKG_VERSION"))),
+                    None => Ok(info),
+                };
             }
             Err(e) => last = e,
         }
@@ -2357,6 +2444,86 @@ mod tests {
         rec.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T-F3-02. Un puesto con otra versión de los datos no escribe en el
+    /// servidor, y el mensaje dice qué hay que actualizar; al conectar ya se
+    /// sabe. Leer sí puede (para ver lo que hay mientras se actualiza).
+    #[test]
+    fn stations_and_server_with_other_data_versions_do_not_write_to_each_other() {
+        use crate::model::DATA_VERSION;
+        let dir = std::env::temp_dir().join(format!("ds_versiones_{}", std::process::id()));
+        let mut st = State::new(&Db::sample(crate::model::today()), dir.join("clinica.json"), "CLAVEV", vec![7; 32]);
+        let token = st.new_session(1, 3);
+        let peer = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let req = |method: &str, path: &str, data: Option<String>| {
+            let mut headers = vec![("X-Clave".to_string(), "CLAVEV".to_string()), ("X-Sesion".to_string(), token.clone())];
+            if let Some(d) = data {
+                headers.push((DATA_HEADER.to_string(), d));
+            }
+            Request { method: method.into(), path: path.into(), query: String::new(), headers, body: b"{\"cambios\": []}".to_vec(), peer }
+        };
+        for (data, want) in [(None, Some(UPDATE_STATION)), (Some("0".to_string()), Some(UPDATE_STATION)), (Some((DATA_VERSION + 1).to_string()), Some(UPDATE_SERVER)), (Some(DATA_VERSION.to_string()), None)] {
+            for path in ["/cambios", "/cadena"] {
+                let (resp, _) = st.handle(&req("POST", path, data.clone()), "CLAVEV");
+                match want {
+                    Some(msg) => assert_eq!((resp.code, resp.body.contains(msg)), (426, true), "{path} {data:?}: {}", resp.body),
+                    None => assert_ne!(resp.code, 426, "{path}: {}", resp.body),
+                }
+            }
+            let (resp, _) = st.handle(&req("GET", "/datos", data.clone()), "CLAVEV");
+            assert_eq!(resp.code, 200, "leer, sí");
+        }
+        // al conectar: lo que dice el servidor
+        let (resp, _) = st.handle(&req("GET", "/acceso", None), "CLAVEV");
+        let info: AccessInfo = serde_json::from_str(&resp.body).unwrap();
+        assert_eq!((info.data_version, info.version.as_deref(), info.mismatch()), (Some(DATA_VERSION), Some(env!("CARGO_PKG_VERSION")), None));
+        let with = |v: serde_json::Value| serde_json::from_value::<AccessInfo>(v).unwrap().mismatch();
+        assert_eq!(with(json!({ "datos": DATA_VERSION + 1 })), Some(UPDATE_STATION));
+        assert_eq!(with(json!({ "datos": 0 })), Some(UPDATE_SERVER));
+        assert_eq!(with(json!({})), Some(UPDATE_SERVER), "un servidor que no la dice es anterior");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T-F3-02. Lo que un puesto no pudo enviar queda en la bandeja de su
+    /// ordenador (solo para el usuario), con el primer «antes» y el último
+    /// «ahora» de cada registro; en la sesión siguiente se envía, y enviarlo
+    /// otra vez no cambia nada.
+    #[test]
+    fn unsent_changes_survive_in_the_outbox_and_reach_the_server_later() {
+        let (addr, path, h) = start("CLAVE_BANDEJA");
+        let a = signed_in(&addr, "CLAVE_BANDEJA", "Dirección", 1, "0000");
+        let (mut db, synced) = a.load().unwrap();
+        let pid = db.patients[0].id;
+        let outbox = path.with_file_name("pendientes.json");
+        db.patients.iter_mut().find(|p| p.id == pid).unwrap().notes = "primera nota".into();
+        save_outbox(&outbox, &unsent(&db, &synced)).unwrap();
+        db.patients.iter_mut().find(|p| p.id == pid).unwrap().notes = "nota definitiva".into();
+        db.appointments[0].notes = "cita cambiada".into();
+        save_outbox(&outbox, &unsent(&db, &synced)).unwrap();
+        let kept = load_outbox(&outbox);
+        assert_eq!(kept.len(), 2, "un cambio por registro: {kept:?}");
+        assert!(kept.iter().any(|c| c.field == "patients" && c.after.as_deref().is_some_and(|x| x.contains("nota definitiva")) && c.before.as_deref().is_some_and(|x| !x.contains("nota"))));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&outbox).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        // otra sesión (el programa se cerró y se volvió a abrir): se envía
+        let b = signed_in(&addr, "CLAVE_BANDEJA", "Dirección", 1, "0000");
+        let (mut db2, mut s2) = b.load().unwrap();
+        assert_eq!(b.push_changes(&mut db2, &mut s2, &kept).unwrap(), 2);
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.patient(pid).unwrap().notes, "nota definitiva");
+        assert_eq!(disk.appointments[0].notes, "cita cambiada");
+        assert_eq!(db2.patient(pid).unwrap().notes, "nota definitiva", "y el puesto lo tiene");
+        // enviarla otra vez (si no llegó a borrarse) no cambia nada
+        let before = serde_json::to_string(&crate::sync::on_disk(&path).patients).unwrap();
+        b.push_changes(&mut db2, &mut s2, &kept).unwrap();
+        assert_eq!(serde_json::to_string(&crate::sync::on_disk(&path).patients).unwrap(), before);
+        a.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
@@ -3159,7 +3326,7 @@ mod tests {
         for i in 0..4_000 {
             let (n, k) = (rng.below(300), rng.below(bodies.len()));
             let body = if i % 4 == 0 { rng.bytes(n) } else { rng.mutate(&bodies[k]) };
-            let mut headers = vec![("X-Clave".to_string(), if rng.below(10) == 0 { "MAL".to_string() } else { "CLAVE42".to_string() })];
+            let mut headers = vec![("X-Clave".to_string(), if rng.below(10) == 0 { "MAL".to_string() } else { "CLAVE42".to_string() }), (DATA_HEADER.to_string(), crate::model::DATA_VERSION.to_string())];
             if rng.below(4) > 0 {
                 headers.push(("X-Sesion".to_string(), token.clone()));
             }
