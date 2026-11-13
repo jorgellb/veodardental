@@ -121,14 +121,16 @@ impl AeatStatus {
             "AceptadoConErrores" => "Aceptada con errores",
             "Incorrecto" => "Rechazada por la AEAT",
             "ErrorConexion" => "Reintentar (sin conexión)",
+            "EnvioRechazado" => "Envío rechazado: revisar",
             _ => "Pendiente de enviar",
         }
     }
     pub fn sent_ok(&self) -> bool {
         matches!(self.state.as_str(), "Correcto" | "AceptadoConErrores")
     }
+    /// Por enviar: nuevo, sin conexión o con el envío rechazado (este, solo a mano).
     pub fn pending(&self) -> bool {
-        matches!(self.state.as_str(), "" | "ErrorConexion")
+        matches!(self.state.as_str(), "" | "ErrorConexion" | "EnvioRechazado")
     }
 }
 
@@ -806,6 +808,29 @@ pub fn apply_reply(db: &mut Db, batch: &[(Key, Option<Key>)], r: &Reply) -> (usi
     (ok, warn, bad)
 }
 
+/// ¿Es un error SOAP del cliente (el envío está mal, o el certificado)? Repetir
+/// el mismo envío daría el mismo error; los del servidor de la AEAT se reintentan.
+pub fn client_fault(xml: &str) -> bool {
+    first(xml, "faultcode").is_some_and(|c| c.contains("Client"))
+}
+
+/// Marca un lote que la AEAT rechazó entero (no se reintenta solo).
+pub fn mark_rejected(db: &mut Db, batch: &[(Key, Option<Key>)], msg: &str) {
+    for (k, _) in batch {
+        if let Some(st) = status_mut(db, *k) {
+            st.state = "EnvioRechazado".into();
+            st.message = msg.to_string();
+            st.tries += 1;
+        }
+    }
+}
+
+/// El primer envío rechazado entero, si lo hay: hasta revisarlo (y enviar a
+/// mano), el envío automático se para.
+pub fn needs_review(db: &Db) -> Option<String> {
+    chain(db).iter().find(|i| i.aeat().state == "EnvioRechazado").map(|i| format!("La AEAT rechazó el envío de {}: {}", i.num_serie(), i.aeat().message))
+}
+
 /// Marca un lote que no llegó a la AEAT (se reintentará).
 pub fn mark_connection_error(db: &mut Db, batch: &[(Key, Option<Key>)], msg: &str) {
     for (k, _) in batch {
@@ -882,7 +907,16 @@ pub fn send_pending(db: &mut Db, id: Option<&Identity>) -> SendSummary {
     let all = pending(db, &cfg);
     for batch in all.chunks(1000) {
         let body = envelope(db, &cfg, batch);
-        match post(&cfg.url(), &body, id).and_then(|t| parse_reply(&t)) {
+        let answer = post(&cfg.url(), &body, id);
+        if let Ok(t) = &answer
+            && client_fault(t)
+        {
+            let e = parse_reply(t).err().unwrap_or_default();
+            mark_rejected(db, batch, &e);
+            sum.error = format!("La AEAT rechazó el envío: {e}");
+            break;
+        }
+        match answer.and_then(|t| parse_reply(&t)) {
             Ok(r) => {
                 let (ok, warn, bad) = apply_reply(db, batch, &r);
                 sum.sent += batch.len();
@@ -1149,6 +1183,106 @@ mod tests {
         assert_eq!(r.lines[1], LineResult { num_serie: "NUM2".into(), operation: String::new(), state: "Incorrecto".into(), code: "1100".into(), message: "Valor o tipo incorrecto del campo: NIF & nombre".into() });
         let fault = "<soapenv:Envelope><soapenv:Body><soapenv:Fault><faultcode>env:Client</faultcode><faultstring>Codigo[4102].El XML no cumple el esquema</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>";
         assert!(parse_reply(fault).unwrap_err().contains("4102"));
+    }
+
+    /// DOBLE DE PRUEBA de la AEAT (explícito, en 127.0.0.1): contesta a cada
+    /// envío con lo que diga `answer` para ese número de envío (`None`: corta
+    /// la conexión sin responder, como una caída tras recibirlo). Devuelve
+    /// los sobres recibidos.
+    fn fake_aeat(answers: Vec<Option<String>>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://127.0.0.1:{}/verifactu", listener.local_addr().unwrap().port());
+        let h = std::thread::spawn(move || {
+            let mut got = vec![];
+            for answer in answers {
+                let (mut s, _) = listener.accept().unwrap();
+                // la petición entera (cabecera y cuerpo con Content-Length)
+                let mut buf = vec![];
+                let mut chunk = [0u8; 65536];
+                loop {
+                    let n = s.read(&mut chunk).unwrap();
+                    buf.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(i) = text.find("\r\n\r\n") {
+                        let len: usize = text.lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse().unwrap_or(0))).unwrap_or(0);
+                        if buf.len() >= i + 4 + len {
+                            got.push(text[i + 4..].to_string());
+                            break;
+                        }
+                    }
+                    if n == 0 {
+                        break;
+                    }
+                }
+                match answer {
+                    Some(body) => {
+                        let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                    }
+                    None => drop(s),
+                }
+            }
+            got
+        });
+        (url, h)
+    }
+
+    fn reply_for(codes: &[String], line: &str, wait: u32) -> String {
+        let lines: String = codes.iter().map(|c| format!("<tikR:RespuestaLinea><tikR:IDFactura><tik:NumSerieFactura>{c}</tik:NumSerieFactura></tikR:IDFactura>{line}</tikR:RespuestaLinea>")).collect();
+        format!(
+            "<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>CSV9</tikR:CSV><tikR:TiempoEsperaEnvio>{wait}</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>Correcto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>"
+        )
+    }
+
+    /// T-F3-06. Caída después de que la AEAT lo registrara (la respuesta no
+    /// llega): queda para reintentar; el reintento manda exactamente lo mismo,
+    /// la AEAT contesta «duplicado» (3000) y se concilia como registrado.
+    /// Después no queda nada pendiente y no se envía otra vez.
+    #[test]
+    fn a_lost_answer_is_resent_identically_and_reconciled_as_registered() {
+        let mut db = db_with_invoices();
+        let codes: Vec<String> = chain_order(&db).iter().map(|i| i.code()).collect();
+        let dup = "<tikR:EstadoRegistro>Incorrecto</tikR:EstadoRegistro><tikR:CodigoErrorRegistro>3000</tikR:CodigoErrorRegistro><tikR:DescripcionErrorRegistro>Registro de facturación duplicado.</tikR:DescripcionErrorRegistro>";
+        let (url, h) = fake_aeat(vec![None, Some(reply_for(&codes, dup, 180))]);
+        db.verifactu.endpoint = url;
+        let first = send_pending(&mut db, None);
+        assert!(!first.error.is_empty() && first.sent == 0, "{first:?}");
+        assert!(chain(&db).iter().all(|i| i.aeat().state == "ErrorConexion"));
+        assert!(needs_review(&db).is_none(), "una caída se reintenta sola");
+        let second = send_pending(&mut db, None);
+        let bodies = h.join().unwrap();
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(bodies[0], bodies[1], "el reintento es idéntico: mismas huellas y fechas");
+        assert_eq!((second.sent, second.ok, second.bad, second.wait_secs), (codes.len(), codes.len(), 0, 180), "y la espera que pide la AEAT");
+        assert!(chain(&db).iter().all(|i| i.aeat().state == "Correcto" && i.aeat().tries == 2));
+        assert!(pending(&db, &db.verifactu).is_empty(), "conciliado: nada que reenviar");
+    }
+
+    /// T-F3-06. Rechazo del envío entero: un error SOAP del cliente (esquema,
+    /// certificado) no se reintenta solo (daría lo mismo) y para el envío
+    /// automático hasta revisarlo; uno del servidor de la AEAT, sí.
+    #[test]
+    fn a_rejected_submission_stops_the_automatic_retries_but_a_server_fault_does_not() {
+        let client = "<soapenv:Envelope><soapenv:Body><soapenv:Fault><faultcode>env:Client</faultcode><faultstring>Codigo[4102].El XML no cumple el esquema</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>".to_string();
+        let server = client.replace("env:Client", "env:Server").replace("Codigo[4102].El XML no cumple el esquema", "Servicio no disponible");
+        let mut db = db_with_invoices();
+        let codes: Vec<String> = chain_order(&db).iter().map(|i| i.code()).collect();
+        let (url, h) = fake_aeat(vec![Some(client), Some(server), Some(reply_for(&codes, "<tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro>", 60))]);
+        db.verifactu.endpoint = url;
+        let s = send_pending(&mut db, None);
+        assert!(s.error.contains("rechazó el envío") && s.error.contains("4102"), "{}", s.error);
+        assert!(chain(&db).iter().all(|i| i.aeat().state == "EnvioRechazado" && i.aeat().label() == "Envío rechazado: revisar"));
+        assert!(needs_review(&db).is_some_and(|m| m.contains("4102")), "el envío automático se para");
+        assert_eq!(pending(&db, &db.verifactu).len(), codes.len(), "a mano, sí se puede reenviar");
+        // a mano (corregida la causa): esta vez falla el servidor de la AEAT
+        let s = send_pending(&mut db, None);
+        assert!(!s.error.is_empty());
+        assert!(chain(&db).iter().all(|i| i.aeat().state == "ErrorConexion"), "del servidor: se reintenta");
+        assert!(needs_review(&db).is_none());
+        let s = send_pending(&mut db, None);
+        h.join().unwrap();
+        assert_eq!((s.ok, s.bad), (codes.len(), 0));
+        assert!(pending(&db, &db.verifactu).is_empty());
     }
 
     /// Envío completo contra un servicio de prueba que contesta como la AEAT.

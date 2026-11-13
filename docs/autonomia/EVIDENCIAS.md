@@ -704,3 +704,31 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 416 pasan, 0 fallan, 10 ignoradas |
+
+## E-027 T-F3-06: VERI*FACTU contra una AEAT simulada
+- **Defecto demostrado y corregido.**
+  - **Qué pasaba:** un error SOAP del cliente sobre el envío entero (esquema no válido, certificado) se trataba como «sin conexión». El envío automático lo repetía cada dos minutos para siempre, con el mismo error.
+  - **Ahora:**
+    - las facturas quedan «Envío rechazado: revisar»;
+    - el envío automático se para y el panel lo dice;
+    - se reenvían a mano cuando esté corregido.
+  - **Errores del servidor de la AEAT:** se reintentan como una caída (`client_fault`, `mark_rejected`, `needs_review`).
+- **Doble de prueba explícito de la AEAT** (`fake_aeat`, en 127.0.0.1): contesta a cada envío lo que diga la prueba, o corta la conexión sin responder tras recibirlo.
+  - `verifactu::tests::a_lost_answer_is_resent_identically_and_reconciled_as_registered`:
+    1. Caída tras registrar: queda «sin conexión» y se reintenta sola.
+    2. El reintento manda exactamente el mismo sobre (mismas huellas y fechas).
+    3. La AEAT contesta «duplicado» (3000) y se concilia como registrada. No queda nada pendiente, y se guarda la espera pedida (180 s).
+  - `verifactu::tests::a_rejected_submission_stops_the_automatic_retries_but_a_server_fault_does_not`: rechazo del cliente → parado y reenviable a mano; fallo del servidor → reintento; y después, correcto.
+- **Ya estaba, con su prueba:**
+  - aceptación parcial con un rechazado por línea, que no se reenvía solo: `sends_pending_and_records_results`;
+  - lectura de respuestas y errores: `reads_aeat_reply_and_faults`;
+  - envío desde un solo ordenador: `only_one_computer_sends_to_the_aeat`;
+  - la espera entre envíos que pide la AEAT, en el envío automático (`screens::verifactu::tick`).
+- **Sin probar con la AEAT real:** el entorno de pruebas de la AEAT con el certificado de la clínica sigue en B-06 (T-F3-06X).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 418 pasan, 0 fallan, 10 ignoradas |

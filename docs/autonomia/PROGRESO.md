@@ -37,10 +37,11 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F3-03: firma condicionada a secretos, empaquetado comprobado y bandeja por usuario (revisión de seguridad) | E-024 | `c08cd25` |
 | T-F3-04: registro de errores e informe para soporte; firma solo con etiqueta y sesión caducada (revisión de seguridad) | E-025 | `2945231` |
 | T-F3-05: ensayo de restauración y clave de recuperación; nombres fuera del registro (revisión de seguridad) | E-026 | `9bdf3b7` |
+| T-F3-06: VERI*FACTU contra una AEAT simulada (rechazo, caída, reintento idéntico y conciliación) | E-027 | (pendiente) |
 
 ## Siguiente acción
 Las fases 1 y 2 están terminadas en la parte de ingeniería. El mapeo real de GESDEN, Novaclinic, Clinic Cloud y Dentalink sigue en B-03, B-04 y B-05. Toca la fase 3: instalación y operación.
-1. T-F3-06 a T-F3-09 (ver `TAREAS.json`); T-F3-01 a T-F3-05 hechas (E-022 a E-026).
+1. T-F3-07 a T-F3-09 (ver `TAREAS.json`); T-F3-01 a T-F3-06 hechas (E-022 a E-027).
    - Inventariar lo que ya hay: instaladores, `tools/`, copias de seguridad (`src/tools.rs`), puesta en marcha (`src/golive.rs`) y servidor.
    - Firma de código y máquinas Windows/macOS reales: B-24 y B-25.
 2. Después, la fase 4 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08).

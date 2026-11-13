@@ -2055,8 +2055,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas con servidor AEAT simulado explícito",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-027"
+   ]
   },
   {
    "id": "T-F3-07",

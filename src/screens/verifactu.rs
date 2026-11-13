@@ -144,6 +144,10 @@ pub fn tick(app: &mut App, ctx: &egui::Context) {
     if app.vf.next_allowed.map(|t| Instant::now() < t).unwrap_or(false) {
         return;
     }
+    // un envío rechazado entero no se repite solo: daría el mismo error
+    if verifactu::needs_review(&app.db).is_some() {
+        return;
+    }
     let c = app.vf.cert().clone();
     if c.path.trim().is_empty() || c.password.is_empty() {
         return;
@@ -513,6 +517,9 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
     let mut open = None;
     card(ui, |ui| {
         ui.set_width(ui.available_width());
+        if let Some(m) = verifactu::needs_review(&app.db) {
+            ui.label(RichText::new(format!("{m}. El envío automático está parado: corrija la causa y pulse «Enviar ahora».")).color(DANGER));
+        }
         ui.horizontal(|ui| {
             section(ui, "Envíos");
             right_aligned(ui, |ui| {
