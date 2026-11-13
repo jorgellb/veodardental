@@ -33,7 +33,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | `3d777b0` |
 | T-F2-01 a T-F2-09: motor de migración, asistente, conciliación, GESDEN/Novaclinic, perfiles y documentación | E-021 | `e4e3298` |
 | Revisión de seguridad de la fase 2, ficheros solo para el usuario y T-F3-01: ensayo de instalación | E-022 | `e44ee0a` |
-| T-F3-02: actualizaciones coordinadas (versión de datos, bandeja de pendientes, paquetes firmados y vuelta atrás) | E-023 | (pendiente) |
+| T-F3-02: actualizaciones coordinadas (versión de datos, bandeja de pendientes, paquetes firmados y vuelta atrás) | E-023 | `7704bd1` |
 
 ## Siguiente acción
 Las fases 1 y 2 están terminadas en la parte de ingeniería. El mapeo real de GESDEN, Novaclinic, Clinic Cloud y Dentalink sigue en B-03, B-04 y B-05. Toca la fase 3: instalación y operación.
