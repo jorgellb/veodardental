@@ -495,6 +495,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                     phone: String::new(),
                     centers: vec![],
                     deduct_lab: false,
+                    commission_on_insurer: false,
                     hours: None,
                 });
                 app.lists.collab_sel = Some(id);
@@ -553,6 +554,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 ui.label("Comisión");
                 ui.add(egui::DragValue::new(&mut c.commission_pct).range(0.0..=100.0).suffix(" %"));
                 ui.checkbox(&mut c.deduct_lab, "descontando el laboratorio").on_hover_text("La comisión se calcula sobre lo producido menos el coste de laboratorio de sus tratamientos");
+                ui.checkbox(&mut c.commission_on_insurer, "también sobre lo que paga la mutua").on_hover_text("Sin marcar, la comisión es solo sobre lo que paga el paciente; marcada, cuenta también el baremo que paga la mutua por sus actos");
             });
             ui.add_space(6.0);
             section(ui, "Horario de consulta");

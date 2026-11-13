@@ -58,6 +58,11 @@ pub struct ListsState {
     pub report_from: NaiveDate,
     pub report_to: NaiveDate,
     pub report_tab: usize,
+    /// Filtros de los informes (ninguno = todos).
+    pub report_center: Option<u32>,
+    pub report_doctor: Option<u32>,
+    /// Fecha a la que se calcula la deuda de los pacientes.
+    pub report_debt_at: NaiveDate,
     pub tariff_sel: u32,
     pub treat_filter: String,
     pub treat_sel: Option<String>,
@@ -101,6 +106,9 @@ impl Default for ListsState {
             report_from: t - chrono::Duration::days(90),
             report_to: t,
             report_tab: 0,
+            report_center: None,
+            report_doctor: None,
+            report_debt_at: t,
             tariff_sel: 2,
             treat_filter: String::new(),
             treat_sel: None,

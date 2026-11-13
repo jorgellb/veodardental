@@ -2451,3 +2451,42 @@ fn a_doubtful_bank_move_is_chosen_by_hand_and_can_be_undone() {
     }
     assert!(h.state().db.bank_moves.iter().find(|m| m.id == id).unwrap().matched.is_none());
 }
+
+/// Informes: el resumen económico dice qué entra en cada total y responde a
+/// los filtros de centro y profesional; los cobros por forma de pago, con
+/// las remesas, suman el total.
+#[test]
+fn the_economic_summary_shows_its_totals_and_filters() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Informes;
+        a.lists.report_tab = 7;
+        a.lists.report_from = a.today - chrono::Duration::days(365);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Lo que paga la mutua (baremo)");
+    h.get_by_label("Devoluciones y recibos devueltos");
+    h.get_by_label("Profesional");
+    let (net, f) = {
+        let a = h.state();
+        let f = crate::informes::Filter { from: a.lists.report_from, to: a.lists.report_to, center: None, doctor: None };
+        (a.db.report_collected(&f).net, f)
+    };
+    assert!(!h.query_all_by_label(&net.to_string()).collect::<Vec<_>>().is_empty(), "el neto cobrado: {net}");
+    // con un centro elegido, sus cobros
+    h.state_mut().lists.report_center = Some(2);
+    for _ in 0..3 {
+        h.step();
+    }
+    let c2 = h.state().db.report_collected(&crate::informes::Filter { center: Some(2), ..f }).net;
+    assert_ne!(c2, net, "los datos de ejemplo tienen cobros en los dos centros");
+    assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
+}

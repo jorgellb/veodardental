@@ -72,7 +72,7 @@ impl Db {
         }
     }
 
-    fn claimed(&self, entry_id: u32) -> bool {
+    pub(crate) fn claimed(&self, entry_id: u32) -> bool {
         self.claims.iter().any(|c| c.lines.iter().any(|l| l.entry_id == entry_id))
     }
 

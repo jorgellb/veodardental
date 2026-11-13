@@ -189,3 +189,49 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 343 pasan, 0 fallan, 10 ignoradas |
+
+## E-011 Área 5: informes
+- Revisión en `docs/autonomia/revision/area5.md`: 7 defectos demostrados (I1 a I7). Las definiciones de cada total están en `src/informes.rs`.
+- **Cuadre independiente:** `informes::tests::november()` crea operaciones sintéticas.
+  - Contenido:
+    - dos centros, dos profesionales y una mutua (copago y baremo);
+    - una anulación, una devolución y un recibo devuelto;
+    - dos facturas y una rectificativa;
+    - cobros en el último segundo de octubre y el primero de diciembre.
+  - Los totales esperados están calculados a mano a partir de esa lista (no con el código probado), y todos cuadran al céntimo:
+    - cobrado: 509 − 72 − 60 = 377 €; por centro, 177 + 200 €;
+    - producción: 437,50 + 50 €, por profesional y por centro;
+    - facturado: 172 − 100 = 72 €;
+    - deuda: 100,50 € y 30 € a favor a 30/11;
+    - mutuas: 50 € liquidados en noviembre y cobrados en diciembre.
+- **Pruebas nuevas:**
+  - `cents::tests::sums_are_exact_to_the_cent` (tipo `Cents` de T-R7-1, D-06)
+  - `informes::tests::collected_matches_the_operations`
+  - `informes::tests::production_matches_the_operations`
+  - `informes::tests::invoiced_matches_the_operations`
+  - `informes::tests::debt_at_a_cut_off_date`
+  - `informes::tests::insurers_match_the_operations`
+  - `informes::commission_tests::the_commission_counts_the_insurer_part_only_if_marked`
+  - `screens::cobros::tests::the_payment_methods_add_up_to_the_total`
+  - `ui_tests::the_economic_summary_shows_its_totals_and_filters`
+  - `server::tests::a_station_is_warned_when_the_server_has_another_time_zone`
+- **Por lectura del código anterior (`f7ea39c`):**
+  - I1: las casillas recorrían `PAY_METHODS`, que no tiene «Domiciliación».
+  - I2: `amount()` es solo la parte del paciente, y nadie sumaba `insurer_fee`.
+  - I4 e I5: no había ni centro en los tratamientos ni fecha en la deuda.
+  - I7: `access()` no decía la zona horaria.
+- **Medición de «Pendientes de cobro»** (I6):
+  - Datos: 5.018 pacientes y 100.013 cobros sintéticos (semilla 7); perfil `dev`, este equipo; prueba temporal que no queda en el repositorio.
+  - Antes (`patient_balance` por paciente): 368 ms por fotograma.
+  - Ahora (`balances_at`): 2,6 ms.
+  - Mismo resultado: 3 deudores.
+- **Capturas sintéticas:** `f1_area5_informes_t{7,2,0}_1280x{800,720}.png` y `f1_area5_cobros_1280x{800,720}.png`:
+  - resumen económico, producción con las columnas paciente, mutua y total, y deuda a una fecha;
+  - a 1280 px se leen sin recortes, y a 720 px de alto la página se desplaza.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 353 pasan, 0 fallan, 10 ignoradas |

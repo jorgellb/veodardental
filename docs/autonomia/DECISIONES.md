@@ -52,3 +52,13 @@ Si ya estaba cobrada antes de conciliar, no se toca. Se prefiere esto a dejarla 
 `parse_money` toma como decimal el separador que va último cuando hay dos («1.234,56», «1,234.56»), y como miles el que se repite. Con uno solo que no se repite, sigue siendo el decimal, como antes («12,5», «94.25»).
 
 «1.500» queda ambiguo y se lee como 1,5. Los bancos exportan con decimales, así que no se adivina por columna.
+
+## D-12 Producción y comisión con mutuas
+La producción que muestran los informes es lo que paga el paciente más lo que paga la mutua (el baremo de la tarifa).
+
+La comisión de los colaboradores sigue siendo sobre lo que paga el paciente, que es como se calculaba: cambiarla sin más cambiaría lo que se paga a cada uno. Se añade a cada colaborador la opción «también sobre lo que paga la mutua», desmarcada por defecto, y la base se dice en la pantalla y en la liquidación impresa. Elegirla es cosa de la clínica.
+
+## D-13 Fechas y zona horaria
+Las fechas siguen siendo la hora local, sin zona, del ordenador que registra. Cambiarlas a UTC exigiría migrar todos los datos y no aporta nada mientras servidor y puestos estén en la misma zona.
+
+Para que no pase sin notarse, el servidor dice su diferencia con UTC y el puesto avisa si es otra. El servidor en la nube (fase 6) debe configurarse con la zona horaria de la clínica.

@@ -1171,7 +1171,10 @@ impl State {
     fn access(&self) -> Response {
         let users: Vec<Value> = self.snap.records.get("users").into_iter().flat_map(|r| r.iter()).filter_map(|(_, u)| serde_json::from_str(&strip_user_json(u)).ok()).collect();
         let name = self.snap.get("config", None).and_then(|c| serde_json::from_str::<Value>(c).ok()).map(|c| c["name"].clone()).unwrap_or(Value::Null);
-        reply(200, json!({ "clinica": name, "usuarios": users, "rev": self.rev() }))
+        // su zona horaria: lo que hace el servidor (cobros de cuotas, remesas,
+        // facturas) lleva su fecha local, y los informes agrupan por esa fecha
+        let offset = chrono::Local::now().offset().local_minus_utc();
+        reply(200, json!({ "clinica": name, "usuarios": users, "rev": self.rev(), "desfase": offset }))
     }
 
     fn new_session(&mut self, user: u32, station: u32) -> String {
@@ -1548,6 +1551,25 @@ pub struct AccessInfo {
     pub clinic: String,
     #[serde(rename = "usuarios", default)]
     pub users: Vec<crate::users::User>,
+    /// Diferencia con UTC del servidor, en segundos (no la dan las versiones anteriores).
+    #[serde(rename = "desfase", default)]
+    pub utc_offset: Option<i32>,
+}
+
+/// Aviso si el servidor tiene otra zona horaria que el puesto: lo que hace
+/// el servidor llevaría otra fecha, y un cobro de las 0:30 podría contar en
+/// el día anterior en los informes.
+pub fn clock_warning(server: Option<i32>, here: i32) -> Option<String> {
+    let s = server?;
+    if s == here {
+        return None;
+    }
+    let utc = |o: i32| format!("UTC{}{:02}:{:02}", if o < 0 { '-' } else { '+' }, o.abs() / 3600, o.abs() % 3600 / 60);
+    Some(format!(
+        "El servidor de la clínica está en otra zona horaria ({}) que este puesto ({}): los cobros y facturas que haga el servidor llevarán su fecha y los informes podrían contar un cobro en otro día. Ponga en el servidor la zona horaria de la clínica.",
+        utc(s),
+        utc(here)
+    ))
 }
 
 /// Lo que devuelve el servidor: su revisión y lo que ha cambiado.
@@ -2749,6 +2771,26 @@ mod tests {
         assert!(rb.chain_op(&mut b, &mut sb, &json!({ "accion": "importar_extracto", "cuenta": 99, "movimientos": [{ "fecha": "2026-11-05", "centimos": 150 }] })).unwrap_err().contains("cuenta"));
         assert!(rb.chain_op(&mut b, &mut sb, &json!({ "accion": "conciliar_movimiento", "movimiento": ids[1], "con": { "Otro": "" } })).is_err());
         ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// El puesto sabe la zona horaria del servidor y avisa si no es la suya
+    /// (lo que hace el servidor llevaría otra fecha en los informes).
+    #[test]
+    fn a_station_is_warned_when_the_server_has_another_time_zone() {
+        let (addr, path, h) = start("CLAVE33");
+        let mut r = Remote::new(&addr, "CLAVE33", 0);
+        let info = connect(&mut r, "Recepción", 1).unwrap();
+        let here = chrono::Local::now().offset().local_minus_utc();
+        assert_eq!(info.utc_offset, Some(here), "el servidor da su desfase");
+        assert_eq!(clock_warning(info.utc_offset, here), None, "misma zona: sin aviso");
+        let w = clock_warning(Some(0), 3600).unwrap();
+        assert!(w.contains("UTC+00:00") && w.contains("UTC+01:00"), "{w}");
+        assert!(clock_warning(Some(-12_600), 0).unwrap().contains("UTC-03:30"));
+        assert_eq!(clock_warning(None, 3600), None, "un servidor anterior no lo dice");
+        let rb = signed_in(&addr, "CLAVE33", "Dirección", 1, "0000");
+        rb.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

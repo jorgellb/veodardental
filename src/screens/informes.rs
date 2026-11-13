@@ -1,13 +1,21 @@
 //! Informes: pendientes de cobro, libro diario, producción y liquidación
-//! de colaboradores, ingresos mensuales y presupuestos pendientes.
+//! de colaboradores, ingresos mensuales, presupuestos pendientes y el
+//! resumen económico. Los totales salen de `crate::informes`, que define qué
+//! entra en cada uno, con los mismos filtros de periodo, centro y profesional.
 
 use crate::app::{App, Dialog, PatTab};
+use crate::informes::Filter;
 use crate::model::*;
 use crate::theme::*;
 use chrono::Datelike;
 use egui::{Align2, CornerRadius, FontId, RichText, Sense, Ui, pos2, vec2};
 
-const TABS: [&str; 7] = ["Pendientes de cobro", "Libro diario", "Producción", "Ingresos", "Presupuestos", "Captación", "Consultas"];
+const TABS: [&str; 8] = ["Pendientes de cobro", "Libro diario", "Producción", "Ingresos", "Presupuestos", "Captación", "Consultas", "Resumen económico"];
+
+/// El filtro de los informes con lo elegido en la pantalla.
+fn filter(app: &App) -> Filter {
+    Filter { from: app.lists.report_from, to: app.lists.report_to, center: app.lists.report_center, doctor: app.lists.report_doctor }
+}
 
 pub fn show(app: &mut App, ui: &mut Ui) {
     title(ui, "Informes", "Listados de gestión de la clínica");
@@ -17,46 +25,85 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 app.lists.report_tab = i;
             }
         }
-        if matches!(app.lists.report_tab, 1 | 2 | 5) {
-            ui.separator();
+    });
+    let tab = app.lists.report_tab;
+    ui.horizontal_wrapped(|ui| {
+        if matches!(tab, 1 | 2 | 5 | 7) {
             ui.label("Desde");
             crate::screens::date_picker(ui, "rep_from", &mut app.lists.report_from);
             ui.label("hasta");
             crate::screens::date_picker(ui, "rep_to", &mut app.lists.report_to);
         }
+        if tab == 0 {
+            ui.label("Deuda a");
+            crate::screens::date_picker(ui, "rep_debt", &mut app.lists.report_debt_at);
+        }
+        if matches!(tab, 1 | 2 | 3 | 7) && app.db.multi_center() {
+            ui.add_space(8.0);
+            ui.label("Centro");
+            let centers: Vec<(u32, String)> = app.db.centers.iter().filter(|c| c.active).map(|c| (c.id, c.name.clone())).collect();
+            let cur = app.lists.report_center.and_then(|c| centers.iter().find(|x| x.0 == c)).map(|x| x.1.clone()).unwrap_or_else(|| "Todos".into());
+            crate::theme::combo("rep_center").width(200.0).selected_text(cur).show_ui(ui, |ui| {
+                ui.selectable_value(&mut app.lists.report_center, None, "Todos");
+                for (id, n) in &centers {
+                    ui.selectable_value(&mut app.lists.report_center, Some(*id), n);
+                }
+            });
+        }
+        if matches!(tab, 1 | 7) {
+            ui.add_space(8.0);
+            ui.label("Profesional");
+            let docs: Vec<(u32, String)> = app.db.collaborators.iter().filter(|c| c.active || Some(c.id) == app.lists.report_doctor).map(|c| (c.id, c.alias.clone())).collect();
+            let cur = app.lists.report_doctor.and_then(|d| docs.iter().find(|x| x.0 == d)).map(|x| x.1.clone()).unwrap_or_else(|| "Todos".into());
+            crate::theme::combo("rep_doctor").width(180.0).selected_text(cur).show_ui(ui, |ui| {
+                ui.selectable_value(&mut app.lists.report_doctor, None, "Todos");
+                for (id, n) in &docs {
+                    ui.selectable_value(&mut app.lists.report_doctor, Some(*id), n);
+                }
+            });
+        }
     });
     ui.add_space(8.0);
-    egui::ScrollArea::vertical().id_salt("rep").auto_shrink([false, false]).show(ui, |ui| match app.lists.report_tab {
+    egui::ScrollArea::vertical().id_salt("rep").auto_shrink([false, false]).show(ui, |ui| match tab {
         0 => pending(app, ui),
         1 => daybook(app, ui),
         2 => production(app, ui),
         3 => monthly(app, ui),
         4 => budgets(app, ui),
         5 => crate::screens::salud::captacion(app, ui),
-        _ => crate::screens::herramientas::consultas(app, ui),
+        6 => crate::screens::herramientas::consultas(app, ui),
+        _ => summary(app, ui),
     });
 }
 
+/// Pacientes que deben a la fecha elegida (lo realizado hasta ese día menos
+/// lo cobrado hasta ese día). Los anticipos se dicen aparte: no compensan.
 fn pending(app: &mut App, ui: &mut Ui) {
-    let mut rows: Vec<(u32, f64)> = app.db.patients.iter().map(|p| (p.id, app.db.patient_balance(p.id))).filter(|r| r.1 > 0.005).collect();
-    rows.sort_by(|a, b| b.1.total_cmp(&a.1));
-    let total: f64 = rows.iter().map(|r| r.1).sum();
+    let at = app.lists.report_debt_at;
+    let rows: Vec<(Patient, f64)> = app.db.balances_at(at).into_iter().filter(|r| r.1.0 > 0).filter_map(|(pid, b)| Some((app.db.patient(pid)?.clone(), b.eur()))).collect();
+    let debt = app.db.report_debt(at);
+    // último cobro de cada paciente, de una pasada
+    let mut last: std::collections::HashMap<u32, chrono::NaiveDate> = std::collections::HashMap::new();
+    for p in app.db.payments.iter().filter(|p| p.date.date() <= at) {
+        let d = last.entry(p.patient_id).or_insert(p.date.date());
+        *d = (*d).max(p.date.date());
+    }
     card(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            section(ui, "Pacientes con deuda pendiente");
+        ui.horizontal_wrapped(|ui| {
+            section(ui, &format!("Pacientes con deuda pendiente a {}", fmt_date(at)));
             right_aligned(ui, |ui| {
-                ui.label(RichText::new(format!("Total pendiente: {}", money(total))).family(crate::theme::sb()).color(DANGER));
+                ui.label(RichText::new(format!("Total pendiente: {}", debt.owed)).family(crate::theme::sb()).color(DANGER));
             });
         });
+        muted(ui, format!("{} pacientes deben {} · otros tienen {} a favor (anticipos), que no se restan de la deuda.", debt.debtors, debt.owed, debt.credit));
         let tbl = Table::new("pend", vec![("Nº", 70.0), ("Paciente", 240.0), ("Móvil", 130.0), ("Tarifa", 180.0), ("Último cobro", 120.0), ("Pendiente", 120.0)]);
         tbl.header(ui);
         let mut open = None;
-        for (i, (pid, bal)) in rows.iter().enumerate() {
-            let p = app.db.patient(*pid).unwrap();
-            let last = app.db.payments.iter().filter(|x| x.patient_id == *pid).map(|x| x.date.date()).max();
-            if tbl.row(ui, i, false, &[cell(p.history_no.to_string()), cell(p.full_name()), cell(&p.mobile), cell(app.db.tariff_name(p.tariff_id)), cell(last.map(fmt_date).unwrap_or_else(|| "nunca".into())), cellc(money(*bal), DANGER)]).clicked() {
-                open = Some(*pid);
+        for (i, (p, bal)) in rows.iter().enumerate() {
+            let lastp = last.get(&p.id).map(|d| fmt_date(*d)).unwrap_or_else(|| "nunca".into());
+            if tbl.row(ui, i, false, &[cell(p.history_no.to_string()), cell(p.full_name()), cell(&p.mobile), cell(app.db.tariff_name(p.tariff_id)), cell(lastp), cellc(money(*bal), DANGER)]).clicked() {
+                open = Some(p.id);
             }
         }
         if rows.is_empty() {
@@ -68,27 +115,25 @@ fn pending(app: &mut App, ui: &mut Ui) {
     });
 }
 
-fn in_range(app: &App, d: chrono::NaiveDate) -> bool {
-    d >= app.lists.report_from && d <= app.lists.report_to
-}
-
 fn daybook(app: &mut App, ui: &mut Ui) {
-    let mut es: Vec<MedEntry> = app.db.entries.iter().filter(|e| e.state == TxState::Realizado && in_range(app, e.date)).cloned().collect();
-    es.sort_by_key(|e| (e.date, e.id));
-    let total: f64 = es.iter().map(|e| e.amount()).sum();
+    let f = filter(app);
+    let es: Vec<MedEntry> = app.db.report_acts(&f).into_iter().cloned().collect();
+    let prod = app.db.report_production(&f);
     card(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             section(ui, "Libro diario (tratamientos realizados)");
             right_aligned(ui, |ui| {
-                ui.label(RichText::new(format!("{} actos · {}", es.len(), money(total))).family(crate::theme::sb()));
+                ui.label(RichText::new(format!("{} actos · {}", prod.acts, prod.total())).family(crate::theme::sb()));
             });
         });
-        let tbl = Table::new("diario", vec![("Fecha", 96.0), ("Nº", 60.0), ("Paciente", 200.0), ("Código", 64.0), ("Tratamiento", 240.0), ("Piezas", 90.0), ("Doctor", 110.0), ("Tarifa", 150.0), ("Importe", 100.0)]);
+        muted(ui, format!("Paciente {} · mutua {} (el baremo que paga la compañía)", prod.patient, prod.insurer));
+        let tbl = Table::new("diario", vec![("Fecha", 96.0), ("Nº", 60.0), ("Paciente", 200.0), ("Código", 64.0), ("Tratamiento", 220.0), ("Piezas", 80.0), ("Doctor", 110.0), ("Tarifa", 140.0), ("Paciente", 96.0), ("Mutua", 90.0)]);
         tbl.header(ui);
         for (i, e) in es.iter().enumerate() {
             let p = app.db.patient(e.patient_id).cloned().unwrap_or_default();
             let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
+            let ins = app.db.insurer_part(e);
             tbl.row(
                 ui,
                 i,
@@ -103,6 +148,7 @@ fn daybook(app: &mut App, ui: &mut Ui) {
                     cell(app.db.doctor_alias(e.doctor_id)),
                     cell(app.db.tariff_name(if e.tariff_id != 0 { e.tariff_id } else { p.tariff_id })),
                     cell(money(e.amount())),
+                    cell(if ins.is_zero() { String::new() } else { ins.to_string() }),
                 ],
             );
         }
@@ -113,33 +159,51 @@ fn daybook(app: &mut App, ui: &mut Ui) {
 }
 
 fn production(app: &mut App, ui: &mut Ui) {
-    let rows: Vec<(String, usize, f64, f64, [u8; 3])> = app
+    let f = Filter { doctor: None, ..filter(app) };
+    let by_center = f.center.is_some();
+    // (alias, producción, a liquidar, % y base, color)
+    let rows: Vec<(String, crate::informes::Production, f64, String, [u8; 3])> = app
         .db
         .collaborators
         .iter()
         .map(|c| {
-            let (mine, prod, _, fee) = app.db.settlement(c.id, app.lists.report_from, app.lists.report_to);
-            (c.alias.clone(), mine.len(), prod, fee, c.color)
+            let prod = app.db.report_production(&Filter { doctor: Some(c.id), ..f });
+            let (_, _, _, fee) = app.db.settlement(c.id, f.from, f.to);
+            let lab = if c.deduct_lab { " − lab." } else { "" };
+            let ins = if c.commission_on_insurer { " (con mutua)" } else { "" };
+            (c.alias.clone(), prod, fee, format!("{:.0} %{lab}{ins}", c.commission_pct), c.color)
         })
         .collect();
-    let max = rows.iter().map(|r| r.2).fold(1.0, f64::max);
+    let max = rows.iter().map(|r| r.1.total().eur()).fold(1.0, f64::max);
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Producción por colaborador y liquidación de honorarios");
-        let tbl = Table::new("prod", vec![("Colaborador", 160.0), ("Actos", 80.0), ("Producción", 130.0), ("% comisión", 100.0), ("A liquidar", 130.0), ("", 360.0)]);
+        muted(
+            ui,
+            if by_center {
+                "La producción es la del centro elegido; la liquidación de honorarios es siempre de todos los centros."
+            } else {
+                "Producción: lo que paga el paciente más lo que paga la mutua. La comisión es sobre lo que paga el paciente, salvo en los colaboradores marcados «con mutua»."
+            },
+        );
+        let tbl = Table::new("prod", vec![("Colaborador", 150.0), ("Actos", 64.0), ("Paciente", 110.0), ("Mutua", 100.0), ("Total", 110.0), ("Comisión", 130.0), ("A liquidar", 110.0), ("", 200.0)]);
         tbl.header(ui);
-        for (i, (n, count, prod, liq, col)) in rows.iter().enumerate() {
-            let c = app.db.collaborators.get(i);
-            let pct = c.map(|c| c.commission_pct).unwrap_or(0.0);
-            let lab = if c.is_some_and(|c| c.deduct_lab) { " − lab." } else { "" };
-            let r = tbl.row(ui, i, false, &[cell(n), cell(count.to_string()), cell(money(*prod)), cell(format!("{pct:.0} %{lab}")), cellc(money(*liq), ACCENT), cell("")]);
-            let bar_r = egui::Rect::from_min_size(pos2(r.rect.min.x + 680.0, r.rect.center().y - 6.0), vec2(340.0 * (*prod / max) as f32, 12.0));
+        let k = tbl.scale(ui);
+        for (i, (n, prod, liq, pct, col)) in rows.iter().enumerate() {
+            let fee = if by_center { "—".to_string() } else { money(*liq) };
+            let r = tbl.row(ui, i, false, &[cell(n), cell(prod.acts.to_string()), cell(prod.patient.to_string()), cell(prod.insurer.to_string()), cell(prod.total().to_string()), cell(pct), cellc(fee, ACCENT), cell("")]);
+            let x0 = r.rect.min.x + 14.0 + k * (150.0 + 64.0 + 110.0 + 100.0 + 110.0 + 130.0 + 110.0);
+            let bar_r = egui::Rect::from_min_size(pos2(x0, r.rect.center().y - 6.0), vec2(((r.rect.max.x - x0 - 8.0).max(0.0)) * (prod.total().eur() / max) as f32, 12.0));
             ui.painter().rect_filled(bar_r, CornerRadius::same(4), rgb(*col));
         }
-        let tp: f64 = rows.iter().map(|r| r.2).sum();
-        let tl: f64 = rows.iter().map(|r| r.3).sum();
+        let total: crate::cents::Cents = rows.iter().map(|r| r.1.total()).sum();
+        let fees: f64 = rows.iter().map(|r| r.2).sum();
         ui.add_space(6.0);
-        ui.label(RichText::new(format!("Producción total {} · honorarios {} · margen clínica {}", money(tp), money(tl), money(tp - tl))).family(crate::theme::sb()));
+        if by_center {
+            ui.label(RichText::new(format!("Producción del centro {total}")).family(crate::theme::sb()));
+        } else {
+            ui.label(RichText::new(format!("Producción total {} · honorarios {} · margen clínica {}", total, money(fees), money(total.eur() - fees))).family(crate::theme::sb()));
+        }
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             ui.label("🖨 Imprimir liquidación de:");
@@ -160,29 +224,114 @@ fn production(app: &mut App, ui: &mut Ui) {
 
 fn monthly(app: &mut App, ui: &mut Ui) {
     let today = app.today;
-    let months: Vec<(i32, u32)> = (0..12)
+    let center = app.lists.report_center;
+    let data: Vec<(String, f64, f64)> = (0..12)
         .rev()
         .map(|i| {
-            let d = add_months(chrono::NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap(), 0);
-            let total = d.year() * 12 + d.month0() as i32 - i;
-            (total.div_euclid(12), total.rem_euclid(12) as u32 + 1)
-        })
-        .collect();
-    let data: Vec<(String, f64, f64)> = months
-        .iter()
-        .map(|(y, m)| {
-            let cob: f64 = app.db.payments.iter().filter(|p| p.date.year() == *y && p.date.month() == *m).map(|p| p.amount).sum();
-            let prod: f64 = app.db.entries.iter().filter(|e| e.state == TxState::Realizado && e.date.year() == *y && e.date.month() == *m).map(|e| e.amount()).sum();
-            (format!("{} {}", &month_es(*m)[..3], y % 100), cob, prod)
+            let total = today.year() * 12 + today.month0() as i32 - i;
+            let (y, m) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
+            let first = chrono::NaiveDate::from_ymd_opt(y, m, 1).unwrap();
+            let last = add_months(first, 1) - chrono::Duration::days(1);
+            let f = Filter { center, ..Filter::period(first, last) };
+            (format!("{} {}", &month_es(m)[..3], y % 100), app.db.report_collected(&f).net.eur(), app.db.report_production(&f).total().eur())
         })
         .collect();
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Ingresos (cobros) y producción de los últimos 12 meses");
+        muted(ui, "Cobrado: neto de anulaciones y devoluciones. Producido: lo que paga el paciente más lo que paga la mutua.");
         chart(ui, &data, 300.0);
         ui.horizontal(|ui| {
             pill(ui, "■ Cobrado", ACCENT);
             pill(ui, "■ Producido", INFO);
+        });
+    });
+}
+
+/// Resumen económico del periodo, con qué entra en cada total.
+fn summary(app: &mut App, ui: &mut Ui) {
+    let f = filter(app);
+    let c = app.db.report_collected(&f);
+    let p = app.db.report_production(&f);
+    let inv = app.db.report_invoiced(&f);
+    let debt = app.db.report_debt(f.to);
+    let ins = app.db.report_insurers(&f);
+    let w = kpi_w(ui, 4);
+    ui.horizontal(|ui| {
+        kpi(ui, w, "Cobrado (neto)", &c.net.to_string(), &format!("{} movimientos", c.count), ACCENT);
+        ui.add_space(4.0);
+        kpi(ui, w, "Producción", &p.total().to_string(), &format!("{} actos", p.acts), INFO);
+        ui.add_space(4.0);
+        kpi(ui, w, "Facturado (neto)", &inv.net.to_string(), &format!("{} facturas · {} rectificativas", inv.invoices, inv.rectifying), OK);
+        ui.add_space(4.0);
+        kpi(ui, w, &format!("Deuda a {}", fmt_date(f.to)), &debt.owed.to_string(), &format!("{} pacientes", debt.debtors), DANGER);
+    });
+    ui.add_space(8.0);
+    let line = |ui: &mut Ui, label: &str, v: crate::cents::Cents| {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            right_aligned(ui, |ui| {
+                ui.label(RichText::new(v.to_string()).family(crate::theme::sb()));
+            });
+        });
+    };
+    let half = (ui.available_width() - 12.0) / 2.0;
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, "Cobrado");
+                muted(ui, "Cobros con fecha en el periodo (y del centro elegido). Las anulaciones y devoluciones restan el día en que se hacen. El profesional no cuenta: los cobros no son de un profesional.");
+                for (m, v) in c.by_method.iter().filter(|(m, v)| !v.is_zero() || crate::informes::METHODS[..5].contains(&m.as_str())) {
+                    line(ui, m, *v);
+                }
+                ui.separator();
+                line(ui, "Cobros", c.charged);
+                line(ui, "Anulaciones", c.cancelled);
+                line(ui, "Devoluciones y recibos devueltos", c.returned);
+                line(ui, "Neto", c.net);
+            });
+            ui.add_space(8.0);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, "Facturado");
+                muted(ui, "Facturas con fecha de expedición en el periodo; las rectificativas, en negativo. Las facturas no son de un centro ni de un profesional.");
+                line(ui, &format!("{} facturas", inv.invoices), inv.issued);
+                line(ui, &format!("{} rectificativas", inv.rectifying), inv.rectified);
+                line(ui, "Base imponible", inv.base);
+                line(ui, "IVA", inv.vat);
+                line(ui, "Neto", inv.net);
+            });
+        });
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, "Producción");
+                muted(ui, "Tratamientos realizados con fecha en el periodo, en el centro donde se hicieron y del profesional elegido. Lo previsto no entra.");
+                line(ui, "Lo que paga el paciente", p.patient);
+                line(ui, "Lo que paga la mutua (baremo)", p.insurer);
+                line(ui, "Total", p.total());
+            });
+            ui.add_space(8.0);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, "Mutuas");
+                muted(ui, "Liquidaciones con fecha en el periodo, cobradas en el periodo, pendientes de cobro hoy y baremo de actos del periodo aún sin liquidar.");
+                line(ui, "Liquidado", ins.claimed);
+                line(ui, "Cobrado de las mutuas", ins.collected);
+                line(ui, "Pendiente de cobro", ins.pending);
+                line(ui, "Sin liquidar todavía", ins.unclaimed);
+            });
+            ui.add_space(8.0);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, &format!("Deuda a {}", fmt_date(f.to)));
+                muted(ui, "Por paciente, lo realizado hasta ese día menos lo cobrado hasta ese día. Los anticipos no restan de la deuda.");
+                line(ui, &format!("Deben ({} pacientes)", debt.debtors), debt.owed);
+                line(ui, "Saldo a favor de pacientes", debt.credit);
+            });
         });
     });
 }

@@ -91,6 +91,7 @@ impl Db {
             phone: format!("600 100 00{id}"),
             centers: vec![],
             deduct_lab: false,
+            commission_on_insurer: false,
             hours: None,
         };
         let collaborators = vec![

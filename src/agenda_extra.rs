@@ -157,14 +157,22 @@ impl Db {
         round2(self.lab_works.iter().filter(|w| w.entry_id == Some(entry_id)).map(|w| w.cost).sum())
     }
 
-    /// Liquidación de un colaborador: sus tratamientos realizados, lo producido,
-    /// el laboratorio que se le descuenta (0 si no se le descuenta) y los honorarios.
+    /// Lo que cuenta un acto para la comisión de quien lo hizo: lo que paga
+    /// el paciente y, si el colaborador lo tiene marcado, también la mutua.
+    pub fn commission_amount(&self, e: &MedEntry) -> f64 {
+        let insurer = self.doctor(e.doctor_id).is_some_and(|d| d.commission_on_insurer);
+        if insurer { round2(e.amount() + self.insurer_part(e).eur()) } else { e.amount() }
+    }
+
+    /// Liquidación de un colaborador: sus tratamientos realizados, lo producido
+    /// que cuenta para su comisión (ver `commission_amount`), el laboratorio
+    /// que se le descuenta (0 si no se le descuenta) y los honorarios.
     pub fn settlement(&self, doctor_id: u32, from: NaiveDate, to: NaiveDate) -> (Vec<&MedEntry>, f64, f64, f64) {
         let d = self.doctor(doctor_id);
         let pct = d.map(|d| d.commission_pct).unwrap_or(0.0);
         let mut v: Vec<&MedEntry> = self.entries.iter().filter(|e| e.doctor_id == doctor_id && e.state == TxState::Realizado && e.date >= from && e.date <= to).collect();
         v.sort_by_key(|e| (e.date, e.id));
-        let prod: f64 = round2(v.iter().map(|e| e.amount()).sum());
+        let prod: f64 = round2(v.iter().map(|e| self.commission_amount(e)).sum());
         let lab = if d.is_some_and(|d| d.deduct_lab) { round2(v.iter().map(|e| self.lab_cost_of(e.id)).sum()) } else { 0.0 };
         (v, prod, lab, round2((prod - lab) * pct / 100.0))
     }
@@ -188,7 +196,7 @@ impl Db {
                 } else {
                     String::new()
                 };
-                format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>{lab_cell}<td class='n'>{}</td></tr>", fmt_date(e.date), esc(&self.patient_name(e.patient_id)), esc(&e.description), teeth.join("-"), esc(&money(e.amount())))
+                format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>{lab_cell}<td class='n'>{}</td></tr>", fmt_date(e.date), esc(&self.patient_name(e.patient_id)), esc(&e.description), teeth.join("-"), esc(&money(self.commission_amount(e))))
             })
             .collect();
         let cols = if deduct { 5 } else { 4 };
@@ -202,7 +210,8 @@ impl Db {
         } else {
             String::new()
         };
-        let basis = if deduct { " sobre la producción menos el laboratorio" } else { "" };
+        let paid_by = if d.as_ref().is_some_and(|d| d.commission_on_insurer) { "lo que pagan el paciente y la mutua" } else { "lo que paga el paciente" };
+        let basis = if deduct { format!(" sobre {paid_by}, menos el laboratorio") } else { format!(" sobre {paid_by}") };
         format!(
             "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Liquidación</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:820px;margin:32px auto;color:#1e293b}}h1{{font-size:21px}}table{{width:100%;border-collapse:collapse;margin-top:12px}}th{{text-align:left;font-size:12px;color:#475569;background:#eef3f8;padding:6px}}td{{padding:6px;border-bottom:1px solid #e2e8f0;font-size:13px}}.n{{text-align:right}}.tot td{{font-weight:700;border:none;font-size:15px}}</style></head><body><b>{clinic}</b><h1>Liquidación de honorarios · {name}</h1><p>Periodo del {from} al {to} · Nº colegiado {lic} · Comisión {pct:.0} %{basis}</p><table><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Piezas</th>{lab_head}<th class='n'>Importe</th></tr>{lines}<tr class='tot'><td colspan='{cols}' class='n'>Producción</td><td class='n'>{prod}</td></tr>{lab_rows}<tr class='tot'><td colspan='{cols}' class='n'>Honorarios a liquidar</td><td class='n'>{fee}</td></tr></table><p style='margin-top:50px'>Conforme: ______________________</p></body></html>",
             clinic = esc(&self.config.name),

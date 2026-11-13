@@ -208,6 +208,8 @@ impl App {
         // ventana, o el servidor de datos, los abre sin guardar)
         let local_mode = persist && !crate::shared::shared() && !crate::shared::remote_mode();
         let lock = local_mode.then(|| crate::local::lock(&Db::path()));
+        // aviso si el servidor tiene otra zona horaria
+        let mut clock: Option<String> = None;
         let (mut db, mut err) = match (&lock, persist) {
             (_, false) => (Db::sample(today()), None),
             (Some(Err(_)), true) => Db::load_from(&Db::path(), false),
@@ -256,6 +258,7 @@ impl App {
             persist = false;
             match crate::server::connect(&mut r, &crate::shared::machine_name(), if local { 20 } else { 1 }) {
                 Ok(info) => {
+                    clock = crate::server::clock_warning(info.utc_offset, chrono::Local::now().offset().local_minus_utc());
                     // puesto dado de alta con una versión anterior: apunta ahora la huella,
                     // ya comprobada (el servidor ha demostrado saber la clave de la clínica)
                     if st.server_pin.is_empty() && !r.pinned().is_empty() {
@@ -326,6 +329,9 @@ impl App {
             tools: screens::herramientas::ToolsState::default(),
             bank: screens::bancos::BankUi::default(),
         };
+        if let Some(w) = clock {
+            app.toast = Some((w, 15.0, crate::theme::WARN));
+        }
         // En modo captura se entra directamente como Recepción.
         if app.screenshot.is_some() {
             app.user_id = app.db.users.iter().find(|u| u.profile == crate::users::Profile::Recepcion).map(|u| u.id);
@@ -784,7 +790,10 @@ impl App {
                 self.offline = None;
                 self.save_error = None;
                 self.user_id = None;
-                self.notify("Conectado con el servidor de la clínica.");
+                match crate::server::clock_warning(info.utc_offset, chrono::Local::now().offset().local_minus_utc()) {
+                    Some(w) => self.toast = Some((w, 15.0, crate::theme::WARN)),
+                    None => self.notify("Conectado con el servidor de la clínica."),
+                }
             }
             Err(e) => self.offline = Some(e),
         }

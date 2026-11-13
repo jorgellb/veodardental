@@ -20,15 +20,19 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad de las áreas 1 y 2 | E-008 | `7c55ab2` |
 | T-F1-A3: odontograma, periodontograma e historial | E-009 | `dee610b` |
 | T-F1-A4: bancos y conciliación | E-010 | `d6f2e0a` |
+| T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-A5: informes.
-   - Cuadrar los informes de forma independiente con cobros, caja, facturas y rectificativas.
-   - Comprobar devoluciones, deuda, mutuas, fechas de corte, filtros por centro y profesional, y zona horaria.
-   - Definir qué incluye cada total.
-2. Después, áreas 6 a 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+1. T-F1-A6: comunicaciones.
+   - Consentimiento por finalidad, bajas, horarios y festivos.
+   - Reintentos, fallos parciales, colas y duplicados.
+   - Plantillas y trazabilidad.
+   - Resultados inciertos del proveedor.
+2. Después, áreas 7 a 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir
+- Los totales económicos se calculan en `src/informes.rs` (`Filter` y `report_*`). Las pantallas no deben sumar por su cuenta.
 - Las operaciones que no deben hacerse dos veces van como `ChainOp` en src/app.rs, con `run`, `json`, `from_json` y `needs`; el servidor las ejecuta con los datos al día. El banco ya va así (D-09).
 - Si la compilación falla al enlazar con «undefined hidden symbol» (caché incremental dañada por un corte), basta con `tools/aislado.sh cargo clean -p veodardental`.
 - `src/firmado.rs` protege lo firmado y lo emitido en el servidor (`protect_json`, para los campos «documents», «health» y «prescriptions») y en la carpeta compartida (`Db::keep_signed`). Si aparecen más registros inmutables, hay que añadirlos ahí.

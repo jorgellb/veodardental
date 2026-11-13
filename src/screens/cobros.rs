@@ -222,14 +222,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(8.0);
     let list = filtered(app);
-    let total: f64 = list.iter().map(|p| p.amount).sum();
-    let w = kpi_w(ui, PAY_METHODS.len() + 1);
+    let total: crate::cents::Cents = list.iter().map(|p| crate::cents::Cents::from_eur(p.amount)).sum();
+    let by_method = by_method(&list);
+    let w = kpi_w(ui, by_method.len() + 1);
     ui.horizontal(|ui| {
-        kpi(ui, w, "Total cobrado", &money(total), &format!("{} cobros", list.len()), ACCENT);
-        for m in PAY_METHODS {
+        kpi(ui, w, "Total cobrado", &total.to_string(), &format!("{} cobros", list.len()), ACCENT);
+        for (m, s) in &by_method {
             ui.add_space(4.0);
-            let s: f64 = list.iter().filter(|p| p.method == m).map(|p| p.amount).sum();
-            kpi(ui, w, m, &money(s), "", INFO);
+            kpi(ui, w, if *m == "Domiciliación" { "Remesas" } else { m }, &s.to_string(), "", INFO);
         }
     });
     ui.add_space(8.0);
@@ -254,6 +254,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// Lo cobrado por forma de pago: las de la clínica y, si hay, lo cobrado por
+/// remesa (domiciliación). Suman el total de la lista.
+fn by_method(list: &[Payment]) -> Vec<(&'static str, crate::cents::Cents)> {
+    crate::informes::METHODS.iter().map(|m| (*m, list.iter().filter(|p| p.method == *m).map(|p| crate::cents::Cents::from_eur(p.amount)).sum::<crate::cents::Cents>())).filter(|(m, s)| PAY_METHODS.contains(m) || !s.is_zero()).collect()
+}
+
 fn filtered(app: &App) -> Vec<Payment> {
     let mut v: Vec<Payment> = app.db.payments.iter().filter(|p| p.date.date() >= app.lists.pay_from && p.date.date() <= app.lists.pay_to).filter(|p| app.lists.pay_method.as_ref().map(|m| &p.method == m).unwrap_or(true)).cloned().collect();
     v.sort_by_key(|p| std::cmp::Reverse(p.date));
@@ -270,4 +276,26 @@ fn export_csv(app: &App) -> Result<String, String> {
     }
     std::fs::write(&path, s).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Antes las casillas por forma de pago eran solo las cinco de la clínica:
+    /// lo cobrado por remesa entraba en el total pero en ninguna casilla, y las
+    /// casillas no sumaban el total.
+    #[test]
+    fn the_payment_methods_add_up_to_the_total() {
+        let mut db = Db::sample(chrono::NaiveDate::from_ymd_opt(2026, 11, 6).unwrap());
+        db.add_payment(101, 50.0, "Domiciliación", "Cuota remesa");
+        let list: Vec<Payment> = db.payments.to_vec();
+        let total: crate::cents::Cents = list.iter().map(|p| crate::cents::Cents::from_eur(p.amount)).sum();
+        let shown = by_method(&list);
+        assert!(shown.iter().any(|(m, s)| *m == "Domiciliación" && s.0 >= 5000));
+        assert_eq!(shown.iter().map(|x| x.1).sum::<crate::cents::Cents>(), total);
+        // sin remesas, solo las cinco de siempre
+        let plain: Vec<Payment> = list.into_iter().filter(|p| p.method != "Domiciliación").collect();
+        assert_eq!(by_method(&plain).len(), PAY_METHODS.len());
+    }
 }

@@ -129,6 +129,10 @@ pub struct Collaborator {
     /// de sus tratamientos.
     #[serde(default)]
     pub deduct_lab: bool,
+    /// La comisión cuenta también lo que paga la mutua por sus actos (el
+    /// baremo), no solo lo que paga el paciente. Sin marcar, como siempre.
+    #[serde(default)]
+    pub commission_on_insurer: bool,
     /// Días y horas en que pasa consulta (vacío: el horario de la clínica).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hours: Option<crate::horario::Week>,
@@ -287,6 +291,10 @@ pub struct MedEntry {
     /// de versiones anteriores): la tarifa actual del paciente.
     #[serde(default)]
     pub tariff_id: u32,
+    /// Centro donde se hizo: el del puesto al apuntarlo o al marcarlo como
+    /// hecho. 0 = de antes de guardarse (cuenta como el centro principal).
+    #[serde(default)]
+    pub center_id: u32,
 }
 
 impl MedEntry {
@@ -1658,6 +1666,7 @@ impl Db {
             odg,
             invoice_id: None,
             tariff_id: tariff,
+            center_id: self.config.current_center,
         });
         if state == TxState::Realizado {
             self.after_realized(id);
@@ -1715,9 +1724,12 @@ impl Db {
     pub fn realize_entry(&mut self, id: u32, date: NaiveDate, doctor_id: u32) {
         let pid = self.entries.iter().find(|e| e.id == id).map(|e| e.patient_id);
         let tariff = pid.and_then(|p| self.patient(p)).map(|p| p.tariff_id);
+        let center = self.config.current_center;
         if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
             e.state = TxState::Realizado;
             e.date = date;
+            // donde se hace (un presupuesto se acepta en un centro y se hace en otro)
+            e.center_id = center;
             // la compañía que cubre al paciente el día que se hace
             if let Some(t) = tariff {
                 e.tariff_id = t;
@@ -1885,6 +1897,7 @@ impl Db {
                 odg: l.odg,
                 invoice_id: None,
                 tariff_id: b.tariff_id,
+                center_id: self.config.current_center,
             });
         }
         // Recall de seguimiento cancelado al aceptar.
