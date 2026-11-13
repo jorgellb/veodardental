@@ -16,6 +16,10 @@ use std::time::Duration;
 /// Puerto local (solo este ordenador) por el que llegan los avisos de llamada.
 pub const CALL_PORT: u16 = 8897;
 const KEEP: usize = 1000;
+/// La misma llamada avisada otra vez antes de estos segundos es repetida.
+pub const REPEAT_SECS: i64 = 15;
+/// Avisos de llamada por minuto como máximo (más es una avalancha).
+pub const MAX_PER_MINUTE: usize = 30;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CallLog {
@@ -102,7 +106,13 @@ impl Db {
     }
 
     /// Apunta la llamada en el registro y devuelve su id.
+    /// Si la centralita avisa otra vez de la misma llamada (en menos de
+    /// [`REPEAT_SECS`] segundos), es la misma: no se apunta dos veces.
     pub fn log_call(&mut self, number: &str, taken_by: &str) -> u32 {
+        let t = now();
+        if let Some(c) = self.calls.iter().rev().find(|c| same_number(&c.number, number) && (t - c.when).num_seconds().abs() <= REPEAT_SECS) {
+            return c.id;
+        }
         let id = self.new_id();
         let patients = self.patients_by_phone(number);
         let other = if patients.is_empty() { self.other_caller(number).unwrap_or_default() } else { String::new() };
@@ -144,12 +154,21 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Número que viene en la dirección (`numero`, `number`, `n` o `caller`).
+/// ¿Parece un número de teléfono? Cifras (de 3 a 17, con el prefijo «00»
+/// internacional), separadores habituales y un «+» delante; nada más.
+pub fn plausible_number(n: &str) -> bool {
+    let t = n.trim();
+    let digits = t.chars().filter(|c| c.is_ascii_digit()).count();
+    (3..=17).contains(&digits) && t.chars().enumerate().all(|(i, c)| c.is_ascii_digit() || matches!(c, ' ' | '-' | '.' | '(' | ')') || (c == '+' && i == 0))
+}
+
+/// Número que viene en la dirección (`numero`, `number`, `n` o `caller`), si
+/// parece un número de teléfono.
 pub fn number_from_url(url: &str) -> Option<String> {
     let q = url.split_once('?')?.1;
     q.split('&').find_map(|kv| {
         let (k, v) = kv.split_once('=')?;
-        matches!(k, "numero" | "number" | "n" | "caller" | "telefono").then(|| percent_decode(v).trim().to_string()).filter(|v| !v.is_empty())
+        matches!(k, "numero" | "number" | "n" | "caller" | "telefono").then(|| percent_decode(v).trim().to_string()).filter(|v| plausible_number(v))
     })
 }
 
@@ -161,9 +180,28 @@ pub fn listen(port: u16, wake: impl Fn() + Send + 'static) -> Result<(u16, Recei
     let real = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(port);
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        let mut recent: std::collections::VecDeque<std::time::Instant> = std::collections::VecDeque::new();
         for req in server.incoming_requests() {
             let url = req.url().to_string();
             let h = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap();
+            // una página web abierta en el navegador (otro sitio) no puede avisar
+            // de llamadas: el navegador lo dice en «Sec-Fetch-Site»; la centralita,
+            // el programa de teléfono o la dirección escrita a mano, no
+            let site = req.headers().iter().find(|x| x.field.equiv("Sec-Fetch-Site")).map(|x| x.value.as_str().to_ascii_lowercase());
+            if site.as_deref().is_some_and(|s| s != "none" && s != "same-origin") {
+                let _ = req.respond(tiny_http::Response::from_string("no").with_status_code(403).with_header(h));
+                continue;
+            }
+            // una avalancha de avisos se corta (no tapa las llamadas de verdad)
+            let now_i = std::time::Instant::now();
+            while recent.front().is_some_and(|t| now_i.duration_since(*t).as_secs() >= 60) {
+                recent.pop_front();
+            }
+            if recent.len() >= MAX_PER_MINUTE {
+                let _ = req.respond(tiny_http::Response::from_string("demasiados avisos").with_status_code(429).with_header(h));
+                continue;
+            }
+            recent.push_back(now_i);
             match (url.starts_with("/llamada"), number_from_url(&url)) {
                 (true, Some(n)) => {
                     let ok = tx.send(n).is_ok();
@@ -265,6 +303,47 @@ mod tests {
         assert_eq!(number_from_url("/llamada?x=1&n=915551030").as_deref(), Some("915551030"));
         assert_eq!(number_from_url("/llamada?numero="), None);
         assert_eq!(number_from_url("/llamada"), None);
+    }
+
+    /// Solo números de teléfono (no texto ni cifras de más o de menos), y la
+    /// misma llamada avisada dos veces seguidas se apunta una vez.
+    #[test]
+    fn only_real_numbers_and_no_repeated_calls() {
+        assert_eq!(number_from_url("/llamada?numero=%3Cscript%3E"), None);
+        assert_eq!(number_from_url("/llamada?numero=12"), None);
+        assert_eq!(number_from_url(&format!("/llamada?numero={}", "6".repeat(25))), None);
+        assert_eq!(number_from_url("/llamada?numero=600%20111%20222").as_deref(), Some("600 111 222"));
+        let mut d = db();
+        let n = d.calls.len();
+        let a = d.log_call("600111222", "Recepción");
+        let b = d.log_call("+34 600 111 222", "Recepción");
+        assert_eq!((a, d.calls.len()), (b, n + 1), "el mismo aviso repetido");
+        d.calls.iter_mut().find(|c| c.id == a).unwrap().when -= chrono::Duration::seconds(REPEAT_SECS + 1);
+        assert_ne!(d.log_call("600111222", "Recepción"), a, "pasado un rato, es otra llamada");
+    }
+
+    /// Una página web abierta en el navegador no puede hacer saltar avisos
+    /// de llamada (la petición lleva «Sec-Fetch-Site: cross-site»), y una
+    /// avalancha se corta.
+    #[test]
+    fn web_pages_cannot_fake_calls_and_floods_are_cut() {
+        let (port, rx) = listen(0, || {}).unwrap();
+        let get = |extra: Option<(&str, &str)>| {
+            let mut r = ureq::get(&format!("http://127.0.0.1:{port}/llamada?numero=600111222"));
+            if let Some((k, v)) = extra {
+                r = r.set(k, v);
+            }
+            match r.call() {
+                Ok(r) => r.status(),
+                Err(ureq::Error::Status(c, _)) => c,
+                Err(_) => 0,
+            }
+        };
+        assert_eq!(get(Some(("Sec-Fetch-Site", "cross-site"))), 403);
+        assert!(rx.recv_timeout(Duration::from_millis(200)).is_err(), "no llega");
+        assert_eq!(get(Some(("Sec-Fetch-Site", "none"))), 200, "escrita a mano en el navegador, sí");
+        let codes: Vec<u16> = (0..MAX_PER_MINUTE + 2).map(|_| get(None)).collect();
+        assert!(codes.contains(&429), "{codes:?}");
     }
 
     #[test]

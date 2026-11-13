@@ -341,3 +341,17 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 370 pasan, 0 fallan, 10 ignoradas |
+
+## E-017 Área 10: telefonía y laboratorio digital
+- Revisión en `docs/autonomia/revision/area10.md`: 6 defectos demostrados (F1 a F4, L1 y L2). Todas las pruebas nuevas estaban en rojo antes del arreglo:
+  - `phone::tests::only_real_numbers_and_no_repeated_calls`: «<script>» se aceptaba como número.
+  - `phone::tests::web_pages_cannot_fake_calls_and_floods_are_cut`: con `Sec-Fetch-Site: cross-site` devolvía 200.
+  - `lab_order::tests::attachments_too_big_for_an_email_are_left_out`: sin aviso, y el adjunto entraba.
+  - `server::tests::a_lab_work_received_on_two_stations_is_one_expense`: `left: 2, right: 1`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 374 pasan, 0 fallan, 10 ignoradas |

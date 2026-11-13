@@ -6,6 +6,11 @@ use crate::model::{Db, ImageKind, PatientImage, fmt_date, today};
 use crate::stock::LabWork;
 use std::io::Write;
 
+/// Tamaño máximo de los adjuntos de un paquete que se envía por correo (los
+/// servidores de correo suelen admitir unos 25 MB, y el ZIP y la codificación
+/// del correo ocupan algo más).
+pub const MAX_PACKAGE: u64 = 18 * 1024 * 1024;
+
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
@@ -149,9 +154,17 @@ pub fn package(db: &Db, w: &LabWork) -> Result<(Vec<u8>, Vec<String>), String> {
     z.start_file("orden_de_trabajo.html", opt).map_err(|e| e.to_string())?;
     z.write_all(order_html(db, w).as_bytes()).map_err(|e| e.to_string())?;
     let mut warnings = vec![];
+    let mut total: u64 = 0;
     for (k, img) in attached(db, w).iter().enumerate() {
+        // lo que no cabe en un correo no se mete (ni se llega a leer)
+        let size = if img.demo { 0 } else { std::fs::metadata(&img.path).map(|m| m.len()).unwrap_or(0) };
+        if total + size > MAX_PACKAGE {
+            warnings.push(format!("{} no cabe en el correo ({:.0} MB): envíelo por la plataforma o la nube del laboratorio.", attachment_name(k, img), size as f64 / 1_048_576.0));
+            continue;
+        }
         match image_bytes(img) {
             Ok(b) => {
+                total += b.len() as u64;
                 // los STL y DICOM se guardan sin comprimir más (ya ocupan lo suyo)
                 let o = if matches!(img.kind, ImageKind::Escaneo3D | ImageKind::Tac) { SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored) } else { opt };
                 z.start_file(attachment_name(k, img), o).map_err(|e| e.to_string())?;
@@ -211,6 +224,26 @@ mod tests {
         w.notes = "Hombro cervical <1 mm>".into();
         w.attachments = imgs;
         (db, id)
+    }
+
+    /// Un adjunto que no cabe en un correo (un TAC o un escaneado enorme) no
+    /// se mete en el paquete: se avisa para enviarlo por otro medio. No se
+    /// llega a leer.
+    #[test]
+    fn attachments_too_big_for_an_email_are_left_out() {
+        let (mut db, id) = db_with_work();
+        let dir = std::env::temp_dir().join(format!("veodardental_lab_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let big = dir.join("escaneo.stl");
+        std::fs::File::create(&big).unwrap().set_len(MAX_PACKAGE + 1).unwrap();
+        let img = db.new_id();
+        db.images.push(PatientImage { id: img, patient_id: 101, kind: ImageKind::Escaneo3D, date: today(), teeth: vec![36], path: big.display().to_string(), source: "Importada".into(), notes: String::new(), demo: false });
+        db.lab_works.iter_mut().find(|w| w.id == id).unwrap().attachments.push(img);
+        let w = db.lab_works.iter().find(|w| w.id == id).unwrap().clone();
+        let (zip, warnings) = package(&db, &w).unwrap();
+        assert!(warnings.iter().any(|x| x.contains("no cabe")), "{warnings:?}");
+        assert!((zip.len() as u64) < MAX_PACKAGE, "sin el adjunto grande");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

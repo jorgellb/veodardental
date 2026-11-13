@@ -2939,6 +2939,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// Dos puestos marcan a la vez como recibido el mismo trabajo de
+    /// laboratorio: su coste va a Gastos una vez, no dos.
+    #[test]
+    fn a_lab_work_received_on_two_stations_is_one_expense() {
+        let (addr, path, h) = start("CLAVE37");
+        let ra = signed_in(&addr, "CLAVE37", "Recepción 1", 1, "0000");
+        let rb = signed_in(&addr, "CLAVE37", "Recepción 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        a.station = ra.station;
+        let lab = a.suppliers.iter().find(|s| s.is_lab).map(|s| s.id).unwrap();
+        let id = a.new_lab_work(101, None, lab, 7);
+        a.lab_works.iter_mut().find(|w| w.id == id).unwrap().cost = 180.0;
+        a.set_lab_state(id, crate::stock::LabState::Enviado);
+        ra.push(&mut a, &mut sa).unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        b.station = rb.station;
+        a.set_lab_state(id, crate::stock::LabState::Recibido);
+        b.set_lab_state(id, crate::stock::LabState::Recibido);
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let tag = format!("#L{id}");
+        assert_eq!(disk.expenses.iter().filter(|e| e.concept.ends_with(&tag)).count(), 1, "una vez");
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
     #[test]
     fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
         use crate::app::ChainOp;

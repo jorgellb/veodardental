@@ -372,7 +372,9 @@ impl Db {
         if w.cost <= 0.0 || self.expenses.iter().any(|e| e.concept.ends_with(&format!("#L{}", w.id))) {
             return;
         }
-        let id = self.new_id();
+        // el gasto lleva el número del trabajo: si dos puestos lo marcan como
+        // recibido a la vez, crean el mismo registro y queda uno solo
+        let id = if self.expenses.iter().any(|e| e.id == w.id) { self.new_id() } else { w.id };
         // las prótesis dentales a medida de laboratorio están exentas de IVA
         let e = Expense {
             id,

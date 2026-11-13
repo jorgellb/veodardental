@@ -26,15 +26,15 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A8: IA de radiografías | E-014 | `6e2a560` |
 | Revisión de seguridad del área 8 | E-015 | `802798a` |
 | T-F1-A9: cita online y portales | E-016 | `80670ec` |
+| T-F1-A10: telefonía y laboratorio digital | E-017 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-A10: telefonía y laboratorio digital.
-   - Autenticación y límites de las integraciones.
-   - Formatos documentados.
-   - Eventos repetidos o desordenados.
-   - Paquetes grandes, y rutas y archivos maliciosos.
-   - Estados y costes de los trabajos de laboratorio.
-2. Después, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+1. T-F1-11: una prueba que recorra todas las pantallas a 1280×720 y 1280×800 y falle si algo se sale; arreglos y capturas.
+2. T-F1-12a a T-F1-12d:
+   - concurrencia por flujo;
+   - desconexión, reenvío, reinicio y fallo de escritura;
+   - protocolo del servidor con entradas inválidas;
+   - fuzzing con semilla.
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir
