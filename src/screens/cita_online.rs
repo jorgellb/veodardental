@@ -542,11 +542,9 @@ pub fn appt_link_row(app: &mut App, ui: &mut Ui, appt: u32) {
 
 /// Enlace del documento (lo crea si hace falta).
 pub fn doc_url(app: &mut App, doc_id: u32) -> String {
-    let had = app.db.doc_link(doc_id).is_some();
+    // (al enviarlo se renueva su plazo: cambia aunque ya existiera)
     let t = app.db.doc_token(doc_id);
-    if !had {
-        app.changed();
-    }
+    app.changed();
     let base = if app.db.booking.public_url.trim().is_empty() { local_url(app) } else { app.db.booking.public_url.clone() };
     crate::doc_link::link_url(&base, &t)
 }
@@ -703,11 +701,9 @@ pub fn doc_link_row(app: &mut App, ui: &mut Ui, doc_id: u32) {
 
 /// Enlace del presupuesto (lo crea si hace falta).
 pub fn budget_url(app: &mut App, bid: u32) -> String {
-    let had = app.db.budget_link(bid).is_some();
+    // (al enviarlo se renueva su plazo: cambia aunque ya existiera)
     let t = app.db.budget_token(bid);
-    if !had {
-        app.changed();
-    }
+    app.changed();
     let base = if app.db.booking.public_url.trim().is_empty() { local_url(app) } else { app.db.booking.public_url.clone() };
     crate::budget_link::link_url(&base, &t)
 }

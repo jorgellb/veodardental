@@ -80,3 +80,8 @@ Para que dos puestos no envíen el mismo correo, el puesto los reserva antes con
 Quien da por bueno un análisis con IA es un profesional colegiado, con el mismo criterio que para recetar (`collaborator_problem`). El servidor solo acepta su revisión, con su nombre.
 
 El límite de análisis de pago al mes es de 20 por defecto: un uso normal de una clínica pequeña, con un gasto acotado. Se cambia en la configuración y es cosa de la clínica.
+
+## D-17 Caducidad de los enlaces de documentos y presupuestos
+Abren 30 días desde la última vez que la clínica los envía (copiar, enviar por correo o abrir el enlace cuenta como envío), o desde que se firman o se deciden. Un presupuesto pendiente abre además mientras está en plazo.
+
+Reenviar un enlace sin firmar ni decidir lo renueva con el mismo código, así que el paciente no recibe varios enlaces distintos. Es un equilibrio entre dar tiempo al paciente y no dejar datos personales abiertos indefinidamente; el plazo se puede cambiar en `portal::LINK_DAYS`.

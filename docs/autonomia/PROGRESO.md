@@ -24,14 +24,17 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A6: comunicaciones | E-012 | `cdddd05` |
 | T-F1-A7: ortodoncia | E-013 | `d0c52f4` |
 | T-F1-A8: IA de radiografías | E-014 | `6e2a560` |
+| Revisión de seguridad del área 8 | E-015 | `802798a` |
+| T-F1-A9: cita online y portales | E-016 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-A9: cita online y portales.
-   - Tokens y caducidad; acceso por paciente y responsable.
-   - Enumeración, intentos repetidos y abuso.
-   - Cancelaciones y reservas concurrentes; horario validado en el servidor.
-   - Uso desde el móvil.
-2. Después, área 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+1. T-F1-A10: telefonía y laboratorio digital.
+   - Autenticación y límites de las integraciones.
+   - Formatos documentados.
+   - Eventos repetidos o desordenados.
+   - Paquetes grandes, y rutas y archivos maliciosos.
+   - Estados y costes de los trabajos de laboratorio.
+2. Después, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir

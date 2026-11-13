@@ -327,3 +327,17 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 368 pasan, 0 fallan, 10 ignoradas |
+
+## E-016 Área 9: cita online y portales
+- Revisión en `docs/autonomia/revision/area9.md`: 1 defecto demostrado (P1). El resto de comprobaciones, revisadas sin defecto, con las pruebas existentes citadas.
+- **P1, demostrado en rojo antes del arreglo:** las dos pruebas fallaban con «caducado». A los 31 días, el enlace seguía publicado.
+- **Pruebas nuevas:**
+  - `doc_link::tests::document_links_expire_and_resending_renews_them`
+  - `budget_link::tests::budget_links_expire`
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 370 pasan, 0 fallan, 10 ignoradas |

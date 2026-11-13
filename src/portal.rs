@@ -46,6 +46,11 @@ pub fn new_token() -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+/// Días que abre un enlace de documento o de presupuesto desde la última vez
+/// que se envía, se firma o se decide. Después ya no abre (lo que muestra son
+/// datos del paciente).
+pub const LINK_DAYS: i64 = 30;
+
 /// Un código con el formato correcto (32 cifras hexadecimales).
 pub fn valid_token(t: &str) -> bool {
     t.len() == 32 && t.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))

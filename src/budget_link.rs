@@ -126,8 +126,13 @@ impl Db {
         Some(link_url(&base, &t))
     }
 
+    /// Enlace del presupuesto para enviarlo (o volver a enviarlo): el mismo
+    /// código, que vuelve a valer `LINK_DAYS` días si aún no está decidido.
     pub fn budget_token(&mut self, bid: u32) -> String {
-        if let Some(l) = self.budget_link(bid) {
+        if let Some(l) = self.blink_mut(bid) {
+            if l.decided.is_none() {
+                l.created = Some(now());
+            }
             return l.token.clone();
         }
         let token = crate::portal::new_token();
@@ -368,13 +373,20 @@ pub struct PubBudget {
     pub viewed: bool,
 }
 
-pub fn publish_budgets(db: &Db) -> HashMap<String, PubBudget> {
+pub fn publish_budgets(db: &Db, day: NaiveDate) -> HashMap<String, PubBudget> {
     let mut m = HashMap::new();
     if !db.booking.budgets {
         return m;
     }
     for l in &db.budget_links {
         let Some(b) = db.budgets.iter().find(|b| b.id == l.budget_id) else { continue };
+        // abre `LINK_DAYS` días desde que se envió o se decidió y, si sigue
+        // pendiente, mientras el presupuesto esté en plazo
+        let last = [l.created, l.decided].into_iter().flatten().map(|t| t.date()).max().unwrap_or(b.date);
+        let open_offer = l.decided.is_none() && b.state == BudgetState::Pendiente && day <= b.expires();
+        if day > last + chrono::Duration::days(crate::portal::LINK_DAYS) && !open_offer {
+            continue;
+        }
         let first = db.patient(b.patient_id).map(|p| p.first_name.clone()).unwrap_or_default();
         m.insert(
             l.token.clone(),
@@ -454,6 +466,28 @@ mod tests {
 
     fn sig() -> Strokes {
         vec![(0..20).map(|i| [i as f32 / 20.0, 0.5 + (i as f32 / 3.0).sin() * 0.3]).collect()]
+    }
+
+    /// Un enlace de presupuesto vale mientras el presupuesto está pendiente y
+    /// en plazo (y al menos 30 días desde que se envía); decidido, 30 días más
+    /// para verlo. Después ya no abre.
+    #[test]
+    fn budget_links_expire() {
+        let mut db = Db::sample(today());
+        let bid = pending(&mut db);
+        let token = db.budget_token(bid);
+        let open = |db: &Db, day| publish_budgets(db, day).contains_key(&token);
+        let expires = db.budgets.iter().find(|b| b.id == bid).unwrap().expires();
+        let last = expires.max(today() + chrono::Duration::days(30));
+        assert!(open(&db, last));
+        assert!(!open(&db, last + chrono::Duration::days(1)), "caducado");
+        // aceptado: se puede ver 30 días desde la decisión
+        let b = db.budgets.iter().find(|b| b.id == bid).unwrap().clone();
+        let hash = budget_hash(&db, &b);
+        db.budget_remote_accept(bid, "Ana García López", "", sig(), 0, &hash, "1.2.3.4").unwrap();
+        db.budget_links.iter_mut().find(|l| l.budget_id == bid).unwrap().created = Some(now() - chrono::Duration::days(400));
+        assert!(open(&db, today() + chrono::Duration::days(30)));
+        assert!(!open(&db, today() + chrono::Duration::days(31)));
     }
 
     #[test]

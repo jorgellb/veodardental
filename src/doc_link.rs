@@ -57,8 +57,14 @@ impl Db {
         self.doc_links.iter().find(|l| l.doc_id == doc_id)
     }
 
+    /// Enlace del documento para enviarlo (o volver a enviarlo): el mismo
+    /// código, que vuelve a valer `LINK_DAYS` días si aún no está firmado.
     pub fn doc_token(&mut self, doc_id: u32) -> String {
-        if let Some(l) = self.doc_link(doc_id) {
+        let signed = self.documents.iter().any(|d| d.id == doc_id && d.signed);
+        if let Some(l) = self.dlink_mut(doc_id) {
+            if !signed && l.signed.is_none() {
+                l.created = Some(now());
+            }
             return l.token.clone();
         }
         let token = crate::portal::new_token();
@@ -224,13 +230,18 @@ pub struct PubDoc {
     pub representative: String,
 }
 
-pub fn publish_docs(db: &Db) -> HashMap<String, PubDoc> {
+pub fn publish_docs(db: &Db, day: NaiveDate) -> HashMap<String, PubDoc> {
     let mut m = HashMap::new();
     if !db.booking.docs {
         return m;
     }
     for l in &db.doc_links {
         let Some(d) = db.documents.iter().find(|d| d.id == l.doc_id) else { continue };
+        // abre `LINK_DAYS` días desde que se envió, se firmó o se rechazó
+        let last = [l.created, l.signed, l.declined].into_iter().flatten().map(|t| t.date()).max().unwrap_or(d.date);
+        if day > last + chrono::Duration::days(crate::portal::LINK_DAYS) {
+            continue;
+        }
         let doctor = db.doctor(d.doctor_id).map(|c| if c.license.trim().is_empty() || c.license == "-" { c.name.clone() } else { format!("{} (nº col. {})", c.name, c.license) }).unwrap_or_default();
         m.insert(
             l.token.clone(),
@@ -357,6 +368,32 @@ mod tests {
     }
 
     /// Un menor de 16 años no firma él mismo por internet: firma su representante.
+    /// Un enlace de documento vale 30 días desde que se envía (o desde que se
+    /// firma por internet): después ya no abre. Volver a enviarlo lo renueva.
+    #[test]
+    fn document_links_expire_and_resending_renews_them() {
+        let mut db = Db::sample(today());
+        let tid = db.doc_templates.iter().find(|t| t.name.contains("extracción")).map(|t| t.id).unwrap();
+        let id = db.new_document(101, tid, &[36]).unwrap();
+        let token = db.doc_token(id);
+        let open = |db: &Db, day| publish_docs(db, day).contains_key(&token);
+        assert!(open(&db, today() + chrono::Duration::days(30)));
+        assert!(!open(&db, today() + chrono::Duration::days(31)), "caducado");
+        // se lo vuelven a enviar: vale otros 30 días
+        db.doc_links.iter_mut().find(|l| l.doc_id == id).unwrap().created = Some(now() - chrono::Duration::days(40));
+        assert!(!open(&db, today()));
+        assert_eq!(db.doc_token(id), token, "el mismo enlace");
+        assert!(open(&db, today()));
+        // firmado por internet: se puede ver 30 días desde la firma
+        let d = db.documents.iter().find(|d| d.id == id).unwrap().clone();
+        db.doc_remote_sign(id, "Carlos Martínez Sanz", "", sig(), &doc_hash(&d), "1.2.3.4").unwrap();
+        db.doc_links.iter_mut().find(|l| l.doc_id == id).unwrap().created = Some(now() - chrono::Duration::days(90));
+        assert!(open(&db, today() + chrono::Duration::days(30)));
+        assert!(!open(&db, today() + chrono::Duration::days(31)));
+        db.doc_token(id);
+        assert!(!open(&db, today() + chrono::Duration::days(31)), "firmado, reenviarlo no lo alarga");
+    }
+
     #[test]
     fn a_minor_does_not_sign_their_own_document_online() {
         let mut db = Db::sample(today());
@@ -370,7 +407,7 @@ mod tests {
         let e = db.doc_remote_sign(id, &own, "", sig(), &hash, "1.2.3.4").unwrap_err();
         assert!(e.contains("menor"), "{e}");
         // la página lo sabe y lo explica
-        let published = publish_docs(&db);
+        let published = publish_docs(&db, today());
         let pubdoc = published.values().find(|p| p.title == d.title && p.minor).expect("marcado como menor");
         assert!(pubdoc.minor);
         db.doc_remote_sign(id, "Laura Romero Navas", "12345678Z", sig(), &hash, "1.2.3.4").unwrap();

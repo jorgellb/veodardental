@@ -311,8 +311,8 @@ pub fn publish(db: &Db, today: NaiveDate) -> Published {
         accepting: c.enabled,
         links: crate::portal::publish_links(db, today),
         cancel_hours: c.cancel_hours,
-        budgets: crate::budget_link::publish_budgets(db),
-        docs: crate::doc_link::publish_docs(db),
+        budgets: crate::budget_link::publish_budgets(db, today),
+        docs: crate::doc_link::publish_docs(db, today),
         offers: crate::slot_offer::publish_offers(db, today),
         rx: crate::rx_link::publish_rx(db, today),
     }
