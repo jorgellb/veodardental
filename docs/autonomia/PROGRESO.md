@@ -40,7 +40,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F3-06: VERI*FACTU contra una AEAT simulada (rechazo, caída, reintento idéntico y conciliación) | E-027 | `8a5bb6a` |
 | T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | `3f51833` |
 | T-F3-09: instrumentos del piloto (tiempos y pasos, incidencias, disponibilidad y restauraciones) | E-029 | `445396c` |
-| T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | (pendiente) |
+| T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | `4380f92` |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
