@@ -174,6 +174,10 @@ pub struct Patient {
     pub accepts_sms: bool,
     pub accepts_email: bool,
     pub accepts_whatsapp: bool,
+    /// Avisos que no quiere recibir por ningún canal (baja por finalidad):
+    /// por ejemplo, felicitaciones o seguimiento de presupuestos.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub no_messages: Vec<crate::comms::MsgKind>,
     pub referral: String,
     pub profession: String,
     pub active: bool,

@@ -906,6 +906,12 @@ pub enum ChainOp {
     BankExpense {
         bank_move: u32,
     },
+    /// Reserva de correos pendientes para enviarlos desde este puesto (con la
+    /// marca `token`), para que otro no los envíe a la vez. Devuelve cuántos.
+    ClaimEmails {
+        ids: Vec<u32>,
+        token: String,
+    },
     /// Cita pedida por internet: se apunta en la agenda (devuelve la cita) o se rechaza.
     Confirm {
         request: u32,
@@ -969,6 +975,7 @@ impl ChainOp {
             ChainOp::MatchBank { bank_move, with } => db.match_bank_move(*bank_move, with.clone()),
             ChainOp::UnmatchBank { bank_move } => db.unmatch_bank_move(*bank_move),
             ChainOp::BankExpense { bank_move } => db.expense_for_move(*bank_move),
+            ChainOp::ClaimEmails { ids, token } => Ok(db.claim_emails(ids, token, crate::model::now())),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
@@ -1003,6 +1010,7 @@ impl ChainOp {
             ChainOp::MatchBank { bank_move, with } => json!({ "accion": "conciliar_movimiento", "movimiento": bank_move, "con": with }),
             ChainOp::UnmatchBank { bank_move } => json!({ "accion": "deshacer_conciliacion", "movimiento": bank_move }),
             ChainOp::BankExpense { bank_move } => json!({ "accion": "gasto_del_cargo", "movimiento": bank_move }),
+            ChainOp::ClaimEmails { ids, token } => json!({ "accion": "reservar_correos", "mensajes": ids, "marca": token }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
@@ -1035,6 +1043,17 @@ impl ChainOp {
             "conciliar_movimiento" => ChainOp::MatchBank { bank_move: num("movimiento")?, with: bank_match_json(&v["con"])? },
             "deshacer_conciliacion" => ChainOp::UnmatchBank { bank_move: num("movimiento")? },
             "gasto_del_cargo" => ChainOp::BankExpense { bank_move: num("movimiento")? },
+            "reservar_correos" => {
+                let ids = v["mensajes"].as_array().ok_or("Faltan los mensajes.")?;
+                if ids.len() > 10_000 {
+                    return Err("Demasiados mensajes de una vez.".into());
+                }
+                let token = text("marca");
+                if token.is_empty() || token.len() > 64 {
+                    return Err("Falta la marca del envío.".into());
+                }
+                ChainOp::ClaimEmails { ids: ids.iter().map(|x| x.as_u64().map(|n| n as u32).ok_or("Mensaje no válido.")).collect::<Result<_, _>>()?, token }
+            }
             "confirmar_cita" => ChainOp::Confirm { request: num("solicitud")? },
             "rechazar_cita" => ChainOp::Reject { request: num("solicitud")?, why: text("motivo") },
             "cobrar_cuota" => ChainOp::PayInstallment { budget: num("presupuesto")?, index: num("cuota")?, method: pay_method(&text("forma"))? },
@@ -1053,6 +1072,7 @@ impl ChainOp {
         const REMIT: &[&str] = &["remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
         const CLAIM: &[&str] = &["claims", "entries", "patients", "tariffs", "auths", "config", "audit_log", "next_id"];
         const BANK: &[&str] = &["bank_moves", "bank_accounts", "expenses", "remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
+        const MESSAGES: &[&str] = &["messages"];
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
         // el saldo del paciente sale de sus tratamientos y sus cobros
         const PAY: &[&str] = &["payments", "budgets", "remittances", "entries", "patients", "cash", "config", "audit_log", "next_id"];
@@ -1093,6 +1113,8 @@ impl ChainOp {
             ChainOp::Claim { .. } => (Some(Facturacion), CLAIM),
             ChainOp::Reconcile | ChainOp::ImportBank { .. } | ChainOp::MatchBank { .. } | ChainOp::UnmatchBank { .. } | ChainOp::BankExpense { .. } => (Some(Gastos), BANK),
             ChainOp::Confirm { .. } | ChainOp::Reject { .. } => (None, BOOKING),
+            // como generar los mensajes del día: cualquier usuario
+            ChainOp::ClaimEmails { .. } => (None, MESSAGES),
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
             ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),

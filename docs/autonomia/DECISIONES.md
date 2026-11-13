@@ -62,3 +62,16 @@ La comisión de los colaboradores sigue siendo sobre lo que paga el paciente, qu
 Las fechas siguen siendo la hora local, sin zona, del ordenador que registra. Cambiarlas a UTC exigiría migrar todos los datos y no aporta nada mientras servidor y puestos estén en la misma zona.
 
 Para que no pase sin notarse, el servidor dice su diferencia con UTC y el puesto avisa si es otra. El servidor en la nube (fase 6) debe configurarse con la zona horaria de la clínica.
+
+## D-14 Envíos inciertos y reserva de correos
+Un correo o un WhatsApp que salió y se cortó sin respuesta puede haber llegado. Reintentarlo solo podría mandarlo dos veces, y ninguno de los dos proveedores garantiza que un reenvío no se duplique. Por eso queda como «¿Llegó?» y lo decide recepción.
+
+Para que dos puestos no envíen el mismo correo, el puesto los reserva antes con una marca aleatoria (`ChainOp::ClaimEmails`), en el servidor o con el fichero bloqueado. Una reserva sin resultado durante 30 minutos pasa a «¿Llegó?». No hace falta permiso especial: cualquier usuario puede generar y enviar los mensajes del día, como antes.
+
+## D-15 Datos de salud y bajas en los mensajes
+- **Datos de salud:** los comodines de alertas, tratamientos, pendientes y fecha de nacimiento valen en los documentos, pero se quitan de cualquier SMS, WhatsApp o correo (minimización).
+- **Bajas:**
+  - «BAJA» por WhatsApp quita ese canal al número que lo envía, no los demás.
+  - La baja por finalidad se marca en la ficha.
+  - Solo felicitaciones y seguimientos de presupuesto llevan el texto de baja: los recordatorios de cita y de revisión son de la atención del paciente.
+- **Revisión pendiente:** la revisión jurídica de qué mensajes son comunicaciones comerciales (LSSI) queda para el responsable de protección de datos, con el resto de la fase 4.

@@ -172,19 +172,49 @@ fn transport(cfg: &MailConfig) -> Result<SmtpTransport, String> {
     Ok(builder.build())
 }
 
+/// Por qué no consta un correo como enviado.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SendError {
+    /// No salió: no hubo conexión, o el servidor lo rechazó con un código.
+    /// Se puede reintentar.
+    NotSent(String),
+    /// Se cortó la conexión, o se agotó el tiempo, sin la respuesta del
+    /// servidor: puede que el correo haya salido. Reintentarlo solo podría
+    /// mandarlo dos veces, así que no se reintenta sin que alguien lo decida.
+    Uncertain(String),
+}
+
+impl SendError {
+    pub fn text(&self) -> &str {
+        match self {
+            SendError::NotSent(s) | SendError::Uncertain(s) => s,
+        }
+    }
+}
+
 /// Envía un correo con adjuntos.
 pub fn send(cfg: &MailConfig, to: &str, subject: &str, text: &str, files: &[FileAttachment]) -> Result<(), String> {
-    let msg = build(cfg, to, subject, text, files)?;
-    let t = transport(cfg)?;
+    send_tracked(cfg, to, subject, text, files).map_err(|e| e.text().to_string())
+}
+
+/// Envía un correo y distingue lo que seguro que no salió de lo que no se
+/// sabe (ver [`SendError`]).
+pub fn send_tracked(cfg: &MailConfig, to: &str, subject: &str, text: &str, files: &[FileAttachment]) -> Result<(), SendError> {
+    let msg = build(cfg, to, subject, text, files).map_err(SendError::NotSent)?;
+    let t = transport(cfg).map_err(SendError::NotSent)?;
     t.send(&msg).map(|_| ()).map_err(|e| {
         let s = e.to_string();
         let l = s.to_lowercase();
         if l.contains("authentication") || l.contains("535") || l.contains("credentials") {
-            "El servidor rechazó el usuario o la contraseña (en Gmail u Outlook hace falta una «contraseña de aplicación»).".into()
-        } else if l.contains("connection") || l.contains("timed out") || l.contains("dns") || l.contains("resolve") {
-            format!("No se puede conectar con el servidor de correo: {s}")
+            SendError::NotSent("El servidor rechazó el usuario o la contraseña (en Gmail u Outlook hace falta una «contraseña de aplicación»).".into())
+        } else if e.is_permanent() || e.is_transient() {
+            // el servidor contestó con un código de error: no lo aceptó
+            SendError::NotSent(format!("El servidor de correo no aceptó el envío: {s}"))
+        } else if e.is_tls() || e.is_client() || ["refused", "dns", "resolve", "unreachable", "no route", "name or service"].iter().any(|k| l.contains(k)) {
+            SendError::NotSent(format!("No se puede conectar con el servidor de correo: {s}"))
         } else {
-            format!("El servidor de correo no aceptó el envío: {s}")
+            // se cortó o se agotó el tiempo sin respuesta: puede haber salido
+            SendError::Uncertain(format!("Se cortó la conexión sin la confirmación del servidor; puede que el correo haya llegado: {s}"))
         }
     })
 }
@@ -280,6 +310,61 @@ pub(crate) mod tests {
         assert!(data.contains("Subject: Orden de trabajo"));
         assert!(data.contains("orden.zip"), "lleva el adjunto");
         assert!(data.contains("Content-Type: application/zip"));
+    }
+
+    /// Servidor de prueba que recibe el correo entero y se corta antes de
+    /// confirmarlo (o lo rechaza con 550).
+    fn smtp_that(cut: bool) -> (u16, std::thread::JoinHandle<()>) {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let h = std::thread::spawn(move || {
+            let (s, _) = l.accept().unwrap();
+            let mut w = s.try_clone().unwrap();
+            let mut r = BufReader::new(s);
+            writeln!(w, "220 prueba ESMTP\r").unwrap();
+            let mut line = String::new();
+            loop {
+                line.clear();
+                if r.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                let up = line.to_uppercase();
+                if up.starts_with("EHLO") {
+                    write!(w, "250-prueba\r\n250 8BITMIME\r\n").unwrap();
+                } else if up.starts_with("DATA") {
+                    write!(w, "354 adelante\r\n").unwrap();
+                    while r.read_line(&mut line).unwrap_or(0) > 0 && !line.ends_with(".\r\n") {}
+                    if cut {
+                        // recibido entero, pero sin «250»: se corta la conexión
+                        return;
+                    }
+                    write!(w, "550 buzón no disponible\r\n").unwrap();
+                } else if up.starts_with("QUIT") {
+                    write!(w, "221 adios\r\n").unwrap();
+                    return;
+                } else {
+                    write!(w, "250 ok\r\n").unwrap();
+                }
+            }
+        });
+        (port, h)
+    }
+
+    /// Lo que seguro que no salió se distingue de lo que no se sabe: un
+    /// servidor que se corta tras recibir el correo, sin confirmarlo, puede
+    /// haberlo entregado; reintentarlo solo lo mandaría dos veces.
+    #[test]
+    fn a_cut_after_the_data_is_uncertain_and_a_rejection_is_not() {
+        let cfg = |port| MailConfig { enabled: true, host: "127.0.0.1".into(), port, security: Security::Ninguna, from_email: "clinica@example.com".into(), ..Default::default() };
+        let (port, h) = smtp_that(true);
+        assert!(matches!(send_tracked(&cfg(port), "ana@example.com", "Cita", "Hola", &[]), Err(SendError::Uncertain(_))));
+        h.join().unwrap();
+        let (port, h) = smtp_that(false);
+        assert!(matches!(send_tracked(&cfg(port), "ana@example.com", "Cita", "Hola", &[]), Err(SendError::NotSent(_))));
+        h.join().unwrap();
+        // nadie escuchando en el puerto: no salió
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        assert!(matches!(send_tracked(&cfg(closed), "ana@example.com", "Cita", "Hola", &[]), Err(SendError::NotSent(_))));
     }
 
     #[test]

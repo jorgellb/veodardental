@@ -235,3 +235,37 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 353 pasan, 0 fallan, 10 ignoradas |
+
+## E-012 Área 6: comunicaciones
+- Revisión en `docs/autonomia/revision/area6.md`: 7 defectos demostrados (C1 a C7).
+- **Demostraciones ejecutadas:**
+  - Servidor SMTP de prueba que recibe el correo entero y se corta sin «250»: `send_tracked` da `Uncertain`. El `send` anterior lo devolvía como un error más y `email_failed` lo dejaba para reintentar: hasta 3 envíos del mismo correo.
+  - Con un 550 tras los datos, o con un puerto cerrado: `NotSent`, y se reintenta.
+  - Servidor HTTP de prueba que recibe la petición de WhatsApp y se corta: el error empieza por «No se sabe si llegó». Antes era «Sin conexión con WhatsApp» y el mensaje quedaba «No se pudo enviar».
+- **Por lectura del código anterior (`87aa461`):**
+  - C1: `start_outbox` tomaba los pendientes del puesto sin reservarlos.
+  - C3: `target = day + days` (día natural).
+  - C4 a C6: no había ni baja por finalidad, ni lectura de «BAJA», ni comprobación de comodines.
+- **Pruebas nuevas:**
+  - `mail::tests::a_cut_after_the_data_is_uncertain_and_a_rejection_is_not`
+  - `comms::tests::reminders_skip_weekends_and_holidays`
+  - `comms::tests::a_patient_can_opt_out_of_one_kind_of_message`
+  - `comms::tests::emails_are_claimed_once_and_uncertain_ones_wait_for_a_decision`
+  - `comms::tests::templates_only_use_placeholders_that_are_filled_and_no_health_data`
+  - `whatsapp::tests::an_uncertain_send_is_not_retried_and_replies_still_count`
+  - `whatsapp::tests::replying_baja_stops_whatsapp`
+  - `whatsapp::tests::network_errors_tell_not_sent_from_uncertain`
+  - `server::tests::two_stations_sending_emails_at_once_send_each_one_once`
+- **Pruebas de pantalla ajustadas** porque dependían del día y la hora de ejecución (sin cambiar ninguna comprobación; detalle en area6.md):
+  - `ui_tests::daily_emails_are_sent_automatically`
+  - `ui_tests::patient_link_actions_reach_the_agenda`
+
+  Las dos fallaron en la batería de las 19:00 de un viernes y pasan tras el ajuste.
+- **Capturas sintéticas:** `f1_area6_comunicaciones_1280x{800,720}.png` y `f1_area6_filiacion_1280x{800,720}.png` (avisos que quiere recibir).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 362 pasan, 0 fallan, 10 ignoradas |

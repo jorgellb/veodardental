@@ -21,14 +21,14 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A3: odontograma, periodontograma e historial | E-009 | `dee610b` |
 | T-F1-A4: bancos y conciliación | E-010 | `d6f2e0a` |
 | T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `7fd53f0` |
+| T-F1-A6: comunicaciones | E-012 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-A6: comunicaciones.
-   - Consentimiento por finalidad, bajas, horarios y festivos.
-   - Reintentos, fallos parciales, colas y duplicados.
-   - Plantillas y trazabilidad.
-   - Resultados inciertos del proveedor.
-2. Después, áreas 7 a 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+1. T-F1-A7: ortodoncia.
+   - Controles, evolución, fases, cuotas y retención.
+   - Permisos y fechas.
+   - Modificaciones y cobros sin duplicación ni pérdida de historia.
+2. Después, áreas 8 a 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir

@@ -98,6 +98,61 @@ pub struct Message {
     /// Intentos de envío por correo.
     #[serde(default)]
     pub attempts: u32,
+    /// Se cortó el envío sin confirmación: puede que haya llegado. No se
+    /// reintenta solo; alguien decide si consta como enviado o se reenvía.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uncertain: bool,
+    /// Envío en curso: marca del puesto que lo ha reservado para enviarlo
+    /// (así dos puestos no envían el mismo correo) y desde cuándo.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sending: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sending_since: Option<NaiveDateTime>,
+    /// Quién lo dio por enviado.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sent_by: String,
+}
+
+/// Minutos tras los que un envío reservado por un puesto que no ha dicho
+/// cómo terminó (se cerró o perdió la conexión) pasa a «no se sabe si llegó».
+pub const SENDING_LEASE_MIN: i64 = 30;
+
+/// Comodines con datos de salud: valen en los documentos, pero no salen en
+/// un mensaje (SMS, WhatsApp o correo).
+pub const CLINICAL_PLACEHOLDERS: [&str; 4] = ["[ALERTAS]", "[TRATAMIENTOS]", "[PENDIENTES]", "[FECHANAC]"];
+
+/// Comodines que se sustituyen en un mensaje de esta clase. Los demás
+/// llegarían tal cual al paciente.
+pub fn msg_placeholders(kind: MsgKind) -> Vec<&'static str> {
+    let mut v = vec!["[NOMBRE]", "[APELLIDOS]", "[CLINICA]", "[TELCLINICA]", "[DIRCLINICA]", "[NIF]", "[HISTORIAL]", "[CIUDAD]", "[DIRECCION]", "[DOCTOR]", "[FECHA]"];
+    match kind {
+        MsgKind::RecordatorioCita => v.extend(["[HORA]", "[MOTIVO]", "[ENLACE]"]),
+        MsgKind::Recall => v.extend(["[MOTIVO]", "[ENLACE_CITA]"]),
+        MsgKind::PresupuestoPendiente => v.extend(["[MOTIVO]", "[IMPORTE]", "[ENLACE_PRESUPUESTO]"]),
+        _ => {}
+    }
+    v
+}
+
+/// Comodines de un texto que no se sustituirían en un mensaje de esta clase
+/// (mal escritos, de otra clase o con datos de salud).
+pub fn unknown_placeholders(text: &str, kind: MsgKind) -> Vec<String> {
+    let ok = msg_placeholders(kind);
+    let mut out: Vec<String> = vec![];
+    let mut rest = text;
+    while let Some(i) = rest.find('[') {
+        let after = &rest[i + 1..];
+        let Some(j) = after.find(']') else { break };
+        let tok = &after[..j];
+        if tok.chars().count() >= 3 && tok.chars().all(|c| c.is_uppercase() || c == '_') {
+            let t = format!("[{tok}]");
+            if !ok.contains(&t.as_str()) && !out.contains(&t) {
+                out.push(t);
+            }
+        }
+        rest = &after[j + 1..];
+    }
+    out
 }
 
 /// Clave de un recordatorio de los que se generan solos (de cita, de revisión,
@@ -264,6 +319,13 @@ impl Db {
         s.replace("[FECHA]", &long_date(today())).replace("[DOCTOR]", &self.doctor(p.doctor_id).map(|d| d.name.clone()).unwrap_or_default())
     }
 
+    /// Texto de un mensaje para el paciente: como `fill`, pero sin los datos de
+    /// salud ([`CLINICAL_PLACEHOLDERS`]), que no salen por SMS, WhatsApp ni correo.
+    pub fn fill_message(&self, text: &str, pid: u32, extra: &[(&str, String)]) -> String {
+        let clean = CLINICAL_PLACEHOLDERS.iter().fold(text.to_string(), |s, c| s.replace(c, ""));
+        self.fill(&clean, pid, extra)
+    }
+
     /// Recordatorios y tareas que crean solos todos los puestos al arrancar:
     /// si dos puestos los crearon a la vez, sobran los repetidos (los que no
     /// cumplen `keep`; si ninguno, el más antiguo se queda). Devuelve cuántos.
@@ -315,6 +377,10 @@ impl Db {
     /// Crea el mensaje. `link` es (texto, dirección) de un enlace que se añade al
     /// final cuando el mensaje sale por correo o WhatsApp y la plantilla no lo lleva ya.
     fn push_msg(&mut self, t: &MsgTemplate, pid: u32, related: Option<u32>, extra: &[(&str, String)], link: Option<(&str, String)>) -> bool {
+        // avisos de esta clase que el paciente no quiere recibir (por ningún canal)
+        if self.patient(pid).is_some_and(|p| p.no_messages.contains(&t.kind)) {
+            return false;
+        }
         let Some(mut to) = self.contact(pid, t.channel) else { return false };
         let p = self.patient(pid).cloned().unwrap_or_default();
         let mut ch = t.channel;
@@ -323,8 +389,8 @@ impl Db {
             to = p.mobile.clone();
         }
         let id = self.new_id();
-        let mut text = self.fill(&t.text, pid, extra);
-        let mut subject = self.fill(&t.subject, pid, extra);
+        let mut text = self.fill_message(&t.text, pid, extra);
+        let mut subject = self.fill_message(&t.subject, pid, extra);
         if ch == Channel::Email && subject.trim().is_empty() {
             subject = format!("Mensaje de {}", self.config.name);
         }
@@ -336,13 +402,97 @@ impl Db {
         {
             text = format!("{}\n\n{label}: {url}", text.trim_end());
         }
-        self.messages.push(Message { id, patient_id: pid, kind: t.kind, channel: ch, to, subject, text, created: now(), sent_at: None, state: MsgState::Pendiente, related, user: self.config.current_user.clone(), error: String::new(), attempts: 0 });
+        // en lo que no es la atención de su cita o revisión, cómo darse de baja
+        if ch == Channel::Email && matches!(t.kind, MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente) {
+            text = format!("{}\n\n—\nSi no quiere recibir estos mensajes, respóndanos con la palabra BAJA o llámenos al {}.", text.trim_end(), self.config.phone);
+        }
+        self.messages.push(Message {
+            id,
+            patient_id: pid,
+            kind: t.kind,
+            channel: ch,
+            to,
+            subject,
+            text,
+            created: now(),
+            sent_at: None,
+            state: MsgState::Pendiente,
+            related,
+            user: self.config.current_user.clone(),
+            error: String::new(),
+            attempts: 0,
+            uncertain: false,
+            sending: String::new(),
+            sending_since: None,
+            sent_by: String::new(),
+        });
         true
     }
 
-    /// Correos pendientes que el programa puede enviar (con menos de 3 intentos fallidos).
+    /// Correos pendientes que el programa puede enviar: con menos de 3
+    /// intentos fallidos, sin un envío en curso en otro puesto y sin la duda
+    /// de si llegaron.
     pub fn pending_emails(&self) -> Vec<u32> {
-        self.messages.iter().filter(|m| m.state == MsgState::Pendiente && m.channel == Channel::Email && m.to.contains('@') && m.attempts < 3).map(|m| m.id).collect()
+        self.messages.iter().filter(|m| m.state == MsgState::Pendiente && m.channel == Channel::Email && m.to.contains('@') && m.attempts < 3 && !m.uncertain && m.sending.is_empty()).map(|m| m.id).collect()
+    }
+
+    /// Reserva para enviarlos con la marca `token` los correos de `ids` que
+    /// siguen pendientes y libres. En red lo hace el servidor con los datos al
+    /// día: dos puestos no se quedan con el mismo correo.
+    ///
+    /// Un envío reservado hace más de [`SENDING_LEASE_MIN`] minutos sin saber
+    /// cómo terminó pasa a «no se sabe si llegó». Devuelve cuántos ha reservado.
+    pub fn claim_emails(&mut self, ids: &[u32], token: &str, at: NaiveDateTime) -> u32 {
+        for m in self.messages.iter_mut().filter(|m| !m.sending.is_empty() && m.sending_since.is_none_or(|s| at - s > Duration::minutes(SENDING_LEASE_MIN))) {
+            m.sending.clear();
+            m.sending_since = None;
+            if m.state == MsgState::Pendiente {
+                m.uncertain = true;
+                m.error = "El puesto que lo estaba enviando no terminó (se cerró o perdió la conexión): puede que haya llegado.".into();
+            }
+        }
+        let free = self.pending_emails();
+        let mut n = 0;
+        for m in self.messages.iter_mut().filter(|m| ids.contains(&m.id) && free.contains(&m.id)) {
+            m.sending = token.to_string();
+            m.sending_since = Some(at);
+            n += 1;
+        }
+        n
+    }
+
+    /// Correos reservados con esta marca (los que este puesto tiene que enviar).
+    pub fn claimed_emails(&self, token: &str) -> Vec<u32> {
+        self.messages.iter().filter(|m| !token.is_empty() && m.sending == token && m.state == MsgState::Pendiente).map(|m| m.id).collect()
+    }
+
+    /// Cómo terminó el envío de un correo reservado con `token`.
+    pub fn email_outcome(&mut self, id: u32, token: &str, result: &Result<(), crate::mail::SendError>) {
+        let Some(m) = self.messages.iter_mut().find(|m| m.id == id && m.sending == token) else { return };
+        m.sending.clear();
+        m.sending_since = None;
+        match result {
+            Ok(()) => self.mark_sent(id),
+            Err(crate::mail::SendError::NotSent(e)) => self.email_failed(id, e),
+            Err(crate::mail::SendError::Uncertain(e)) => {
+                m.attempts += 1;
+                m.uncertain = true;
+                m.error = e.clone();
+            }
+        }
+    }
+
+    /// Decide un correo del que no se sabía si llegó: consta como enviado, o
+    /// vuelve a pendiente para enviarlo otra vez.
+    pub fn resolve_uncertain(&mut self, id: u32, arrived: bool) {
+        let Some(m) = self.messages.iter_mut().find(|m| m.id == id && m.uncertain) else { return };
+        m.uncertain = false;
+        if arrived {
+            self.mark_sent(id);
+        } else {
+            m.error.clear();
+            m.attempts = 0;
+        }
     }
 
     /// Apunta un intento de envío por correo que ha fallado.
@@ -371,8 +521,12 @@ impl Db {
         for t in templates {
             match t.kind {
                 MsgKind::RecordatorioCita => {
-                    let target = day + Duration::days(t.days.max(0) as i64);
-                    let appts: Vec<Appointment> = self.appointments.iter().filter(|a| a.date == target && a.patient_id.is_some() && !a.state.is_cancelled() && a.state != ApptState::Finalizada).cloned().collect();
+                    // `days` días laborables antes de la cita (como el WhatsApp
+                    // automático): si el viernes se recuerdan las del lunes, no
+                    // se pierden aunque el ordenador no se encienda el fin de
+                    // semana. Con 0 días, las de hoy.
+                    let due = |a: &Appointment| if t.days <= 0 { a.date == day } else { a.date > day && self.wa_send_day(a.date, t.days as u32) <= day };
+                    let appts: Vec<Appointment> = self.appointments.iter().filter(|a| due(a) && a.patient_id.is_some() && !a.state.is_cancelled() && a.state != ApptState::Finalizada).cloned().collect();
                     for a in appts {
                         let pid = a.patient_id.unwrap();
                         // con WhatsApp automático activo, a estos pacientes se lo envía el programa
@@ -471,10 +625,13 @@ impl Db {
 
     /// Marca un mensaje como enviado y actualiza recalls relacionados.
     pub fn mark_sent(&mut self, id: u32) {
+        let user = self.config.current_user.clone();
         let Some(m) = self.messages.iter_mut().find(|m| m.id == id) else { return };
         m.state = MsgState::Enviado;
         m.sent_at = Some(now());
         m.error.clear();
+        m.uncertain = false;
+        m.sent_by = user;
         let (kind, related, ch) = (m.kind, m.related, m.channel);
         if kind == MsgKind::Recall
             && let Some(r) = self.recalls.iter_mut().find(|r| Some(r.id) == related)
@@ -568,6 +725,162 @@ mod tests {
 
     fn d() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()
+    }
+
+    /// Base: solo una cita, de 102 (acepta todo), el día indicado.
+    fn one_appointment(day: NaiveDate) -> (Db, u32) {
+        let mut db = Db::sample(d());
+        db.messages.clear();
+        db.appointments.clear();
+        let p = db.patients.iter_mut().find(|p| p.id == 102).unwrap();
+        (p.accepts_gdpr, p.accepts_whatsapp, p.accepts_sms, p.mobile) = (true, true, true, "600 111 222".into());
+        let id = db.new_id();
+        db.appointments.push(Appointment {
+            id,
+            date: day,
+            start: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+            minutes: 30,
+            patient_id: Some(102),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 1,
+            box_id: 1,
+            reason: "Revisión".into(),
+            treatment_code: String::new(),
+            state: ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
+        (db, id)
+    }
+
+    /// El recordatorio «un día antes» es el día laborable anterior: el
+    /// viernes se recuerdan las citas del lunes (antes, el viernes se
+    /// recordaban las del sábado y las del lunes, el domingo, que con la
+    /// clínica cerrada no llegaba a salir). Con un festivo en medio, igual.
+    #[test]
+    fn reminders_skip_weekends_and_holidays() {
+        let friday = NaiveDate::from_ymd_opt(2026, 11, 13).unwrap();
+        let monday = friday + Duration::days(3);
+        assert!(!Db::sample(d()).working_day(friday + Duration::days(1)) && !Db::sample(d()).working_day(friday + Duration::days(2)), "fin de semana cerrado");
+        let (mut db, appt) = one_appointment(monday);
+        db.generate_messages(friday);
+        assert!(db.messages.iter().any(|m| m.kind == MsgKind::RecordatorioCita && m.related == Some(appt)), "el viernes sale el de la cita del lunes");
+        let n = db.messages.len();
+        db.generate_messages(friday + Duration::days(1));
+        db.generate_messages(monday);
+        assert_eq!(db.messages.len(), n, "no se repite");
+        // martes con el lunes festivo: también el viernes
+        let (mut db, appt) = one_appointment(monday + Duration::days(1));
+        db.holidays.push(crate::agenda_extra::Holiday { date: monday, name: "Fiesta".into() });
+        db.generate_messages(friday);
+        assert!(db.messages.iter().any(|m| m.related == Some(appt)));
+        // y no antes de tiempo: la del miércoles, el viernes no
+        let (mut db, appt) = one_appointment(monday + Duration::days(2));
+        db.generate_messages(friday);
+        assert!(!db.messages.iter().any(|m| m.related == Some(appt)));
+    }
+
+    /// Baja por finalidad: quien no quiere recordatorios de cita no los
+    /// recibe por ningún canal, pero sí los demás avisos. Las felicitaciones
+    /// y el seguimiento de presupuestos por correo dicen cómo darse de baja.
+    #[test]
+    fn a_patient_can_opt_out_of_one_kind_of_message() {
+        let friday = NaiveDate::from_ymd_opt(2026, 11, 13).unwrap();
+        let (mut db, appt) = one_appointment(friday + Duration::days(3));
+        db.patients.iter_mut().find(|p| p.id == 102).unwrap().no_messages = vec![MsgKind::RecordatorioCita];
+        let (_, skipped) = db.generate_messages(friday);
+        assert!(!db.messages.iter().any(|m| m.related == Some(appt)), "no quiere recordatorios de cita");
+        assert!(skipped > 0);
+        let s = crate::whatsapp::WaSettings { enabled: true, ..Default::default() };
+        assert!(db.wa_due(&s, friday.and_hms_opt(10, 30, 0).unwrap()).is_empty(), "tampoco por el WhatsApp automático");
+        // un seguimiento de presupuesto por correo lleva cómo darse de baja
+        let mut db = mail_db(true);
+        db.generate_messages(d());
+        let m = db.messages.iter().find(|m| m.kind == MsgKind::PresupuestoPendiente && m.channel == Channel::Email).unwrap();
+        assert!(m.text.contains("BAJA"), "{}", m.text);
+        let r = db.messages.iter().find(|m| m.kind == MsgKind::RecordatorioCita && m.channel == Channel::Email).unwrap();
+        assert!(!r.text.contains("BAJA"), "un recordatorio de cita no es publicidad");
+    }
+
+    /// Dos puestos que envían a la vez no se quedan con el mismo correo; un
+    /// envío cortado sin confirmación no se reintenta solo, y un puesto que
+    /// se cerró a medias deja sus correos como «no se sabe si llegó».
+    #[test]
+    fn emails_are_claimed_once_and_uncertain_ones_wait_for_a_decision() {
+        use crate::mail::SendError;
+        let mut db = mail_db(true);
+        db.generate_messages(d());
+        let ids = db.pending_emails();
+        assert!(ids.len() >= 2);
+        let t0 = now();
+        assert_eq!(db.claim_emails(&ids, "A", t0) as usize, ids.len());
+        assert_eq!(db.claim_emails(&ids, "B", t0), 0, "ya los tiene otro puesto");
+        assert!(db.pending_emails().is_empty() && db.claimed_emails("B").is_empty());
+        assert_eq!(db.claimed_emails("A").len(), ids.len());
+        let (a, b, c) = (ids[0], ids[1], ids.get(2).copied());
+        // el resultado de otra marca no cuenta
+        db.email_outcome(a, "B", &Ok(()));
+        assert_eq!(db.messages.iter().find(|m| m.id == a).unwrap().state, MsgState::Pendiente);
+        db.email_outcome(a, "A", &Ok(()));
+        db.email_outcome(b, "A", &Err(SendError::Uncertain("se cortó".into())));
+        let mb = db.messages.iter().find(|m| m.id == b).unwrap().clone();
+        assert!(mb.uncertain && mb.state == MsgState::Pendiente && !db.pending_emails().contains(&b), "no se reintenta solo");
+        // si llegó, consta como enviado; si no, vuelve a la cola
+        db.resolve_uncertain(b, false);
+        assert!(db.pending_emails().contains(&b));
+        db.claim_emails(&[b], "A2", t0);
+        db.email_outcome(b, "A2", &Err(SendError::Uncertain("se cortó".into())));
+        db.config.current_user = "Recepción".into();
+        db.resolve_uncertain(b, true);
+        let mb = db.messages.iter().find(|m| m.id == b).unwrap();
+        assert_eq!((mb.state, mb.sent_by.as_str(), mb.uncertain), (MsgState::Enviado, "Recepción", false));
+        // un puesto que se cerró a medias: pasado el plazo, «no se sabe si llegó»
+        if let Some(c) = c {
+            db.claim_emails(&[c], "C", t0);
+            assert_eq!(db.claim_emails(&[c], "D", t0 + Duration::minutes(SENDING_LEASE_MIN + 1)), 0);
+            let mc = db.messages.iter().find(|m| m.id == c).unwrap();
+            assert!(mc.uncertain && mc.sending.is_empty());
+        }
+        // lo que seguro que no salió sí se reintenta
+        let id = db.pending_emails().first().copied();
+        if let Some(id) = id {
+            db.claim_emails(&[id], "E", t0);
+            db.email_outcome(id, "E", &Err(SendError::NotSent("sin conexión".into())));
+            assert!(db.pending_emails().contains(&id));
+        }
+    }
+
+    /// Las plantillas de serie solo usan comodines de su clase; uno mal
+    /// escrito, o de otra clase, se señala; y un dato de salud nunca sale en
+    /// un mensaje aunque la plantilla lo lleve.
+    #[test]
+    fn templates_only_use_placeholders_that_are_filled_and_no_health_data() {
+        for t in default_msg_templates() {
+            assert!(unknown_placeholders(&format!("{} {}", t.subject, t.text), t.kind).is_empty(), "{}", t.name);
+        }
+        assert_eq!(unknown_placeholders("Hola [NOMBER], su [MOTIVO] a las [HORA]", MsgKind::Recall), vec!["[NOMBER]", "[HORA]"]);
+        assert_eq!(unknown_placeholders("Alergias: [ALERTAS] [a] [x]", MsgKind::Libre), vec!["[ALERTAS]"]);
+        let mut db = Db::sample(d());
+        let p = db.patients.iter_mut().find(|p| p.id == 102).unwrap();
+        p.alerts = "Alergia a la penicilina".into();
+        let out = db.fill_message("Hola [NOMBRE]. Alertas: [ALERTAS]. Pendiente: [PENDIENTES]", 102, &[]);
+        assert!(!out.contains("penicilina") && !out.contains('['), "{out}");
+        assert!(db.fill("[ALERTAS]", 102, &[]).contains("penicilina"), "los documentos sí lo llevan");
+        // y al generar los mensajes del día
+        let (mut db, appt) = one_appointment(d() + Duration::days(1));
+        db.patients.iter_mut().find(|p| p.id == 102).unwrap().alerts = "Alergia a la penicilina".into();
+        for t in db.msg_templates.iter_mut().filter(|t| t.kind == MsgKind::RecordatorioCita) {
+            t.text.push_str(" [ALERTAS]");
+        }
+        db.generate_messages(d());
+        let m = db.messages.iter().find(|m| m.related == Some(appt)).unwrap();
+        assert!(!m.text.contains("penicilina"), "{}", m.text);
     }
 
     #[test]

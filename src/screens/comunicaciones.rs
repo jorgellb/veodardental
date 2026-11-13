@@ -32,7 +32,9 @@ impl Default for CommsState {
 
 /// Correos que se están enviando en segundo plano, uno tras otro.
 pub struct Outbox {
-    rx: std::sync::mpsc::Receiver<(u32, Result<(), String>)>,
+    rx: std::sync::mpsc::Receiver<(u32, Result<(), crate::mail::SendError>)>,
+    /// Marca con la que este puesto ha reservado los correos que envía.
+    token: String,
     pub total: usize,
     pub done: usize,
     pub ok: usize,
@@ -53,7 +55,15 @@ pub fn start_outbox(app: &mut App, ids: Vec<u32>, auto: bool) {
         }
         return;
     }
-    let jobs: Vec<(u32, String, String, String)> = ids.iter().filter_map(|id| app.db.messages.iter().find(|m| m.id == *id && m.state == MsgState::Pendiente).map(|m| (m.id, m.to.clone(), m.subject.clone(), m.text.clone()))).collect();
+    // primero se reservan (en el servidor, o con el fichero compartido
+    // bloqueado): lo que otro puesto esté enviando no se envía otra vez
+    let token = crate::portal::new_token();
+    if let Err(e) = app.chain_op(crate::app::ChainOp::ClaimEmails { ids, token: token.clone() }) {
+        app.warn(format!("No se han podido preparar los correos: {e}"));
+        return;
+    }
+    let claimed = app.db.claimed_emails(&token);
+    let jobs: Vec<(u32, String, String, String)> = claimed.iter().filter_map(|id| app.db.messages.iter().find(|m| m.id == *id).map(|m| (m.id, m.to.clone(), m.subject.clone(), m.text.clone()))).collect();
     if jobs.is_empty() {
         return;
     }
@@ -62,13 +72,13 @@ pub fn start_outbox(app: &mut App, ids: Vec<u32>, auto: bool) {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for (id, to, subject, text) in jobs {
-            let r = crate::mail::send(&cfg, &to, &subject, &text, &[]);
+            let r = crate::mail::send_tracked(&cfg, &to, &subject, &text, &[]);
             if tx.send((id, r)).is_err() {
                 break;
             }
         }
     });
-    app.comms.outbox = Some(Outbox { rx, total, done: 0, ok: 0, auto });
+    app.comms.outbox = Some(Outbox { rx, token, total, done: 0, ok: 0, auto });
 }
 
 /// Hace ya el envío automático del día: genera los mensajes y manda los correos.
@@ -107,10 +117,7 @@ pub fn outbox_tick(app: &mut App, ctx: &egui::Context) {
             if r.is_ok() {
                 ob.ok += 1;
             }
-            match r {
-                Ok(()) => app.db.mark_sent(*id),
-                Err(e) => app.db.email_failed(*id, e),
-            }
+            app.db.email_outcome(*id, &ob.token, r);
         }
         if !results.is_empty() {
             app.dirty = true;
@@ -311,8 +318,9 @@ fn messages(app: &mut App, ui: &mut Ui) {
                 let mut pick = None;
                 egui::ScrollArea::vertical().id_salt("msgl").max_height(470.0).show(ui, |ui| {
                     for (i, m) in list.iter().enumerate() {
-                        let failed = m.state == MsgState::Pendiente && !m.error.is_empty();
+                        let failed = m.state == MsgState::Pendiente && !m.error.is_empty() && !m.uncertain;
                         let st_col = match m.state {
+                            MsgState::Pendiente if m.uncertain => WARN,
                             MsgState::Pendiente if failed => DANGER,
                             MsgState::Pendiente => WARN,
                             MsgState::Enviado => OK,
@@ -324,7 +332,16 @@ fn messages(app: &mut App, ui: &mut Ui) {
                             cell(m.kind.label()),
                             cellc(m.channel.label(), channel_color(m.channel)),
                             cell(&m.to),
-                            cellc(if failed { "Con error" } else { m.state.label() }, st_col),
+                            cellc(
+                                if m.uncertain {
+                                    "¿Llegó?"
+                                } else if failed {
+                                    "Con error"
+                                } else {
+                                    m.state.label()
+                                },
+                                st_col,
+                            ),
                         ];
                         if tbl.row(ui, i, app.comms.selected == Some(m.id), &cells).clicked() {
                             pick = Some(m.id);
@@ -379,12 +396,30 @@ fn detail(app: &mut App, ui: &mut Ui) {
         }
         ui.add_space(8.0);
         let ctx = ui.ctx().clone();
-        if m.state == MsgState::Pendiente && !m.error.is_empty() {
+        if m.state == MsgState::Pendiente && !m.error.is_empty() && !m.uncertain {
             ui.label(RichText::new(format!("No se pudo enviar ({} intento{}): {}", m.attempts, if m.attempts == 1 { "" } else { "s" }, m.error)).size(12.5).color(DANGER));
             ui.add_space(4.0);
         }
         let sending = app.comms.outbox.is_some();
         match m.state {
+            // no se sabe si llegó: no se reenvía solo, lo decide recepción
+            MsgState::Pendiente if m.uncertain => {
+                ui.label(RichText::new(format!("No se sabe si llegó. {}", m.error)).size(12.5).color(WARN));
+                muted(ui, "Si el paciente lo ha recibido (o la copia está en el correo de la clínica), márquelo como enviado; si no, vuelva a enviarlo.");
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Sí, consta como enviado").clicked() {
+                        app.db.resolve_uncertain(id, true);
+                        app.changed();
+                    }
+                    if ui.button("No llegó: volver a enviar").clicked() {
+                        app.db.resolve_uncertain(id, false);
+                        app.changed();
+                    }
+                });
+            }
+            MsgState::Pendiente if !m.sending.is_empty() && !sending => {
+                muted(ui, "Se está enviando desde otro puesto.");
+            }
             MsgState::Pendiente => {
                 ui.horizontal_wrapped(|ui| {
                     let label = match m.channel {
@@ -423,7 +458,25 @@ fn detail(app: &mut App, ui: &mut Ui) {
     });
 }
 
-const PLACEHOLDERS: &str = "[NOMBRE] [APELLIDOS] [FECHA] [HORA] [DOCTOR] [MOTIVO] [IMPORTE] [CLINICA] [TELCLINICA] [NIF] [HISTORIAL] [PIEZAS] [TRATAMIENTOS] [PENDIENTES] [ALERTAS] [CIUDAD] [ENLACE] [ENLACE_CITA] [ENLACE_PRESUPUESTO]";
+/// Comodines de los documentos (estos sí pueden llevar datos de salud).
+const DOC_PLACEHOLDERS: &str = "[NOMBRE] [APELLIDOS] [NIF] [FECHANAC] [DIRECCION] [CIUDAD] [HISTORIAL] [FECHA] [DOCTOR] [CLINICA] [DIRCLINICA] [TELCLINICA] [PIEZAS] [ALERTAS] [TRATAMIENTOS] [PENDIENTES]";
+
+/// Los comodines de esta clase de mensaje y, si el texto lleva otros, aviso:
+/// llegarían tal cual al paciente (o son datos de salud, que no se envían).
+fn placeholder_help(ui: &mut Ui, text: &str, kind: MsgKind) {
+    muted(ui, format!("Comodines: {}", crate::comms::msg_placeholders(kind).join(" ")));
+    let bad = crate::comms::unknown_placeholders(text, kind);
+    if !bad.is_empty() {
+        let clinical: Vec<&String> = bad.iter().filter(|b| crate::comms::CLINICAL_PLACEHOLDERS.contains(&b.as_str())).collect();
+        let other: Vec<&String> = bad.iter().filter(|b| !crate::comms::CLINICAL_PLACEHOLDERS.contains(&b.as_str())).collect();
+        if !other.is_empty() {
+            ui.label(RichText::new(format!("No se sustituyen en este mensaje y llegarían tal cual: {}", other.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" "))).size(12.5).color(DANGER));
+        }
+        if !clinical.is_empty() {
+            ui.label(RichText::new(format!("Son datos de salud y no se envían por mensaje (se quitan): {}", clinical.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" "))).size(12.5).color(DANGER));
+        }
+    }
+}
 
 fn msg_templates(app: &mut App, ui: &mut Ui) {
     let avail = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 6.0);
@@ -502,7 +555,8 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                     }
                     ui.label(RichText::new("Texto").size(13.5).color(MUTED));
                     ui.add(egui::TextEdit::multiline(&mut t.text).desired_rows(6).desired_width(f32::INFINITY));
-                    muted(ui, format!("Comodines: {PLACEHOLDERS}"));
+                    let all = format!("{} {}", t.subject, t.text);
+                    placeholder_help(ui, &all, t.kind);
                     if serde_json::to_string(t).unwrap_or_default() != before {
                         app.dirty = true;
                     }
@@ -532,7 +586,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                         ("[ENLACE_CITA]", format!("{site}/")),
                         ("[ENLACE_PRESUPUESTO]", format!("{site}/presupuesto/8a1e…")),
                     ];
-                    let txt = app.db.fill(&preview, pid, &extra);
+                    let txt = app.db.fill_message(&preview, pid, &extra);
                     egui::Frame::new().fill(Color32::from_rgb(220, 248, 198)).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(12)).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.label(txt);
@@ -587,7 +641,7 @@ fn doc_templates(app: &mut App, ui: &mut Ui) {
                     ui.checkbox(&mut t.marks_gdpr, "Al firmarlo, registra el consentimiento de protección de datos del paciente");
                     ui.label(RichText::new("Texto del documento").size(13.5).color(MUTED));
                     ui.add(egui::TextEdit::multiline(&mut t.body).desired_rows(16).desired_width(f32::INFINITY));
-                    muted(ui, format!("Comodines: {PLACEHOLDERS}"));
+                    muted(ui, format!("Comodines: {DOC_PLACEHOLDERS}"));
                     if serde_json::to_string(t).unwrap_or_default() != before {
                         app.dirty = true;
                     }
@@ -626,7 +680,7 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
                     app.warn("El paciente no tiene ese dato de contacto.");
                 } else {
                     let id = app.db.new_id();
-                    let text = app.db.fill(&std::mem::take(&mut app.comms.free_text), pid, &[]);
+                    let text = app.db.fill_message(&std::mem::take(&mut app.comms.free_text), pid, &[]);
                     let m = Message {
                         id,
                         patient_id: pid,
@@ -642,6 +696,10 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
                         user: app.db.config.current_user.clone(),
                         error: String::new(),
                         attempts: 0,
+                        uncertain: false,
+                        sending: String::new(),
+                        sending_since: None,
+                        sent_by: String::new(),
                     };
                     app.db.messages.push(m.clone());
                     let ctx = ui.ctx().clone();

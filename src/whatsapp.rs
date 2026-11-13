@@ -36,6 +36,9 @@ const MAX_BODY: u64 = 1024 * 1024;
 /// Texto de la plantilla que hay que crear en Meta (categoría Utilidad).
 pub const TEMPLATE_TEXT: &str = "Hola {{nombre}}, le recordamos su cita en {{clinica}} el {{fecha}} a las {{hora}}. ¿Podrá venir?";
 pub const BUTTON_YES: &str = "Sí, confirmo";
+/// Principio del error de un envío del que no se sabe si llegó (la petición
+/// salió y se cortó la conexión sin respuesta).
+pub const UNCERTAIN: &str = "No se sabe si llegó";
 pub const BUTTON_NO: &str = "No puedo ir";
 /// Texto del recordatorio cuando se envía por la pasarela (mensaje normal).
 pub const GW_TEXT: &str = "Hola [NOMBRE], le recordamos su cita en [CLINICA] el [FECHA] a las [HORA]. Por favor, responda SÍ para confirmarla o NO si no puede venir. ¡Gracias!";
@@ -272,6 +275,10 @@ pub struct WaMessage {
     pub reply: String,
     pub reply_at: Option<NaiveDateTime>,
     pub error: String,
+    /// Se cortó el envío sin respuesta: puede que haya llegado. No se reenvía
+    /// solo (lo que conteste el paciente se recoge igual).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uncertain: bool,
 }
 
 /// Parte propia de un identificador de mensaje: WAHA usa «true_<chat>_<id>».
@@ -297,6 +304,13 @@ pub fn intl(number: &str) -> Option<String> {
 /// «lunes 9 de noviembre».
 pub fn date_text(d: NaiveDate) -> String {
     format!("{} {} de {}", weekday_es(d), d.day(), month_es(d.month()))
+}
+
+/// ¿Pide no recibir más mensajes («BAJA», «STOP», «darme de baja»…)?
+pub fn is_opt_out(text: &str) -> bool {
+    let t = fold(text);
+    let t = t.trim().trim_matches(|c: char| !c.is_alphanumeric());
+    t == "baja" || t == "stop" || ["de baja", "no quiero recibir", "no me envie", "no me mande", "no quiero mas mensajes", "no quiero mensajes"].iter().any(|k| t.contains(k))
 }
 
 /// ¿Dice que sí (Some(true)), que no (Some(false)) o no está claro (None)?
@@ -516,7 +530,7 @@ impl Db {
             .filter(|a| a.date.and_time(a.start) - now >= Duration::hours(2))
             .filter(|a| self.wa_send_day(a.date, s.days_before) <= today)
             .filter(|a| self.wa_for_appt(a.id).is_none())
-            .filter(|a| a.patient_id.and_then(|p| self.patient(p)).is_some_and(|p| p.active && p.accepts_gdpr && p.accepts_whatsapp && intl(&p.mobile).is_some()))
+            .filter(|a| a.patient_id.and_then(|p| self.patient(p)).is_some_and(|p| p.active && p.accepts_gdpr && p.accepts_whatsapp && !p.no_messages.contains(&crate::comms::MsgKind::RecordatorioCita) && intl(&p.mobile).is_some()))
             .collect();
         v.sort_by_key(|a| (a.date, a.start));
         let mut ids: Vec<u32> = v.into_iter().map(|a| a.id).collect();
@@ -532,7 +546,7 @@ impl Db {
     pub fn wa_text(&self, s: &WaSettings, a: &Appointment) -> String {
         let text = s.gw_text.replace("[CLINICA]", &self.clinic_for(a));
         let extra = [("[FECHA]", date_text(a.date)), ("[HORA]", a.start.format("%H:%M").to_string()), ("[DOCTOR]", self.doctor_alias(a.doctor_id)), ("[MOTIVO]", a.reason.clone()), ("[ENLACE]", self.existing_link_url(a.id).unwrap_or_default())];
-        self.fill(&text, a.patient_id.unwrap_or(0), &extra)
+        self.fill_message(&text, a.patient_id.unwrap_or(0), &extra)
     }
 
     fn clinic_for(&self, a: &Appointment) -> String {
@@ -553,7 +567,21 @@ impl Db {
             Provider::Pasarela => text_request(&to, &self.wa_text(s, &a)),
         };
         let id = self.new_id();
-        self.whatsapp.push(WaMessage { id, appt_id, patient_id: p.id, to, wamid: String::new(), user_id: String::new(), created: when, sent_at: None, state: WaState::Enviando, reply: String::new(), reply_at: None, error: String::new() });
+        self.whatsapp.push(WaMessage {
+            id,
+            appt_id,
+            patient_id: p.id,
+            to,
+            wamid: String::new(),
+            user_id: String::new(),
+            created: when,
+            sent_at: None,
+            state: WaState::Enviando,
+            reply: String::new(),
+            reply_at: None,
+            error: String::new(),
+            uncertain: false,
+        });
         Some((id, body))
     }
 
@@ -571,6 +599,20 @@ impl Db {
                 if let Some(a) = self.appointments.iter_mut().find(|a| a.id == appt) {
                     a.reminder_sent = true;
                 }
+            }
+            Err(e) if e.starts_with(UNCERTAIN) => {
+                // puede que haya salido: se da por enviado (sus respuestas se
+                // recogen por su número) y no se reenvía, pero recepción lo sabe
+                m.state = WaState::Enviado;
+                m.uncertain = true;
+                m.error = e.clone();
+                let (pid, appt) = (m.patient_id, m.appt_id);
+                if let Some(a) = self.appointments.iter_mut().find(|a| a.id == appt) {
+                    a.reminder_sent = true;
+                }
+                let when = self.appointments.iter().find(|a| a.id == appt).map(|a| format!("{} a las {}", fmt_date(a.date), a.start.format("%H:%M"))).unwrap_or_default();
+                let who = self.patient_name(pid);
+                self.add_task(today, "WhatsApp", "", Some(pid), &format!("No se sabe si llegó el WhatsApp de la cita del {when} de {who} (se cortó la conexión al enviarlo): si contesta, se recogerá; si no, llamar para confirmarla"), Some(today));
             }
             Err(e) => {
                 m.state = WaState::Fallido;
@@ -619,6 +661,36 @@ impl Db {
         self.whatsapp.iter().enumerate().filter(|(_, m)| m.to == num && open(m)).max_by_key(|(_, m)| m.id).map(|(i, _)| i)
     }
 
+    /// El paciente pide no recibir más WhatsApp: se le quita el canal (a todos
+    /// los pacientes con ese número), queda en el registro de cambios y
+    /// recepción lo sabe. Devuelve la confirmación a enviar, si se contesta.
+    fn wa_opt_out(&mut self, s: &WaSettings, found: Option<usize>, from: &str, text: &str, today: NaiveDate) -> Vec<(u32, String, String)> {
+        let mut pids = self.patients_by_phone(from);
+        if let Some(i) = found
+            && !pids.contains(&self.whatsapp[i].patient_id)
+        {
+            pids.push(self.whatsapp[i].patient_id);
+        }
+        let mut names = vec![];
+        for pid in &pids {
+            if let Some(p) = self.patient_mut(*pid)
+                && p.accepts_whatsapp
+            {
+                p.accepts_whatsapp = false;
+                names.push(p.full_name());
+            }
+        }
+        if names.is_empty() {
+            return vec![];
+        }
+        let who = names.join(", ");
+        self.audit("Baja de WhatsApp", &format!("{who} · respondió «{}»", text.trim()));
+        self.add_task(today, "WhatsApp", "", pids.first().copied(), &format!("{who} ha pedido no recibir más WhatsApp (respondió «{}»): ya no se le envían. Si quiere otro canal, apúntelo en su ficha.", text.trim()), Some(today));
+        let to = found.map(|i| self.whatsapp[i].to.clone()).or_else(|| intl(from)).unwrap_or_default();
+        let log = found.map(|i| self.whatsapp[i].id).unwrap_or(0);
+        if s.auto_reply && !to.is_empty() { vec![(log, to, "Hecho: no le enviaremos más mensajes por WhatsApp. Si cambia de opinión, díganoslo en la clínica.".to_string())] } else { vec![] }
+    }
+
     /// Aplica un aviso de Meta. Devuelve las respuestas automáticas a enviar
     /// (id del registro, número, texto).
     pub fn wa_apply(&mut self, s: &WaSettings, ev: &WaEvent, now: NaiveDateTime) -> Vec<(u32, String, String)> {
@@ -656,7 +728,11 @@ impl Db {
                         self.wa_seen.drain(0..extra);
                     }
                 }
-                let Some(i) = self.wa_find(context, user_id, from, today) else {
+                let found = self.wa_find(context, user_id, from, today);
+                if is_opt_out(text) {
+                    return self.wa_opt_out(s, found, from, text, today);
+                }
+                let Some(i) = found else {
                     // Con la pasarela, recepción ya ve estos chats en su propio WhatsApp.
                     if s.provider == Provider::Pasarela {
                         return vec![];
@@ -774,8 +850,9 @@ pub fn post_message(s: &WaSettings, body: &Value) -> Result<String, String> {
     match res {
         Ok(r) => {
             let t = read(r)?;
-            let v: Value = serde_json::from_str(&t).map_err(|_| "Respuesta de Meta no válida".to_string())?;
-            v["messages"][0]["id"].as_str().map(|x| x.to_string()).ok_or_else(|| "Meta no devolvió el identificador del mensaje".into())
+            // Meta lo ha aceptado (200), aunque la respuesta no se entienda
+            let v: Value = serde_json::from_str(&t).map_err(|_| format!("{UNCERTAIN}: Meta lo aceptó pero su respuesta no se entiende"))?;
+            v["messages"][0]["id"].as_str().map(|x| x.to_string()).ok_or_else(|| format!("{UNCERTAIN}: Meta lo aceptó sin devolver su identificador"))
         }
         Err(ureq::Error::Status(code, r)) => {
             let t = read(r).unwrap_or_default();
@@ -790,7 +867,18 @@ pub fn post_message(s: &WaSettings, body: &Value) -> Result<String, String> {
             };
             Err(format!("Meta rechazó el mensaje{ecode}: {text}"))
         }
-        Err(e) => Err(format!("Sin conexión con WhatsApp: {e}")),
+        Err(ureq::Error::Transport(t)) => Err(transport_error("WhatsApp", &t)),
+    }
+}
+
+/// Un error de red al enviar: si la petición no llegó a salir (no hay
+/// conexión, nombre o dirección), no se envió; si salió y se cortó sin
+/// respuesta, no se sabe ([`UNCERTAIN`]).
+fn transport_error(to: &str, t: &ureq::Transport) -> String {
+    use ureq::ErrorKind::*;
+    match t.kind() {
+        Dns | ConnectionFailed | InvalidUrl | UnknownScheme | InsecureRequestHttpsOnly | InvalidProxyUrl | ProxyConnect | ProxyUnauthorized => format!("Sin conexión con {to}: {t}"),
+        _ => format!("{UNCERTAIN}: se cortó la conexión con {to} al enviarlo ({t})"),
     }
 }
 
@@ -857,10 +945,11 @@ pub fn gateway_send(s: &WaSettings, to: &str, text: &str) -> Result<String, Stri
     match req.send_string(&body.to_string()) {
         Ok(r) => {
             let v: Value = serde_json::from_str(&read_body(r)).unwrap_or(Value::Null);
-            gw_message_id(&v).ok_or_else(|| "La pasarela no devolvió el identificador del mensaje".into())
+            gw_message_id(&v).ok_or_else(|| format!("{UNCERTAIN}: la pasarela lo aceptó sin devolver su identificador"))
         }
         Err(ureq::Error::Status(code, r)) => Err(format!("No se envió: {}", gw_error(code, &read_body(r)))),
-        Err(_) => Err("No hay conexión con la pasarela de WhatsApp: compruebe que está encendida".into()),
+        Err(ureq::Error::Transport(t)) if !transport_error("la pasarela", &t).starts_with(UNCERTAIN) => Err("No hay conexión con la pasarela de WhatsApp: compruebe que está encendida".into()),
+        Err(ureq::Error::Transport(t)) => Err(transport_error("la pasarela", &t)),
     }
 }
 
@@ -1247,6 +1336,7 @@ pub fn sample_whatsapp(db: &mut Db, today: NaiveDate) {
             reply: if confirmed { BUTTON_YES.into() } else { String::new() },
             reply_at: confirmed.then(|| sent + Duration::minutes(14)),
             error: String::new(),
+            uncertain: false,
         });
     }
 }
@@ -1378,6 +1468,76 @@ mod tests {
 
     fn reply(id: &str, text: &str, context: &str) -> WaEvent {
         WaEvent::Message { id: id.into(), from: String::new(), user_id: "US.9".into(), name: "Paciente".into(), context: context.into(), text: text.into(), button: true }
+    }
+
+    /// Un envío que salió y se cortó sin respuesta: no se reenvía, la
+    /// respuesta del paciente se recoge igual y recepción lo sabe.
+    #[test]
+    fn an_uncertain_send_is_not_retried_and_replies_still_count() {
+        let mut db = Db::sample(friday());
+        let s = cfg();
+        db.whatsapp.clear();
+        let appt = db.wa_due(&s, at(friday(), 10, 30))[0];
+        let (log, _) = db.wa_prepare(&s, appt, now()).unwrap();
+        let tasks = db.tasks.len();
+        db.wa_sent(log, Err(format!("{UNCERTAIN}: se cortó la conexión")), friday());
+        let m = db.whatsapp.iter().find(|m| m.id == log).unwrap().clone();
+        assert!(m.uncertain && m.state == WaState::Enviado);
+        assert!(!db.wa_due(&s, at(friday(), 10, 31)).contains(&appt), "no se reenvía");
+        assert_eq!(db.tasks.len(), tasks + 1);
+        assert!(db.tasks.last().unwrap().text.contains("No se sabe si llegó"));
+        // el paciente contesta (sin identificador del mensaje): se recoge por su número
+        let p = db.appointments.iter().find(|a| a.id == appt).unwrap().patient_id.unwrap();
+        let from = db.patient(p).unwrap().mobile.clone();
+        let ev = WaEvent::Message { id: "in9".into(), from, user_id: String::new(), name: String::new(), context: String::new(), text: "Sí".into(), button: false };
+        db.wa_apply(&s, &ev, at(friday(), 11, 0));
+        assert_eq!(db.appointments.iter().find(|a| a.id == appt).unwrap().state, ApptState::Confirmada);
+    }
+
+    /// «BAJA» por WhatsApp: no se le envían más WhatsApp (a ese número),
+    /// queda en el registro de cambios y recepción lo sabe.
+    #[test]
+    fn replying_baja_stops_whatsapp() {
+        for t in ["BAJA", "baja.", "Stop", "Quiero darme de baja", "no quiero recibir más mensajes"] {
+            assert!(is_opt_out(t), "{t}");
+        }
+        for t in ["No", "Sí", "No puedo ir", "¿Me da cita?"] {
+            assert!(!is_opt_out(t), "{t}");
+        }
+        let mut db = Db::sample(friday());
+        let s = WaSettings { auto_reply: true, ..cfg() };
+        let (appt, _) = sent_reminder(&mut db);
+        let pid = db.appointments.iter().find(|a| a.id == appt).unwrap().patient_id.unwrap();
+        let r = db.wa_apply(&s, &reply("in5", "BAJA", "wamid.SENT"), at(friday(), 11, 0));
+        assert!(!db.patient(pid).unwrap().accepts_whatsapp);
+        assert_eq!(db.appointments.iter().find(|a| a.id == appt).unwrap().state, ApptState::Planificada, "no anula la cita");
+        assert!(db.audit_log.iter().any(|a| a.action == "Baja de WhatsApp"));
+        assert!(db.tasks.iter().any(|t| t.text.contains("no recibir más WhatsApp")));
+        assert_eq!(r.len(), 1, "se le confirma");
+        assert!(db.wa_due(&s, at(friday(), 10, 30)).iter().all(|a| db.appointments.iter().find(|x| x.id == *a).unwrap().patient_id != Some(pid)));
+    }
+
+    /// Si la petición no llegó a salir, no se envió; si salió y se cortó sin
+    /// respuesta, no se sabe (no se reintenta).
+    #[test]
+    fn network_errors_tell_not_sent_from_uncertain() {
+        // nadie escuchando: no salió
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let s = WaSettings { api_base: format!("http://127.0.0.1:{closed}/v27.0"), ..cfg() };
+        let e = post_message(&s, &text_request("34600111222", "hola")).unwrap_err();
+        assert!(!e.starts_with(UNCERTAIN), "{e}");
+        // recibe la petición y se corta sin contestar: no se sabe
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let h = std::thread::spawn(move || {
+            let (mut c, _) = l.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = std::io::Read::read(&mut c, &mut buf);
+        });
+        let s = WaSettings { api_base: format!("http://127.0.0.1:{port}/v27.0"), ..cfg() };
+        let e = post_message(&s, &text_request("34600111222", "hola")).unwrap_err();
+        assert!(e.starts_with(UNCERTAIN), "{e}");
+        h.join().unwrap();
     }
 
     #[test]

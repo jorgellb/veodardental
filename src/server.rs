@@ -2795,6 +2795,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// Dos puestos que pulsan «Enviar por correo» a la vez: el servidor da
+    /// cada correo pendiente a uno solo.
+    #[test]
+    fn two_stations_sending_emails_at_once_send_each_one_once() {
+        use crate::app::ChainOp;
+        use crate::comms::{Channel, Message, MsgKind, MsgState};
+        let (addr, path, h) = start("CLAVE34");
+        let ra = signed_in(&addr, "CLAVE34", "Recepción 1", 2, "0000");
+        let rb = signed_in(&addr, "CLAVE34", "Recepción 2", 2, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        let mut ids = vec![];
+        for pid in [101, 102, 103] {
+            let id = a.new_id();
+            a.messages.push(Message {
+                id,
+                patient_id: pid,
+                kind: MsgKind::Libre,
+                channel: Channel::Email,
+                to: format!("p{pid}@example.com"),
+                subject: "Aviso".into(),
+                text: "Hola".into(),
+                created: crate::model::now(),
+                sent_at: None,
+                state: MsgState::Pendiente,
+                related: None,
+                user: String::new(),
+                error: String::new(),
+                attempts: 0,
+                uncertain: false,
+                sending: String::new(),
+                sending_since: None,
+                sent_by: String::new(),
+            });
+            ids.push(id);
+        }
+        ra.push(&mut a, &mut sa).unwrap();
+        let claim = |t: &str| ChainOp::ClaimEmails { ids: ids.clone(), token: t.into() }.json();
+        assert_eq!(ra.chain_op(&mut a, &mut sa, &claim("A")).unwrap(), 3);
+        assert_eq!(rb.chain_op(&mut b, &mut sb, &claim("B")).unwrap(), 0, "ya los envía el otro puesto");
+        assert_eq!(a.claimed_emails("A").len(), 3);
+        assert!(b.claimed_emails("B").is_empty() && b.pending_emails().is_empty(), "y el segundo lo ve");
+        // lo que llega mal se rechaza
+        assert!(rb.chain_op(&mut b, &mut sb, &json!({ "accion": "reservar_correos", "mensajes": [1], "marca": "" })).is_err());
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
     #[test]
     fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
         use crate::app::ChainOp;

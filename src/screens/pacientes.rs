@@ -784,6 +784,21 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                 ui.checkbox(&mut p.accepts_email, "Email");
                 ui.checkbox(&mut p.accepts_whatsapp, "WhatsApp");
             });
+            // baja por finalidad: estos avisos no le llegan por ningún canal
+            ui.label(RichText::new("Avisos que quiere recibir").size(12.5).color(MUTED));
+            ui.horizontal_wrapped(|ui| {
+                use crate::comms::MsgKind;
+                for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::PresupuestoPendiente, MsgKind::Cumpleanos] {
+                    let mut on = !p.no_messages.contains(&k);
+                    if ui.checkbox(&mut on, k.label()).changed() {
+                        if on {
+                            p.no_messages.retain(|x| *x != k);
+                        } else {
+                            p.no_messages.push(k);
+                        }
+                    }
+                }
+            });
         });
     });
 }

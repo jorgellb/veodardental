@@ -655,6 +655,10 @@ pub fn consultas(app: &mut App, ui: &mut Ui) {
                         user: app.db.config.current_user.clone(),
                         error: String::new(),
                         attempts: 0,
+                        uncertain: false,
+                        sending: String::new(),
+                        sending_since: None,
+                        sent_by: String::new(),
                     });
                     n += 1;
                 }

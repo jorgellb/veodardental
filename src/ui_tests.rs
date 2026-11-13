@@ -1064,7 +1064,9 @@ fn patient_link_actions_reach_the_agenda() {
     assert!(h.state().db.patient(101).unwrap().allergies.contains("Ibuprofeno"));
     // pide otra hora: llega a la agenda como cambio y recepción lo acepta
     let days: serde_json::Value = serde_json::from_str(&ureq::get(&format!("http://127.0.0.1:{port}/api/cita/{token}/huecos")).call().unwrap().into_string().unwrap()).unwrap();
-    let (fecha, hora) = (days["dias"][0]["fecha"].as_str().unwrap().to_string(), days["dias"][0]["horas"][1]["hora"].as_str().unwrap().to_string());
+    // el primer día con al menos dos horas libres (a última hora, hoy puede no quedar ninguna)
+    let day = days["dias"].as_array().unwrap().iter().find(|d| d["horas"].as_array().is_some_and(|h| h.len() >= 2)).expect("sin días con huecos").clone();
+    let (fecha, hora) = (day["fecha"].as_str().unwrap().to_string(), day["horas"][1]["hora"].as_str().unwrap().to_string());
     assert_eq!(post("cambiar", serde_json::json!({"fecha": fecha, "hora": hora})), 200);
     assert!(wait(&mut h, &|a| a.db.booking_requests.iter().any(|r| r.replaces == Some(id) && r.state == ReqState::Pendiente)));
     h.step();
@@ -1321,7 +1323,8 @@ fn daily_emails_are_sent_automatically() {
             t.active = t.kind == MsgKind::RecordatorioCita && t.channel == Channel::Email;
         }
         let tomorrow = today + chrono::Duration::days(1);
-        a.db.appointments.retain(|x| x.date != tomorrow);
+        // solo estas dos citas por venir (un viernes también tocan las del lunes)
+        a.db.appointments.retain(|x| x.date <= today);
         for (k, pid) in [101u32, 102].into_iter().enumerate() {
             let p = a.db.patients.iter_mut().find(|p| p.id == pid).unwrap();
             p.accepts_gdpr = true;

@@ -199,6 +199,10 @@ impl Db {
                 user: self.config.current_user.clone(),
                 error: String::new(),
                 attempts: 0,
+                uncertain: false,
+                sending: String::new(),
+                sending_since: None,
+                sent_by: String::new(),
             });
             if let Some(x) = self.slot_offers.iter_mut().find(|x| x.id == offer_id) {
                 x.invites[i].channel = ch.label().to_string();
