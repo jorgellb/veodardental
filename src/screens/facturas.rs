@@ -330,7 +330,7 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
 }
 
 fn out_dir() -> Result<std::path::PathBuf, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR);
+    let dir = crate::paths::documents().join(crate::brand::DIR);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }

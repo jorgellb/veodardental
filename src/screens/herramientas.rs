@@ -598,7 +598,7 @@ pub fn consultas(app: &mut App, ui: &mut Ui) {
             section(ui, &format!("{} pacientes encontrados", ids.len()));
             right_aligned(ui, |ui| {
                 if ui.button("⬇ Exportar CSV").clicked() {
-                    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR);
+                    let dir = crate::paths::documents().join(crate::brand::DIR);
                     let _ = std::fs::create_dir_all(&dir);
                     let path = dir.join(format!("consulta_pacientes_{}.csv", now().format("%Y%m%d_%H%M")));
                     match std::fs::write(&path, app.db.query_csv(&ids, today)) {

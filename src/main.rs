@@ -14,6 +14,7 @@ mod colegiado;
 mod comms;
 mod erx;
 mod extra;
+mod paths;
 mod finance;
 mod firma;
 mod gesden;

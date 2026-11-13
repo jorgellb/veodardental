@@ -6,7 +6,7 @@ use crate::theme::*;
 use egui::{RichText, Ui};
 
 fn save_file(name: &str, content: &str) -> Result<std::path::PathBuf, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("mutuas");
+    let dir = crate::paths::documents().join(crate::brand::DIR).join("mutuas");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(name);
     std::fs::write(&path, content).map_err(|e| e.to_string())?;

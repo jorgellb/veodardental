@@ -168,7 +168,7 @@ pub fn decrypt(bytes: &[u8], password: &str) -> Result<Vec<u8>, String> {
 // ───────────────────────────── la clave de este ordenador ─────────────────────────────
 
 fn key_path() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("copias.json")
+    crate::paths::config().join(crate::brand::DIR).join("copias.json")
 }
 
 #[cfg(not(test))]

@@ -482,8 +482,7 @@ fn hip_for(app: &App, s: &crate::finance::SrepIssue) -> String {
 
 /// Carpeta de documentos del programa (en las pruebas, la temporal).
 fn docs_dir(sub: &str) -> Result<std::path::PathBuf, String> {
-    let docs = if cfg!(test) { Some(std::env::temp_dir()) } else { dirs::document_dir().or_else(dirs::home_dir) };
-    let dir = docs.unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join(sub);
+    let dir = crate::paths::documents().join(crate::brand::DIR).join(sub);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
@@ -1069,7 +1068,7 @@ fn esc(s: &str) -> String {
 }
 
 fn export_html(app: &App, r: &Prescription) -> Result<std::path::PathBuf, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("recetas");
+    let dir = crate::paths::documents().join(crate::brand::DIR).join("recetas");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let p = app.db.patient(r.patient_id).cloned().unwrap_or_default();
     let d = app.db.doctor(r.doctor_id).cloned();

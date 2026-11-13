@@ -201,7 +201,7 @@ impl WaSettings {
 }
 
 fn settings_path() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("whatsapp.json")
+    crate::paths::config().join(crate::brand::DIR).join("whatsapp.json")
 }
 
 pub fn load_settings() -> WaSettings {

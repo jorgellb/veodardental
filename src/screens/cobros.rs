@@ -266,7 +266,7 @@ fn filtered(app: &App) -> Vec<Payment> {
 }
 
 fn export_csv(app: &App) -> Result<String, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR);
+    let dir = crate::paths::documents().join(crate::brand::DIR);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("cobros_{}_{}.csv", app.lists.pay_from.format("%Y%m%d"), app.lists.pay_to.format("%Y%m%d")));
     let mut s = String::from("Fecha;Recibo;Paciente;Concepto;Forma de pago;Usuario;Importe\n");

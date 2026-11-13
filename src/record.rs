@@ -199,7 +199,7 @@ pub fn safe_name(s: &str) -> String {
 }
 
 pub fn out_dir() -> PathBuf {
-    dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("fichas")
+    crate::paths::documents().join(crate::brand::DIR).join("fichas")
 }
 
 /// Exporta la ficha imprimible de cada paciente (activos o todos) a una carpeta.

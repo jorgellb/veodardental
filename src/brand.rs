@@ -18,7 +18,7 @@ static MIGRATED: OnceLock<usize> = OnceLock::new();
 /// Carpetas donde el programa guarda cosas: datos de la clínica, ajustes de
 /// este ordenador y documentos (en Windows, las dos primeras son la misma).
 fn bases() -> Vec<PathBuf> {
-    [dirs::data_dir(), dirs::config_dir(), dirs::document_dir().or_else(dirs::home_dir)].into_iter().flatten().collect()
+    vec![crate::paths::data(), crate::paths::config(), crate::paths::documents()]
 }
 
 /// Al abrir el programa con el nombre nuevo por primera vez, pasa las

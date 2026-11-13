@@ -413,7 +413,7 @@ fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
 }
 
 fn export_txt(app: &App, b: &Budget) -> Result<String, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR);
+    let dir = crate::paths::documents().join(crate::brand::DIR);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("presupuesto_{}.txt", b.id));
     let p = app.db.patient(b.patient_id).cloned().unwrap_or_default();

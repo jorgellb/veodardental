@@ -840,7 +840,7 @@ pub struct RepoConfig {
 }
 
 fn config_path() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("repositorio.json")
+    crate::paths::config().join(crate::brand::DIR).join("repositorio.json")
 }
 
 pub fn load_config() -> Option<RepoConfig> {

@@ -96,7 +96,7 @@ fn esc(s: &str) -> String {
 const CSS: &str = "body{font-family:'Open Sans',Arial,sans-serif;max-width:820px;margin:36px auto;color:#1e293b}.head{display:flex;justify-content:space-between;border-bottom:3px solid #0e9688;padding-bottom:12px}.head b{font-size:20px}.muted{color:#64748b;font-size:13px}h1{font-size:22px;margin:22px 0 6px}table{width:100%;border-collapse:collapse;margin-top:14px}th{background:#eef3f8;color:#475569;font-size:12px;text-transform:uppercase;text-align:left;padding:8px}td{padding:8px;border-bottom:1px solid #e2e8f0;font-size:14px}td.n{text-align:right}tr.total td{font-weight:700;font-size:16px;border:none}.box{background:#f4f8fb;border-radius:8px;padding:12px;margin-top:16px;font-size:13px}.firma{margin-top:50px;display:flex;gap:80px}.firma div{border-top:1px solid #94a3b8;width:240px;padding-top:6px;font-size:12px;color:#64748b}@media print{body{margin:14mm}}";
 
 pub fn open_html(ctx: &egui::Context, name: &str, html: String) -> Result<std::path::PathBuf, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("imprimir");
+    let dir = crate::paths::documents().join(crate::brand::DIR).join("imprimir");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(name);
     std::fs::write(&path, html).map_err(|e| e.to_string())?;

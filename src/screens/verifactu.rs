@@ -21,7 +21,7 @@ pub struct LocalCert {
 }
 
 fn cert_file() -> std::path::PathBuf {
-    dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("aeat.json")
+    crate::paths::config().join(crate::brand::DIR).join("aeat.json")
 }
 
 fn load_cert() -> LocalCert {

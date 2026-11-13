@@ -235,7 +235,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
 
 /// Documento imprimible (con la firma y, si se firmó por internet, los datos que la acreditan).
 fn export_html(app: &App, d: &PatientDoc) -> Result<std::path::PathBuf, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("documentos");
+    let dir = crate::paths::documents().join(crate::brand::DIR).join("documentos");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let p = app.db.patient(d.patient_id).cloned().unwrap_or_default();
     let path = dir.join(format!("{}_{}_{}.html", p.history_no, d.id, fold(&d.title).replace(|c: char| !c.is_ascii_alphanumeric(), "_")));

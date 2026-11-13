@@ -200,7 +200,7 @@ fn items(app: &mut App, ui: &mut Ui, r: &Remittance) {
 }
 
 fn write_xml(app: &mut App, rid: u32) -> Result<String, String> {
-    let dir = dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("remesas");
+    let dir = crate::paths::documents().join(crate::brand::DIR).join("remesas");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("remesa_SEPA_{rid}.xml"));
     std::fs::write(&path, app.db.sepa_xml(rid)).map_err(|e| e.to_string())?;

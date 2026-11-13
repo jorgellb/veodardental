@@ -44,7 +44,7 @@ pub struct StationSeen {
 }
 
 fn settings_path() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("puesto.json")
+    crate::paths::config().join(crate::brand::DIR).join("puesto.json")
 }
 
 pub fn load_station() -> Station {

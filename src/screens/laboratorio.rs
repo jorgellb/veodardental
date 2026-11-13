@@ -329,7 +329,7 @@ pub struct LabJob {
 }
 
 fn lab_dir() -> std::path::PathBuf {
-    dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("laboratorio")
+    crate::paths::documents().join(crate::brand::DIR).join("laboratorio")
 }
 
 fn save_zip(name: &str, bytes: &[u8]) -> Result<std::path::PathBuf, String> {

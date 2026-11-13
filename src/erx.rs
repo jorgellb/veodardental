@@ -261,7 +261,7 @@ pub fn sign_all(list: &mut [RPrescripcion], signer: &crate::firma::Signer, now: 
 
 /// Ruta del certificado (.p12/.pfx) de cada prescriptor en ESTE ordenador.
 fn cert_file() -> std::path::PathBuf {
-    dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(crate::brand::DIR).join("firma.json")
+    crate::paths::config().join(crate::brand::DIR).join("firma.json")
 }
 
 pub fn cert_path(doctor_id: u32) -> String {

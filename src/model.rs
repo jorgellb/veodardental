@@ -994,7 +994,7 @@ impl Db {
     /// Carpeta de imágenes del paciente (como IMG/PACIENTES del original).
     pub fn patient_image_dir(&self, pid: u32) -> PathBuf {
         let n = self.patient(pid).map(|p| p.history_no).unwrap_or(pid);
-        dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("imagenes").join(n.to_string())
+        crate::paths::data().join(crate::brand::DIR).join("imagenes").join(n.to_string())
     }
 
     /// Sustituye los comodines del enlace por los datos del paciente. Los
@@ -1286,7 +1286,7 @@ impl Db {
         if crate::shared::shared() {
             return PathBuf::from(crate::shared::station().data_dir.trim()).join("clinica.json");
         }
-        let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+        let base = crate::paths::data();
         base.join(crate::brand::DIR).join("clinica.json")
     }
 

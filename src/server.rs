@@ -101,7 +101,7 @@ impl ServerConfig {
 }
 
 fn config_path() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("servidor.json")
+    crate::paths::config().join(crate::brand::DIR).join("servidor.json")
 }
 
 /// Clave nueva de 12 caracteres (60 bits) del generador aleatorio del sistema.

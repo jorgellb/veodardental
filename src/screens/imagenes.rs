@@ -425,7 +425,7 @@ fn split_args(s: &str) -> Vec<String> {
 
 pub fn bridge_path(c: &Connector) -> PathBuf {
     if c.bridge_path.trim().is_empty() {
-        dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(crate::brand::DIR).join("IMCONECT.ini")
+        crate::paths::data().join(crate::brand::DIR).join("IMCONECT.ini")
     } else {
         PathBuf::from(c.bridge_path.trim())
     }
