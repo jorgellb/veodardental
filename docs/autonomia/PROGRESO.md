@@ -35,7 +35,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad de la fase 2, ficheros solo para el usuario y T-F3-01: ensayo de instalación | E-022 | `e44ee0a` |
 | T-F3-02: actualizaciones coordinadas (versión de datos, bandeja de pendientes, paquetes firmados y vuelta atrás) | E-023 | `7704bd1` |
 | T-F3-03: firma condicionada a secretos, empaquetado comprobado y bandeja por usuario (revisión de seguridad) | E-024 | `c08cd25` |
-| T-F3-04: registro de errores e informe para soporte; firma solo con etiqueta y sesión caducada (revisión de seguridad) | E-025 | (pendiente) |
+| T-F3-04: registro de errores e informe para soporte; firma solo con etiqueta y sesión caducada (revisión de seguridad) | E-025 | `2945231` |
 
 ## Siguiente acción
 Las fases 1 y 2 están terminadas en la parte de ingeniería. El mapeo real de GESDEN, Novaclinic, Clinic Cloud y Dentalink sigue en B-03, B-04 y B-05. Toca la fase 3: instalación y operación.
