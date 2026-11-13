@@ -203,6 +203,9 @@ pub struct App {
     pub offline_since: Option<std::time::Instant>,
     /// Medidas que esperan a que estén los datos (tras reconectar).
     pub pending_measures: Vec<(crate::medidas::Kind, u64, String)>,
+    /// Registro de accesos a las historias: freno de las consultas y lo que ve Dirección.
+    pub history_throttle: crate::accesos::Throttle,
+    pub history_view: Option<(u32, crate::accesos::Loaded)>,
     pub sms_job: Option<std::sync::mpsc::Receiver<(u32, Result<(), crate::mail::SendError>)>>,
     pub ortho: screens::ortodoncia::OrthoUi,
     pub rem: screens::remesas::RemState2,
@@ -342,6 +345,8 @@ impl App {
             timing: None,
             offline_since: None,
             pending_measures: vec![],
+            history_throttle: Default::default(),
+            history_view: None,
             ortho: screens::ortodoncia::OrthoUi::default(),
             rem: screens::remesas::RemState2::default(),
             cobros_tab: 0,
@@ -732,6 +737,56 @@ impl App {
         Ok(())
     }
 
+    /// Apunta que el usuario consulta una parte de la historia de `pid` (una
+    /// vez cada cinco minutos). En red lo apunta el servidor con el usuario de
+    /// la sesión; en un solo ordenador, este programa.
+    pub fn note_access(&mut self, pid: u32, context: &str) {
+        let Some(user) = self.user_id else { return };
+        if self.awaiting_data || !self.history_throttle.fresh(user, pid, context) {
+            return;
+        }
+        if let Some(r) = self.remote.clone() {
+            let ctx = context.to_string();
+            std::thread::spawn(move || {
+                let _ = r.note_access(pid, &ctx);
+            });
+        } else if self.local.is_some() {
+            self.append_history(user, pid, crate::accesos::Action::Consulta, context.to_string());
+        }
+    }
+
+    /// En un solo ordenador: lo que se acaba de guardar de cada historia.
+    fn note_changes(&mut self, touched: std::collections::BTreeMap<u32, std::collections::BTreeSet<String>>) {
+        let Some(user) = self.user_id else { return };
+        for (pid, parts) in touched {
+            self.append_history(user, pid, crate::accesos::Action::Modificacion, parts.into_iter().collect::<Vec<_>>().join(", "));
+        }
+    }
+
+    fn append_history(&mut self, user: u32, patient: u32, action: crate::accesos::Action, context: String) {
+        let name = self.db.user(user).map(|u| u.name.clone()).unwrap_or_default();
+        let e = crate::accesos::Entry { at: crate::model::now(), user_id: user, user: name, station: 0, patient, action, context, prev: String::new() };
+        if let Err(err) = crate::accesos::append(&crate::accesos::log_file(&Db::path()), e) {
+            self.save_error = Some(err);
+        }
+    }
+
+    /// Dirección: carga el registro de accesos a la historia de `pid`.
+    pub fn load_history_log(&mut self, pid: u32) {
+        let r = match self.remote.clone() {
+            Some(r) => r.history_log(pid),
+            None => {
+                let f = crate::accesos::log_file(&Db::path());
+                let integrity = match crate::accesos::verify(&f) {
+                    Ok(n) => format!("Íntegro ({n} entradas)"),
+                    Err(e) => e,
+                };
+                Ok((crate::accesos::read(&f, Some(pid)), integrity))
+            }
+        };
+        self.history_view = Some((pid, r));
+    }
+
     /// Instrumentos del piloto (`medidas`): mide dar cita, cobrar y cerrar la
     /// caja (tiempo y pasos), las caídas de la conexión, y apunta lo pendiente
     /// en cuanto están los datos.
@@ -882,7 +937,10 @@ impl App {
         }
         // un solo ordenador: solo lo que ha cambiado, en el diario
         if let Some(st) = self.local.as_mut() {
-            return st.save(&mut self.db).map(|_| 0);
+            st.save(&mut self.db)?;
+            let touched = std::mem::take(&mut st.touched);
+            self.note_changes(touched);
+            return Ok(0);
         }
         match crate::shared::save_synced(&mut self.db, &mut self.base, &Db::path())? {
             crate::shared::Synced::Merged(n) => Ok(n),

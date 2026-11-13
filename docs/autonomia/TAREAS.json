@@ -2214,8 +2214,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas: consultar y modificar dejan registro sin copiar la historia; en red lo registra el servidor",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-032"
+   ]
   },
   {
    "id": "T-F4-03",

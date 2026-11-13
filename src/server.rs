@@ -614,6 +614,9 @@ struct State {
     /// Clave pública del servidor y clave de las firmas de la prueba.
     public: Vec<u8>,
     proof: ring::hmac::Key,
+    /// Registro de accesos a las historias (lo escribe el servidor) y su freno.
+    history: PathBuf,
+    history_throttle: crate::accesos::Throttle,
 }
 
 /// Cuántas veces en la última ventana (y, si `add`, apunta una más).
@@ -736,6 +739,7 @@ impl State {
         let limit = crate::model::now() - chrono::Duration::hours(SESSION_IDLE_HOURS);
         let sessions: HashMap<String, Session> = std::fs::read_to_string(sessions_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         let sessions = sessions.into_iter().filter(|(_, s)| s.last_used > limit).collect();
+        let history = crate::accesos::log_file(&path);
         State {
             snap: Snapshot::from_db(initial),
             log: VecDeque::new(),
@@ -753,6 +757,8 @@ impl State {
             proofs: HashMap::new(),
             public,
             proof: proof_key(key),
+            history,
+            history_throttle: Default::default(),
         }
     }
 
@@ -992,6 +998,8 @@ impl State {
                 (k, s)
             })
             .collect();
+        // de quién es cada historia que se cambia (para el registro de accesos)
+        let history = crate::accesos::patients_touched(&changes);
         let applied = sync::apply(&mut self.snap, &changes)?;
         let (mut touched, mut previous) = (applied.touched, applied.previous);
         // si algo falla a partir de aquí, se deshace todo
@@ -1041,7 +1049,49 @@ impl State {
             sync::undo(&mut self.snap, previous);
             return Err(e);
         }
+        self.note_history(user, station, crate::accesos::Action::Modificacion, history);
         Ok(sent)
+    }
+
+    /// Apunta en el registro de accesos lo que hizo `user` en cada historia.
+    fn note_history(&mut self, user: u32, station: u32, action: crate::accesos::Action, parts: std::collections::BTreeMap<u32, std::collections::BTreeSet<String>>) {
+        let name = self.user(user).map(|u| u.name).unwrap_or_else(|| format!("usuario {user}"));
+        for (patient, ctx) in parts {
+            let context = ctx.into_iter().collect::<Vec<_>>().join(", ");
+            let e = crate::accesos::Entry { at: crate::model::now(), user_id: user, user: name.clone(), station, patient, action, context, prev: String::new() };
+            if let Err(err) = crate::accesos::append(&self.history, e) {
+                eprintln!("{err}");
+            }
+        }
+    }
+
+    /// Un puesto avisa de que su usuario consulta una historia: el servidor lo
+    /// apunta con el usuario de la sesión (no con el que diga el puesto).
+    fn history_access(&mut self, req: &Request, me: u32, station: u32) -> Response {
+        let v: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+        let Some(patient) = v["paciente"].as_u64().map(|n| n as u32) else { return error(400, "Falta «paciente».") };
+        if self.snap.get("patients", Some(&patient.to_string())).is_none() {
+            return error(404, "Ese paciente no existe.");
+        }
+        let context: String = v["contexto"].as_str().unwrap_or("Ficha").chars().filter(|c| !c.is_control()).take(60).collect();
+        if self.history_throttle.fresh(me, patient, &context) {
+            self.note_history(me, station, crate::accesos::Action::Consulta, [(patient, [context].into_iter().collect())].into_iter().collect());
+        }
+        reply(200, json!({ "ok": true }))
+    }
+
+    /// El registro de accesos de una historia (o de todas): solo Dirección.
+    fn history_read(&self, req: &Request, me: u32) -> Response {
+        if !self.is_admin(me) {
+            return error(403, "Solo Dirección puede ver el registro de accesos a las historias.");
+        }
+        let patient = req.param("paciente").and_then(|p| p.parse::<u32>().ok());
+        let list: Vec<crate::accesos::Entry> = crate::accesos::read(&self.history, patient).into_iter().take(2000).collect();
+        let integrity = match crate::accesos::verify(&self.history) {
+            Ok(n) => format!("Íntegro ({n} entradas)"),
+            Err(e) => e,
+        };
+        reply(200, json!({ "accesos": list, "integridad": integrity }))
     }
 
     /// Recordatorios y tareas automáticas nuevos que ya existen (otro puesto
@@ -1480,6 +1530,8 @@ impl State {
                         Err(e) => error(400, &e),
                     },
                     ("POST", "/cadena") => self.chain_op(req, me),
+                    ("POST", "/historia") => self.history_access(req, me, station),
+                    ("GET", "/historia") => self.history_read(req, me),
                     ("POST", "/contrasena") => self.set_pin(req, me),
                     ("POST", "/movil") => self.totp(req, me),
                     _ => error(404, "no existe"),
@@ -1977,6 +2029,18 @@ impl Remote {
         sync::mark_synced(db);
         self.receive(db, synced, delta)?;
         Ok(changes.len())
+    }
+
+    /// Avisa al servidor de que el usuario de la sesión consulta una historia.
+    pub fn note_access(&self, patient: u32, context: &str) -> Result<(), String> {
+        self.post("/historia", &json!({ "paciente": patient, "contexto": context }).to_string()).map(|_| ())
+    }
+
+    /// Registro de accesos a una historia (solo Dirección) y su integridad.
+    pub fn history_log(&self, patient: u32) -> Result<(Vec<crate::accesos::Entry>, String), String> {
+        let v = parse(&self.get(&format!("/historia?paciente={patient}"))?)?;
+        let list = serde_json::from_value(v["accesos"].clone()).map_err(|e| format!("Respuesta no válida del servidor: {e}"))?;
+        Ok((list, v["integridad"].as_str().unwrap_or("").to_string()))
     }
 
     /// Envía cambios guardados en la bandeja de este ordenador (de una sesión
@@ -2544,6 +2608,42 @@ mod tests {
         b.push_changes(&mut db2, &mut s2, &kept).unwrap();
         assert_eq!(serde_json::to_string(&crate::sync::on_disk(&path).patients).unwrap(), before);
         a.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T-F4-02. En red, el servidor apunta quién consulta y quién modifica
+    /// cada historia, con el usuario de la sesión (no el que diga el puesto) y
+    /// sin copiar la historia. Solo Dirección lo lee, y no va con los datos.
+    #[test]
+    fn the_server_records_who_reads_and_changes_each_history() {
+        let (addr, path, h) = start("CLAVE_HIST");
+        let rec = signed_in(&addr, "CLAVE_HIST", "Recepción", 2, "0000");
+        let dir = signed_in(&addr, "CLAVE_HIST", "Dirección", 1, "0000");
+        // consulta (el puesto intenta decir que es otro usuario: no cuenta)
+        rec.post("/historia", &json!({ "paciente": 101, "contexto": "Citas", "usuario": "Dirección" }).to_string()).unwrap();
+        rec.note_access(101, "Citas").unwrap();
+        assert!(rec.note_access(999_999, "Ficha").is_err(), "paciente que no existe");
+        // modificación de un tratamiento del 101 por Dirección
+        let (mut d, mut sd) = dir.load().unwrap();
+        let secret = "Nota clínica que no debe salir al registro";
+        let e = d.entries.iter_mut().find(|e| e.patient_id == 101).unwrap();
+        e.notes = secret.into();
+        dir.push(&mut d, &mut sd).unwrap();
+        // solo Dirección lo lee
+        assert!(rec.history_log(101).unwrap_err().contains("Solo Dirección"));
+        let (list, integrity) = dir.history_log(101).unwrap();
+        assert!(integrity.starts_with("Íntegro"), "{integrity}");
+        let reads: Vec<&crate::accesos::Entry> = list.iter().filter(|e| e.action == crate::accesos::Action::Consulta).collect();
+        assert_eq!(reads.len(), 1, "la consulta repetida no se apunta dos veces: {list:?}");
+        assert_eq!((reads[0].user.as_str(), reads[0].user_id, reads[0].context.as_str()), ("Recepción", 2, "Citas"));
+        assert!(list.iter().any(|e| e.action == crate::accesos::Action::Modificacion && e.user_id == 1 && e.context == "tratamientos"), "{list:?}");
+        // sin copiar la historia, y fuera de los datos que reciben los puestos
+        let file = std::fs::read_to_string(crate::accesos::log_file(&path)).unwrap();
+        assert!(!file.contains(secret));
+        assert!(!rec.get("/datos").unwrap().contains("accesos_historias") && !rec.get("/datos").unwrap().contains("\"Consulta\""));
+        assert_eq!(crate::accesos::verify(&crate::accesos::log_file(&path)).unwrap(), list.len());
+        rec.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

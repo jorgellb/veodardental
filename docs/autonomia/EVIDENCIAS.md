@@ -818,3 +818,31 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - **TicketBAI:** NF 3/2020, DF 32/2020 y DF 48/2021. Si alcanza a los servicios sanitarios exentos no está confirmado, y Navarra está pendiente.
   - **Receta privada:** SREP, CGCOE, CGCOM y Nodofarma.
 - **Lo que no se afirma:** ninguna certificación ni ningún cumplimiento. Lo confirmado y lo pendiente van separados.
+
+## E-032 T-F4-02: registro de accesos a cada historia
+- **Qué hay:** `src/accesos.rs`. Apunta quién consulta y quién modifica la historia de cada paciente: cuándo, desde qué puesto, con qué usuario y en qué parte (pestaña de la ficha, o tratamientos, ficha, recetas…).
+- **Nunca copia la historia:** solo el nombre de la parte. Lo que cuenta como historia está en `HISTORY_LISTS`; citas y gastos no, por ejemplo.
+- **Protegido y limitado:**
+  - va en un fichero aparte (`accesos_historias.jsonl`, 0600), fuera de los datos de la clínica, así que los puestos no lo reciben;
+  - cada línea va encadenada con la huella de la anterior: borrar o cambiar una línea se detecta (`verify`), y Dirección ve si está íntegro;
+  - solo Dirección lo lee: en la ficha, «Accesos a esta historia»; en red, `GET /historia`, que rechaza a los demás.
+  - Las consultas se apuntan una vez cada cinco minutos por usuario, paciente y parte, para no llenarlo.
+- **En red lo registra el servidor:**
+  - la consulta llega por la sesión del puesto (`POST /historia`) y el servidor la apunta con el usuario de la sesión, aunque el puesto diga otro;
+  - las modificaciones las apunta el servidor al recibir los cambios (`State::save`).
+- **En un solo ordenador:** lo apunta el programa, con las historias tocadas en cada guardado (`LocalStore::touched`).
+- **Pruebas:**
+  - `accesos::tests::the_log_is_chained_and_tampering_shows`: cadena, 0600, y borrado o cambio detectados;
+  - `accesos::tests::changes_tell_which_patient_and_part_without_content`;
+  - `server::tests::the_server_records_who_reads_and_changes_each_history`: usuario de la sesión, consulta sin duplicar, modificación con su parte, Recepción sin acceso al registro, la nota clínica fuera del registro y el registro fuera de `/datos`;
+  - `local::tests::each_save_tells_which_histories_it_touched`.
+- **Límites:**
+  - El modo de carpeta compartida no apunta accesos: se retira en T-F4-05.
+  - El paso de la interfaz en un solo ordenador (al abrir la ficha) no tiene prueba de interfaz propia: las pruebas de interfaz comparten el bloqueo de los datos. Sí la tienen sus piezas (`LocalStore::touched`, `accesos::append`) y la vía en red.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 429 pasan, 0 fallan, 10 ignoradas |

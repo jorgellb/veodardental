@@ -66,6 +66,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         app.pat_tab = PatTab::Resumen;
     }
     header(app, ui, pid);
+    // registro de accesos: quién consulta qué parte de la historia
+    let part = PatTab::ALL.iter().find(|(t, _)| *t == app.pat_tab).map(|(_, n)| *n).unwrap_or("Ficha");
+    app.note_access(pid, part);
+    history_log(app, ui, pid);
     ui.add_space(8.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
@@ -123,6 +127,40 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         PatTab::Cuenta => cuenta(app, ui, pid),
         PatTab::Citas => citas(app, ui, pid),
     });
+}
+
+/// Dirección: quién ha consultado o modificado esta historia (sin su contenido).
+fn history_log(app: &mut App, ui: &mut Ui, pid: u32) {
+    if !app.can(crate::users::Perm::Configuracion) {
+        return;
+    }
+    let open = app.history_view.as_ref().is_some_and(|(p, _)| *p == pid);
+    ui.horizontal(|ui| {
+        if ui.small_button(if open { "Ocultar los accesos" } else { "🔍 Accesos a esta historia" }).clicked() {
+            if open {
+                app.history_view = None;
+            } else {
+                app.load_history_log(pid);
+            }
+        }
+    });
+    let Some((_, r)) = app.history_view.as_ref().filter(|(p, _)| *p == pid) else { return };
+    match r {
+        Err(e) => {
+            ui.label(RichText::new(e).color(DANGER));
+        }
+        Ok((list, integrity)) => {
+            ui.label(RichText::new(integrity).color(if integrity.starts_with("Íntegro") { OK } else { DANGER }));
+            egui::ScrollArea::vertical().id_salt("accesos_hist").max_height(180.0).show(ui, |ui| {
+                if list.is_empty() {
+                    muted(ui, "Sin accesos apuntados.");
+                }
+                for e in list.iter().take(200) {
+                    ui.label(format!("{} · {} · puesto {} · {}: {}", e.at.format("%d/%m/%Y %H:%M"), e.user, e.station, e.action.label(), e.context));
+                }
+            });
+        }
+    }
 }
 
 fn avatar(ui: &mut Ui, p: &Patient, size: f32) {

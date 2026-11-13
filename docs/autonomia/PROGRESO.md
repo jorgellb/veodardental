@@ -41,10 +41,12 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | `3f51833` |
 | T-F3-09: instrumentos del piloto (tiempos y pasos, incidencias, disponibilidad y restauraciones) | E-029 | `445396c` |
 | T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | `4380f92` |
+| T-F4-00: normativa consultada (fuente, fecha, versión y efecto) | E-031 | `03a9036` |
+| T-F4-02: registro de accesos a cada historia (encadenado, fuera de los datos, en red por el servidor) | E-032 | (pendiente) |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
-1. T-F4-00 a T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`).
+1. T-F4-01 y T-F4-03 a T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`); hechas T-F4-00 y T-F4-02.
    - Consultar documentación oficial vigente; registrar fuente, fecha, versión y efecto, y separar lo confirmado de lo pendiente.
    - Inventariar lo que ya hay: receta electrónica (srep*), registro de accesos (`access_log`), herramientas RGPD, cifrado (`cifrado.rs`), carpeta compartida (`shared.rs`) y registro de jornada.
 2. Después, las fases 5 y 6 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08) y el cierre (T-CIERRE-01/02).

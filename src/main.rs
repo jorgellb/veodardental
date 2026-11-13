@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod accesos;
 mod actualizar;
 mod agenda_extra;
 mod app;

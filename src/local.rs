@@ -43,6 +43,8 @@ pub struct LocalStore {
     journal: Option<File>,
     lines: usize,
     bytes: usize,
+    /// Historias tocadas en el último guardado (para el registro de accesos).
+    pub touched: std::collections::BTreeMap<u32, std::collections::BTreeSet<String>>,
     /// Revisión de lo que hay en el disco (fichero y diario).
     rev: u64,
     /// Cómo están los datos en el disco, registro a registro.
@@ -58,7 +60,7 @@ impl LocalStore {
         }
         let synced = Snapshot::from_db(db);
         sync::mark_synced(db);
-        Ok(LocalStore { path, _lock: lock, journal: None, lines: 0, bytes: 0, rev: db.rev, synced })
+        Ok(LocalStore { path, _lock: lock, journal: None, lines: 0, bytes: 0, rev: db.rev, synced, touched: Default::default() })
     }
 
     /// Guarda lo que ha cambiado en `db` (si nada, no escribe nada). Devuelve
@@ -69,6 +71,7 @@ impl LocalStore {
             sync::mark_synced(db);
             return Ok(0);
         }
+        self.touched = crate::accesos::patients_touched(&changes);
         // la revisión nunca baja (aunque se haya restaurado una copia antigua):
         // si no, al abrir se descartaría lo apuntado
         let rev = self.rev.max(db.rev) + 1;
@@ -150,6 +153,24 @@ mod tests {
         let made: Vec<_> = crate::tools::list_backups(&crate::tools::backup_dir()).into_iter().filter(|b| !before.contains(&b.path) && b.path.to_string_lossy().contains("antes_de_actualizar")).collect();
         assert_eq!(made.len(), 1, "una copia previa");
         assert_eq!(crate::tools::read_backup(&made[0].path, None).unwrap().data_version, 0, "con los datos como estaban");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T-F4-02, un solo ordenador: cada guardado dice qué historias tocó y en
+    /// qué parte (para el registro de accesos), sin su contenido.
+    #[test]
+    fn each_save_tells_which_histories_it_touched() {
+        let path = dir("historias");
+        let mut db = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 4).unwrap());
+        Db::write_full(&db, &path).unwrap();
+        let mut st = LocalStore::new(path.clone(), lock(&path).unwrap(), &mut db).unwrap();
+        db.patients.iter_mut().find(|p| p.id == 101).unwrap().allergies = "Látex".into();
+        let e = db.entries.iter_mut().find(|e| e.patient_id == 102).unwrap();
+        e.notes = "revisar".into();
+        db.expenses.clear();
+        st.save(&mut db).unwrap();
+        let t: Vec<(u32, Vec<String>)> = st.touched.iter().map(|(p, s)| (*p, s.iter().cloned().collect())).collect();
+        assert_eq!(t, vec![(101, vec!["ficha".to_string()]), (102, vec!["tratamientos".to_string()])]);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
