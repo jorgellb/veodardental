@@ -1,0 +1,2696 @@
+{
+ "version": 1,
+ "fuente": "VEODARDENTAL_GOAL.md",
+ "fuente_sha256": "dceb8c7c55273f99eb7d7e17c629ff2867067891abe386a577c16157f937a38d",
+ "requisitos": [
+  {
+   "id": "R2-1",
+   "linea": 17,
+   "ancla": "El informe del propietario, fechado el 13 de noviembre de 20",
+   "texto": "El informe del propietario, fechado el 13 de noviembre de 2026, sitúa el último commit en `ade418b`: aproximadamente 54.600 líneas de Rust, 302 pruebas automáticas satisfactorias, otras 10 manuales o de integración y cero avisos de clippy. Son referencias históricas, no resultados de esta ejecución. Comprueba el HEAD real; si hay avances posteriores, consérvalos y continúa desde ellos. No vuelvas al commit indicado."
+  },
+  {
+   "id": "R2-2",
+   "linea": 19,
+   "ancla": "El producto ya dispone de pacientes y responsables, agenda, ",
+   "texto": "El producto ya dispone de pacientes y responsables, agenda, odontograma y periodontograma, imágenes, ortodoncia, recetas, presupuestos, cobros, caja, facturas y VERI*FACTU, SEPA, mutuas, bancos, almacén, laboratorio, informes, comunicaciones, portales web, usuarios y doble factor, servidor TLS, copias e importadores. Comprueba lo que realmente está implementado antes de construirlo otra vez."
+  },
+  {
+   "id": "R2-3",
+   "linea": 21,
+   "ancla": "Protege las mejoras existentes: contraseñas y secretos solo ",
+   "texto": "Protege las mejoras existentes: contraseñas y secretos solo en el servidor; permisos aplicados en servidor; límites de entrada y descompresión; escrituras atómicas y recuperación del diario; identificadores y numeración únicos entre puestos; facturas encadenadas por el servidor; operaciones monetarias y de stock idempotentes; cuotas y presupuestos exactos; trazabilidad de implantes; fusión completa de pacientes; importaciones y copias seguras. Toda modificación de estos flujos necesita evidencia de que conserva sus invariantes."
+  },
+  {
+   "id": "R2-4",
+   "linea": 23,
+   "ancla": "Las mediciones históricas se hicieron con unos 220 MB y 20.0",
+   "texto": "Las mediciones históricas se hicieron con unos 220 MB y 20.000 pacientes: guardado local de 0,02 a 0,2 segundos, cambios de aproximadamente 1 KB y entrada de puesto comprimida de aproximadamente 8 MB. Reprodúcelas con datos sintéticos equivalentes antes de usarlas como referencia. No publiques esas cifras como mediciones nuevas."
+  },
+  {
+   "id": "R3-1",
+   "linea": 27,
+   "ancla": "Quedan autorizados: inspección del código y documentación pú",
+   "texto": "Quedan autorizados: inspección del código y documentación pública, modificaciones locales reversibles, pruebas aisladas, datos sintéticos, compilaciones, mediciones, documentación, ramas de trabajo y commits locales pequeños de tu propio trabajo verificado. Puedes actualizar las dependencias necesarias de forma acotada, justificando compatibilidad y efecto sobre los instaladores."
+  },
+  {
+   "id": "R3-2",
+   "linea": 29,
+   "ancla": "Este encargo permite ejecutar directamente las mejoras técni",
+   "texto": "Este encargo permite ejecutar directamente las mejoras técnicas descritas; sustituye el paso de proponer cada arreglo y esperar aprobación. Respeta las instrucciones aplicables del repositorio y los controles efectivos de herramientas. Si una acción concreta necesita un permiso que no tienes, registra su alcance y continúa con lo permitido; no alteres permisos, hooks o controles para sortearlo."
+  },
+  {
+   "id": "R3-3",
+   "linea": 31,
+   "ancla": "No quedan autorizados por este encargo:",
+   "texto": "No quedan autorizados por este encargo:"
+  },
+  {
+   "id": "R3-4",
+   "linea": 33,
+   "ancla": "- Abrir el programa contra los datos reales, leer o copiar h",
+   "texto": "- Abrir el programa contra los datos reales, leer o copiar historias reales, ni acceder a certificados o secretos de la clínica. Para una eventual fuente real se necesita una autorización específica con alcance y destino."
+  },
+  {
+   "id": "R3-5",
+   "linea": 34,
+   "ancla": "- Modificar o borrar datos clínicos, copias reales o bases d",
+   "texto": "- Modificar o borrar datos clínicos, copias reales o bases de origen. En particular, no borres las dos copias indicadas del 11 y 12 de noviembre."
+  },
+  {
+   "id": "R3-6",
+   "linea": 35,
+   "ancla": "- Enviar mensajes a pacientes, presentar facturas o registro",
+   "texto": "- Enviar mensajes a pacientes, presentar facturas o registros ante organismos, realizar cobros, remesas, pedidos o firmas reales; activar servicios en producción o desplegar en la clínica."
+  },
+  {
+   "id": "R3-7",
+   "linea": 36,
+   "ancla": "- Contratar servicios, gastar créditos de proveedores, compr",
+   "texto": "- Contratar servicios, gastar créditos de proveedores, comprar certificados, crear cuentas de pago o aceptar condiciones en nombre de la clínica."
+  },
+  {
+   "id": "R3-8",
+   "linea": 37,
+   "ancla": "- Publicar cambios, hacer push, fusionar ramas o crear versi",
+   "texto": "- Publicar cambios, hacer push, fusionar ramas o crear versiones públicas sin una autorización adicional. Deja los commits locales listos para revisión."
+  },
+  {
+   "id": "R3-9",
+   "linea": 39,
+   "ancla": "Implementa y prueba esas capacidades en entornos locales o d",
+   "texto": "Implementa y prueba esas capacidades en entornos locales o de pruebas permitidos, con datos ficticios y sin cargos. Deja desactivada cualquier activación real. Nunca incorpores datos de salud, claves, certificados privados, volcados reales ni registros con información personal al repositorio o a servicios externos."
+  },
+  {
+   "id": "R3-10",
+   "linea": 41,
+   "ancla": "Respeta los cambios del propietario: registra el estado inic",
+   "texto": "Respeta los cambios del propietario: registra el estado inicial de git; no uses reset destructivo, limpieza indiscriminada, rebase de su trabajo, force push ni commits que incluyan cambios ajenos. Aísla tu trabajo en una rama o worktree cuando haga falta."
+  },
+  {
+   "id": "R4-1",
+   "linea": 45,
+   "ancla": "Empieza ejecutando trabajo, sin responder únicamente con un ",
+   "texto": "Empieza ejecutando trabajo, sin responder únicamente con un plan:"
+  },
+  {
+   "id": "R4-2",
+   "linea": 47,
+   "ancla": "1. Lee `CLAUDE.md`, las instrucciones aplicables, `Cargo.tom",
+   "texto": "1. Lee `CLAUDE.md`, las instrucciones aplicables, `Cargo.toml`, la organización del workspace, CI y scripts existentes. Identifica servidor, cliente, persistencia, tareas automáticas, importadores, portales y empaquetado."
+  },
+  {
+   "id": "R4-3",
+   "linea": 48,
+   "ancla": "2. Inspecciona HEAD y el estado de git. Conserva el trabajo ",
+   "texto": "2. Inspecciona HEAD y el estado de git. Conserva el trabajo previo. Documenta diferencias respecto al punto de partida."
+  },
+  {
+   "id": "R4-4",
+   "linea": 49,
+   "ancla": "3. Antes de lanzar ejecutables o pruebas, comprueba qué ruta",
+   "texto": "3. Antes de lanzar ejecutables o pruebas, comprueba qué rutas y servicios utilizan. Aísla datos, configuración, cachés y salidas en directorios temporales de pruebas; impide que un valor por defecto lleve a los datos reales. Si el código no permite inyectar esas rutas, prepara primero ese aislamiento."
+  },
+  {
+   "id": "R4-5",
+   "linea": 50,
+   "ancla": "4. Ejecuta la batería inicial segura y registra los comandos",
+   "texto": "4. Ejecuta la batería inicial segura y registra los comandos, resultados y fallos previos. Identifica qué pruebas excluidas requieren servicios, datos o costes; no lances indiscriminadamente todas las pruebas ignoradas."
+  },
+  {
+   "id": "R4-6",
+   "linea": 51,
+   "ancla": "5. Crea o adapta los documentos de seguimiento siguientes y ",
+   "texto": "5. Crea o adapta los documentos de seguimiento siguientes y comienza la primera tarea ejecutable de mayor prioridad en la misma sesión."
+  },
+  {
+   "id": "R4-7",
+   "linea": 53,
+   "ancla": "Mantén estas fuentes de estado, aprovechando equivalentes ex",
+   "texto": "Mantén estas fuentes de estado, aprovechando equivalentes existentes cuando los haya:"
+  },
+  {
+   "id": "R4-8",
+   "linea": 55,
+   "ancla": "- `docs/autonomia/ESTADO_INICIAL.md`: observaciones y compro",
+   "texto": "- `docs/autonomia/ESTADO_INICIAL.md`: observaciones y comprobaciones del punto de partida."
+  },
+  {
+   "id": "R4-9",
+   "linea": 56,
+   "ancla": "- `docs/autonomia/TAREAS.json`: inventario exhaustivo y traz",
+   "texto": "- `docs/autonomia/TAREAS.json`: inventario exhaustivo y trazable de requisitos y tareas de este documento."
+  },
+  {
+   "id": "R4-10",
+   "linea": 57,
+   "ancla": "- `docs/autonomia/PROGRESO.md`: qué está hecho y probado, qu",
+   "texto": "- `docs/autonomia/PROGRESO.md`: qué está hecho y probado, qué falta y cuál es la siguiente acción concreta."
+  },
+  {
+   "id": "R4-11",
+   "linea": 58,
+   "ancla": "- `docs/autonomia/BLOQUEOS.md`: dependencias externas precis",
+   "texto": "- `docs/autonomia/BLOQUEOS.md`: dependencias externas precisas y cómo resolverlas."
+  },
+  {
+   "id": "R4-12",
+   "linea": 59,
+   "ancla": "- `docs/autonomia/DECISIONES.md`: decisiones técnicas y supu",
+   "texto": "- `docs/autonomia/DECISIONES.md`: decisiones técnicas y supuestos relevantes."
+  },
+  {
+   "id": "R4-13",
+   "linea": 60,
+   "ancla": "- `docs/autonomia/EVIDENCIAS.md`: pruebas, comandos, códigos",
+   "texto": "- `docs/autonomia/EVIDENCIAS.md`: pruebas, comandos, códigos de salida, mediciones, capturas sintéticas y commits."
+  },
+  {
+   "id": "R4-14",
+   "linea": 61,
+   "ancla": "- `docs/autonomia/ENTREGA.md`: se genera al cierre, con el e",
+   "texto": "- `docs/autonomia/ENTREGA.md`: se genera al cierre, con el estado final verificable."
+  },
+  {
+   "id": "R4-15",
+   "linea": 63,
+   "ancla": "Cada tarea debe tener identificador estable, requisito de or",
+   "texto": "Cada tarea debe tener identificador estable, requisito de origen, fase, dependencias, tipo, criterio de aceptación, estado y evidencia. Distingue `ingenieria`, `decision_externa` y `validacion_externa`. Usa estados `PENDIENTE`, `EN_CURSO`, `HECHA` y `BLOQUEADA_EXTERNA`. Una tarea de ingeniería puede tener una dependencia externa concreta, pero debe separar y terminar sus partes ejecutables."
+  },
+  {
+   "id": "R4-16",
+   "linea": 65,
+   "ancla": "Mantén el inventario completo: no elimines requisitos, reduz",
+   "texto": "Mantén el inventario completo: no elimines requisitos, reduzcas su alcance, los reclasifiques como opcionales ni cambies su criterio para vaciar la cola. Descompón trabajos grandes en tareas pequeñas enlazadas al requisito original. Un requisito con subtareas pendientes o bloqueadas no está completamente satisfecho. Una función que ya existe puede darse por hecha tras verificar su criterio y registrar evidencia."
+  },
+  {
+   "id": "R4-17",
+   "linea": 67,
+   "ancla": "Un bloqueo válido identifica: dato, permiso, infraestructura",
+   "texto": "Un bloqueo válido identifica: dato, permiso, infraestructura o acción externa que falta; evidencia de por qué es necesaria; parte exacta afectada; preparación técnica ya terminada; responsable previsto; paso mínimo para desbloquear; prueba que se ejecutará después. La dificultad, el tamaño de una tarea, el tiempo que llevas trabajando o un fallo de código propio no son dependencias externas."
+  },
+  {
+   "id": "R4-18",
+   "linea": 69,
+   "ancla": "Después de cada lote coherente actualiza el estado y guarda ",
+   "texto": "Después de cada lote coherente actualiza el estado y guarda un commit de los archivos propios verificados. Tras una compactación o reanudación lee este documento y el seguimiento; continúa desde la siguiente tarea, sin reiniciar la auditoría ni repetir trabajo terminado."
+  },
+  {
+   "id": "R5-1",
+   "linea": 73,
+   "ancla": "1. Comprende el flujo real y reproduce el problema o define ",
+   "texto": "1. Comprende el flujo real y reproduce el problema o define el comportamiento nuevo con criterios comprobables."
+  },
+  {
+   "id": "R5-2",
+   "linea": 74,
+   "ancla": "2. Para un defecto, crea primero una prueba de regresión per",
+   "texto": "2. Para un defecto, crea primero una prueba de regresión pertinente y confirma que falla por el defecto. Para una función nueva, define pruebas de comportamiento y aceptación. No añadas pruebas triviales que solo repitan la implementación; los cambios puramente documentales no las necesitan."
+  },
+  {
+   "id": "R5-3",
+   "linea": 75,
+   "ancla": "3. Implementa la solución completa en el flujo utilizado por",
+   "texto": "3. Implementa la solución completa en el flujo utilizado por el usuario, incluidos permisos, persistencia, errores y trabajo en red cuando correspondan."
+  },
+  {
+   "id": "R5-4",
+   "linea": 76,
+   "ancla": "4. Ejecuta las pruebas específicas; resuelve sus fallos. Des",
+   "texto": "4. Ejecuta las pruebas específicas; resuelve sus fallos. Después ejecuta los controles exigidos por el repositorio y los de regresión afectados. Antes de cerrar cada lote ejecuta la batería completa segura y clippy, salvo un bloqueo concreto y documentado del entorno."
+  },
+  {
+   "id": "R5-5",
+   "linea": 77,
+   "ancla": "5. Si cambias una pantalla, comprueba el flujo con datos de ",
+   "texto": "5. Si cambias una pantalla, comprueba el flujo con datos de demostración y guarda evidencia visual. Si cambias dinero, concurrencia, almacenamiento o seguridad, prueba los casos de fallo además del caso satisfactorio."
+  },
+  {
+   "id": "R5-6",
+   "linea": 78,
+   "ancla": "6. Revisa el diff para detectar regresiones, filtraciones, c",
+   "texto": "6. Revisa el diff para detectar regresiones, filtraciones, código muerto y cambios ajenos. Actualiza el seguimiento, guarda el commit cuando esté verificado y empieza la siguiente tarea."
+  },
+  {
+   "id": "R5-7",
+   "linea": 80,
+   "ancla": "Busca causas antes de repetir un intento. No repitas indefin",
+   "texto": "Busca causas antes de repetir un intento. No repitas indefinidamente una misma orden fallida sin cambiar la hipótesis. Si una dependencia externa bloquea una prueba, registra el hecho y sigue con las demás. No uses `TODO`, `unimplemented!`, respuestas constantes, simulaciones presentadas como integraciones reales, botones sin efecto ni documentación en lugar de la función para dar una tarea por terminada."
+  },
+  {
+   "id": "R5-8",
+   "linea": 82,
+   "ancla": "No concluyas una fase solo porque compila. Tampoco cierres e",
+   "texto": "No concluyas una fase solo porque compila. Tampoco cierres el encargo al acabar la auditoría, crear los documentos de seguimiento o pasar las pruebas existentes: quedan todas las funcionalidades de las fases posteriores."
+  },
+  {
+   "id": "RF0-1",
+   "linea": 88,
+   "ancla": "- Conserva este encargo y documenta el estado inicial del pr",
+   "texto": "- Conserva este encargo y documenta el estado inicial del producto en el repositorio, con fecha y procedencia de las cifras."
+  },
+  {
+   "id": "RF0-2",
+   "linea": 89,
+   "ancla": "- Exención de IVA: el informe propone revisar la referencia ",
+   "texto": "- Exención de IVA: el informe propone revisar la referencia `20.Uno.3º` frente a `20.Uno.5º`. Localiza dónde se usa y prepara el cambio verificable con datos ficticios si procede, pero deja la decisión fiscal y su activación pendientes de la gestoría. Consulta fuentes oficiales actuales; no alteres facturas históricas ni presentes una interpretación propia como aprobación fiscal."
+  },
+  {
+   "id": "RF0-3",
+   "linea": 90,
+   "ancla": "- Copias del 11 y 12 de noviembre en `~/.local/share/VeodarD",
+   "texto": "- Copias del 11 y 12 de noviembre en `~/.local/share/VeodarDental/copias/`: registra la decisión de conservación o borrado como pendiente de la clínica. No accedas a esa carpeta ni borres esas copias durante este encargo."
+  },
+  {
+   "id": "RF0-4",
+   "linea": 91,
+   "ancla": "- Registra los requisitos externos para GESDEN, receta certi",
+   "texto": "- Registra los requisitos externos para GESDEN, receta certificada, AEAT, firma de instaladores y WhatsApp. Esta lista no impide empezar las fases siguientes."
+  },
+  {
+   "id": "RF0-5",
+   "linea": 93,
+   "ancla": "Cierre técnico: documentación e inventario completos y todo ",
+   "texto": "Cierre técnico: documentación e inventario completos y todo lo ejecutable de esta fase terminado. Cierre total: las decisiones externas también están resueltas con evidencia; hasta entonces informa de la diferencia."
+  },
+  {
+   "id": "RF1-0",
+   "linea": 97,
+   "ancla": "Revisa las áreas en este orden. En cada una inventaría los f",
+   "texto": "Revisa las áreas en este orden. En cada una inventaría los flujos, comprueba el código y los casos límite, corrige los defectos encontrados y registra evidencia. Si no encuentras fallos, documenta lo revisado y las comprobaciones; no inventes defectos para generar cambios."
+  },
+  {
+   "id": "RF1-A1",
+   "linea": 101,
+   "ancla": "| 1 | Documentos, consentimientos y cuestionarios | Versión ",
+   "texto": "| 1 | Documentos, consentimientos y cuestionarios | Versión y contenido exacto firmado; integridad e inmutabilidad; identidad y representación de menores; relación entre firma, documento y paciente; caducidad y actualización del cuestionario; permisos, revocación y descarga. La validez jurídica definitiva requiere revisión externa. |"
+  },
+  {
+   "id": "RF1-A2",
+   "linea": 102,
+   "ancla": "| 2 | Recetas y vademécum | Identidad del prescriptor y paci",
+   "texto": "| 2 | Recetas y vademécum | Identidad del prescriptor y paciente, datos obligatorios, unidades y dosis, alergias e interacciones, vigencia de fuentes y trazabilidad. No inventes reglas clínicas ni modifiques dosis automáticamente. Los avisos y excepciones deben ser revisables por el profesional. |"
+  },
+  {
+   "id": "RF1-A3",
+   "linea": 103,
+   "ancla": "| 3 | Odontograma, periodontograma e historial | Dentición a",
+   "texto": "| 3 | Odontograma, periodontograma e historial | Dentición adulta y temporal, piezas y superficies, evolución por visita, coherencia entre dibujo, presupuesto y tratamiento realizado; deshacer y concurrencia sin romper cobros, facturas o stock. |"
+  },
+  {
+   "id": "RF1-A4",
+   "linea": 104,
+   "ancla": "| 4 | Bancos y conciliación | Formatos disponibles de Norma ",
+   "texto": "| 4 | Bancos y conciliación | Formatos disponibles de Norma 43, signos, fechas, céntimos, importaciones repetidas, coincidencias ambiguas, devoluciones y deshacer conciliaciones. Una coincidencia dudosa requiere elección, no conciliación automática arbitraria. |"
+  },
+  {
+   "id": "RF1-A5",
+   "linea": 105,
+   "ancla": "| 5 | Informes | Cuadre independiente con cobros, caja, fact",
+   "texto": "| 5 | Informes | Cuadre independiente con cobros, caja, facturas y rectificativas; devoluciones, deuda, mutuas, fechas de corte, filtros por centro y profesional y zona horaria. Define qué se incluye en cada total. |"
+  },
+  {
+   "id": "RF1-A6",
+   "linea": 106,
+   "ancla": "| 6 | Comunicaciones | Consentimiento por finalidad, bajas, ",
+   "texto": "| 6 | Comunicaciones | Consentimiento por finalidad, bajas, horarios y festivos, reintentos, fallos parciales, colas y duplicados, plantillas y trazabilidad. Si el proveedor no garantiza idempotencia, trata explícitamente los resultados inciertos. |"
+  },
+  {
+   "id": "RF1-A7",
+   "linea": 107,
+   "ancla": "| 7 | Ortodoncia | Controles, evolución, fases, cuotas y ret",
+   "texto": "| 7 | Ortodoncia | Controles, evolución, fases, cuotas y retención; permisos, fechas, modificaciones y cobros sin duplicación ni pérdida de historia. |"
+  },
+  {
+   "id": "RF1-A8",
+   "linea": 108,
+   "ancla": "| 8 | IA de radiografías | Qué datos saldrían de la aplicaci",
+   "texto": "| 8 | IA de radiografías | Qué datos saldrían de la aplicación, minimización y metadatos, autorización, tiempos máximos, errores, respuestas incompletas, límites de coste y trazabilidad del modelo. El profesional debe revisar el resultado antes de incorporarlo al historial. |"
+  },
+  {
+   "id": "RF1-A9",
+   "linea": 109,
+   "ancla": "| 9 | Cita online y portales | Tokens y caducidad, acceso po",
+   "texto": "| 9 | Cita online y portales | Tokens y caducidad, acceso por paciente y responsable, enumeración, intentos repetidos, abuso, cancelaciones y reservas concurrentes, validación del horario en servidor y uso desde móvil. |"
+  },
+  {
+   "id": "RF1-A10",
+   "linea": 110,
+   "ancla": "| 10 | Telefonía y laboratorio digital | Autenticación y lím",
+   "texto": "| 10 | Telefonía y laboratorio digital | Autenticación y límites de las integraciones, formatos documentados, eventos repetidos o desordenados, paquetes grandes, rutas y archivos maliciosos, estados y costes de trabajos de laboratorio. |"
+  },
+  {
+   "id": "RF1-11",
+   "linea": 112,
+   "ancla": "Comprueba también la anchura de todas las pantallas existent",
+   "texto": "Comprueba también la anchura de todas las pantallas existentes y nuevas: a 1280 píxeles de ancho los controles y acciones necesarios deben ser accesibles, sin recortes ni ventanas fuera de pantalla. Prueba al menos alturas de 720 y 800 píxeles; utiliza desplazamiento vertical y diseños adaptativos cuando corresponda. Conserva la utilidad de tablas y formularios con textos largos."
+  },
+  {
+   "id": "RF1-12",
+   "linea": 114,
+   "ancla": "Mantén pruebas de concurrencia para facturas, recibos, cuota",
+   "texto": "Mantén pruebas de concurrencia para facturas, recibos, cuotas, devoluciones, remesas, stock, recordatorios y reservas. Incluye desconexión, reenvío, reinicio, fallo de escritura y recuperación cuando afecten al flujo. En el protocolo del servidor comprueba entradas inválidas, tamaños y datos comprimidos, y prepara pruebas de propiedades o fuzzing acotado y reproducible en los puntos de mayor riesgo."
+  },
+  {
+   "id": "RF1-13",
+   "linea": 116,
+   "ancla": "Cierre: todas las áreas revisadas, defectos demostrados y co",
+   "texto": "Cierre: todas las áreas revisadas, defectos demostrados y corregidos, comprobaciones de pantalla registradas e informes reconciliados con un conjunto independiente de operaciones sintéticas. Ninguna regresión en las garantías existentes."
+  },
+  {
+   "id": "RF2-1",
+   "linea": 120,
+   "ancla": "Implementa una migración de extremo a extremo para GESDEN y ",
+   "texto": "Implementa una migración de extremo a extremo para GESDEN y Novaclinic, y un asistente de Excel/CSV con mapeo para Clinic Cloud, Dentalink y otras exportaciones disponibles."
+  },
+  {
+   "id": "RF2-2",
+   "linea": 122,
+   "ancla": "Incluye pacientes y responsables, alertas médicas, historia,",
+   "texto": "Incluye pacientes y responsables, alertas médicas, historia, tratamientos realizados y pendientes, presupuestos abiertos, citas pasadas y futuras, saldos y cobros, documentos y rutas de imágenes. Conserva identificadores de origen para trazabilidad e idempotencia. Documenta qué formatos, versiones y campos soporta de verdad cada adaptador."
+  },
+  {
+   "id": "RF2-3",
+   "linea": 124,
+   "ancla": "No inventes tablas ni relaciones de un producto propietario.",
+   "texto": "No inventes tablas ni relaciones de un producto propietario. Con esquemas o exportaciones autorizados implementa y prueba el adaptador real. Si faltan, termina el motor, el mapeo configurable, las validaciones, el importador genérico y los informes con fixtures sintéticos claramente identificados. Registra únicamente el mapeo o la validación real que falta como bloqueo; un ejemplo inventado no certifica compatibilidad con GESDEN o Novaclinic."
+  },
+  {
+   "id": "RF2-4",
+   "linea": 126,
+   "ancla": "El asistente debe permitir previsualización, simulacro aisla",
+   "texto": "El asistente debe permitir previsualización, simulacro aislado, errores por fila, tratamiento explícito de duplicados, copia previa del destino, importación repetida sin duplicar y recuperación ante interrupciones. Lee siempre el origen en solo lectura. No mezcles dos personas por compartir NIF o número de historia ni pierdas filas de contenido multilineal o codificaciones admitidas."
+  },
+  {
+   "id": "RF2-5",
+   "linea": 128,
+   "ancla": "Genera un informe de conciliación origen/destino por pacient",
+   "texto": "Genera un informe de conciliación origen/destino por paciente y global: pacientes, deuda total, citas futuras, presupuestos abiertos y tratamientos pendientes. Usa importes exactos y explica todas las exclusiones y diferencias; evita contar dos veces deuda histórica y cobros importados. Conserva vínculos y evidencia de correspondencia de documentos e imágenes."
+  },
+  {
+   "id": "RF2-6",
+   "linea": 130,
+   "ancla": "Cierre técnico: flujos completos y simulacro reproducible co",
+   "texto": "Cierre técnico: flujos completos y simulacro reproducible con datos sintéticos. Cierre real: simulacro autorizado con una clínica real y todos los recuentos y totales reconciliados; no lo declares hecho sin esa prueba."
+  },
+  {
+   "id": "RF3-0",
+   "linea": 134,
+   "ancla": "Antes de considerar el producto listo para instalar:",
+   "texto": "Antes de considerar el producto listo para instalar:"
+  },
+  {
+   "id": "RF3-1",
+   "linea": 136,
+   "ancla": "- Prepara instalación de servidor y puestos para Windows, ma",
+   "texto": "- Prepara instalación de servidor y puestos para Windows, macOS y Linux, configuración segura de TLS, incorporación de puestos, permisos y comprobación del cifrado del disco."
+  },
+  {
+   "id": "RF3-2",
+   "linea": 137,
+   "ancla": "- Implementa actualizaciones coordinadas de servidor y clien",
+   "texto": "- Implementa actualizaciones coordinadas de servidor y clientes: compatibilidad de versiones y protocolo, verificación de autenticidad e integridad, copia previa, migraciones seguras, tratamiento de puestos desconectados y recuperación de una actualización fallida. Prueba el fallo entre pasos; no dejes una clínica a medias ni pierdas datos al recuperar."
+  },
+  {
+   "id": "RF3-3",
+   "linea": 138,
+   "ancla": "- Integra el proceso de firma de instaladores y notarización",
+   "texto": "- Integra el proceso de firma de instaladores y notarización cuando sea aplicable. Sin certificados o cuentas solo puedes verificar el empaquetado y la preparación del proceso; no declares firmados los binarios ni elimines avisos rebajando controles del sistema."
+  },
+  {
+   "id": "RF3-4",
+   "linea": 139,
+   "ancla": "- Implementa registro local de errores con rotación y minimi",
+   "texto": "- Implementa registro local de errores con rotación y minimización de datos. El envío a soporte requiere una acción o consentimiento claro y una previsualización suficiente; no envíes telemetría real por defecto."
+  },
+  {
+   "id": "RF3-5",
+   "linea": 140,
+   "ancla": "- Verifica copias escalonadas y cifradas, alertas de fallo, ",
+   "texto": "- Verifica copias escalonadas y cifradas, alertas de fallo, segunda copia configurable en USB o nube y restauración real en una carpeta aislada. Incluye disponibilidad y recuperación de claves sin guardarlas junto a los datos cifrados."
+  },
+  {
+   "id": "RF3-6",
+   "linea": 141,
+   "ancla": "- Termina la preparación de VERI*FACTU, WhatsApp oficial de ",
+   "texto": "- Termina la preparación de VERI*FACTU, WhatsApp oficial de Meta, correo y SMS con entornos de prueba o dobles de prueba explícitos. Prueba rechazo, caída, reintento, idempotencia y conciliación de estados. Las pruebas AEAT con certificado de la clínica y las plantillas aprobadas de Meta son hitos externos independientes."
+  },
+  {
+   "id": "RF3-7",
+   "linea": 142,
+   "ancla": "- Prepara una lista de instalación, un procedimiento de rest",
+   "texto": "- Prepara una lista de instalación, un procedimiento de restauración y vuelta atrás y una guía breve para recepción y profesionales."
+  },
+  {
+   "id": "RF3-8",
+   "linea": 144,
+   "ancla": "Durante un futuro piloto se medirán tiempo y pasos para dar ",
+   "texto": "Durante un futuro piloto se medirán tiempo y pasos para dar cita, cobrar y cerrar caja, incidencias, disponibilidad y restauraciones. Implementa los instrumentos necesarios sin registrar contenido clínico innecesario."
+  },
+  {
+   "id": "RF3-9",
+   "linea": 146,
+   "ancla": "Cierre de ingeniería: instalación y recuperación ensayadas, ",
+   "texto": "Cierre de ingeniería: instalación y recuperación ensayadas, actualizaciones verificadas, instrumentos e integraciones disponibles en los entornos permitidos y guía operativa completa. El cierre del piloto exige un mes real de actividad solo con VeodarDental, sin incidencias graves, con caja, facturación AEAT y copias comprobadas. No sustituyas ese mes por una simulación ni esperes inactivo durante un mes en esta ejecución."
+  },
+  {
+   "id": "RF4-0",
+   "linea": 150,
+   "ancla": "Consulta documentación oficial vigente en la fecha de implem",
+   "texto": "Consulta documentación oficial vigente en la fecha de implementación. Registra fuente, fecha, versión y efectos sobre el código. Si no puedes consultarla, distingue lo confirmado de lo pendiente; no inventes plazos ni presentes el informe histórico como norma actual."
+  },
+  {
+   "id": "RF4-1",
+   "linea": 152,
+   "ancla": "- Receta electrónica privada: completa firma, repositorio, h",
+   "texto": "- Receta electrónica privada: completa firma, repositorio, hoja del paciente, trazabilidad y pruebas técnicas; prepara la documentación y los entornos necesarios para certificación y conexión con farmacias. Confirma los organismos y procedimientos actuales, incluidos los citados en el informe —CGCOM, Consejo de Dentistas y Nodofarma— antes de implementar requisitos específicos. La certificación y la interoperabilidad real solo se cierran con evidencia externa."
+  },
+  {
+   "id": "RF4-2",
+   "linea": 153,
+   "ancla": "- Registro de accesos: registra quién consulta y quién modif",
+   "texto": "- Registro de accesos: registra quién consulta y quién modifica cada historia, cuándo, desde qué contexto autorizado y qué acción realiza. Evita copiar la historia al log; protege y limita el propio registro y prueba su funcionamiento en red."
+  },
+  {
+   "id": "RF4-3",
+   "linea": 154,
+   "ancla": "- Herramientas RGPD: exportación íntegra y trazable del paci",
+   "texto": "- Herramientas RGPD: exportación íntegra y trazable del paciente y sus documentos; rectificación, bloqueo, restricciones y supresión con controles de conservación y representación. Los plazos y excepciones deben estar fundamentados y revisados externamente antes de activarse sobre datos reales. No realices supresiones reales en este encargo."
+  },
+  {
+   "id": "RF4-4",
+   "linea": 155,
+   "ancla": "- Cifrado de datos e imágenes: utiliza soluciones mantenidas",
+   "texto": "- Cifrado de datos e imágenes: utiliza soluciones mantenidas y criptografía estándar, con gestión y rotación de claves, restauración, integridad y migración recuperable. No diseñes criptografía propia ni hagas una migración irreversible de datos reales."
+  },
+  {
+   "id": "RF4-5",
+   "linea": 156,
+   "ancla": "- Carpeta compartida: prepara su retirada o desaconseja técn",
+   "texto": "- Carpeta compartida: prepara su retirada o desaconseja técnicamente el modo que distribuye el fichero completo y secretos. Implementa una transición comprobable al servidor y evita que los nuevos puestos reciban secretos. Conserva las instalaciones existentes hasta una migración autorizada."
+  },
+  {
+   "id": "RF4-6",
+   "linea": 157,
+   "ancla": "- Registro de jornada: entradas, salidas, pausas, correccion",
+   "texto": "- Registro de jornada: entradas, salidas, pausas, correcciones trazables, acceso por rol y exportaciones. Verifica los requisitos aplicables en fuentes oficiales; la existencia de una pantalla de fichaje no demuestra cumplimiento legal."
+  },
+  {
+   "id": "RF4-7",
+   "linea": 158,
+   "ancla": "- Exportación contable: libros de facturas emitidas y recibi",
+   "texto": "- Exportación contable: libros de facturas emitidas y recibidas, rectificativas, cobros y gastos conforme al alcance de los formatos de A3, ContaSol y Sage que puedas documentar. Prueba archivos válidos según especificaciones disponibles; deja pendiente la aceptación por la gestoría cuando requiera su programa."
+  },
+  {
+   "id": "RF4-8",
+   "linea": 159,
+   "ancla": "- Facturación foral: arquitectura y adaptadores para TicketB",
+   "texto": "- Facturación foral: arquitectura y adaptadores para TicketBAI y requisitos aplicables de Navarra si el ámbito geográfico lo exige. No inventes un formato común ni actives una obligación sin determinar su aplicabilidad. Separa implementación, prueba de homologación y activación real."
+  },
+  {
+   "id": "RF4-9",
+   "linea": 160,
+   "ancla": "- Prepara la evidencia para revisión por gestoría, responsab",
+   "texto": "- Prepara la evidencia para revisión por gestoría, responsable de protección de datos y auditoría de seguridad externa. Una revisión propia no sustituye esas aprobaciones."
+  },
+  {
+   "id": "RF4-10",
+   "linea": 162,
+   "ancla": "Cierre técnico: herramientas completas, pruebas y trazabilid",
+   "texto": "Cierre técnico: herramientas completas, pruebas y trazabilidad de requisitos. Cierre normativo: validaciones externas documentadas y ninguna afirmación de certificación o cumplimiento pendiente presentada como concluida."
+  },
+  {
+   "id": "RF5-0",
+   "linea": 166,
+   "ancla": "Implementa los flujos completos y accesibles en egui o en lo",
+   "texto": "Implementa los flujos completos y accesibles en egui o en los portales existentes, según corresponda. Aprovecha capacidades ya presentes después de verificarlas."
+  },
+  {
+   "id": "RF5-1",
+   "linea": 168,
+   "ancla": "- Cuadro de mando: ocupación de profesionales y gabinetes, a",
+   "texto": "- Cuadro de mando: ocupación de profesionales y gabinetes, ausencias, aceptación de presupuestos, producción por hora de sillón y profesional, recalls que terminan en cita, comparaciones y objetivos. Define fórmulas y denominadores, fechas, anulaciones y filtros por centro; verifica cada indicador con operaciones sintéticas calculadas de forma independiente."
+  },
+  {
+   "id": "RF5-2",
+   "linea": 169,
+   "ancla": "- Pago por internet de presupuestos, cuotas y señales: utili",
+   "texto": "- Pago por internet de presupuestos, cuotas y señales: utiliza integraciones documentadas de TPV virtual y/o Bizum con un flujo de pago alojado por el proveedor cuando proceda. Importe validado por servidor, notificaciones autenticadas, idempotencia, conciliación, devoluciones y estados inciertos. Nunca guardes datos de tarjeta; prueba sin cargos. La señal de reserva requiere una política configurable y visible para el paciente, con cancelaciones y devoluciones coherentes."
+  },
+  {
+   "id": "RF5-3",
+   "linea": 170,
+   "ancla": "- Plan de tratamiento por fases y alternativas: vínculo entr",
+   "texto": "- Plan de tratamiento por fases y alternativas: vínculo entre odontograma, tratamientos y presupuesto en un flujo continuo; versiones y aceptación explícita de la alternativa elegida, sumas exactas y prevención de duplicidades. Conecta los consentimientos adecuados al aceptar, sin alterar los ya firmados."
+  },
+  {
+   "id": "RF5-4",
+   "linea": 171,
+   "ancla": "- Notas de evolución: plantillas por tratamiento y dictado c",
+   "texto": "- Notas de evolución: plantillas por tratamiento y dictado con transcripción y resumen opcional de IA. El profesional revisa y confirma antes de guardar. Conserva procedencia y evita que la IA invente hechos clínicos; minimiza audio y transferencias externas."
+  },
+  {
+   "id": "RF5-5",
+   "linea": 172,
+   "ancla": "- Periodontograma por voz: captura de medidas por pieza y pu",
+   "texto": "- Periodontograma por voz: captura de medidas por pieza y punto, corrección y confirmación visible, con errores y ruido simulados. No incorpores automáticamente valores ambiguos a la historia."
+  },
+  {
+   "id": "RF5-6",
+   "linea": 173,
+   "ancla": "- Imagen: visor DICOM/CBCT y STL dentro del producto, además",
+   "texto": "- Imagen: visor DICOM/CBCT y STL dentro del producto, además de la integración externa; carga de muestras públicas adecuadas o sintéticas, orientación y escala correctas, límites de memoria, procesamiento que no bloquee la interfaz y manejo de archivos inválidos. Comparación de radiografías de fechas distintas con identidad, fecha y orientación claras. No incorpores diagnóstico automático no validado."
+  },
+  {
+   "id": "RF5-7",
+   "linea": 174,
+   "ancla": "- Alertas clínicas ampliadas: flujos para profilaxis, bifosf",
+   "texto": "- Alertas clínicas ampliadas: flujos para profilaxis, bifosfonatos, embarazo y anticoagulantes, sustentados en fuentes clínicas autorizadas y revisión profesional. Conserva las alertas existentes; no inventes recomendaciones terapéuticas ni hagas prescripciones automáticas."
+  },
+  {
+   "id": "RF5-8",
+   "linea": 175,
+   "ancla": "- Esterilización: relación de ciclos y lotes del autoclave e",
+   "texto": "- Esterilización: relación de ciclos y lotes del autoclave e instrumental con los pacientes y tratamientos; incidencias, estados y consulta de personas potencialmente afectadas, con auditoría."
+  },
+  {
+   "id": "RF5-9",
+   "linea": 176,
+   "ancla": "- Encuestas de satisfacción y solicitud de reseñas: envío co",
+   "texto": "- Encuestas de satisfacción y solicitud de reseñas: envío configurable tras visita, consentimiento y bajas, prevención de duplicados y resultados medibles. Verifica las reglas vigentes del canal; no condicione la solicitud de reseña pública a haber dado una valoración positiva."
+  },
+  {
+   "id": "RF5-10",
+   "linea": 177,
+   "ancla": "- Portal del paciente: citas, presupuestos, facturas, docume",
+   "texto": "- Portal del paciente: citas, presupuestos, facturas, documentos firmados y recetas, con autorización por objeto y por responsable, sesiones y revocación seguras y uso móvil. Prueba que no se puede acceder a otro paciente cambiando un identificador."
+  },
+  {
+   "id": "RF5-11",
+   "linea": 178,
+   "ancla": "- Idiomas: castellano, catalán, euskera, gallego e inglés en",
+   "texto": "- Idiomas: castellano, catalán, euskera, gallego e inglés en interfaz, mensajes y documentos de pacientes; selección y alternativa predeterminada, fechas e importes, variables y textos largos. Conserva versiones de documentos; registra las traducciones clínicas o legales que requieran validación externa."
+  },
+  {
+   "id": "RF5-12",
+   "linea": 179,
+   "ancla": "- Campañas a grupos de pacientes: segmentación, consentimien",
+   "texto": "- Campañas a grupos de pacientes: segmentación, consentimiento por finalidad, bajas, horario y límites, previsualización y resultados de citas atribuibles con criterios explícitos. No envíes campañas reales durante el desarrollo."
+  },
+  {
+   "id": "RF5-13",
+   "linea": 181,
+   "ancla": "Cierre técnico: funciones implementadas, conectadas y verifi",
+   "texto": "Cierre técnico: funciones implementadas, conectadas y verificadas; las integraciones reales y contenidos especializados pendientes quedan identificados. La mejora frente al programa anterior —menos ausencias, mayor aceptación y menos tiempo en recepción— exige mediciones del piloto; no inventes resultados comerciales."
+  },
+  {
+   "id": "RF6-1",
+   "linea": 185,
+   "ancla": "- Grupos de clínicas: permisos y separación de pacientes, ce",
+   "texto": "- Grupos de clínicas: permisos y separación de pacientes, centros, sociedades cuando proceda, cajas, series y datos; vistas consolidadas solo para usuarios autorizados, cambios de centro y concurrencia. Prueba que ningún identificador, consulta o caché permite cruzar límites de acceso."
+  },
+  {
+   "id": "RF6-2",
+   "linea": 186,
+   "ancla": "- Servidor en la nube opcional: mismo protocolo seguro, apro",
+   "texto": "- Servidor en la nube opcional: mismo protocolo seguro, aprovisionamiento documentado, copias, recuperación y acceso remoto. Prepara y prueba localmente el despliegue; no contrates infraestructura ni subas datos reales. Estudia y documenta las condiciones de alojamiento y transferencia aplicables antes del uso real."
+  },
+  {
+   "id": "RF6-3",
+   "linea": 187,
+   "ancla": "- Datáfono y financiación: adaptadores para proveedores con ",
+   "texto": "- Datáfono y financiación: adaptadores para proveedores con especificación disponible, estados y conciliación, cancelación y recuperación ante fallos. Las altas, contratos, cargos y decisiones de financiación quedan fuera de esta ejecución."
+  },
+  {
+   "id": "RF6-4",
+   "linea": 188,
+   "ancla": "- Aseguradoras: autorizaciones y liquidaciones directas medi",
+   "texto": "- Aseguradoras: autorizaciones y liquidaciones directas mediante canales permitidos y documentados. Evita duplicados y conserva respuestas y estado. Si faltan API, acuerdo o entorno, completa el flujo interno y el contrato de integración y registra la conexión concreta pendiente."
+  },
+  {
+   "id": "RF6-5",
+   "linea": 189,
+   "ancla": "- Pedidos por stock mínimo: propuesta y flujo configurable d",
+   "texto": "- Pedidos por stock mínimo: propuesta y flujo configurable de aprobación, unidades de compra, lotes y caducidades, recepción y prevención de duplicados. La automatización de un pedido real necesita habilitación explícita; prueba con proveedor ficticio."
+  },
+  {
+   "id": "RF6-6",
+   "linea": 190,
+   "ancla": "- Modo tableta: navegación táctil, controles y texto grandes",
+   "texto": "- Modo tableta: navegación táctil, controles y texto grandes, contraste ajustable, odontograma e historia utilizables, formularios y flujos principales accesibles sin ratón."
+  },
+  {
+   "id": "RF6-7",
+   "linea": 191,
+   "ancla": "- Calidad continua: pruebas de pantalla útiles, mediciones d",
+   "texto": "- Calidad continua: pruebas de pantalla útiles, mediciones de una clínica grande por versión, pruebas del protocolo con entradas aleatorias y documentación para auditoría externa. Mantén tiempos de prueba acotados y resultados reproducibles."
+  },
+  {
+   "id": "RF6-8",
+   "linea": 192,
+   "ancla": "- Base de datos: mide memoria, tiempos, tamaño y concurrenci",
+   "texto": "- Base de datos: mide memoria, tiempos, tamaño y concurrencia en escenarios de varias clínicas. Mantén el almacenamiento actual si cumple. Solo migra a una base de datos con una necesidad demostrada, plan de compatibilidad, copia, recuperación y pruebas; no confundas una reescritura con un criterio de éxito."
+  },
+  {
+   "id": "RF6-9",
+   "linea": 194,
+   "ancla": "Cierre técnico: escenarios sintéticos de varias clínicas ope",
+   "texto": "Cierre técnico: escenarios sintéticos de varias clínicas operativos, permisos y totales verificados, componentes disponibles y mediciones registradas. Cierre real: un grupo autorizado trabaja con datos e informes conjuntos y se han validado sus servicios externos."
+  },
+  {
+   "id": "R7-0",
+   "linea": 198,
+   "ancla": "Estas reglas forman parte de todos los criterios de aceptaci",
+   "texto": "Estas reglas forman parte de todos los criterios de aceptación afectados:"
+  },
+  {
+   "id": "R7-1",
+   "linea": 200,
+   "ancla": "- Usa céntimos enteros o un tipo decimal apropiado, con redo",
+   "texto": "- Usa céntimos enteros o un tipo decimal apropiado, con redondeo explícito. No introduzcas coma flotante binaria en importes monetarios. Las cuotas y líneas deben sumar exactamente el total."
+  },
+  {
+   "id": "R7-2",
+   "linea": 201,
+   "ancla": "- Mantén autoridad del servidor sobre numeración, encadenami",
+   "texto": "- Mantén autoridad del servidor sobre numeración, encadenamiento, permisos y operaciones irrepetibles. Prueba colisiones, reintentos y respuestas perdidas; no prometas ejecución exactamente una vez si el proveedor externo no la puede garantizar."
+  },
+  {
+   "id": "R7-3",
+   "linea": 202,
+   "ancla": "- Separa eventos, estados y referencias para rastrear un cob",
+   "texto": "- Separa eventos, estados y referencias para rastrear un cobro, devolución, factura, liquidación o movimiento de stock sin duplicarlo. Las anulaciones no deben borrar la trazabilidad."
+  },
+  {
+   "id": "R7-4",
+   "linea": 203,
+   "ancla": "- Conserva la atomicidad y la recuperación ante apagón, falt",
+   "texto": "- Conserva la atomicidad y la recuperación ante apagón, falta de espacio o fallo parcial. Las migraciones de formato necesitan compatibilidad documentada y restauración ensayada."
+  },
+  {
+   "id": "R7-5",
+   "linea": 204,
+   "ancla": "- Comprueba autorización en servidor para cada lectura y esc",
+   "texto": "- Comprueba autorización en servidor para cada lectura y escritura sensible; ocultar controles de egui no basta. No vuelvas a enviar contraseñas ni semillas de doble factor a clientes."
+  },
+  {
+   "id": "R7-6",
+   "linea": 205,
+   "ancla": "- Acota entradas de red, archivos, imágenes, descompresión, ",
+   "texto": "- Acota entradas de red, archivos, imágenes, descompresión, colas y tareas concurrentes. Verifica errores y cancelaciones sin bloquear la interfaz ni agotar memoria."
+  },
+  {
+   "id": "R7-7",
+   "linea": 206,
+   "ancla": "- Mantén la minimización de datos en logs, portales, informe",
+   "texto": "- Mantén la minimización de datos en logs, portales, informes de error y servicios de IA. Usa fixtures totalmente ficticios y secretos de prueba claramente diferenciados."
+  },
+  {
+   "id": "R8-1",
+   "linea": 210,
+   "ancla": "Adapta las órdenes a los comandos oficiales del repositorio ",
+   "texto": "Adapta las órdenes a los comandos oficiales del repositorio y a las combinaciones de funcionalidades realmente soportadas. Como referencia, si existe un workspace Cargo y un lockfile:"
+  },
+  {
+   "id": "R8-2",
+   "linea": 219,
+   "ancla": "No uses indiscriminadamente `--all-features` si hay funcione",
+   "texto": "No uses indiscriminadamente `--all-features` si hay funciones incompatibles o servicios reales. Registra la matriz soportada y ejecútala cuando corresponda. Ejecuta la compilación de distribución al cierre y cuando afectes a empaquetado o dependencias; las comprobaciones de otros sistemas necesitan un runner real de ese sistema. No declares probado Windows o macOS por haber compilado en Linux ni inventes resultados de CI."
+  },
+  {
+   "id": "R8-3",
+   "linea": 221,
+   "ancla": "No reduzcas el número de pruebas, ignores fallos, rebajes co",
+   "texto": "No reduzcas el número de pruebas, ignores fallos, rebajes controles, elimines assertions ni cambies expectativas para esconder un defecto. Un fallo inicial también debe resolverse si entra en el alcance, o quedar documentado con evidencia y su causa real. Distingue pruebas ejecutadas, excluidas justificadamente y pendientes de entorno; un doble de prueba no equivale a una prueba con proveedor real."
+  },
+  {
+   "id": "R8-4",
+   "linea": 223,
+   "ancla": "Mide los cambios de rendimiento contra la referencia inicial",
+   "texto": "Mide los cambios de rendimiento contra la referencia inicial en el mismo entorno y con datos sintéticos grandes, semilla y procedimiento reproducibles. Registra mediana y dispersión cuando ayuden, tamaño, memoria y versiones. No optimices sin medir ni atribuyas a una mejora diferencias de hardware o de datos."
+  },
+  {
+   "id": "R8-5",
+   "linea": 225,
+   "ancla": "Para restauración, abre la copia restaurada solo en un entor",
+   "texto": "Para restauración, abre la copia restaurada solo en un entorno aislado y comprueba pacientes, relaciones, documentos, dinero y continuidad del diario. Que exista el archivo de copia o que se pueda descifrar no basta para afirmar que la restauración funciona."
+  },
+  {
+   "id": "R8-6",
+   "linea": 227,
+   "ancla": "Prepara un comando de comprobación del objetivo, siguiendo l",
+   "texto": "Prepara un comando de comprobación del objetivo, siguiendo las herramientas ya usadas en el proyecto, que valide al menos: integridad del inventario, cobertura de todos los requisitos, ausencia de tareas ejecutables pendientes y referencias de evidencia para tareas hechas y bloqueadas. Debe fallar si falta un requisito, una evidencia requerida o una tarea ejecutable. Este comando no sustituye las pruebas del producto ni demuestra por sí solo la veracidad de un bloqueo."
+  },
+  {
+   "id": "R8-7",
+   "linea": 229,
+   "ancla": "El cierre debe mostrar en la conversación, para que el evalu",
+   "texto": "El cierre debe mostrar en la conversación, para que el evaluador de `/goal` pueda juzgarlo:"
+  },
+  {
+   "id": "R8-8",
+   "linea": 231,
+   "ancla": "1. Resultado del verificador del objetivo, con número de req",
+   "texto": "1. Resultado del verificador del objetivo, con número de requisitos, tareas hechas, pendientes ejecutables y bloqueos externos."
+  },
+  {
+   "id": "R8-9",
+   "linea": 232,
+   "ancla": "2. Órdenes de calidad realmente ejecutadas y sus códigos de ",
+   "texto": "2. Órdenes de calidad realmente ejecutadas y sus códigos de salida, con recuentos reales de pruebas."
+  },
+  {
+   "id": "R8-10",
+   "linea": 233,
+   "ancla": "3. Evidencia de los flujos críticos, restauración, concurren",
+   "texto": "3. Evidencia de los flujos críticos, restauración, concurrencia, pantallas y rendimiento afectados."
+  },
+  {
+   "id": "R8-11",
+   "linea": 234,
+   "ancla": "4. Commits propios, HEAD final y estado final de git; los ca",
+   "texto": "4. Commits propios, HEAD final y estado final de git; los cambios ajenos preexistentes se identifican por separado."
+  },
+  {
+   "id": "R8-12",
+   "linea": 235,
+   "ancla": "5. Dependencias externas restantes, agrupadas por responsabl",
+   "texto": "5. Dependencias externas restantes, agrupadas por responsable y con una acción mínima para resolver cada una."
+  },
+  {
+   "id": "R9-1",
+   "linea": 239,
+   "ancla": "Continúa mientras exista cualquier tarea de ingeniería autor",
+   "texto": "Continúa mientras exista cualquier tarea de ingeniería autorizada que puedas ejecutar con los recursos disponibles. No cierres por haber terminado una fase, porque el trabajo sea grande, porque solo falte una función difícil o porque una integración externa esté bloqueada. No preguntes «¿sigo?» ni «¿quieres que lo implemente?»."
+  },
+  {
+   "id": "R9-2",
+   "linea": 241,
+   "ancla": "En cada avance explica brevemente en castellano qué comporta",
+   "texto": "En cada avance explica brevemente en castellano qué comportamiento has completado, cómo lo has comprobado y qué tarea estás ejecutando a continuación. Un mensaje de avance debe ir acompañado de trabajo; no entres en un bucle de respuestas al evaluador sin usar herramientas ni producir cambios o verificaciones."
+  },
+  {
+   "id": "R9-3",
+   "linea": 243,
+   "ancla": "No esperes activamente a organismos, credenciales, decisione",
+   "texto": "No esperes activamente a organismos, credenciales, decisiones o periodos reales de piloto. Agota primero todas las tareas independientes y toda la preparación que sí puedas completar. Tampoco eludas cuotas, autenticación, permisos, límites de uso o decisiones del propietario: si detienen la sesión, conserva un punto de reanudación preciso."
+  },
+  {
+   "id": "R9-4",
+   "linea": 245,
+   "ancla": "La ejecución puede cerrarse cuando todas las tareas autoriza",
+   "texto": "La ejecución puede cerrarse cuando todas las tareas autorizadas ejecutables de las fases 0 a 6 estén implementadas o verificadas como ya existentes, los controles ejecutables en el entorno hayan pasado y el inventario no tenga tareas ejecutables pendientes. Una comprobación que necesite infraestructura externa ausente sigue pendiente, con evidencia de esa dependencia; no se considera satisfactoria. Lo que siga requiriendo decisiones, credenciales, infraestructura o validación real debe conservarse como pendiente externo justificado, con su preparación terminada. No lo marques como entregado ni afirmes que toda la hoja de ruta, el piloto o la certificación están completos."
+  },
+  {
+   "id": "R9-5",
+   "linea": 247,
+   "ancla": "Genera `docs/autonomia/ENTREGA.md` con lo realmente entregad",
+   "texto": "Genera `docs/autonomia/ENTREGA.md` con lo realmente entregado, evidencia, limitaciones concretas y pasos externos restantes. Si quedan dependencias externas, el resultado se describe como «ingeniería disponible completada; validaciones o activaciones externas pendientes». No uses una declaración de éxito genérica que oculte esas diferencias."
+  }
+ ],
+ "tareas": [
+  {
+   "id": "T-INI-01",
+   "requisitos": [
+    "R4-1",
+    "R4-2",
+    "R4-3",
+    "R3-10",
+    "R2-1"
+   ],
+   "fase": "transversal",
+   "titulo": "Inspeccionar repositorio, HEAD, git, CI, Cargo y arquitectura; registrar el estado inicial",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "ESTADO_INICIAL.md con HEAD real, estado de git, ficheros ajenos, CI, órdenes oficiales y componentes",
+   "estado": "HECHA",
+   "evidencia": [
+    "E-001"
+   ]
+  },
+  {
+   "id": "T-INI-02",
+   "requisitos": [
+    "R4-4",
+    "R3-4"
+   ],
+   "fase": "transversal",
+   "titulo": "Aislar rutas de datos, ajustes y documentos en pruebas y ejecutables",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Ninguna prueba ni captura usa las carpetas reales; prueba automática y script tools/aislado.sh",
+   "estado": "HECHA",
+   "evidencia": [
+    "E-002"
+   ]
+  },
+  {
+   "id": "T-INI-03",
+   "requisitos": [
+    "R4-5",
+    "R8-1",
+    "R8-2"
+   ],
+   "fase": "transversal",
+   "titulo": "Batería inicial segura con códigos de salida y clasificación de pruebas ignoradas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Órdenes fmt/test/clippy/release registradas con su salida; cada prueba ignorada clasificada",
+   "estado": "HECHA",
+   "evidencia": [
+    "E-001",
+    "E-003"
+   ]
+  },
+  {
+   "id": "T-INI-04",
+   "requisitos": [
+    "R4-6",
+    "R4-7",
+    "R4-8",
+    "R4-9",
+    "R4-10",
+    "R4-11",
+    "R4-12",
+    "R4-13",
+    "R4-15",
+    "R4-16",
+    "R4-17"
+   ],
+   "fase": "transversal",
+   "titulo": "Documentos de seguimiento e inventario trazable",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "docs/autonomia con ESTADO_INICIAL, TAREAS.json, PROGRESO, BLOQUEOS, DECISIONES y EVIDENCIAS; cada requisito con tareas",
+   "estado": "EN_CURSO",
+   "evidencia": []
+  },
+  {
+   "id": "T-INI-05",
+   "requisitos": [
+    "R8-6"
+   ],
+   "fase": "transversal",
+   "titulo": "Verificador del objetivo (cargo run --example verificar_objetivo)",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Falla si falta un requisito, una evidencia o queda una tarea de ingeniería pendiente; comprueba bloqueos completos y su preparación",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-INI-06",
+   "requisitos": [
+    "R2-2"
+   ],
+   "fase": "transversal",
+   "titulo": "Comprobar en el código las funciones que el informe da por existentes",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Tabla en ESTADO_INICIAL con cada módulo citado y dónde está implementado",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-INI-07",
+   "requisitos": [
+    "R2-3",
+    "R8-3"
+   ],
+   "fase": "transversal",
+   "titulo": "Catálogo de invariantes protegidos con sus pruebas; añadir las que falten",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Cada invariante del apartado 2 con al menos una prueba que lo demuestra, registrada en EVIDENCIAS",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-INI-08",
+   "requisitos": [
+    "R2-4",
+    "R8-4"
+   ],
+   "fase": "transversal",
+   "titulo": "Reproducir las mediciones históricas con una clínica sintética grande",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Mediciones de guardado local, cambio enviado y entrada comprimida con datos sintéticos, procedimiento y versión registrados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-PROC-01",
+   "requisitos": [
+    "R3-1",
+    "R3-2",
+    "R3-3",
+    "R3-4",
+    "R3-5",
+    "R3-6",
+    "R3-7",
+    "R3-8",
+    "R3-9",
+    "R9-3"
+   ],
+   "fase": "transversal",
+   "titulo": "Respetar los límites: sin datos reales, sin servicios reales, sin cargos y sin push",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Evidencia de aislamiento, dobles de prueba, activaciones reales desactivadas y commits solo locales",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-PROC-02",
+   "requisitos": [
+    "R4-18",
+    "R4-14",
+    "R5-1",
+    "R5-2",
+    "R5-3",
+    "R5-4",
+    "R5-5",
+    "R5-6",
+    "R5-7",
+    "R5-8",
+    "R9-1",
+    "R9-2"
+   ],
+   "fase": "transversal",
+   "titulo": "Ciclo por tarea: reproducir, prueba primero, flujo completo, batería y clippy por lote, diff revisado, seguimiento al día",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "EVIDENCIAS registra por lote las pruebas en rojo y en verde, la batería completa y el commit",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-1",
+   "requisitos": [
+    "R7-0",
+    "R7-1"
+   ],
+   "fase": "transversal",
+   "titulo": "Dinero en céntimos enteros con redondeo explícito; auditar sumas existentes",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Tipo Cents usado en el código nuevo; facturas, presupuestos, cuotas, caja y remesas cuadran al céntimo con pruebas de propiedades",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-2",
+   "requisitos": [
+    "R7-0",
+    "R7-2"
+   ],
+   "fase": "transversal",
+   "titulo": "Autoridad del servidor: colisiones, reintentos y respuestas perdidas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de numeración, cadena, permisos y operaciones irrepetibles con reintento tras respuesta perdida",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-3",
+   "requisitos": [
+    "R7-0",
+    "R7-3"
+   ],
+   "fase": "transversal",
+   "titulo": "Trazabilidad de cobros, devoluciones, facturas, liquidaciones y stock sin borrar historia",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Cada anulación conserva el original y su referencia; pruebas",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-4",
+   "requisitos": [
+    "R7-0",
+    "R7-4"
+   ],
+   "fase": "transversal",
+   "titulo": "Atomicidad y recuperación ante apagón, disco lleno o fallo parcial",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de escritura interrumpida, sin espacio y diario truncado sin pérdida ni corrupción",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-5",
+   "requisitos": [
+    "R7-0",
+    "R7-5"
+   ],
+   "fase": "transversal",
+   "titulo": "Autorización en el servidor para cada lectura y escritura sensible",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Auditoría de rutas y operaciones del servidor con pruebas por perfil; ninguna contraseña ni semilla viaja a los puestos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-6",
+   "requisitos": [
+    "R7-0",
+    "R7-6"
+   ],
+   "fase": "transversal",
+   "titulo": "Límites de entradas de red, ficheros, imágenes, descompresión, colas y tareas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Auditoría con pruebas de tamaños máximos y cancelación sin bloquear la interfaz",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-R7-7",
+   "requisitos": [
+    "R7-0",
+    "R7-7"
+   ],
+   "fase": "transversal",
+   "titulo": "Minimización de datos en registros, portales, informes de error e IA",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Revisión con pruebas de que no salen datos de salud innecesarios; fixtures ficticios",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-CIERRE-01",
+   "requisitos": [
+    "R8-5"
+   ],
+   "fase": "transversal",
+   "titulo": "Restauración ensayada en entorno aislado con comprobación de contenido",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Copia restaurada abierta en carpeta aislada: pacientes, relaciones, documentos, dinero y diario comprobados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-CIERRE-02",
+   "requisitos": [
+    "R8-7",
+    "R8-8",
+    "R8-9",
+    "R8-10",
+    "R8-11",
+    "R8-12",
+    "R9-4",
+    "R9-5",
+    "RF0-5"
+   ],
+   "fase": "transversal",
+   "titulo": "Cierre: verificador, órdenes de calidad, ENTREGA.md y resumen en la conversación",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "ENTREGA.md con evidencias, limitaciones y pasos externos; verificador y calidad mostrados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F0-01",
+   "requisitos": [
+    "RF0-1"
+   ],
+   "fase": 0,
+   "titulo": "Conservar el encargo en el repositorio y documentar el estado inicial con fecha y procedencia",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Encargo guardado sin cambios con su SHA-256; ESTADO_INICIAL distingue cifras históricas y medidas",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F0-02",
+   "requisitos": [
+    "RF0-2"
+   ],
+   "fase": 0,
+   "titulo": "Localizar dónde se usa la referencia de exención de IVA",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Lista de usos en código, plantillas y facturas guardadas",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F0-03",
+   "requisitos": [
+    "RF0-2"
+   ],
+   "fase": 0,
+   "titulo": "Consultar las fuentes oficiales vigentes del artículo 20.Uno de la Ley 37/1992",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Fuente, fecha y texto aplicable registrados en docs/normativa.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F0-04",
+   "requisitos": [
+    "RF0-2"
+   ],
+   "fase": 0,
+   "titulo": "Referencia de exención configurable solo para facturas nuevas",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F0-02",
+    "T-F0-03"
+   ],
+   "criterio": "Por defecto no cambia nada; las facturas emitidas conservan su texto; prueba con datos ficticios",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F0-05",
+   "requisitos": [
+    "RF0-2"
+   ],
+   "fase": 0,
+   "titulo": "Decisión de la gestoría sobre la referencia de exención y su activación",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F0-04"
+   ],
+   "criterio": "Decisión documentada por la gestoría",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-01"
+  },
+  {
+   "id": "T-F0-06",
+   "requisitos": [
+    "RF0-3"
+   ],
+   "fase": 0,
+   "titulo": "Decisión de la clínica sobre las copias del 11 y 12 de noviembre",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-INI-02"
+   ],
+   "criterio": "Decisión documentada; mientras tanto no se accede a esa carpeta",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-02"
+  },
+  {
+   "id": "T-F0-07",
+   "requisitos": [
+    "RF0-4"
+   ],
+   "fase": 0,
+   "titulo": "Registrar requisitos externos de GESDEN, receta, AEAT, firma de instaladores y WhatsApp",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "BLOQUEOS.md con cada dependencia completa",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A1-REV",
+   "requisitos": [
+    "RF1-A1",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 1: Documentos, consentimientos y cuestionarios",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area1.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A1-FIX",
+   "requisitos": [
+    "RF1-A1"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 1 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A1-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A2-REV",
+   "requisitos": [
+    "RF1-A2",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 2: Recetas y vademécum",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A1-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area2.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A2-FIX",
+   "requisitos": [
+    "RF1-A2"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 2 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A2-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A3-REV",
+   "requisitos": [
+    "RF1-A3",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 3: Odontograma, periodontograma e historial",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A2-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area3.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A3-FIX",
+   "requisitos": [
+    "RF1-A3"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 3 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A3-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A4-REV",
+   "requisitos": [
+    "RF1-A4",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 4: Bancos y conciliación",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A3-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area4.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A4-FIX",
+   "requisitos": [
+    "RF1-A4"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 4 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A4-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A5-REV",
+   "requisitos": [
+    "RF1-A5",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 5: Informes",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A4-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area5.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A5-FIX",
+   "requisitos": [
+    "RF1-A5"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 5 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A5-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A6-REV",
+   "requisitos": [
+    "RF1-A6",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 6: Comunicaciones",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A5-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area6.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A6-FIX",
+   "requisitos": [
+    "RF1-A6"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 6 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A6-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A7-REV",
+   "requisitos": [
+    "RF1-A7",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 7: Ortodoncia",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A6-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area7.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A7-FIX",
+   "requisitos": [
+    "RF1-A7"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 7 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A7-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A8-REV",
+   "requisitos": [
+    "RF1-A8",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 8: IA de radiografías",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A7-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area8.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A8-FIX",
+   "requisitos": [
+    "RF1-A8"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 8 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A8-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A9-REV",
+   "requisitos": [
+    "RF1-A9",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 9: Cita online y portales",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A8-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area9.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A9-FIX",
+   "requisitos": [
+    "RF1-A9"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 9 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A9-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A10-REV",
+   "requisitos": [
+    "RF1-A10",
+    "RF1-0"
+   ],
+   "fase": 1,
+   "titulo": "Revisión del área 10: Telefonía y laboratorio digital",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A9-REV"
+   ],
+   "criterio": "Flujos inventariados y comprobaciones mínimas de la tabla hechas, con hallazgos en docs/autonomia/revision/area10.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A10-FIX",
+   "requisitos": [
+    "RF1-A10"
+   ],
+   "fase": 1,
+   "titulo": "Corregir los defectos demostrados del área 10 con pruebas de regresión",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A10-REV"
+   ],
+   "criterio": "Cada defecto con prueba que falla antes y pasa después; sin defectos inventados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-A1-EXT",
+   "requisitos": [
+    "RF1-A1"
+   ],
+   "fase": 1,
+   "titulo": "Validez jurídica definitiva de firmas y consentimientos",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F1-A1-FIX"
+   ],
+   "criterio": "Informe de jurista o DPO",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-22"
+  },
+  {
+   "id": "T-F1-A2-EXT",
+   "requisitos": [
+    "RF1-A2"
+   ],
+   "fase": 1,
+   "titulo": "Revisión profesional de las reglas y avisos del vademécum",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F1-A2-FIX"
+   ],
+   "criterio": "Revisión firmada por un odontólogo",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-16"
+  },
+  {
+   "id": "T-F1-A10-EXT",
+   "requisitos": [
+    "RF1-A10"
+   ],
+   "fase": 1,
+   "titulo": "Prueba con centralita y laboratorio reales",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F1-A10-FIX"
+   ],
+   "criterio": "Prueba con la centralita y el laboratorio de la clínica",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-23"
+  },
+  {
+   "id": "T-F1-11",
+   "requisitos": [
+    "RF1-11"
+   ],
+   "fase": 1,
+   "titulo": "Comprobación automática de anchura y altura de todas las pantallas (1280×720 y 1280×800) y arreglos",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Prueba que recorre las pantallas y falla si algo se sale; capturas sintéticas de evidencia",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-12a",
+   "requisitos": [
+    "RF1-12"
+   ],
+   "fase": 1,
+   "titulo": "Inventario y pruebas de concurrencia: facturas, recibos, cuotas, devoluciones, remesas, stock, recordatorios y reservas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Cada flujo con prueba de dos puestos a la vez",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-12b",
+   "requisitos": [
+    "RF1-12"
+   ],
+   "fase": 1,
+   "titulo": "Desconexión, reenvío, reinicio, fallo de escritura y recuperación",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de cada caso en los flujos afectados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-12c",
+   "requisitos": [
+    "RF1-12"
+   ],
+   "fase": 1,
+   "titulo": "Protocolo del servidor: entradas inválidas, tamaños y datos comprimidos",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de rechazo sin pánico ni consumo descontrolado",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-12d",
+   "requisitos": [
+    "RF1-12"
+   ],
+   "fase": 1,
+   "titulo": "Pruebas de propiedades y fuzzing acotado y reproducible en los puntos de más riesgo",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Generador con semilla fija sobre combinación de cambios, protocolo, CSV y Norma 43",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F1-13",
+   "requisitos": [
+    "RF1-13"
+   ],
+   "fase": 1,
+   "titulo": "Informes reconciliados con un conjunto independiente de operaciones sintéticas",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F1-A5-REV"
+   ],
+   "criterio": "Prueba con oráculo independiente para cada total de informes",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-01",
+   "requisitos": [
+    "RF2-1",
+    "RF2-3"
+   ],
+   "fase": 2,
+   "titulo": "Motor de migración con identificadores de origen e importación idempotente",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Cada registro importado guarda sistema, tabla e id de origen; repetir no duplica",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-02",
+   "requisitos": [
+    "RF2-2"
+   ],
+   "fase": 2,
+   "titulo": "Entidades: pacientes y responsables, alertas, historia, tratamientos hechos y pendientes, presupuestos, citas, saldos y cobros, documentos e imágenes",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-01"
+   ],
+   "criterio": "Importación probada de cada entidad con fixtures sintéticos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-03",
+   "requisitos": [
+    "RF2-4"
+   ],
+   "fase": 2,
+   "titulo": "Asistente: previsualización, simulacro aislado, errores por fila, duplicados explícitos, copia previa, repetición sin duplicar y recuperación",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-01"
+   ],
+   "criterio": "Flujo en pantalla probado; origen en solo lectura",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-04",
+   "requisitos": [
+    "RF2-5"
+   ],
+   "fase": 2,
+   "titulo": "Informe de conciliación por paciente y global con importes exactos y exclusiones",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-02"
+   ],
+   "criterio": "Pacientes, deuda, citas futuras, presupuestos abiertos y tratamientos pendientes cuadran sin doble cómputo",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-05",
+   "requisitos": [
+    "RF2-1",
+    "RF2-3"
+   ],
+   "fase": 2,
+   "titulo": "Adaptador GESDEN sobre el motor con mapeo configurable",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-02"
+   ],
+   "criterio": "Catálogo y pacientes existentes conservados; resto del mapeo configurable y validable",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-06",
+   "requisitos": [
+    "RF2-1",
+    "RF2-3"
+   ],
+   "fase": 2,
+   "titulo": "Adaptador Novaclinic sobre el motor con mapeo configurable",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-02"
+   ],
+   "criterio": "Igual que GESDEN",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-07",
+   "requisitos": [
+    "RF2-1"
+   ],
+   "fase": 2,
+   "titulo": "Perfiles de Excel/CSV para Clinic Cloud, Dentalink y otras exportaciones",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-03"
+   ],
+   "criterio": "Perfiles de mapeo seleccionables y probados con fixtures sintéticos identificados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-08",
+   "requisitos": [
+    "RF2-1",
+    "RF2-3"
+   ],
+   "fase": 2,
+   "titulo": "Documentar formatos, versiones y campos realmente soportados por cada adaptador",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-05",
+    "T-F2-06",
+    "T-F2-07"
+   ],
+   "criterio": "docs/migracion.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-09",
+   "requisitos": [
+    "RF2-6"
+   ],
+   "fase": 2,
+   "titulo": "Simulacro reproducible de extremo a extremo con datos sintéticos",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F2-03",
+    "T-F2-04"
+   ],
+   "criterio": "Prueba automática: origen sintético, simulacro, importación e informe cuadrado",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F2-10",
+   "requisitos": [
+    "RF2-3",
+    "RF2-6"
+   ],
+   "fase": 2,
+   "titulo": "Esquema o exportación autorizada de GESDEN y simulacro real conciliado",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F2-05",
+    "T-F2-09"
+   ],
+   "criterio": "Simulacro autorizado con recuentos y totales reconciliados",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-03"
+  },
+  {
+   "id": "T-F2-11",
+   "requisitos": [
+    "RF2-3",
+    "RF2-6"
+   ],
+   "fase": 2,
+   "titulo": "Exportación autorizada de Novaclinic y simulacro real",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F2-06",
+    "T-F2-09"
+   ],
+   "criterio": "Simulacro autorizado",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-04"
+  },
+  {
+   "id": "T-F2-12",
+   "requisitos": [
+    "RF2-1"
+   ],
+   "fase": 2,
+   "titulo": "Exportaciones reales de Clinic Cloud y Dentalink",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F2-07"
+   ],
+   "criterio": "Perfiles comprobados con exportaciones reales autorizadas",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-05"
+  },
+  {
+   "id": "T-F3-01",
+   "requisitos": [
+    "RF3-1",
+    "RF3-0"
+   ],
+   "fase": 3,
+   "titulo": "Instalación de servidor y puestos ensayada en Linux con raíces aisladas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Ensayo automático: servidor, alta de puesto con huella, permisos y comprobación de cifrado",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-01X",
+   "requisitos": [
+    "RF3-1"
+   ],
+   "fase": 3,
+   "titulo": "Ensayo de instalación en Windows y macOS reales",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F3-01"
+   ],
+   "criterio": "Ensayo en máquinas o runners reales",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-24"
+  },
+  {
+   "id": "T-F3-02",
+   "requisitos": [
+    "RF3-2"
+   ],
+   "fase": 3,
+   "titulo": "Actualizaciones coordinadas: compatibilidad, firma e integridad, copia previa, migraciones, puestos desconectados y vuelta atrás",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de fallo entre pasos sin dejar la clínica a medias ni perder datos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-03",
+   "requisitos": [
+    "RF3-3"
+   ],
+   "fase": 3,
+   "titulo": "Proceso de firma y notarización en CI condicionado a secretos; verificación del empaquetado",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Flujo de CI preparado; empaquetado comprobado en Linux; sin declarar binarios firmados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-03X",
+   "requisitos": [
+    "RF3-3"
+   ],
+   "fase": 3,
+   "titulo": "Certificado de firma de Windows y cuenta de Apple",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F3-03"
+   ],
+   "criterio": "Certificados disponibles en los secretos del repositorio",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-25"
+  },
+  {
+   "id": "T-F3-04",
+   "requisitos": [
+    "RF3-4"
+   ],
+   "fase": 3,
+   "titulo": "Registro local de errores con rotación y minimización; envío a soporte con consentimiento y previsualización",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de rotación, minimización y que nada se envía sin acción explícita",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-05",
+   "requisitos": [
+    "RF3-5"
+   ],
+   "fase": 3,
+   "titulo": "Copias: escalonado, cifrado, alertas, segunda copia, restauración real aislada y recuperación de claves",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-CIERRE-01"
+   ],
+   "criterio": "Pruebas de restauración con comprobación de contenido y de clave separada de los datos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-06",
+   "requisitos": [
+    "RF3-6"
+   ],
+   "fase": 3,
+   "titulo": "VERI*FACTU con doble de prueba: rechazo, caída, reintento, idempotencia y conciliación de estados",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas con servidor AEAT simulado explícito",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-07",
+   "requisitos": [
+    "RF3-6"
+   ],
+   "fase": 3,
+   "titulo": "WhatsApp, correo y SMS con dobles de prueba: rechazo, caída, reintento, idempotencia y resultados inciertos",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas con servidores simulados explícitos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-06X",
+   "requisitos": [
+    "RF3-6"
+   ],
+   "fase": 3,
+   "titulo": "Prueba en el entorno de pruebas de la AEAT con el certificado de la clínica",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F3-06"
+   ],
+   "criterio": "Respuesta real del entorno de pruebas",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-06"
+  },
+  {
+   "id": "T-F3-07X",
+   "requisitos": [
+    "RF3-6"
+   ],
+   "fase": 3,
+   "titulo": "Cuenta de WhatsApp Business y plantillas aprobadas por Meta",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F3-07"
+   ],
+   "criterio": "Plantilla aprobada y prueba con número de pruebas",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-07"
+  },
+  {
+   "id": "T-F3-08",
+   "requisitos": [
+    "RF3-7"
+   ],
+   "fase": 3,
+   "titulo": "Lista de instalación, procedimiento de restauración y vuelta atrás y guía breve",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Documentos en docs/ comprobados contra el programa",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-09",
+   "requisitos": [
+    "RF3-8"
+   ],
+   "fase": 3,
+   "titulo": "Instrumentos del piloto: tiempo y pasos para cita, cobro y cierre de caja, incidencias, disponibilidad y restauraciones",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Medición sin contenido clínico, exportable, con pruebas",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F3-10",
+   "requisitos": [
+    "RF3-9",
+    "RF5-13"
+   ],
+   "fase": 3,
+   "titulo": "Mes de piloto real solo con VeodarDental",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F3-01",
+    "T-F3-02",
+    "T-F3-05",
+    "T-F3-08",
+    "T-F3-09"
+   ],
+   "criterio": "Mes real sin incidencias graves con caja, AEAT y copias comprobadas",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-08"
+  },
+  {
+   "id": "T-F4-00",
+   "requisitos": [
+    "RF4-0"
+   ],
+   "fase": 4,
+   "titulo": "Registro de normativa consultada con fuente, fecha, versión y efecto",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "docs/normativa.md",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-01",
+   "requisitos": [
+    "RF4-1"
+   ],
+   "fase": 4,
+   "titulo": "Receta electrónica: trazabilidad, pruebas técnicas y documentación para certificación; organismos actuales confirmados",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F4-00"
+   ],
+   "criterio": "Pruebas del circuito con farmacia simulada; expediente actualizado",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-01X",
+   "requisitos": [
+    "RF4-1"
+   ],
+   "fase": 4,
+   "titulo": "Certificación y conexión real con farmacias",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F4-01"
+   ],
+   "criterio": "Certificación oficial",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-09"
+  },
+  {
+   "id": "T-F4-02",
+   "requisitos": [
+    "RF4-2"
+   ],
+   "fase": 4,
+   "titulo": "Registro de accesos de lectura y escritura a cada historia, protegido y probado en red",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas: consultar y modificar dejan registro sin copiar la historia; en red lo registra el servidor",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-03",
+   "requisitos": [
+    "RF4-3"
+   ],
+   "fase": 4,
+   "titulo": "Herramientas RGPD: exportación, rectificación, bloqueo, restricción y supresión con controles de conservación y representación",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas con datos ficticios; supresión desactivada hasta revisión externa",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-03X",
+   "requisitos": [
+    "RF4-3"
+   ],
+   "fase": 4,
+   "titulo": "Revisión externa de plazos y excepciones de conservación",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F4-03"
+   ],
+   "criterio": "Informe del DPO",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-10"
+  },
+  {
+   "id": "T-F4-04",
+   "requisitos": [
+    "RF4-4"
+   ],
+   "fase": 4,
+   "titulo": "Cifrado de datos e imágenes con claves gestionadas, rotación, restauración, integridad y migración recuperable",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de cifrado, rotación, restauración y migración reversible",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-05",
+   "requisitos": [
+    "RF4-5"
+   ],
+   "fase": 4,
+   "titulo": "Retirada de la carpeta compartida con transición al servidor; nuevos puestos sin secretos",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de transición y de que un puesto nuevo no recibe secretos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-06",
+   "requisitos": [
+    "RF4-6"
+   ],
+   "fase": 4,
+   "titulo": "Registro de jornada: entradas, salidas, pausas, correcciones trazables, acceso por rol y exportación",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F4-00"
+   ],
+   "criterio": "Pruebas; requisitos legales consultados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-06X",
+   "requisitos": [
+    "RF4-6"
+   ],
+   "fase": 4,
+   "titulo": "Revisión legal del registro de jornada",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F4-06"
+   ],
+   "criterio": "Revisión de asesoría laboral",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-26"
+  },
+  {
+   "id": "T-F4-07",
+   "requisitos": [
+    "RF4-7"
+   ],
+   "fase": 4,
+   "titulo": "Exportación contable para A3, ContaSol y Sage según especificaciones documentables",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F4-00"
+   ],
+   "criterio": "Ficheros validados contra la especificación disponible",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-07X",
+   "requisitos": [
+    "RF4-7"
+   ],
+   "fase": 4,
+   "titulo": "Aceptación por la gestoría en su programa contable",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F4-07"
+   ],
+   "criterio": "Importación correcta en el programa de la gestoría",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-11"
+  },
+  {
+   "id": "T-F4-08",
+   "requisitos": [
+    "RF4-8"
+   ],
+   "fase": 4,
+   "titulo": "Facturación foral: arquitectura y adaptador TicketBAI; Navarra según aplicabilidad",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F4-00"
+   ],
+   "criterio": "Implementación separada de homologación y activación, con pruebas",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-08X",
+   "requisitos": [
+    "RF4-8"
+   ],
+   "fase": 4,
+   "titulo": "Homologación foral y activación",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F4-08"
+   ],
+   "criterio": "Prueba en entorno de la hacienda foral",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-12"
+  },
+  {
+   "id": "T-F4-09",
+   "requisitos": [
+    "RF4-9",
+    "RF4-10"
+   ],
+   "fase": 4,
+   "titulo": "Evidencia preparada para gestoría, DPO y auditoría de seguridad externa",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "docs/revision_externa con lo necesario para cada revisor",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F4-09X",
+   "requisitos": [
+    "RF4-9"
+   ],
+   "fase": 4,
+   "titulo": "Revisiones de gestoría, DPO y auditoría de seguridad",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F4-09"
+   ],
+   "criterio": "Informes externos",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-13"
+  },
+  {
+   "id": "T-F5-01",
+   "requisitos": [
+    "RF5-1",
+    "RF5-0"
+   ],
+   "fase": 5,
+   "titulo": "Cuadro de mando con fórmulas definidas y verificación independiente",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Cada indicador probado con operaciones sintéticas calculadas aparte",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-02",
+   "requisitos": [
+    "RF5-2"
+   ],
+   "fase": 5,
+   "titulo": "Pago por internet (TPV virtual y Bizum) con importe validado, notificaciones firmadas, idempotencia, conciliación, devoluciones y señal configurable",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas sin cargos con firmas y notificaciones simuladas; sin datos de tarjeta",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-02X",
+   "requisitos": [
+    "RF5-2"
+   ],
+   "fase": 5,
+   "titulo": "Contrato de TPV y credenciales del entorno de pruebas del banco",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F5-02"
+   ],
+   "criterio": "Credenciales de pruebas del comercio",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-14"
+  },
+  {
+   "id": "T-F5-03",
+   "requisitos": [
+    "RF5-3"
+   ],
+   "fase": 5,
+   "titulo": "Plan de tratamiento por fases y alternativas del odontograma al presupuesto",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Versiones, aceptación explícita, sumas exactas, sin duplicados y consentimientos enlazados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-04",
+   "requisitos": [
+    "RF5-4"
+   ],
+   "fase": 5,
+   "titulo": "Notas de evolución con plantillas, dictado, transcripción y resumen revisado por el profesional",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas del flujo de confirmación y de procedencia; transcripción con doble de prueba",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-04X",
+   "requisitos": [
+    "RF5-4",
+    "RF5-5"
+   ],
+   "fase": 5,
+   "titulo": "Proveedor de transcripción real (cuenta o modelo local) validado",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F5-04"
+   ],
+   "criterio": "Cuenta o modelo elegido por la clínica y prueba real",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-15"
+  },
+  {
+   "id": "T-F5-05",
+   "requisitos": [
+    "RF5-5"
+   ],
+   "fase": 5,
+   "titulo": "Periodontograma por voz con corrección y confirmación visibles",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F5-04"
+   ],
+   "criterio": "Pruebas con ruido y errores simulados; nada ambiguo entra en la historia",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-06",
+   "requisitos": [
+    "RF5-6"
+   ],
+   "fase": 5,
+   "titulo": "Visor DICOM/CBCT y STL, y comparación de radiografías",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Muestras sintéticas o públicas, orientación y escala, límites de memoria, sin bloquear la interfaz y ficheros inválidos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-07",
+   "requisitos": [
+    "RF5-7"
+   ],
+   "fase": 5,
+   "titulo": "Alertas clínicas ampliadas con fuentes autorizadas y revisión profesional",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Flujos con fuente citada y confirmación del profesional",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-07X",
+   "requisitos": [
+    "RF5-7"
+   ],
+   "fase": 5,
+   "titulo": "Revisión clínica externa de las alertas",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F5-07"
+   ],
+   "criterio": "Revisión de un odontólogo",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-16"
+  },
+  {
+   "id": "T-F5-08",
+   "requisitos": [
+    "RF5-8"
+   ],
+   "fase": 5,
+   "titulo": "Esterilización: ciclos, lotes, instrumental, pacientes, incidencias y afectados",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de consulta de afectados y auditoría",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-09",
+   "requisitos": [
+    "RF5-9"
+   ],
+   "fase": 5,
+   "titulo": "Encuestas de satisfacción y solicitud de reseñas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Consentimiento, bajas, sin duplicados, resultados medibles y sin condicionar la reseña",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-10",
+   "requisitos": [
+    "RF5-10"
+   ],
+   "fase": 5,
+   "titulo": "Portal del paciente con autorización por objeto y por responsable",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de que no se accede a otro paciente cambiando un identificador",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-11",
+   "requisitos": [
+    "RF5-11"
+   ],
+   "fase": 5,
+   "titulo": "Idiomas: castellano, catalán, euskera, gallego e inglés",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Interfaz, mensajes y documentos con selección y alternativa; pruebas de cobertura de textos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F5-11X",
+   "requisitos": [
+    "RF5-11"
+   ],
+   "fase": 5,
+   "titulo": "Validación de traducciones clínicas y legales",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F5-11"
+   ],
+   "criterio": "Revisión por traductores o profesionales",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-17"
+  },
+  {
+   "id": "T-F5-12",
+   "requisitos": [
+    "RF5-12"
+   ],
+   "fase": 5,
+   "titulo": "Campañas a grupos de pacientes con consentimiento, límites, previsualización y resultados atribuibles",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas sin envíos reales",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-01",
+   "requisitos": [
+    "RF6-1"
+   ],
+   "fase": 6,
+   "titulo": "Grupos de clínicas: separación por centro y sociedad, vistas consolidadas autorizadas",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas de que nada cruza los límites de acceso",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-02",
+   "requisitos": [
+    "RF6-2"
+   ],
+   "fase": 6,
+   "titulo": "Servidor en la nube opcional con despliegue probado localmente",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Aprovisionamiento documentado y ensayado en local; condiciones de alojamiento estudiadas",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-02X",
+   "requisitos": [
+    "RF6-2"
+   ],
+   "fase": 6,
+   "titulo": "Contratación de alojamiento y validación de transferencias",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F6-02"
+   ],
+   "criterio": "Proveedor elegido y contrato de encargo de tratamiento",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-18"
+  },
+  {
+   "id": "T-F6-03",
+   "requisitos": [
+    "RF6-3"
+   ],
+   "fase": 6,
+   "titulo": "Datáfono y financiación: adaptadores, estados, conciliación, cancelación y recuperación",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas con proveedor simulado conforme a la especificación disponible",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-03X",
+   "requisitos": [
+    "RF6-3"
+   ],
+   "fase": 6,
+   "titulo": "Especificación y contrato del proveedor de datáfono y financiación",
+   "tipo": "decision_externa",
+   "dependencias": [
+    "T-F6-03"
+   ],
+   "criterio": "Especificación y entorno de pruebas del proveedor",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-19"
+  },
+  {
+   "id": "T-F6-04",
+   "requisitos": [
+    "RF6-4"
+   ],
+   "fase": 6,
+   "titulo": "Aseguradoras: flujo interno de autorizaciones y liquidaciones y contrato de integración",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Sin duplicados, con respuestas y estados guardados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-04X",
+   "requisitos": [
+    "RF6-4"
+   ],
+   "fase": 6,
+   "titulo": "API o acuerdo con cada aseguradora",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F6-04"
+   ],
+   "criterio": "Entorno de pruebas de la aseguradora",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-20"
+  },
+  {
+   "id": "T-F6-05",
+   "requisitos": [
+    "RF6-5"
+   ],
+   "fase": 6,
+   "titulo": "Pedidos por stock mínimo con aprobación, unidades de compra, lotes y recepción",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Pruebas con proveedor ficticio y sin duplicados",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-06",
+   "requisitos": [
+    "RF6-6"
+   ],
+   "fase": 6,
+   "titulo": "Modo tableta",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Controles grandes, contraste ajustable y flujos principales sin ratón, con pruebas de pantalla",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-07",
+   "requisitos": [
+    "RF6-7"
+   ],
+   "fase": 6,
+   "titulo": "Calidad continua: pruebas de pantalla, mediciones por versión, protocolo aleatorio y documentación de auditoría",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Script de medición y pruebas acotadas reproducibles",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-08",
+   "requisitos": [
+    "RF6-8"
+   ],
+   "fase": 6,
+   "titulo": "Medición de almacenamiento con varias clínicas y decisión documentada",
+   "tipo": "ingenieria",
+   "dependencias": [],
+   "criterio": "Memoria, tiempos, tamaño y concurrencia medidos",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-09",
+   "requisitos": [
+    "RF6-9"
+   ],
+   "fase": 6,
+   "titulo": "Escenario sintético de varias clínicas con permisos y totales verificados",
+   "tipo": "ingenieria",
+   "dependencias": [
+    "T-F6-01"
+   ],
+   "criterio": "Prueba automática del escenario",
+   "estado": "PENDIENTE",
+   "evidencia": []
+  },
+  {
+   "id": "T-F6-09X",
+   "requisitos": [
+    "RF6-9"
+   ],
+   "fase": 6,
+   "titulo": "Grupo real de clínicas trabajando con datos conjuntos",
+   "tipo": "validacion_externa",
+   "dependencias": [
+    "T-F6-09"
+   ],
+   "criterio": "Grupo autorizado en producción",
+   "estado": "BLOQUEADA_EXTERNA",
+   "evidencia": [],
+   "bloqueo": "B-21"
+  }
+ ]
+}
