@@ -2168,8 +2168,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "docs/normativa.md",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-031"
+   ]
   },
   {
    "id": "T-F4-01",

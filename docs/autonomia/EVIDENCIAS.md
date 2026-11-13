@@ -808,3 +808,13 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 425 pasan, 0 fallan, 10 ignoradas |
+
+## E-031 T-F4-00: registro de normativa consultada
+- **Dónde:** `docs/normativa.md`, consultado el 13/11/2026 en fuentes oficiales, con fuente, fecha, versión, contenido, efecto en el código y lo pendiente.
+  - **VERI*FACTU (calendario):** RDL 15/2025, BOE-A-2025-24446; 1/1/2027 para el IS y 1/7/2027 para los demás.
+  - **Historia clínica:** Ley 41/2002, artículo 16 (acceso) y 17 (cinco años como mínimo, más según la comunidad).
+  - **Registro de jornada:** ET artículo 34.9 y guía del Ministerio. El desarrollo digital no consta aprobado. La conservación de cuatro años está marcada para confirmar con la lectura literal.
+  - **Libros registro de IVA e IRPF:** formato común de la AEAT, versión del 18/02/2026. Para A3, ContaSol y Sage no hay especificación oficial pública: B-11.
+  - **TicketBAI:** NF 3/2020, DF 32/2020 y DF 48/2021. Si alcanza a los servicios sanitarios exentos no está confirmado, y Navarra está pendiente.
+  - **Receta privada:** SREP, CGCOE, CGCOM y Nodofarma.
+- **Lo que no se afirma:** ninguna certificación ni ningún cumplimiento. Lo confirmado y lo pendiente van separados.
