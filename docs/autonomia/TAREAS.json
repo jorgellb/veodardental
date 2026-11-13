@@ -2290,8 +2290,10 @@
     "T-F4-00"
    ],
    "criterio": "Pruebas; requisitos legales consultados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-035"
+   ]
   },
   {
    "id": "T-F4-06X",

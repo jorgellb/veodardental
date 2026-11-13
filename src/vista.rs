@@ -43,14 +43,21 @@ fn empty_like(v: &Value) -> Value {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct View {
     clinical: bool,
+    /// Registro de jornada: solo el de este usuario (quien no es Dirección).
+    own: Option<u32>,
 }
 
 impl View {
     /// Todo (Dirección, doctores, higienistas; y sin servidor, todos).
-    pub const FULL: View = View { clinical: true };
+    pub const FULL: View = View { clinical: true, own: None };
 
     pub fn of(p: Profile) -> View {
-        View { clinical: p.can(Perm::Clinico) }
+        View { clinical: p.can(Perm::Clinico), own: None }
+    }
+
+    /// Del registro de jornada, solo lo de `user`.
+    pub fn only_own(self, user: u32) -> View {
+        View { own: Some(user), ..self }
     }
 
     pub fn is_full(self) -> bool {
@@ -73,6 +80,12 @@ impl View {
     /// ve, vacíos.
     pub fn show(self, list: &str, json: &str) -> Option<String> {
         if self.hides(list) {
+            return None;
+        }
+        if list == "punches"
+            && let Some(me) = self.own
+            && serde_json::from_str::<Value>(json).ok().and_then(|v| v["user_id"].as_u64()) != Some(me as u64)
+        {
             return None;
         }
         let fields = self.hidden_fields(list);

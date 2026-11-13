@@ -912,3 +912,38 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 436 pasan, 0 fallan, 10 ignoradas |
+
+## E-035 T-F4-06: registro de jornada, y revisión de seguridad del bloqueo
+- **Revisión de seguridad automática del commit `952fa58`: un hallazgo, corregido.**
+  - **Hallazgo:** otro perfil podía borrar en red un paciente con los datos bloqueados.
+  - **Ahora:** el servidor descarta ese borrado.
+  - **Prueba:** final de `server::tests::the_time_record_only_grows_on_the_server`.
+- **T-F4-06 (`src/jornada.rs`):**
+  - **Fichar:** en Inicio cada persona ficha lo suyo (entrada, inicio y fin de pausa, salida), en orden y a la hora del momento.
+  - **Resumen por día:** primera entrada, última salida, pausas y minutos trabajados, con aviso si el día está incompleto.
+  - **Correcciones (Configuración › Usuarios y permisos › Registro de jornada):**
+    - solo Dirección y siempre con motivo;
+    - sustituyen, anulan o añaden una marca que faltaba;
+    - la original se conserva y queda en el registro de cambios.
+  - **Acceso por rol:** cada persona ve lo suyo y Dirección todo. En red lo aplica el servidor: a quien no es Dirección solo le envía sus fichajes (`View::only_own`).
+  - **Exportación** en CSV por periodo (una fila por persona y día, y las correcciones con su motivo), con las celdas protegidas contra fórmulas.
+  - **En red, el servidor hace cumplir:**
+    - solo se añade (no se cambia ni se borra una marca);
+    - cada uno ficha lo suyo, y la hora la pone el servidor, no el ordenador del puesto;
+    - las correcciones son solo de Dirección.
+- **Normativa:** ET art. 34.9 y guía del Ministerio, en `docs/normativa.md`.
+  - El desarrollo reglamentario digital no consta aprobado a esta fecha.
+  - La conservación de cuatro años se ha marcado para confirmarla con la lectura literal.
+  - El registro no tiene ninguna función de borrado.
+- **Pruebas:**
+  - `jornada::tests::a_day_with_a_pause_adds_up_and_the_order_is_kept`
+  - `jornada::tests::corrections_keep_the_original_and_say_why`
+  - `server::tests::the_time_record_only_grows_on_the_server`: hora del servidor y no la del puesto, nada por otra persona, ni correcciones sin ser Dirección, ni cambios ni borrados, la corrección de Dirección, y cada uno recibe solo lo suyo.
+- **Pendiente:** la revisión de la asesoría laboral (B-26, T-F4-06X). Esta pantalla no demuestra el cumplimiento.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 439 pasan, 0 fallan, 10 ignoradas |

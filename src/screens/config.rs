@@ -219,7 +219,11 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
         CfgTab::Marcha => crate::screens::marcha::panel(app, ui),
         CfgTab::Gabinetes => boxes_tab(app, ui),
         CfgTab::Centros => crate::screens::centros::centers_panel(app, ui),
-        CfgTab::Usuarios => crate::screens::login::users_admin(app, ui),
+        CfgTab::Usuarios => {
+            crate::screens::login::users_admin(app, ui);
+            ui.add_space(10.0);
+            crate::screens::jornada::admin_panel(app, ui);
+        }
         CfgTab::Facturacion => billing_tab(app, ui),
         CfgTab::Correo => crate::screens::correo::panel(app, ui),
         CfgTab::CitaOnline => crate::screens::cita_online::panel(app, ui),

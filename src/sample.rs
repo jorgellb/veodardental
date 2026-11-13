@@ -271,6 +271,7 @@ impl Db {
             imports: vec![].into(),
             measures: vec![].into(),
             rights_requests: vec![].into(),
+            punches: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,
         };

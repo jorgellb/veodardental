@@ -20,6 +20,7 @@ pub mod imagenes;
 pub mod importar;
 pub mod informes;
 pub mod inicio;
+pub mod jornada;
 pub mod laboratorio;
 pub mod llamadas;
 pub mod login;

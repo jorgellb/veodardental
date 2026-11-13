@@ -29,6 +29,7 @@ mod ia;
 mod icons;
 mod informes;
 mod insurer;
+mod jornada;
 mod lab_order;
 mod local;
 mod mail;

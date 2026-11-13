@@ -824,6 +824,9 @@ pub struct Db {
     /// Lo importado de otro programa, con su identificador allí (`migracion`).
     #[serde(default)]
     pub imports: Tracked<Vec<crate::migracion::ImportRef>>,
+    /// Registro de jornada: fichajes y correcciones (`jornada`).
+    #[serde(default)]
+    pub punches: Tracked<Vec<crate::jornada::Punch>>,
     /// Solicitudes de derechos de protección de datos (`rgpd`).
     #[serde(default)]
     pub rights_requests: Tracked<Vec<crate::rgpd::RightsRequest>>,

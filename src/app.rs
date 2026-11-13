@@ -197,6 +197,7 @@ pub struct App {
     pub imp: screens::importar::ImportState,
     pub support: screens::soporte::SupportState,
     pub rights: screens::derechos::RightsForm,
+    pub jornada: screens::jornada::JornadaState,
     /// Pasarela de SMS de este ordenador y el envío en curso.
     pub sms: crate::sms::SmsSettings,
     /// Tarea que se está midiendo para el piloto, y desde cuándo no hay conexión.
@@ -342,6 +343,7 @@ impl App {
             imp: screens::importar::ImportState::default(),
             support: Default::default(),
             rights: Default::default(),
+            jornada: screens::jornada::JornadaState::new(today()),
             sms: if live { crate::sms::load_settings() } else { Default::default() },
             sms_job: None,
             timing: None,

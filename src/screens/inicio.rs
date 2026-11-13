@@ -18,6 +18,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         "Buenas noches"
     };
     title(ui, &format!("{greet}, {}", app.db.config.current_user), &format!("Resumen de {}", long_date(today)));
+    crate::screens::jornada::punch_card(app, ui);
+    ui.add_space(8.0);
 
     let center = cid(app.db.config.current_center);
     let day: Vec<Appointment> = app.db.appointments.iter().filter(|a| a.date == today && cid(a.center_id) == center).cloned().collect();

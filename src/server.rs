@@ -888,7 +888,9 @@ impl State {
 
     /// Lo que ve el usuario de la sesión (según su perfil).
     fn view_of(&self, id: u32) -> View {
-        self.user(id).map(|u| View::of(u.profile)).unwrap_or(View::of(crate::users::Profile::Recepcion))
+        let v = self.user(id).map(|u| View::of(u.profile)).unwrap_or(View::of(crate::users::Profile::Recepcion));
+        // el registro de jornada de los demás, solo para Dirección
+        if self.is_admin(id) { v } else { v.only_own(id) }
     }
 
     /// Un registro tal como se le manda a un puesto: sin contraseñas y sin lo
@@ -929,6 +931,36 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
+        // un paciente con los datos bloqueados tampoco lo borra otro perfil
+        if !admin {
+            changes.retain(|c| c.field != "patients" || c.after.is_some() || !c.key.as_deref().and_then(|k| self.snap.get("patients", Some(k))).and_then(|j| serde_json::from_str::<Value>(j).ok()).is_some_and(|v| !v["blocked"].is_null()));
+        }
+        // registro de jornada (ver `jornada`): solo se añade, nunca se cambia ni se
+        // borra; cada uno ficha lo suyo y a la hora del servidor; corrige Dirección
+        let now = crate::model::now();
+        let snap = &self.snap;
+        changes.retain_mut(|c| {
+            if c.field != "punches" {
+                return true;
+            }
+            let exists = c.key.as_deref().is_some_and(|k| snap.get("punches", Some(k)).is_some());
+            let Some(mut p) = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::jornada::Punch>(a).ok()) else { return false };
+            if exists || c.before.is_some() {
+                return false;
+            }
+            let correction = p.corrects.is_some() || !p.reason.is_empty() || p.void;
+            if correction && !admin {
+                return false;
+            }
+            if !correction {
+                if p.user_id != user {
+                    return false;
+                }
+                p.at = now;
+            }
+            c.after = serde_json::to_string(&p).ok();
+            c.after.is_some()
+        });
         // el bloqueo de los datos de un paciente solo lo pone o lo quita Dirección
         // (RGPD; ver `rgpd::Db::set_block`): de otro perfil, se queda como está
         if !admin {
@@ -2723,6 +2755,63 @@ mod tests {
         d.set_block(101, None, true).unwrap();
         dir.push(&mut d, &mut sd).unwrap();
         assert!(crate::sync::on_disk(&path).patient(101).unwrap().blocked.is_none());
+        dir.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T-F4-06. En red, el registro de jornada solo crece: cada uno ficha lo
+    /// suyo y a la hora del servidor, nadie cambia ni borra una marca, y las
+    /// correcciones (con motivo) son de Dirección. Un paciente bloqueado
+    /// tampoco lo borra otro perfil.
+    #[test]
+    fn the_time_record_only_grows_on_the_server() {
+        use crate::jornada::{Kind, Punch};
+        let (addr, path, h) = start("CLAVE_JORN");
+        let rec = signed_in(&addr, "CLAVE_JORN", "Recepción", 2, "0000");
+        let dir = signed_in(&addr, "CLAVE_JORN", "Dirección", 1, "0000");
+        let (mut r, mut sr) = rec.load().unwrap();
+        let early = crate::model::now() - chrono::Duration::hours(5);
+        // ficha con la hora cambiada en su ordenador: vale la del servidor
+        r.punch(2, Kind::Entrada, early).unwrap();
+        // y por otra persona, y una corrección sin ser Dirección: no
+        let (a, b) = (r.new_id(), r.new_id());
+        r.punches.push(Punch { id: a, user_id: 3, at: early, kind: Kind::Entrada, station: 0, corrects: None, reason: String::new(), by: String::new(), void: false });
+        r.punches.push(Punch { id: b, user_id: 2, at: early, kind: Kind::Salida, station: 0, corrects: None, reason: "me fui antes".into(), by: "Recepción".into(), void: false });
+        rec.push(&mut r, &mut sr).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.punches.len(), 1, "{:?}", disk.punches);
+        let mine = disk.punches[0].clone();
+        assert!((crate::model::now() - mine.at).num_minutes().abs() < 5, "hora del servidor, no la del puesto");
+        // cambiarla o borrarla: no
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.punches.iter_mut().for_each(|p| p.at = early);
+        rec.push(&mut r, &mut sr).unwrap();
+        r.punches.clear();
+        rec.push(&mut r, &mut sr).unwrap();
+        assert_eq!(crate::sync::on_disk(&path).punches.to_vec(), vec![mine.clone()]);
+        // Dirección corrige, con motivo
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.correct_punch(Some(mine.id), 2, Some(Kind::Entrada), early, "Llegó a las 9; el ordenador estaba apagado", true).unwrap();
+        dir.push(&mut d, &mut sd).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.punches.len(), 2);
+        assert!(disk.punches.iter().any(|p| p.corrects == Some(mine.id) && p.at == early));
+        // cada uno recibe solo su registro de jornada; Dirección, el de todos
+        let (r2, _) = rec.load().unwrap();
+        d.punch(1, Kind::Entrada, crate::model::now()).unwrap();
+        dir.push(&mut d, &mut sd).unwrap();
+        let (r3, _) = rec.load().unwrap();
+        assert!(r3.punches.iter().all(|p| p.user_id == 2) && r3.punches.len() == r2.punches.len(), "{:?}", r3.punches);
+        let (d2, _) = dir.load().unwrap();
+        assert!(d2.punches.iter().any(|p| p.user_id == 1) && d2.punches.iter().any(|p| p.user_id == 2));
+        // un paciente bloqueado no lo borra Recepción
+        d.set_block(101, Some("Se conserva por obligación legal"), true).unwrap();
+        dir.push(&mut d, &mut sd).unwrap();
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.patients.retain(|p| p.id != 101);
+        rec.push(&mut r, &mut sr).unwrap();
+        assert!(crate::sync::on_disk(&path).patient(101).is_some());
         dir.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
