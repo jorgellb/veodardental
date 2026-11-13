@@ -671,3 +671,36 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 415 pasan, 0 fallan, 10 ignoradas |
+
+## E-026 T-F3-05: ensayo de restauración y clave de recuperación, y revisión de seguridad del registro
+- **Revisión de seguridad automática del commit `2945231`: un hallazgo, corregido.**
+  - **Hallazgo:** el texto de los avisos es libre. Un nombre de paciente sin comillas («No se puede borrar a Juan Pérez…») pasaba la minimización.
+  - **Ahora:** los avisos y los errores del servidor se apuntan quitando además las palabras de los nombres que hay en los datos: pacientes y responsables, usuarios, colaboradores y contactos (`registro::log_free`, `scrub_with`).
+  - **Prueba:** ampliada `personal_data_never_reaches_the_log`.
+  - **Límite aceptado:** los fallos del programa (pánicos) se apuntan sin acceso a los datos: solo con la minimización por patrones. Salen de invariantes del código y no suelen llevar nombres.
+- **T-F3-05.**
+  - **Ya estaba, con sus pruebas:**
+    - copias escalonadas: `automatic_copies_are_kept_staggered_for_a_year`;
+    - avisos de fallo o de copia antigua: `a_failed_or_old_backup_is_warned`;
+    - segunda copia cifrada: `second_copy_is_encrypted_with_the_backup_password`;
+    - cambio de contraseña: `old_copies_are_encrypted_and_moved_to_a_new_password`.
+  - **Nuevo — ensayo de restauración real aislada (`tools::restore_drill`, botón en Copias de seguridad):**
+    - abre la copia en una carpeta aparte, como la abriría el programa;
+    - compara registro a registro pacientes, citas, tratamientos, cobros, facturas, documentos e imágenes, además del total cobrado y la cadena de facturas;
+    - no toca los datos en uso, borra la carpeta del ensayo (los datos descifrados no quedan) y deja el resultado en el registro de cambios.
+  - **Nuevo — clave de recuperación:**
+    - se guarda solo fuera de las carpetas de las copias y de la segunda copia (`cifrado::export_key`);
+    - abre las copias en otro ordenador sin la contraseña, desde el diálogo de restaurar (`read_key_file`).
+  - **Prueba:** `tools::tests::a_restore_drill_checks_the_contents_and_the_key_lives_apart`.
+    - en las carpetas de copias solo hay copias;
+    - guardar la clave allí se rechaza;
+    - en otro ordenador, sin clave, se pide la contraseña; con la contraseña o con la clave de recuperación, el ensayo sale bien en todo;
+    - los datos en uso no cambian;
+    - una copia dañada no pasa.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 416 pasan, 0 fallan, 10 ignoradas |

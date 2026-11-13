@@ -96,6 +96,28 @@ impl BackupKey {
     }
 }
 
+/// Guarda la clave de recuperación de las copias en `dest` (un USB que se
+/// guarda aparte, una carpeta personal…), nunca en las carpetas de las copias
+/// (`data_dirs`): una clave al lado de lo que abre no protege nada. Con ella
+/// se abren las copias en otro ordenador sin la contraseña.
+pub fn export_key(key: &BackupKey, dest: &std::path::Path, data_dirs: &[&std::path::Path]) -> Result<(), String> {
+    let parent = dest.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let canon = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let here = canon(parent);
+    if data_dirs.iter().filter(|d| !d.as_os_str().is_empty()).any(|d| here.starts_with(canon(d))) {
+        return Err("No guarde la clave junto a las copias (ni en la carpeta de la segunda copia): quien tuviera las copias tendría también la clave. Elija otro disco o carpeta.".into());
+    }
+    let text = serde_json::to_string_pretty(&serde_json::json!({ "clave_de_recuperacion_de_las_copias": key })).map_err(|e| e.to_string())?;
+    crate::paths::write_private(dest, text.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Lee una clave de recuperación guardada con [`export_key`].
+pub fn read_key_file(path: &std::path::Path) -> Result<BackupKey, String> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| format!("No se puede leer la clave: {e}"))?).map_err(|_| "No es una clave de recuperación de las copias.".to_string())?;
+    serde_json::from_value(v["clave_de_recuperacion_de_las_copias"].clone()).map_err(|_| "No es una clave de recuperación de las copias.".to_string())
+}
+
 /// ¿Son datos cifrados por este programa?
 pub fn is_encrypted(bytes: &[u8]) -> bool {
     bytes.len() >= HEADER_LEN && &bytes[..8] == MAGIC

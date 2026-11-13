@@ -31,6 +31,13 @@ pub struct ToolsState {
     pub extra_info: Option<(f64, String, String, bool)>,
     pub board_full: bool,
     pub msg_text: String,
+    /// Último ensayo de restauración (y la contraseña, si la copia la pide).
+    pub drill: Option<Result<crate::tools::Drill, String>>,
+    pub drill_pw: String,
+    /// Dónde guardar la clave de recuperación de las copias.
+    pub key_export: String,
+    /// Fichero de la clave de recuperación para abrir una copia cifrada.
+    pub restore_keyfile: String,
 }
 
 // ───────────────────────────── Copias de seguridad ─────────────────────────────
@@ -100,10 +107,44 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
             }
         });
         ui.data_mut(|d| d.insert_temp(key, other));
+        drill_row(app, ui, list.first().map(|b| b.path.clone()));
     });
     ui.add_space(10.0);
     password_card(app, ui);
     restore_dialog(app, ui.ctx());
+}
+
+/// Ensayo de restauración de la última copia: se abre en una carpeta aparte
+/// y se comprueba; los datos en uso no se tocan (T-F3-05).
+fn drill_row(app: &mut App, ui: &mut Ui, last: Option<PathBuf>) {
+    let Some(path) = last else { return };
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("🧪 Ensayo de restauración de la última copia").on_hover_text("La abre en una carpeta aparte y comprueba que está entera; no cambia nada").clicked() {
+            let dir = crate::paths::data().join(format!("ensayo_{}", crate::model::now().format("%Y%m%d_%H%M%S")));
+            let pw = Some(app.tools.drill_pw.trim()).filter(|p| !p.is_empty());
+            let r = crate::tools::restore_drill(&path, pw, crate::cifrado::current_key().as_ref(), &dir);
+            let ok = r.as_ref().is_ok_and(|d| d.ok());
+            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            app.db.audit("Ensayo de restauración", &format!("{name}: {}", if ok { "correcto" } else { "con fallos" }));
+            app.changed();
+            app.tools.drill = Some(r);
+        }
+        if matches!(&app.tools.drill, Some(Err(e)) if e == NEEDS_PASSWORD) {
+            ui.add_sized([220.0, 32.0], egui::TextEdit::singleline(&mut app.tools.drill_pw).password(true).hint_text("Contraseña de las copias"));
+        }
+    });
+    match &app.tools.drill {
+        Some(Ok(d)) => {
+            for (what, ok) in &d.checks {
+                ui.label(RichText::new(format!("{} {what}", if *ok { "✔" } else { "✖" })).color(if *ok { OK } else { DANGER }));
+            }
+        }
+        Some(Err(e)) => {
+            ui.label(RichText::new(e).color(if e == NEEDS_PASSWORD { TEXT } else { DANGER }));
+        }
+        None => {}
+    }
 }
 
 /// Cuántas copias hay en la carpeta de la segunda copia y si van cifradas
@@ -191,6 +232,25 @@ fn password_card(app: &mut App, ui: &mut Ui) {
                     app.tools.key_test.clear();
                 }
             });
+            // clave de recuperación: para abrir las copias sin la contraseña, guardada aparte
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                let w = (fit_width(ui) - 280.0).clamp(200.0, 420.0);
+                ui.add_sized([w, 34.0], egui::TextEdit::singleline(&mut app.tools.key_export).hint_text("Fichero en un USB o carpeta que no sea la de las copias"));
+                if ui.button("🔑 Guardar la clave de recuperación").clicked() {
+                    let extra = app.db.config.backup_extra.trim().to_string();
+                    let dirs = [backup_dir(), PathBuf::from(&extra)];
+                    let dest = PathBuf::from(app.tools.key_export.trim().trim_matches('"'));
+                    app.tools.key_msg = Some(if dest.as_os_str().is_empty() {
+                        (false, "Escriba dónde guardarla.".into())
+                    } else {
+                        match crate::cifrado::export_key(k, &dest, &[&dirs[0], &dirs[1]]) {
+                            Ok(()) => (true, format!("Clave de recuperación guardada en {}. Guárdela aparte de las copias.", dest.display())),
+                            Err(e) => (false, e),
+                        }
+                    });
+                }
+            });
         }
         if let Some((ok, msg)) = &app.tools.key_msg {
             ui.label(RichText::new(msg).size(14.0).color(if *ok { OK } else { DANGER }));
@@ -251,6 +311,7 @@ fn restore_dialog(app: &mut App, ctx: &egui::Context) {
     let Some((_, encrypted, check)) = app.tools.restore_read.take() else { return };
     let mut close = false;
     let mut retry = false;
+    let mut with_key = false;
     crate::theme::modal("restore").show(ctx, |ui| {
         ui.set_width(520.0);
         title(ui, "Restaurar copia de seguridad", &path.display().to_string());
@@ -265,6 +326,13 @@ fn restore_dialog(app: &mut App, ctx: &egui::Context) {
                     }
                     if ui.button("Cancelar").clicked() {
                         close = true;
+                    }
+                });
+                // en otro ordenador, o sin la contraseña: con la clave de recuperación
+                ui.horizontal(|ui| {
+                    ui.add_sized([280.0, 34.0], egui::TextEdit::singleline(&mut app.tools.restore_keyfile).hint_text("…o fichero de la clave de recuperación"));
+                    if ui.button("Abrir con la clave").clicked() {
+                        with_key = true;
                     }
                 });
             }
@@ -307,7 +375,13 @@ fn restore_dialog(app: &mut App, ctx: &egui::Context) {
         app.tools.restore_pw.clear();
         return;
     }
-    let check = if retry { read_backup(&path, Some(&app.tools.restore_pw)) } else { check };
+    let check = if retry {
+        read_backup(&path, Some(&app.tools.restore_pw))
+    } else if with_key {
+        crate::cifrado::read_key_file(std::path::Path::new(app.tools.restore_keyfile.trim().trim_matches('"'))).and_then(|k| crate::tools::read_backup_with(&path, None, Some(&k)))
+    } else {
+        check
+    };
     if retry {
         app.tools.restore_pw.clear();
     }

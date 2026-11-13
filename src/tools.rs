@@ -199,6 +199,50 @@ pub fn read_backup_with(path: &Path, password: Option<&str>, key: Option<&crate:
     Ok(db)
 }
 
+/// Resultado de un ensayo de restauración: cada comprobación y si salió bien.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Drill {
+    pub checks: Vec<(String, bool)>,
+}
+
+impl Drill {
+    pub fn ok(&self) -> bool {
+        self.checks.iter().all(|c| c.1)
+    }
+}
+
+/// Ensayo de restauración (T-F3-05): la copia se abre en una carpeta aparte
+/// (`dir`) como la abriría el programa, y se compara con lo que lleva. Los
+/// datos en uso no se tocan; la carpeta se borra al terminar.
+pub fn restore_drill(path: &Path, password: Option<&str>, key: Option<&crate::cifrado::BackupKey>, dir: &Path) -> Result<Drill, String> {
+    let original = read_backup_with(path, password, key)?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("No se puede preparar la carpeta del ensayo: {e}"))?;
+    let data = dir.join("clinica.json");
+    let result = (|| {
+        Db::write_full(&original, &data)?;
+        let (back, err) = Db::load_from(&data, false);
+        if let Some(e) = err {
+            return Err(format!("La copia no se abre como datos de la clínica: {e}"));
+        }
+        let json = |v: serde_json::Value| v.to_string();
+        let o = serde_json::to_value(&original).map_err(|e| e.to_string())?;
+        let b = serde_json::to_value(&back).map_err(|e| e.to_string())?;
+        let paid = |d: &Db| d.payments.iter().map(|p| crate::cents::Cents::from_eur(p.amount)).sum::<crate::cents::Cents>();
+        let mut checks = vec![("Se abre como datos de la clínica".to_string(), true)];
+        for (list, label) in [("patients", "pacientes"), ("appointments", "citas"), ("entries", "tratamientos"), ("payments", "cobros"), ("invoices", "facturas"), ("documents", "documentos"), ("images", "imágenes")] {
+            let n = o[list].as_array().map(|a| a.len()).unwrap_or(0);
+            checks.push((format!("{n} {label}, cada uno igual al de la copia"), json(o[list].clone()) == json(b[list].clone())));
+        }
+        checks.push((format!("Cobrado en total: {}", paid(&original)), paid(&original) == paid(&back)));
+        checks.push(("Cadena de facturas íntegra".to_string(), back.verify_chain().is_ok()));
+        Ok(Drill { checks })
+    })();
+    let _ = std::fs::remove_file(&data);
+    let _ = std::fs::remove_file(crate::sync::journal_path(&data));
+    let _ = std::fs::remove_dir(dir);
+    result
+}
+
 /// Pone las copias de `dir` con la clave nueva: cifra las que no lo están y
 /// pasa a la clave nueva las de la clave anterior. Cada copia se escribe y se
 /// comprueba antes de borrar la vieja; las que no se pueden abrir (otra
@@ -515,6 +559,55 @@ mod tests {
         // sin contraseña de copias, la segunda copia sale como siempre
         create_backup_to(&db, &local, &extra.to_string_lossy(), None, "sin clave").unwrap();
         assert_eq!(list_backups(&extra).iter().filter(|b| !b.encrypted).count(), 1);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// T-F3-05. Restauración real en una carpeta aparte, con su contenido
+    /// comprobado; la clave nunca junto a las copias, y las copias se abren en
+    /// otro ordenador con la contraseña o con la clave de recuperación.
+    #[test]
+    fn a_restore_drill_checks_the_contents_and_the_key_lives_apart() {
+        let base = std::env::temp_dir().join(format!("ds_bk_drill_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (local, usb, apart, drill) = (base.join("copias"), base.join("usb"), base.join("llavero"), base.join("ensayo"));
+        let db = Db::sample(d());
+        let k = key("Sonrisa-2026");
+        create_backup_to(&db, &local, &usb.to_string_lossy(), Some(&k), "manual").unwrap();
+        // en las carpetas de copias solo hay copias: ninguna clave
+        for dir in [&local, &usb] {
+            for f in std::fs::read_dir(dir).unwrap().flatten() {
+                let n = f.file_name().to_string_lossy().to_string();
+                assert!(n.starts_with("clinica_"), "{n} en {}", dir.display());
+            }
+        }
+        // la clave de recuperación, solo aparte
+        for wrong in [local.join("clave.json"), usb.join("sub").join("clave.json")] {
+            assert!(crate::cifrado::export_key(&k, &wrong, &[&local, &usb]).unwrap_err().contains("No guarde la clave junto a las copias"), "{}", wrong.display());
+        }
+        let keyfile = apart.join("clave_copias.json");
+        crate::cifrado::export_key(&k, &keyfile, &[&local, &usb]).unwrap();
+        // otro ordenador (sin la clave de este): con la clave de recuperación o con la contraseña
+        let copy = list_backups(&usb)[0].path.clone();
+        assert_eq!(read_backup_with(&copy, None, None).unwrap_err(), NEEDS_PASSWORD);
+        let recovered = crate::cifrado::read_key_file(&keyfile).unwrap();
+        assert_eq!(recovered, k);
+        // ensayo: se abre aparte y todo coincide; la carpeta del ensayo no queda
+        let live = serde_json::to_string(&db).unwrap();
+        for (pw, kk) in [(None, Some(&recovered)), (Some("Sonrisa-2026"), None)] {
+            let r = restore_drill(&copy, pw, kk, &drill).unwrap();
+            assert!(r.ok(), "{:?}", r.checks);
+            assert!(r.checks.iter().any(|c| c.0.starts_with(&format!("{} pacientes", db.patients.len()))));
+            assert!(r.checks.iter().any(|c| c.0 == "Cadena de facturas íntegra" && c.1));
+            assert!(!drill.exists(), "el ensayo no deja datos descifrados");
+        }
+        assert_eq!(serde_json::to_string(&db).unwrap(), live, "los datos en uso, sin tocar");
+        // una copia dañada no pasa el ensayo
+        let mut bytes = std::fs::read(&copy).unwrap();
+        let n = bytes.len();
+        bytes[n - 5] ^= 0xff;
+        let bad = base.join("dañada.dscopia");
+        std::fs::write(&bad, bytes).unwrap();
+        assert!(restore_drill(&bad, Some("Sonrisa-2026"), None, &drill).is_err());
         let _ = std::fs::remove_dir_all(&base);
     }
 

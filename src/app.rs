@@ -466,7 +466,7 @@ impl App {
     }
     pub fn warn(&mut self, text: impl Into<String>) {
         let text = text.into();
-        crate::registro::log(crate::registro::Level::Aviso, "aviso", &text);
+        crate::registro::log_free(crate::registro::Level::Aviso, "aviso", &text, &self.db);
         self.toast = Some((text, 4.5, DANGER));
     }
     pub fn changed(&mut self) {
@@ -552,7 +552,7 @@ impl App {
     /// Error al hablar con el servidor. Si la sesión ya no vale, se vuelve a la
     /// pantalla de entrada; los cambios pendientes se envían al entrar.
     fn remote_error(&mut self, e: String) {
-        crate::registro::log(crate::registro::Level::Error, "servidor", &e);
+        crate::registro::log_free(crate::registro::Level::Error, "servidor", &e, &self.db);
         if e == crate::server::SESSION_EXPIRED {
             // lo que este usuario no ha enviado, a su bandeja (no se envía con la sesión de otro)
             self.keep_unsent();

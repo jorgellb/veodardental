@@ -136,6 +136,55 @@ pub fn log(level: Level, context: &str, message: &str) {
     log_in(&dir(), level, context, message);
 }
 
+/// Palabras de los nombres que hay en los datos (pacientes y responsables,
+/// usuarios, colaboradores y contactos), sin acentos ni mayúsculas.
+pub fn name_tokens(db: &crate::model::Db) -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    let mut add = |s: &str| {
+        for w in s.split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 3) {
+            set.insert(crate::model::fold(w));
+        }
+    };
+    for p in db.patients.iter() {
+        add(&p.first_name);
+        add(&p.last_name);
+        add(&p.payer.name);
+    }
+    for u in db.users.iter() {
+        add(&u.name);
+    }
+    for c in db.collaborators.iter() {
+        add(&c.name);
+        add(&c.alias);
+    }
+    for c in db.contacts.iter() {
+        add(&c.name);
+    }
+    set
+}
+
+/// [`scrub`] y además quita los nombres conocidos (los textos libres, como
+/// los avisos, pueden llevar el nombre de un paciente sin comillas).
+pub fn scrub_with(text: &str, names: &std::collections::HashSet<String>) -> String {
+    scrub(text)
+        .split(' ')
+        .map(|w| {
+            let core = w.trim_matches(|c: char| !c.is_alphanumeric());
+            if !core.is_empty() && names.contains(&crate::model::fold(core)) { w.replacen(core, "<nombre>", 1) } else { w.to_string() }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Apunta un texto libre (un aviso, un error del servidor) quitando también
+/// los nombres que hay en los datos.
+pub fn log_free(level: Level, context: &str, message: &str, db: &crate::model::Db) {
+    if cfg!(test) {
+        return;
+    }
+    log(level, context, &scrub_with(message, &name_tokens(db)));
+}
+
 /// Los fallos del programa (pánicos) también se apuntan, con dónde fue en
 /// el código y el mensaje minimizado.
 pub fn install_panic_hook() {
@@ -230,6 +279,13 @@ mod tests {
         assert_eq!(scrub("Sin conexión con el servidor (error 503)"), "Sin conexión con el servidor (error 503)");
         assert_eq!(scrub("dos\nlíneas"), "dos líneas", "una línea por apunte");
         assert!(scrub(&"x".repeat(2000)).chars().count() <= MAX_LINE + 1);
+        // en un texto libre, los nombres que hay en los datos (sin comillas) también
+        let db = crate::model::Db::sample(crate::model::today());
+        let p = &db.patients[0];
+        let warn = format!("No se puede borrar a {} {}: tiene facturas.", p.first_name, p.last_name.to_uppercase());
+        let s = scrub_with(&warn, &name_tokens(&db));
+        assert!(!s.contains(&p.first_name) && !s.to_lowercase().contains(&p.last_name.to_lowercase()), "{s}");
+        assert!(s.starts_with("No se puede borrar a <nombre>") && s.ends_with("tiene facturas."), "{s}");
     }
 
     #[test]
