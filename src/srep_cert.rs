@@ -435,6 +435,8 @@ pub fn dossier_html(db: &Db, steps: &[Step], log: Option<(usize, Option<usize>)>
         h.push_str("<li class='no'>Revisar las pruebas del circuito que fallan.</li>");
     }
     h.push_str("<li>Prueba conjunta con Nodofarma en su entorno de preproducción (FT13, FT14).</li><li>Solicitud a los Consejos Generales con este expediente y la documentación acreditativa de cada control.</li></ul>");
+    // organismos y procedimiento, confirmados en las fuentes (docs/normativa.md, consultado el 13/11/2026)
+    h.push_str("<h2>Organismos y procedimiento</h2><ul><li>El Sistema de Receta Electrónica Privada lo impulsan los Consejos Generales de Médicos, Dentistas (CGCOE), Podólogos y Farmacéuticos.</li><li>Para un odontólogo, la plataforma de prescripción la certifica el Consejo General de Dentistas (CGCOE), con una recertificación por auditoría completa cada dos años.</li><li>Las farmacias comprueban la receta a través de Nodofarma (Organización Farmacéutica Colegial) contra el repositorio del Consejo del prescriptor.</li><li>Fuentes: procedimiento de certificación y especificación funcional del SREP (documentos del CGCOM, versión de marzo de 2022) y «e-Receta privada» del Consejo General de Farmacéuticos (DF ereceta v2.05, noviembre de 2024). Nada fechado en 2026 indica cambios; se confirma con el CGCOE al presentar la solicitud.</li></ul>");
     h.push_str("<p class='muted'>Los títulos de los controles son un resumen; el texto que revisa el auditor es el del documento de requisitos de los Consejos Generales.</p></body></html>");
     h
 }
@@ -481,6 +483,7 @@ mod tests {
         assert!(html.contains(&format!("{} de {} correctas", steps.len(), steps.len())));
         assert!(html.contains("íntegro"));
         assert!(html.contains("Elena Ruiz Prado"), "los prescriptores con su colegiado");
+        assert!(html.contains("la certifica el Consejo General de Dentistas (CGCOE)") && html.contains("cada dos años") && html.contains("Nodofarma"), "organismos confirmados");
         assert!(!html.contains("<script"));
     }
 }

@@ -2185,8 +2185,11 @@
     "T-F4-00"
    ],
    "criterio": "Pruebas del circuito con farmacia simulada; expediente actualizado",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-007",
+    "E-038"
+   ]
   },
   {
    "id": "T-F4-01X",

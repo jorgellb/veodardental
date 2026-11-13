@@ -993,3 +993,17 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 442 pasan, 0 fallan, 10 ignoradas |
+
+## E-038 T-F4-01: receta electrónica privada, organismos confirmados y expediente
+- **Ya estaba (área 2, E-007), con sus pruebas:**
+  - firma y repositorio;
+  - hoja de información al paciente con DataMatrix y código de barras;
+  - trazabilidad;
+  - circuito completo con una farmacia simulada: `srep_cert::tests::the_whole_circuit_passes_with_a_simulated_pharmacy` y `srep::tests::pharmacy_lifecycle_follows_the_standard`;
+  - servicio por HTTP con comprobación del proxy;
+  - expediente de certificación con los 30 controles de la auditoría.
+- **Nuevo:** los organismos y el procedimiento, confirmados en las fuentes (`docs/normativa.md`, 13/11/2026), van ahora en el expediente:
+  - para un odontólogo certifica el CGCOE, con recertificación por auditoría completa cada dos años;
+  - las farmacias validan las recetas a través de Nodofarma contra el repositorio del Consejo.
+  - **Prueba:** `srep_cert::tests::the_dossier_has_the_system_the_controls_and_the_tests` (ampliada).
+- **Pendiente fuera de aquí:** la certificación y la conexión real con las farmacias (B-09, T-F4-01X).

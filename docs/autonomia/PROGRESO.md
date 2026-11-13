@@ -48,10 +48,11 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F4-06: registro de jornada (fichar, correcciones trazables, acceso por rol, exportación; en red lo hace cumplir el servidor) | E-035 | `e7d3b06` |
 | Revisión de seguridad de la jornada en red | E-036 | `41c80cb` |
 | T-F4-07: libros registro en el formato común de la AEAT | E-037 | `9309580` |
+| T-F4-01: receta privada, organismos confirmados en el expediente | E-038 | (pendiente) |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
-1. T-F4-01, T-F4-04, T-F4-08 y T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`); hechas T-F4-00, T-F4-02, T-F4-03 y T-F4-05 a T-F4-07.
+1. T-F4-04, T-F4-08 y T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`); hechas T-F4-00 a T-F4-03 y T-F4-05 a T-F4-07.
    - Consultar documentación oficial vigente; registrar fuente, fecha, versión y efecto, y separar lo confirmado de lo pendiente.
    - Inventariar lo que ya hay: receta electrónica (srep*), registro de accesos (`access_log`), herramientas RGPD, cifrado (`cifrado.rs`), carpeta compartida (`shared.rs`) y registro de jornada.
 2. Después, las fases 5 y 6 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08) y el cierre (T-CIERRE-01/02).
