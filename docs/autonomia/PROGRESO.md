@@ -30,7 +30,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-11: todas las pantallas a 1280×720 y 1280×800 | E-018 | `84a667a` |
 | T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | `bcfa695` |
 | T-F1-13: informes con oráculo independiente (hecho en el área 5) | E-011 | `7fd53f0` |
-| T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | (este lote) |
+| T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | `3d777b0` |
 
 ## Siguiente acción
 La fase 1 está terminada (ingeniería). Toca la fase 2: migraciones.
