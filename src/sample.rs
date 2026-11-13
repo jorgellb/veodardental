@@ -269,6 +269,7 @@ impl Db {
             golive: vec![],
             rx_links: vec![].into(),
             imports: vec![].into(),
+            measures: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,
         };

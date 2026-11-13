@@ -251,6 +251,8 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
             crate::screens::bancos::audit_panel(app, ui);
             ui.add_space(10.0);
             crate::screens::soporte::panel(app, ui);
+            ui.add_space(10.0);
+            crate::screens::soporte::pilot_panel(app, ui);
         }
         CfgTab::Red => crate::screens::puestos::panel(app, ui),
     }

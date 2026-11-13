@@ -127,6 +127,7 @@ fn drill_row(app: &mut App, ui: &mut Ui, last: Option<PathBuf>) {
             let ok = r.as_ref().is_ok_and(|d| d.ok());
             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             app.db.audit("Ensayo de restauración", &format!("{name}: {}", if ok { "correcto" } else { "con fallos" }));
+            app.db.measure(crate::medidas::Kind::Ensayo, 0, 0, ok, "");
             app.changed();
             app.tools.drill = Some(r);
         }
@@ -348,6 +349,7 @@ fn restore_dialog(app: &mut App, ctx: &egui::Context) {
                             Ok(_) => {
                                 app.db = db.clone();
                                 app.db.audit("Restaurar copia", &path.display().to_string());
+                                app.db.measure(crate::medidas::Kind::Restauracion, 0, 0, true, "");
                                 app.changed();
                                 app.patient = app.db.patients.first().map(|p| p.id);
                                 app.user_id = None; // volver a identificarse con los usuarios de la copia

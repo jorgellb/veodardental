@@ -2130,8 +2130,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Medición sin contenido clínico, exportable, con pruebas",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-029"
+   ]
   },
   {
    "id": "T-F3-10",

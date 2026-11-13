@@ -30,6 +30,7 @@ mod insurer;
 mod lab_order;
 mod local;
 mod mail;
+mod medidas;
 mod migracion;
 mod model;
 mod mssql;

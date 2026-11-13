@@ -1056,6 +1056,7 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
             } else {
                 app.notify(format!("Cita creada: {} {} con {}", fmt_date(d.a.date), hm(d.a.start), app.db.doctor_alias(d.a.doctor_id)));
             }
+            app.measure_done(crate::medidas::Kind::Cita);
         } else if let Some(a) = app.db.appointments.iter_mut().find(|a| a.id == d.a.id) {
             let prev = a.state;
             *a = d.a.clone();

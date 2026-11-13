@@ -2721,3 +2721,57 @@ fn support_report_is_previewed_and_needs_consent() {
     }
     assert!(h.state().support.status.is_empty(), "sin dirección no se intenta enviar: {}", h.state().support.status);
 }
+
+/// T-F3-09. Dar una cita desde la agenda se mide (tiempo y pasos), sin datos
+/// del paciente; un diálogo cerrado sin guardar no cuenta.
+#[test]
+fn giving_an_appointment_is_measured_for_the_pilot() {
+    let mut h = harness();
+    h.event(egui::Event::Text("0000".into()));
+    h.step();
+    h.key_press(egui::Key::Enter);
+    for _ in 0..6 {
+        h.step();
+    }
+    h.get_by_label("Ahora no").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.state_mut().screen = crate::app::Screen::Agenda;
+    // abierta y cerrada sin guardar: no cuenta
+    h.state_mut().open_dialog_by_name("repetir");
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Cancelar").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().db.measures.is_empty());
+    h.state_mut().open_dialog_by_name("repetir");
+    {
+        let a = h.state_mut();
+        let mut day = a.today;
+        while !a.db.working_day(day) {
+            day += chrono::Duration::days(1);
+        }
+        if let crate::app::Dialog::Appointment(d) = &mut a.dialog {
+            d.a.date = day;
+        }
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Guardar cita").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let m = h.state().db.measures.clone();
+    assert_eq!(m.len(), 1, "{m:?}");
+    assert_eq!(m[0].kind, crate::medidas::Kind::Cita);
+    assert!(m[0].steps >= 2, "al menos abrir y guardar: {}", m[0].steps);
+    let json = serde_json::to_string(&m).unwrap();
+    for p in &h.state().db.patients {
+        assert!(!json.contains(&p.full_name()));
+    }
+}

@@ -766,3 +766,27 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 421 pasan, 0 fallan, 10 ignoradas |
+
+## E-029 T-F3-09: instrumentos del piloto
+- **Qué hay:** `src/medidas.rs`, y en los datos la lista `measures`, que se sincroniza entre puestos y se vacía al empezar con datos propios.
+  - **Tareas:** dar cita, cobrar y cerrar la caja, con tiempo y pasos (clics y teclas).
+    - Empiezan al abrir el diálogo de cita nueva, el de cobro o la pantalla de caja, y terminan al guardar.
+    - Si se cierra sin guardar, no cuentan.
+  - **Incidencias:** los errores del servidor y las que se apuntan a mano. Las notas se minimizan como el registro de errores, nombres de los datos incluidos.
+  - **Disponibilidad:** caídas de la conexión con el servidor y su duración. Se apuntan en cuanto vuelven a estar los datos.
+  - **Restauraciones y ensayos de restauración:** con su resultado.
+  - **Resumen de 30 días** (Configuración › Registro de cambios › Medidas del piloto): medianas de tiempo y pasos por tarea, incidencias, minutos sin conexión y porcentaje de disponibilidad, y restauraciones bien y con fallos.
+  - **Exportación** en CSV con `;`.
+- **Sin contenido clínico:** no se apunta el paciente, el tratamiento ni el importe.
+- **Pruebas:**
+  - `medidas::tests::the_summary_gives_medians_availability_and_restorations`, con valores calculados a mano (99,17 % con 6 minutos de caída en 12 horas);
+  - `medidas::tests::measures_carry_no_patient_data`: ni el nombre ni el NIF del paciente en el CSV, y ningún campo de paciente o importe;
+  - `ui_tests::giving_an_appointment_is_measured_for_the_pilot`: una cita dada desde la agenda queda medida, y abrir y cancelar no cuenta.
+- **Pendiente fuera de aquí:** el mes de piloto real sigue en B-08 (T-F3-10). Estos son sus instrumentos, no su resultado.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 424 pasan, 0 fallan, 10 ignoradas |

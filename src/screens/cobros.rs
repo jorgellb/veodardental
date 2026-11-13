@@ -162,6 +162,7 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
                     PayKind::Devolucion => format!("Devolución registrada: {} ({})", money(d.amount), d.method),
                     PayKind::Anulacion(_) => format!("Cobro anulado: {}", money(d.amount)),
                 });
+                app.measure_done(crate::medidas::Kind::Cobro);
                 return app.dialog_take_or_none();
             }
             Err(e) => app.warn(e),

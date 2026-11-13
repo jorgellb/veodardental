@@ -11,6 +11,8 @@ pub struct SupportState {
     pub report: Option<String>,
     pub consent: bool,
     pub status: String,
+    /// Incidencia que se va a apuntar (medidas del piloto).
+    pub incident: String,
 }
 
 pub fn panel(app: &mut App, ui: &mut Ui) {
@@ -62,6 +64,48 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 Err(e) => format!("No se ha enviado: {e}"),
             };
         }
+        if !app.support.status.is_empty() {
+            ui.label(RichText::new(&app.support.status).color(INFO));
+        }
+    });
+}
+
+/// Instrumentos del piloto: resumen de los últimos 30 días, exportación y
+/// apunte de incidencias (sin datos de pacientes).
+pub fn pilot_panel(app: &mut App, ui: &mut Ui) {
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Medidas del piloto");
+        muted(ui, "Cuánto se tarda en dar una cita, cobrar y cerrar la caja (y en cuántos clics y teclas), las incidencias, las caídas de la conexión y las restauraciones. No se apunta nada de los pacientes.");
+        let now = crate::model::now();
+        let rows = crate::medidas::summary(&app.db.measures, now - chrono::Duration::days(30), now);
+        egui::Grid::new("piloto").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
+            for (k, v) in rows {
+                ui.label(RichText::new(k).color(MUTED));
+                ui.label(v);
+                ui.end_row();
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("💾 Exportar las medidas (CSV) a Documentos").clicked() {
+                let p = crate::paths::documents().join(format!("medidas_piloto_{}.csv", now.format("%Y%m%d_%H%M")));
+                app.support.status = match std::fs::create_dir_all(crate::paths::documents()).map_err(|e| e.to_string()).and_then(|_| crate::paths::write_private(&p, crate::medidas::csv(&app.db.measures).as_bytes()).map_err(|e| e.to_string())) {
+                    Ok(()) => format!("Medidas exportadas a {}.", p.display()),
+                    Err(e) => format!("No se pudieron exportar: {e}"),
+                };
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            let w = (fit_width(ui) - 200.0).clamp(200.0, 520.0);
+            ui.add_sized([w, 32.0], egui::TextEdit::singleline(&mut app.support.incident).hint_text("Qué ha pasado (sin nombres de pacientes)"));
+            if ui.add_enabled(!app.support.incident.trim().is_empty(), egui::Button::new("Apuntar incidencia")).clicked() {
+                let note = std::mem::take(&mut app.support.incident);
+                app.db.measure(crate::medidas::Kind::Incidencia, 0, 0, true, note.trim());
+                app.changed();
+                app.support.status = "Incidencia apuntada.".into();
+            }
+        });
         if !app.support.status.is_empty() {
             ui.label(RichText::new(&app.support.status).color(INFO));
         }

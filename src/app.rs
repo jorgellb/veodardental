@@ -198,6 +198,11 @@ pub struct App {
     pub support: screens::soporte::SupportState,
     /// Pasarela de SMS de este ordenador y el envío en curso.
     pub sms: crate::sms::SmsSettings,
+    /// Tarea que se está midiendo para el piloto, y desde cuándo no hay conexión.
+    pub timing: Option<crate::medidas::Timing>,
+    pub offline_since: Option<std::time::Instant>,
+    /// Medidas que esperan a que estén los datos (tras reconectar).
+    pub pending_measures: Vec<(crate::medidas::Kind, u64, String)>,
     pub sms_job: Option<std::sync::mpsc::Receiver<(u32, Result<(), crate::mail::SendError>)>>,
     pub ortho: screens::ortodoncia::OrthoUi,
     pub rem: screens::remesas::RemState2,
@@ -334,6 +339,9 @@ impl App {
             support: Default::default(),
             sms: if live { crate::sms::load_settings() } else { Default::default() },
             sms_job: None,
+            timing: None,
+            offline_since: None,
+            pending_measures: vec![],
             ortho: screens::ortodoncia::OrthoUi::default(),
             rem: screens::remesas::RemState2::default(),
             cobros_tab: 0,
@@ -557,6 +565,9 @@ impl App {
     /// Error al hablar con el servidor. Si la sesión ya no vale, se vuelve a la
     /// pantalla de entrada; los cambios pendientes se envían al entrar.
     fn remote_error(&mut self, e: String) {
+        if e != crate::server::SESSION_EXPIRED {
+            self.pending_measures.push((crate::medidas::Kind::Incidencia, 0, e.clone()));
+        }
         crate::registro::log_free(crate::registro::Level::Error, "servidor", &e, &self.db);
         if e == crate::server::SESSION_EXPIRED {
             // lo que este usuario no ha enviado, a su bandeja (no se envía con la sesión de otro)
@@ -719,6 +730,52 @@ impl App {
             self.db.config.current_user = name;
         }
         Ok(())
+    }
+
+    /// Instrumentos del piloto (`medidas`): mide dar cita, cobrar y cerrar la
+    /// caja (tiempo y pasos), las caídas de la conexión, y apunta lo pendiente
+    /// en cuanto están los datos.
+    fn track_pilot(&mut self, ctx: &egui::Context) {
+        use crate::medidas::{Kind, Timing};
+        let kind = match &self.dialog {
+            Dialog::Appointment(d) if d.is_new => Some(Kind::Cita),
+            Dialog::Payment(_) => Some(Kind::Cobro),
+            Dialog::None if self.screen == Screen::Caja => Some(Kind::CierreCaja),
+            _ => None,
+        };
+        let step = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::PointerButton { pressed: true, .. } | egui::Event::Key { pressed: true, .. })));
+        match (&mut self.timing, kind) {
+            (Some(t), Some(k)) if t.kind == k => t.steps += step as u32,
+            (_, Some(k)) => {
+                let mut t = Timing::new(k);
+                t.steps = 1;
+                self.timing = Some(t);
+            }
+            (Some(_), None) => self.timing = None,
+            (None, None) => {}
+        }
+        match (self.offline.is_some(), self.offline_since) {
+            (true, None) => self.offline_since = Some(std::time::Instant::now()),
+            (false, Some(t)) => {
+                self.pending_measures.push((Kind::Caida, t.elapsed().as_millis() as u64, String::new()));
+                self.offline_since = None;
+            }
+            _ => {}
+        }
+        if !self.pending_measures.is_empty() && self.data_ready() && self.user_id.is_some() {
+            for (k, ms, note) in std::mem::take(&mut self.pending_measures) {
+                self.db.measure(k, ms, 0, true, &note);
+            }
+            self.changed();
+        }
+    }
+
+    /// Termina la tarea medida (al guardar la cita, el cobro o el cierre).
+    pub fn measure_done(&mut self, kind: crate::medidas::Kind) {
+        if let Some(t) = self.timing.take().filter(|t| t.kind == kind) {
+            self.db.measure(kind, t.start.elapsed().as_millis() as u64, t.steps, true, "");
+            self.changed();
+        }
     }
 
     /// Guarda en la bandeja de este ordenador lo que el puesto no ha podido
@@ -1639,6 +1696,7 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.track_pilot(&ctx);
         let time = ctx.input(|i| i.time);
         if ctx.input(|i| !i.events.is_empty() || i.pointer.is_moving()) {
             self.last_activity = time;

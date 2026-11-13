@@ -165,6 +165,7 @@ fn open(app: &mut App, ui: &mut Ui, s: CashSession) {
                 app.db.close_cash_session(s.id, counted);
                 app.lists.cash_opening = counted.min(200.0);
                 app.changed();
+                app.measure_done(crate::medidas::Kind::CierreCaja);
                 app.notify("Caja cerrada.");
             }
         });

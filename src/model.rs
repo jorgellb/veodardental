@@ -818,6 +818,9 @@ pub struct Db {
     /// Lo importado de otro programa, con su identificador allí (`migracion`).
     #[serde(default)]
     pub imports: Tracked<Vec<crate::migracion::ImportRef>>,
+    /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
+    #[serde(default)]
+    pub measures: Tracked<Vec<crate::medidas::Measure>>,
     /// Versión de los datos (para completar lo que añaden las versiones nuevas del programa).
     #[serde(default)]
     pub data_version: u32,
