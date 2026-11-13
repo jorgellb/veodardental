@@ -20,7 +20,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad de las áreas 1 y 2 | E-008 | `7c55ab2` |
 | T-F1-A3: odontograma, periodontograma e historial | E-009 | `dee610b` |
 | T-F1-A4: bancos y conciliación | E-010 | `d6f2e0a` |
-| T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | (este lote) |
+| T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `7fd53f0` |
 
 ## Siguiente acción
 1. T-F1-A6: comunicaciones.
