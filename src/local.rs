@@ -75,7 +75,7 @@ impl LocalStore {
         // la revisión nunca baja (aunque se haya restaurado una copia antigua):
         // si no, al abrir se descartaría lo apuntado
         let rev = self.rev.max(db.rev) + 1;
-        let mut line = sync::journal_line_of(rev, &changes);
+        let mut line = crate::datos_cifrados::line_to_disk(&sync::journal_line_of(rev, &changes))?;
         line.push('\n');
         if self.journal.is_none() {
             self.journal = Some(crate::paths::append_private(&sync::journal_path(&self.path)).map_err(|e| format!("No se puede abrir el diario de cambios: {e}"))?);

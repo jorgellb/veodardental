@@ -13,6 +13,7 @@ mod chat;
 mod cifrado;
 mod colegiado;
 mod comms;
+mod datos_cifrados;
 mod disco;
 mod doc_link;
 mod docs_tests;

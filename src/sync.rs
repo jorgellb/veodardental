@@ -677,8 +677,10 @@ pub fn replay_journal(db: &mut Db, data: &std::path::Path) -> Result<usize, Stri
     let mut n = 0;
     for line in text.lines().filter(|l| !l.trim().is_empty()) {
         // una línea que no se lee es la última, cortada por un apagón, o un
-        // daño: lo de después no se aplica (quedaría un hueco sin avisar)
-        let Ok(j) = serde_json::from_str::<JournalLine>(line) else { break };
+        // daño: lo de después no se aplica (quedaría un hueco sin avisar);
+        // las cifradas (ver `datos_cifrados`) se descifran antes
+        let Some(line) = crate::datos_cifrados::line_from_disk(line) else { break };
+        let Ok(j) = serde_json::from_str::<JournalLine>(&line) else { break };
         if j.rev <= db.rev {
             continue;
         }
@@ -698,7 +700,7 @@ pub fn replay_journal(db: &mut Db, data: &std::path::Path) -> Result<usize, Stri
 /// Para las pruebas: los datos tal como quedan en el disco (fichero y diario).
 #[cfg(test)]
 pub fn on_disk(data: &std::path::Path) -> Db {
-    let mut db: Db = serde_json::from_str(&std::fs::read_to_string(data).unwrap()).unwrap();
+    let mut db: Db = serde_json::from_str(&crate::datos_cifrados::read_text(data).unwrap()).unwrap();
     replay_journal(&mut db, data).unwrap();
     db
 }

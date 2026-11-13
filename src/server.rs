@@ -774,7 +774,7 @@ impl State {
         let tmp = self.path.with_extension("json.tmp");
         {
             let mut f = crate::paths::create_private(&tmp).map_err(|e| e.to_string())?;
-            f.write_all(self.snap.to_json().as_bytes()).map_err(|e| e.to_string())?;
+            f.write_all(&crate::datos_cifrados::to_disk(self.snap.to_json().as_bytes())?).map_err(|e| e.to_string())?;
             f.sync_all().map_err(|e| e.to_string())?;
         }
         std::fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
@@ -792,7 +792,7 @@ impl State {
         if self.journal.is_none() {
             self.rewrite()?;
         }
-        let mut line = sync::journal_line(rev, &self.snap, touched);
+        let mut line = crate::datos_cifrados::line_to_disk(&sync::journal_line(rev, &self.snap, touched))?;
         line.push('\n');
         if let Some(f) = self.journal.as_mut() {
             f.write_all(line.as_bytes()).and_then(|_| f.sync_data()).map_err(|e| format!("No se pudo guardar en el diario de cambios: {e}"))?;

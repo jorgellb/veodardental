@@ -38,6 +38,9 @@ pub struct ToolsState {
     pub key_export: String,
     /// Fichero de la clave de recuperación para abrir una copia cifrada.
     pub restore_keyfile: String,
+    /// Cifrado de los datos: dónde guardar o de dónde leer la clave, y el último resultado.
+    pub data_key_path: String,
+    pub data_msg: Option<(bool, String)>,
 }
 
 // ───────────────────────────── Copias de seguridad ─────────────────────────────
@@ -111,7 +114,82 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(10.0);
     password_card(app, ui);
+    ui.add_space(10.0);
+    data_encryption_card(app, ui);
     restore_dialog(app, ui.ctx());
+}
+
+/// Cifrado de los datos de este ordenador (ver `crate::datos_cifrados`).
+fn data_encryption_card(app: &mut App, ui: &mut Ui) {
+    use crate::datos_cifrados as dc;
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Cifrado de los datos de este ordenador");
+        if crate::shared::remote_mode() {
+            muted(ui, "Este puesto trabaja con el servidor: los datos se cifran en el ordenador servidor.");
+            return;
+        }
+        let k = dc::keys();
+        if k.on() {
+            ui.label(RichText::new(format!("✔ Los datos, su diario y las copias de este ordenador se guardan cifrados (clave {}).", &k.current[..8.min(k.current.len())])).size(14.5).color(OK));
+        } else {
+            muted(
+                ui,
+                "Los datos de la clínica se guardan en este ordenador sin cifrado propio (los protege el cifrado del disco). Cifrarlos protege además las copias de la carpeta de datos que salgan de él. Guarde la clave de recuperación aparte: sin ella, en otro ordenador no se abren.",
+            );
+        }
+        let mut action: Option<(dc::DataKeys, &str)> = None;
+        ui.horizontal_wrapped(|ui| {
+            if !k.on() {
+                if primary(ui, "Cifrar los datos").clicked() {
+                    action = k.with_new_key().ok().map(|n| (n, "Datos cifrados"));
+                }
+            } else {
+                if ui.button("Cambiar la clave").clicked() {
+                    action = k.with_new_key().ok().map(|n| (n, "Clave de los datos cambiada"));
+                }
+                if ui.button("Dejar de cifrar").clicked() {
+                    action = Some((k.off(), "Datos sin cifrar"));
+                }
+            }
+        });
+        if let Some((new, what)) = action {
+            // antes: todo guardado y una copia de seguridad
+            let res = app
+                .save_now()
+                .map_err(|e| format!("No se pudo guardar antes: {e}"))
+                .and_then(|_| create_backup(&app.db, "antes de cambiar el cifrado de los datos").map_err(|e| format!("No se ha cambiado nada: no se pudo hacer la copia previa ({e}).")).and_then(|_| dc::convert(&Db::path(), &app.db, &new)));
+            app.tools.data_msg = Some(match res {
+                Ok(()) => {
+                    app.db.audit(what, "datos de este ordenador");
+                    app.changed();
+                    (true, format!("{what}. Guarde la clave de recuperación aparte."))
+                }
+                Err(e) => (false, e),
+            });
+        }
+        ui.horizontal_wrapped(|ui| {
+            let w = (fit_width(ui) - 420.0).clamp(200.0, 420.0);
+            ui.add_sized([w, 34.0], egui::TextEdit::singleline(&mut app.tools.data_key_path).hint_text("Fichero de la clave de recuperación de los datos"));
+            let p = PathBuf::from(app.tools.data_key_path.trim().trim_matches('"'));
+            if ui.button("🔑 Guardarla aquí").clicked() && !p.as_os_str().is_empty() {
+                let data_dir = Db::path().parent().map(|d| d.to_path_buf()).unwrap_or_default();
+                app.tools.data_msg = Some(match dc::export_keys(&p, &data_dir) {
+                    Ok(()) => (true, format!("Clave de recuperación guardada en {}.", p.display())),
+                    Err(e) => (false, e),
+                });
+            }
+            if ui.button("Recuperar con este fichero").clicked() && !p.as_os_str().is_empty() {
+                app.tools.data_msg = Some(match dc::import_keys(&p) {
+                    Ok(()) => (true, "Clave recuperada: cierre y vuelva a abrir el programa para abrir los datos.".into()),
+                    Err(e) => (false, e),
+                });
+            }
+        });
+        if let Some((ok, msg)) = &app.tools.data_msg {
+            ui.label(RichText::new(msg).color(if *ok { OK } else { DANGER }));
+        }
+    });
 }
 
 /// Ensayo de restauración de la última copia: se abre en una carpeta aparte

@@ -1007,3 +1007,37 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - las farmacias validan las recetas a través de Nodofarma contra el repositorio del Consejo.
   - **Prueba:** `srep_cert::tests::the_dossier_has_the_system_the_controls_and_the_tests` (ampliada).
 - **Pendiente fuera de aquí:** la certificación y la conexión real con las farmacias (B-09, T-F4-01X).
+
+## E-039 T-F4-04: cifrado de los datos con claves gestionadas
+- **Qué hay:** `src/datos_cifrados.rs` cifra con AES-256-GCM (`ring`, sin criptografía propia):
+  - el fichero de datos de la clínica (un ordenador y servidor);
+  - cada línea del diario de cambios;
+  - las copias locales sin contraseña de copias.
+- **Claves:**
+  - aleatorias de 256 bits, con identificador;
+  - guardadas en la configuración (`datos_claves.json`, 0600), no en la carpeta de los datos;
+  - se conserva la anterior, así que lo cifrado antes se sigue abriendo.
+- **Rotación:** clave nueva y todo reescrito con ella.
+- **Recuperación:** la clave se guarda aparte, nunca en la carpeta de los datos (se rechaza), y se recupera en otro ordenador.
+- **Integridad:** un byte cambiado y no se abre. Entonces la carga da error, nunca «no hay datos», así que no se guarda encima.
+- **Migración recuperable en los dos sentidos** (cifrar y dejar de cifrar):
+  1. todo guardado y copia de seguridad previa;
+  2. fichero nuevo al lado, comprobado;
+  3. claves guardadas;
+  4. cambio atómico y diario vacío.
+  - Un corte en cualquier punto deja un fichero que se abre: lo cifrado y lo sin cifrar se leen igual.
+- **Dónde:** Configuración › Copias de seguridad › Cifrado de los datos de este ordenador.
+- **Pruebas:**
+  - `datos_cifrados::tests::data_is_encrypted_rotated_and_decrypted_without_loss`: el disco sin nombres de pacientes, el diario cifrado, la rotación leyendo lo de la clave anterior y el descifrado;
+  - `datos_cifrados::tests::tampering_is_detected_and_the_recovery_key_opens_the_data`: byte cambiado, otro ordenador sin claves, clave de recuperación y corte a mitad;
+  - `datos_cifrados::tests::journal_lines_round_trip_and_mix`.
+- **Límite:** las imágenes están en carpetas que comparten los programas de radiología (puentes); cifrarlas allí rompería esos programas. Las protege el cifrado del disco, que se comprueba en la puesta en marcha (`disco`). Queda anotado aquí y en el módulo.
+- **No se ha tocado:** ningún dato real; la migración solo se hace a mano desde la pantalla.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 445 pasan, 0 fallan, 10 ignoradas |
+- **Prueba existente:** `ui_tests::backup_password_encrypts_the_second_copy` buscaba «sin cifrar», que ahora salía dos veces. Se cambió el texto nuevo, no la prueba.

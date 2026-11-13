@@ -1431,7 +1431,9 @@ impl Db {
         let tmp = path.with_extension("json.tmp");
         {
             let mut f = crate::paths::create_private(&tmp).map_err(|e| e.to_string())?;
-            f.write_all(serde_json::to_string(db).map_err(|e| e.to_string())?.as_bytes()).map_err(|e| e.to_string())?;
+            // cifrado si los datos de este ordenador se cifran (ver `datos_cifrados`)
+            let bytes = crate::datos_cifrados::to_disk(serde_json::to_string(db).map_err(|e| e.to_string())?.as_bytes())?;
+            f.write_all(&bytes).map_err(|e| e.to_string())?;
             // en el disco antes de ocupar el lugar del bueno
             f.sync_all().map_err(|e| e.to_string())?;
         }
@@ -1448,7 +1450,15 @@ impl Db {
     /// ejemplo; si no se puede leer, también, con el error.
     pub fn load_from(p: &std::path::Path, rewrite: bool) -> (Db, Option<String>) {
         let p = p.to_path_buf();
-        if let Ok(txt) = std::fs::read_to_string(&p) {
+        // cifrado sin la clave, o tocado: es un error (nunca «no hay datos»), y no se guarda encima
+        let read = crate::datos_cifrados::read_text(&p);
+        if let Err(e) = &read
+            && p.exists()
+            && e.kind() == std::io::ErrorKind::Other
+        {
+            return (Db::sample(today()), Some(format!("No se pudieron abrir los datos de {}: {e}", p.display())));
+        }
+        if let Ok(txt) = read {
             return match serde_json::from_str::<Db>(&txt) {
                 Ok(mut db) => {
                     // lo apuntado en el diario y que no llegó a reescribirse (de momento, en memoria)

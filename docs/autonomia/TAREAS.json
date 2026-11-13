@@ -2263,8 +2263,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de cifrado, rotación, restauración y migración reversible",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-039"
+   ]
   },
   {
    "id": "T-F4-05",

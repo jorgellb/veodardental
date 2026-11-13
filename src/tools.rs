@@ -38,7 +38,8 @@ fn backup_in(db: &Db, dir: &Path, reason: &str, key: Option<&crate::cifrado::Bac
     let txt = serde_json::to_string(db).map_err(|e| e.to_string())?;
     let (path, bytes) = match key {
         Some(k) => (dir.join(backup_name(now(), reason, crate::cifrado::EXT)), crate::cifrado::encrypt(txt.as_bytes(), k)?),
-        None => (dir.join(backup_name(now(), reason, "json")), txt.into_bytes()),
+        // sin contraseña de copias: como los datos (cifrada si se cifran)
+        None => (dir.join(backup_name(now(), reason, "json")), crate::datos_cifrados::to_disk(txt.as_bytes())?),
     };
     write_whole(&path, &bytes)?;
     prune(dir, now());
@@ -189,7 +190,7 @@ pub fn read_backup_with(path: &Path, password: Option<&str>, key: Option<&crate:
             (None, None) => return Err(NEEDS_PASSWORD.into()),
         }
     } else {
-        bytes
+        crate::datos_cifrados::from_disk(bytes)?
     };
     let txt = String::from_utf8(plain).map_err(|_| "La copia está dañada o no es de esta aplicación.".to_string())?;
     let mut db = serde_json::from_str::<Db>(&txt).map_err(|e| format!("La copia está dañada o no es de esta aplicación: {e}"))?;
