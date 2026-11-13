@@ -345,6 +345,50 @@ pub struct Request {
 
 // ───────────────────────────── revisión y uso ─────────────────────────────
 
+/// Lo que se guarda cuando un puesto cambia (o borra, `after` = None) un
+/// análisis que ya existe:
+/// - lo que pidió y lo que contestó la IA (paciente, imagen, fecha, agente,
+///   modelo, coste, intentos, instrucciones y resultado) no cambia nunca;
+/// - la revisión solo la pone un profesional (`reviewer`), con su nombre, y
+///   después no cambia;
+/// - las propuestas pasadas al plan solo crecen, y solo si está dado por bueno;
+/// - solo se borra un borrador gratuito sin usar: los de pago cuentan en el
+///   límite del mes y lo revisado o usado es la constancia de dónde salió.
+///
+/// Devuelve `None` si se puede borrar.
+pub fn protect_report(cur: &IaReport, after: Option<&IaReport>, reviewer: Option<&str>) -> Option<IaReport> {
+    let Some(a) = after else {
+        return (cur.review.is_some() || !cur.free || !cur.planned.is_empty()).then(|| cur.clone());
+    };
+    let mut kept = cur.clone();
+    if cur.review.is_none()
+        && let (Some(v), Some(name)) = (&a.review, reviewer)
+    {
+        kept.review = Some(IaReview { by: name.to_string(), ..v.clone() });
+    }
+    if kept.review.as_ref().is_some_and(|v| v.valid) {
+        for i in &a.planned {
+            if !kept.planned.contains(i) && *i < kept.analysis.proposals.len() {
+                kept.planned.push(*i);
+            }
+        }
+    }
+    Some(kept)
+}
+
+/// Un análisis nuevo que llega de un puesto: la revisión solo si la pone un
+/// profesional, y nada pasado al plan sin revisión.
+pub fn protect_new_report(mut r: IaReport, reviewer: Option<&str>) -> IaReport {
+    r.review = match (r.review.take(), reviewer) {
+        (Some(v), Some(name)) => Some(IaReview { by: name.to_string(), ..v }),
+        _ => None,
+    };
+    if !r.review.as_ref().is_some_and(|v| v.valid) {
+        r.planned.clear();
+    }
+    r
+}
+
 /// ¿La propuesta habla de piezas que no son las de la imagen? (si la imagen
 /// dice qué piezas muestra).
 pub fn outside_image(image_teeth: &[u8], p: &Proposal) -> bool {

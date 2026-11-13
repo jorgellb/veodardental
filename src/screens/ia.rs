@@ -774,8 +774,9 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
             copy = true;
         }
         right_aligned(ui, |ui| {
-            // lo que ya se usó en el plan queda como constancia de dónde salió
-            if r.planned.is_empty() && ui.small_button("Borrar este análisis").clicked() {
+            // solo un borrador gratuito sin usar: lo revisado o usado es la constancia
+            // de dónde salió, y lo de pago cuenta en el límite del mes
+            if crate::ia::protect_report(r, None, None).is_none() && ui.small_button("Borrar este análisis").clicked() {
                 delete = true;
             }
         });

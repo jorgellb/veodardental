@@ -896,23 +896,18 @@ impl State {
                 c.after = serde_json::to_string(&fixed).ok();
             }
         }
-        // análisis con IA: los da por buenos (o los descarta) solo un profesional
-        // colegiado, con su nombre; y una revisión hecha no se cambia
+        // análisis con IA: lo que contestó la IA no cambia; la revisión solo la
+        // da un profesional colegiado, con su nombre; lo revisado, usado o de
+        // pago no se borra (ver `ia::protect_report`)
         for c in changes.iter_mut().filter(|c| c.field == "ia_reports") {
-            let Some(after) = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::ia::IaReport>(a).ok()) else { continue };
+            let after = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::ia::IaReport>(a).ok());
             let cur = c.key.as_deref().and_then(|k| self.snap.get("ia_reports", Some(k))).and_then(|j| serde_json::from_str::<crate::ia::IaReport>(j).ok());
-            let was = cur.as_ref().and_then(|r| r.review.clone());
-            if after.review == was {
-                continue;
-            }
-            let mut fixed = after.clone();
-            fixed.review = match (&was, &after.review, &reviewer) {
-                (None, Some(v), Some(name)) => Some(crate::ia::IaReview { by: name.clone(), ..v.clone() }),
-                _ => was,
+            let fixed = match (&cur, after) {
+                (Some(cur), after) => crate::ia::protect_report(cur, after.as_ref(), reviewer.as_deref()),
+                (None, Some(new)) => Some(crate::ia::protect_new_report(new, reviewer.as_deref())),
+                (None, None) => continue,
             };
-            if fixed != after {
-                c.after = serde_json::to_string(&fixed).ok();
-            }
+            c.after = fixed.and_then(|r| serde_json::to_string(&r).ok());
         }
         // números de historia con sentido (con ellos se nombran carpetas)
         for c in changes.iter().filter(|c| c.field == "patients") {
@@ -2725,10 +2720,32 @@ mod tests {
         doc.push(&mut b, &mut sb).unwrap();
         let v = crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).unwrap().review.clone().unwrap();
         assert_eq!((v.by.as_str(), v.valid), ("Dra. Ruiz", true), "con el nombre de quien entró");
-        // una revisión hecha no se cambia
-        b.ia_reports.iter_mut().find(|r| r.id == id).unwrap().review = Some(crate::ia::IaReview { at: crate::model::now(), by: "Dra. Ruiz".into(), valid: false });
+        // una revisión hecha no se cambia, ni lo que contestó la IA, ni se borra
+        let stored = crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).cloned().unwrap();
+        {
+            let r = b.ia_reports.iter_mut().find(|r| r.id == id).unwrap();
+            r.review = Some(crate::ia::IaReview { at: crate::model::now(), by: "Dra. Ruiz".into(), valid: false });
+            r.analysis.summary = "Sin hallazgos.".into();
+            r.free = !r.free;
+            r.model = "otro".into();
+        }
         doc.push(&mut b, &mut sb).unwrap();
-        assert!(crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).unwrap().review.as_ref().unwrap().valid);
+        assert_eq!(crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).unwrap(), &stored, "nada cambia");
+        b.ia_reports.retain(|r| r.id != id);
+        doc.push(&mut b, &mut sb).unwrap();
+        assert!(crate::sync::on_disk(&path).ia_reports.iter().any(|r| r.id == id), "lo revisado no se borra");
+        // un borrador de pago tampoco (cuenta en el límite del mes); uno gratuito sin usar, sí
+        let mut paid = stored.clone();
+        (paid.id, paid.free, paid.review, paid.planned) = (b.new_id(), false, None, vec![]);
+        let mut free = paid.clone();
+        (free.id, free.free) = (b.new_id(), true);
+        b.ia_reports.push(paid.clone());
+        b.ia_reports.push(free.clone());
+        doc.push(&mut b, &mut sb).unwrap();
+        b.ia_reports.retain(|r| r.id != paid.id && r.id != free.id);
+        doc.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!(disk.ia_reports.iter().any(|r| r.id == paid.id) && !disk.ia_reports.iter().any(|r| r.id == free.id));
         doc.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

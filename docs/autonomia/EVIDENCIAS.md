@@ -314,3 +314,16 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 368 pasan, 0 fallan, 10 ignoradas |
+
+## E-015 Corrección de la revisión automática de seguridad del área 8 (`6e2a560`)
+| Hallazgo | Corrección | Prueba |
+|---|---|---|
+| El servidor solo protegía la revisión. Un puesto podía cambiar lo que contestó la IA tras revisarlo, pasar un análisis de pago a gratuito (y saltarse el límite del mes) o borrar lo revisado, lo usado en el plan o lo de pago | `ia::protect_report`: paciente, imagen, fecha, agente, modelo, coste, intentos, instrucciones y resultado no cambian. La revisión la pone solo un profesional y después no cambia. Lo pasado al plan solo crece tras darlo por bueno. Solo se borra un borrador gratuito sin usar. `protect_new_report`: un análisis nuevo no llega revisado ni con propuestas en el plan si no lo revisa un profesional. La pantalla solo ofrece borrar lo que se puede borrar | `server::tests::only_a_licensed_professional_reviews_an_ai_analysis`, ampliada: un cambio del resultado, del coste y del modelo tras la revisión no queda; lo revisado y el borrador de pago no se borran; el borrador gratuito sí |
+
+**Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 368 pasan, 0 fallan, 10 ignoradas |
