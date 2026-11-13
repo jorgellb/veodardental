@@ -83,7 +83,7 @@ impl CfgTab {
             CfgTab::Copias => "Copia automática diaria, copia manual, segunda copia cifrada en un disco USB o en la nube, y restauración.",
             CfgTab::Fichas => "Una carpeta con la ficha completa de cada paciente, lista para imprimir o archivar.",
             CfgTab::Duplicados => "Detecta pacientes repetidos y los une con todo su historial.",
-            CfgTab::Registro => "Quién borró, emitió, importó, fusionó o restauró y cuándo.",
+            CfgTab::Registro => "Quién borró, emitió, importó, fusionó o restauró y cuándo; errores del programa e informe para soporte.",
             CfgTab::Red => "Este ordenador como servidor de la clínica o como puesto conectado a él.",
         }
     }
@@ -243,7 +243,11 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
         }
         CfgTab::Fichas => crate::screens::fichas::batch_panel(app, ui),
         CfgTab::Duplicados => crate::screens::bancos::duplicates_panel(app, ui),
-        CfgTab::Registro => crate::screens::bancos::audit_panel(app, ui),
+        CfgTab::Registro => {
+            crate::screens::bancos::audit_panel(app, ui);
+            ui.add_space(10.0);
+            crate::screens::soporte::panel(app, ui);
+        }
         CfgTab::Red => crate::screens::puestos::panel(app, ui),
     }
 }

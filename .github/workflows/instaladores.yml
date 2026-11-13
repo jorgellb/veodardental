@@ -13,6 +13,9 @@
 # - Paquete de actualización (--actualizar, ver src/actualizar.rs):
 #   VEODARDENTAL_CLAVE_FIRMA (clave Ed25519 PKCS#8 en hexadecimal; su parte
 #   pública va en actualizar::RELEASE_KEYS).
+# Se firma solo al construir una etiqueta de versión (v*), nunca en una
+# ejecución a mano desde otra rama. Conviene además guardar estos secretos
+# en un entorno de GitHub («firma») con revisores obligatorios.
 #
 # Las acciones van fijadas a un commit (no a una etiqueta, que se puede
 # mover): estos pasos manejan los secretos de firma.
@@ -23,8 +26,9 @@ on:
   push:
     tags: ["v*"]
 
+# Solo lectura; publicar la versión (escribir) es un trabajo aparte, y solo con etiqueta.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   pruebas:
@@ -60,10 +64,10 @@ jobs:
             formatos: deb,appimage
     runs-on: ${{ matrix.os }}
     env:
-      FIRMA_WINDOWS: ${{ secrets.WINDOWS_CERT_PFX != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
-      FIRMA_APPLE: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
-      NOTARIZAR_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
-      FIRMA_VERSION: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
+      FIRMA_WINDOWS: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WINDOWS_CERT_PFX != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+      FIRMA_APPLE: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      NOTARIZAR_APPLE: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+      FIRMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -95,7 +99,7 @@ jobs:
 
       # ── firma en Windows (solo con certificado) ──
       - name: Firmar los instaladores de Windows
-        if: runner.os == 'Windows' && env.FIRMA_WINDOWS == 'true'
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows' && env.FIRMA_WINDOWS == 'true'
         shell: pwsh
         env:
           PFX: ${{ secrets.WINDOWS_CERT_PFX }}
@@ -112,7 +116,7 @@ jobs:
 
       # ── firma y notarización en macOS (solo con certificado y cuenta) ──
       - name: Firmar (y notarizar) en macOS
-        if: runner.os == 'macOS' && env.FIRMA_APPLE == 'true'
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS' && env.FIRMA_APPLE == 'true'
         shell: bash
         env:
           P12: ${{ secrets.APPLE_CERTIFICATE }}
@@ -145,7 +149,7 @@ jobs:
 
       # ── manifiesto firmado para --actualizar (solo con la clave de versiones) ──
       - name: Firmar el paquete de actualización
-        if: env.FIRMA_VERSION == 'true' && runner.os == 'Linux'
+        if: startsWith(github.ref, 'refs/tags/v') && env.FIRMA_VERSION == 'true' && runner.os == 'Linux'
         shell: bash
         env:
           VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
@@ -180,8 +184,19 @@ jobs:
             dist/FIRMA.txt
             dist/actualizacion/
           if-no-files-found: error
+
+  publicar:
+    needs: instaladores
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
       - name: Publicar en la versión
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
@@ -190,3 +205,4 @@ jobs:
             dist/*.dmg
             dist/*.deb
             dist/*.AppImage
+            dist/FIRMA.txt

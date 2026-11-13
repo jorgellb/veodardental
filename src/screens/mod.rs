@@ -36,6 +36,7 @@ pub mod recalls;
 pub mod recetas;
 pub mod remesas;
 pub mod salud;
+pub mod soporte;
 pub mod tareas;
 pub mod tarifas;
 pub mod teeth;

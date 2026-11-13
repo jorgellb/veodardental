@@ -2023,8 +2023,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de rotación, minimización y que nada se envía sin acción explícita",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-025"
+   ]
   },
   {
    "id": "T-F3-05",

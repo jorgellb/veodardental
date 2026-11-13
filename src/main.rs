@@ -38,6 +38,7 @@ mod paths;
 mod phone;
 mod portal;
 mod record;
+mod registro;
 mod rx_link;
 mod sample;
 mod screens;
@@ -75,6 +76,8 @@ fn main() -> eframe::Result<()> {
             eprintln!("{n} carpetas de {} pasadas a {}", brand::OLD_DIR, brand::NAME);
         }
     }
+    // los fallos del programa, al registro de errores de este ordenador (sin datos de personas)
+    registro::install_panic_hook();
     // una actualización que quedó a medias (apagón): la versión anterior, entera
     if let Some(dir) = actualizar::install_dir() {
         match actualizar::recover(&dir) {

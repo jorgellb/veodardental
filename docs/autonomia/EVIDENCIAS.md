@@ -638,3 +638,36 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 411 pasan, 0 fallan, 10 ignoradas |
+
+## E-025 T-F3-04: registro de errores e informe para soporte, y revisión de seguridad de la CI y de la sesión caducada
+- **Revisión de seguridad automática del commit `c08cd25`: dos hallazgos, corregidos.**
+  - **CI.**
+    - **Hallazgo:** una ejecución a mano desde cualquier rama recibía las claves de firma.
+    - **Ahora:**
+      - todas las firmas exigen una etiqueta `v*`;
+      - el trabajo de instaladores solo lee (`contents: read`), y publicar es un trabajo aparte, el único con permiso de escritura y solo con etiqueta;
+      - el flujo recomienda guardar los secretos en un entorno de GitHub con revisores obligatorios, que configura el responsable.
+  - **Sesión caducada.**
+    - **Hallazgo:** era un comportamiento anterior a este trabajo. Los cambios en memoria de un usuario se enviaban con la sesión del siguiente que entrara, y al reconectar se perdían.
+    - **Ahora:** al caducar la sesión o al reconectar, van a la bandeja de su dueño. Si entra otro usuario, no se envían con su sesión y los datos se recogen de nuevo (`App::unsent_owner`).
+- **T-F3-04 (`src/registro.rs`).**
+  - **Registro local:** `paths::data()/registro`, solo para el usuario (0600), con rotación (actual y dos anteriores, 1 MB cada uno). Apunta los avisos, los errores del servidor y los fallos del programa (pánico, con el sitio del código).
+  - **Minimización** antes de escribir:
+    - correos, teléfonos y números largos, NIF/NIE, IBAN, rutas, claves y lo que va entre comillas o «»;
+    - una línea por apunte, de 500 caracteres como mucho.
+  - **Informe para soporte** (Configuración › Registro de cambios):
+    - lleva versión, sistema y cuántos datos hay (no cuáles), y las últimas líneas ya minimizadas;
+    - se prepara a mano y se ve entero; solo sale si se copia, se guarda o se envía;
+    - enviarlo pide la casilla de consentimiento y una dirección de soporte, que por defecto está vacía. No hay telemetría.
+  - **Pruebas:**
+    - `registro::tests::personal_data_never_reaches_the_log`
+    - `registro::tests::the_log_rotates_and_keeps_three_files_at_most`
+    - `registro::tests::the_support_report_is_previewed_and_only_sent_with_consent` (ningún nombre ni NIF de los pacientes de ejemplo en el informe)
+    - `ui_tests::support_report_is_previewed_and_needs_consent`
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 415 pasan, 0 fallan, 10 ignoradas |

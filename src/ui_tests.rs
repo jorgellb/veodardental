@@ -2682,3 +2682,42 @@ fn migration_wizard_simulates_decides_and_imports() {
     assert!(a.db.patients.iter().any(|p| p.first_name == "Otra"));
     assert!(a.db.audit_log.iter().any(|x| x.action == "Migración"));
 }
+
+/// T-F3-04. El informe para soporte se prepara a mano y se ve entero; sin la
+/// casilla y sin dirección de soporte (por defecto, ninguna), no se envía.
+#[test]
+fn support_report_is_previewed_and_needs_consent() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        crate::screens::config::open(&mut a, crate::screens::config::CfgTab::Registro);
+        a
+    });
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().db.config.support_email.is_empty(), "sin dirección de soporte por defecto");
+    h.get_by_label("Preparar informe para soporte").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let report = h.state().support.report.clone().expect("preparado");
+    assert!(report.starts_with("Informe para soporte de VeodarDental"));
+    for p in &h.state().db.patients {
+        assert!(!report.contains(&p.full_name()), "sin pacientes: {}", p.full_name());
+    }
+    h.get_by_label("Esto es todo lo que lleva:");
+    // sin casilla ni dirección, el botón no hace nada
+    h.get_by_label("✉ Enviar por correo").click();
+    h.get_by_label("He revisado el informe y acepto enviarlo a esa dirección").click();
+    for _ in 0..2 {
+        h.step();
+    }
+    assert!(h.state().support.consent);
+    h.get_by_label("✉ Enviar por correo").click();
+    for _ in 0..2 {
+        h.step();
+    }
+    assert!(h.state().support.status.is_empty(), "sin dirección no se intenta enviar: {}", h.state().support.status);
+}

@@ -650,6 +650,9 @@ pub struct ClinicConfig {
     /// emitidas guardan el suyo). Por defecto, el de siempre (20.Uno.3º).
     #[serde(default)]
     pub vat_exemption: VatExemption,
+    /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub support_email: String,
     /// Perfiles de columnas de la migración (ver `migracion::Profile`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mig_profiles: Vec<crate::migracion::Profile>,

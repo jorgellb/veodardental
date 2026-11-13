@@ -156,6 +156,9 @@ pub struct App {
     pub remote: Option<crate::server::Remote>,
     /// Sin conexión con el servidor: se muestra la pantalla de reintento.
     pub offline: Option<String>,
+    /// Usuario que hizo los cambios sin enviar cuando caducó su sesión: no se
+    /// envían con la sesión de otro (están en su bandeja).
+    pub unsent_owner: Option<u32>,
     /// Puesto conectado al servidor que aún no tiene los datos: solo conoce la
     /// clínica y sus usuarios hasta que alguien entra (el servidor da los datos
     /// con una sesión).
@@ -192,6 +195,7 @@ pub struct App {
     pub last_activity: f64,
     pub docs_mode: u8,
     pub imp: screens::importar::ImportState,
+    pub support: screens::soporte::SupportState,
     pub ortho: screens::ortodoncia::OrthoUi,
     pub rem: screens::remesas::RemState2,
     pub cobros_tab: u8,
@@ -295,6 +299,7 @@ impl App {
             last_poll: 0.0,
             remote,
             offline,
+            unsent_owner: None,
             awaiting_data,
             pending_start: false,
             screenshot: shot.map(|path| Screenshot { path, frames: 0, state: Arc::new(AtomicU8::new(0)) }),
@@ -323,6 +328,7 @@ impl App {
             last_activity: 0.0,
             docs_mode: 0,
             imp: screens::importar::ImportState::default(),
+            support: Default::default(),
             ortho: screens::ortodoncia::OrthoUi::default(),
             rem: screens::remesas::RemState2::default(),
             cobros_tab: 0,
@@ -459,7 +465,9 @@ impl App {
         self.toast = Some((text.into(), 3.5, ACCENT));
     }
     pub fn warn(&mut self, text: impl Into<String>) {
-        self.toast = Some((text.into(), 4.5, DANGER));
+        let text = text.into();
+        crate::registro::log(crate::registro::Level::Aviso, "aviso", &text);
+        self.toast = Some((text, 4.5, DANGER));
     }
     pub fn changed(&mut self) {
         self.dirty = true;
@@ -544,7 +552,13 @@ impl App {
     /// Error al hablar con el servidor. Si la sesión ya no vale, se vuelve a la
     /// pantalla de entrada; los cambios pendientes se envían al entrar.
     fn remote_error(&mut self, e: String) {
+        crate::registro::log(crate::registro::Level::Error, "servidor", &e);
         if e == crate::server::SESSION_EXPIRED {
+            // lo que este usuario no ha enviado, a su bandeja (no se envía con la sesión de otro)
+            self.keep_unsent();
+            if self.dirty {
+                self.unsent_owner = self.user_id;
+            }
             if let Some(r) = self.remote.as_mut() {
                 r.session.clear();
             }
@@ -660,6 +674,12 @@ impl App {
         r.session = session;
         let r = r.clone();
         let view = self.db.user(id).map(|u| crate::vista::View::of(u.profile)).unwrap_or(crate::vista::View::FULL);
+        // entra otro usuario: lo que el anterior dejó sin enviar está en su bandeja y
+        // no se envía con esta sesión; se recogen los datos de nuevo
+        if self.dirty && self.unsent_owner.is_some_and(|o| o != id) {
+            self.dirty = false;
+            self.loaded_view = None;
+        }
         if self.awaiting_data || self.loaded_view != Some(view) {
             // primera vez, o entra un perfil que ve otras cosas: los datos que le tocan
             if !self.awaiting_data && self.dirty {
@@ -686,6 +706,7 @@ impl App {
             self.notify(format!("Enviados al servidor {n} cambios que habían quedado en este puesto.{extra}"));
         }
         self.dirty = false;
+        self.unsent_owner = None;
         self.awaiting_data = false;
         self.persist = true;
         self.save_error = None;
@@ -810,6 +831,8 @@ impl App {
     /// Reintenta la conexión con el servidor.
     pub fn reconnect(&mut self) {
         let Some(mut r) = self.remote.clone() else { return };
+        // los datos se recogen de nuevo: lo que no se había enviado, antes a la bandeja
+        self.keep_unsent();
         match crate::server::connect(&mut r, &crate::shared::machine_name(), if crate::server::is_local(&crate::shared::station().server) { 12 } else { 1 }) {
             Ok(info) => {
                 // los datos llegan al entrar con un usuario

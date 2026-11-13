@@ -199,6 +199,7 @@ impl Db {
                 board_initials: true,
                 vat_exemption: Default::default(),
                 mig_profiles: vec![],
+                support_email: String::new(),
             },
             treatments,
             tariffs: tariffs.into(),
