@@ -49,7 +49,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad de la jornada en red | E-036 | `41c80cb` |
 | T-F4-07: libros registro en el formato común de la AEAT | E-037 | `9309580` |
 | T-F4-01: receta privada, organismos confirmados en el expediente | E-038 | `0904e4a` |
-| T-F4-04: cifrado de los datos, diario y copias con claves gestionadas, rotación y recuperación | E-039 | (pendiente) |
+| T-F4-04: cifrado de los datos, diario y copias con claves gestionadas, rotación y recuperación | E-039 | `2c862c8` |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
