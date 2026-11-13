@@ -13,7 +13,10 @@
 //!   tampoco se guarda encima.
 //! - **Migración recuperable en los dos sentidos:** copia previa, fichero nuevo
 //!   comprobado y cambio atómico. Un corte en cualquier punto deja un fichero
-//!   que se abre: lo cifrado y lo sin cifrar se leen igual.
+//!   que se abre ([`finish_conversion`] termina o deshace el cambio).
+//! - **Sin vuelta atrás silenciosa:** con el cifrado puesto, un fichero o una
+//!   línea del diario sin cifrar no se aceptan (se saltarían la prueba de
+//!   integridad); las copias de antes de cifrar se restauran a mano.
 //!
 //! **Límite:** las imágenes están en carpetas que comparten los programas de
 //! radiología (puentes), y cifrarlas allí rompería esos programas. Las protege
@@ -162,8 +165,26 @@ pub fn to_disk(plain: &[u8]) -> Result<Vec<u8>, String> {
     if k.on() { seal(plain, &k) } else { Ok(plain.to_vec()) }
 }
 
-/// Lo que se lee del disco: descifrado si estaba cifrado.
+const PLAIN_REFUSED: &str = "Este ordenador cifra los datos y el fichero no está cifrado: no se abre, porque podría haberse puesto otro en su lugar. Si es una copia de antes de cifrar, restáurela desde Herramientas.";
+
+/// Lo que se lee del disco: descifrado si estaba cifrado. Si este ordenador
+/// cifra los datos, lo que no está cifrado no se abre: el cifrado es también
+/// la prueba de que nadie lo ha cambiado, y un fichero sin cifrar puesto en
+/// su lugar se la saltaría.
 pub fn from_disk(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let k = keys();
+    if is_sealed(&bytes) {
+        unseal(&bytes, &k)
+    } else if k.on() {
+        Err(PLAIN_REFUSED.into())
+    } else {
+        Ok(bytes)
+    }
+}
+
+/// Una copia de seguridad que elige y confirma quien restaura: también las
+/// de antes de cifrar, que no lo están.
+pub fn from_disk_backup(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     if is_sealed(&bytes) { unseal(&bytes, &keys()) } else { Ok(bytes) }
 }
 
@@ -173,11 +194,14 @@ pub fn line_to_disk(line: &str) -> Result<String, String> {
     if k.on() { Ok(format!("@{}", hex(&seal(line.as_bytes(), &k)?))) } else { Ok(line.to_string()) }
 }
 
-/// Una línea del diario leída del disco (`None`: no se puede leer).
-pub fn line_from_disk(line: &str) -> Option<String> {
+/// Una línea del diario leída del disco: `Ok(None)` si no se puede leer
+/// (cortada o dañada); `Err` si no está cifrada y este ordenador cifra los datos.
+pub fn line_from_disk(line: &str) -> Result<Option<String>, String> {
+    let k = keys();
     match line.strip_prefix('@') {
-        Some(h) => String::from_utf8(unseal(&unhex(h)?, &keys()).ok()?).ok(),
-        None => Some(line.to_string()),
+        Some(h) => Ok(unhex(h).and_then(|b| unseal(&b, &k).ok()).and_then(|p| String::from_utf8(p).ok())),
+        None if k.on() => Err("El diario de cambios tiene una línea sin cifrar y este ordenador cifra los datos: no se aplica.".into()),
+        None => Ok(Some(line.to_string())),
     }
 }
 
@@ -194,7 +218,8 @@ pub fn read_text(path: &Path) -> std::io::Result<String> {
 /// 3. pone el fichero nuevo en su sitio (cambio atómico) y vacía el diario,
 ///    porque el fichero ya lo tiene todo.
 ///
-/// La copia previa la hace quien llama. `db` son los datos al día.
+/// La copia previa la hace quien llama. `db` son los datos al día. Un corte
+/// entre 2 y 3 lo termina [`finish_conversion`] al abrir.
 pub fn convert(data: &Path, db: &crate::model::Db, new: &DataKeys) -> Result<(), String> {
     let plain = serde_json::to_string(db).map_err(|e| e.to_string())?;
     let bytes = if new.on() { seal(plain.as_bytes(), new)? } else { plain.clone().into_bytes() };
@@ -209,6 +234,27 @@ pub fn convert(data: &Path, db: &crate::model::Db, new: &DataKeys) -> Result<(),
     std::fs::rename(&tmp, data).map_err(|e| format!("No se pudo poner el fichero nuevo (se queda el anterior, que se sigue abriendo): {e}"))?;
     let _ = crate::paths::create_private(&crate::sync::journal_path(data));
     Ok(())
+}
+
+/// Termina o deshace un cambio de cifrado que un corte dejó a medias (ver
+/// [`convert`]), antes de abrir los datos y solo quien los tiene bloqueados.
+/// El fichero nuevo vale si las claves guardadas ya son las suyas (cifrado
+/// con la clave actual, o sin cifrar y sin cifrado) y se abre entero; si no,
+/// el corte fue antes de guardarlas: se quita y sigue el de antes. Devuelve
+/// si lo ha puesto en su sitio.
+pub fn finish_conversion(data: &Path) -> Result<bool, String> {
+    let tmp = data.with_extension("json.nuevo");
+    let Ok(bytes) = std::fs::read(&tmp) else { return Ok(false) };
+    let k = keys();
+    let theirs = if is_sealed(&bytes) { k.on() && hex(&bytes[8..8 + ID_LEN]) == k.current } else { !k.on() };
+    let whole = theirs && from_disk(bytes).ok().and_then(|p| serde_json::from_slice::<serde_json::Value>(&p).ok()).is_some();
+    if !whole {
+        std::fs::remove_file(&tmp).map_err(|e| format!("No se pudo quitar {}: {e}", tmp.display()))?;
+        return Ok(false);
+    }
+    std::fs::rename(&tmp, data).map_err(|e| format!("No se pudo terminar el cambio de cifrado: {e}"))?;
+    crate::paths::create_private(&crate::sync::journal_path(data)).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// Guarda la clave de recuperación de los datos en `dest`, nunca en la carpeta de los datos.
@@ -326,6 +372,95 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    /// Con el cifrado puesto nadie puede poner datos sin cifrar en su lugar
+    /// (ni el fichero ni líneas del diario); un diario dañado o desordenado se
+    /// avisa, y un cambio de cifrado cortado se termina o se deshace.
+    #[test]
+    fn plain_data_is_refused_when_encrypted_and_cut_conversions_recover() {
+        use crate::sync::{Snapshot, diff_db, journal_line_of, journal_path};
+        set_keys(&DataKeys::default()).unwrap();
+        let d = dir("degradar");
+        let data = d.join("clinica.json");
+        let j = journal_path(&data);
+        let mut db = Db::sample(crate::model::today());
+        db.rev = 10;
+        let k = keys().with_new_key().unwrap();
+        convert(&data, &db, &k).unwrap();
+        let sealed = std::fs::read(&data).unwrap();
+        // otro fichero, sin cifrar, en su lugar: no se abre
+        let mut fake = db.clone();
+        fake.patients[0].first_name = "Puesto".into();
+        std::fs::write(&data, serde_json::to_string(&fake).unwrap()).unwrap();
+        assert!(Db::load_from(&data, false).1.unwrap().contains("no está cifrado"));
+        std::fs::write(&data, &sealed).unwrap();
+        // dos cambios en el diario, cifrados
+        let mut st = crate::local::LocalStore::new(data.clone(), crate::local::lock(&data).unwrap(), &mut db).unwrap();
+        let before = db.clone();
+        db.patients[0].notes = "uno".into();
+        st.save(&mut db).unwrap();
+        db.patients[0].notes = "dos".into();
+        st.save(&mut db).unwrap();
+        drop(st);
+        let good = std::fs::read_to_string(&j).unwrap();
+        let l: Vec<&str> = good.lines().collect();
+        assert_eq!(Db::load_from(&data, false).0.patients[0].notes, "dos");
+        // cambiadas de sitio
+        std::fs::write(&j, format!("{}\n{}\n", l[1], l[0])).unwrap();
+        assert!(Db::load_from(&data, false).1.unwrap().contains("desordenado"));
+        // una dañada antes del final
+        std::fs::write(&j, format!("@00ff\n{}\n", l[1])).unwrap();
+        assert!(Db::load_from(&data, false).1.unwrap().contains("dañada"));
+        // la última, cortada por un apagón: lo de antes vale
+        std::fs::write(&j, format!("{}\n{}\n", l[0], &l[1][..40])).unwrap();
+        let (back, err) = Db::load_from(&data, false);
+        assert!(err.is_none(), "{err:?}");
+        assert_eq!(back.patients[0].notes, "uno");
+        // una sin cifrar, con un cambio nuevo, puesta al final: no se aplica
+        let mut later = db.clone();
+        later.patients[0].notes = "puesta".into();
+        let plain = journal_line_of(13, &diff_db(&Snapshot::from_db(&db), &later));
+        std::fs::write(&j, format!("{good}{plain}\n")).unwrap();
+        let (back, err) = Db::load_from(&data, false);
+        assert!(err.unwrap().contains("sin cifrar") && back.patients[0].notes != "puesta");
+        // las de antes de cifrar, que ya tiene el fichero, no estorban
+        let stale = journal_line_of(5, &diff_db(&Snapshot::from_db(&before), &later));
+        std::fs::write(&j, format!("{stale}\n{good}")).unwrap();
+        let (back, err) = Db::load_from(&data, false);
+        assert!(err.is_none(), "{err:?}");
+        assert_eq!(back.patients[0].notes, "dos");
+        std::fs::write(&j, "").unwrap();
+
+        // cortes a mitad de un cambio de cifrado (ver `convert`)
+        let nuevo = data.with_extension("json.nuevo");
+        let k2 = keys().with_new_key().unwrap();
+        let mut rotated = before.clone();
+        rotated.patients[0].notes = "rotado".into();
+        let rotated_bytes = seal(serde_json::to_string(&rotated).unwrap().as_bytes(), &k2).unwrap();
+        // antes de guardar las claves nuevas: se quita y sigue el de antes
+        std::fs::write(&nuevo, &rotated_bytes).unwrap();
+        let (back, err) = Db::load_from(&data, true);
+        assert!(err.is_none(), "{err:?}");
+        assert!(back.patients[0].notes != "rotado" && !nuevo.exists());
+        // después: se termina
+        std::fs::write(&nuevo, &rotated_bytes).unwrap();
+        set_keys(&k2).unwrap();
+        let (back, err) = Db::load_from(&data, true);
+        assert!(err.is_none(), "{err:?}");
+        assert!(back.patients[0].notes == "rotado" && !nuevo.exists());
+        // al descifrar, uno sin cifrar con las claves aún puestas se quita…
+        std::fs::write(&nuevo, serde_json::to_string(&before).unwrap()).unwrap();
+        assert_eq!(Db::load_from(&data, true).0.patients[0].notes, "rotado");
+        assert!(!nuevo.exists());
+        // …y con las claves ya sin cifrar, se pone
+        std::fs::write(&nuevo, serde_json::to_string(&before).unwrap()).unwrap();
+        set_keys(&keys().off()).unwrap();
+        let (back, err) = Db::load_from(&data, true);
+        assert!(err.is_none(), "{err:?}");
+        assert!(back.patients[0].notes != "rotado" && !is_sealed(&std::fs::read(&data).unwrap()));
+        set_keys(&DataKeys::default()).unwrap();
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn journal_lines_round_trip_and_mix() {
         set_keys(&DataKeys::default()).unwrap();
@@ -334,9 +469,12 @@ mod tests {
         set_keys(&k).unwrap();
         let enc = line_to_disk("{\"rev\":2}").unwrap();
         assert!(enc.starts_with('@'));
-        assert_eq!(line_from_disk(&enc).as_deref(), Some("{\"rev\":2}"));
-        assert_eq!(line_from_disk("{\"rev\":1}").as_deref(), Some("{\"rev\":1}"), "lo de antes, sin cifrar, también");
-        assert_eq!(line_from_disk("@zz"), None);
+        assert_eq!(line_from_disk(&enc).unwrap().as_deref(), Some("{\"rev\":2}"));
+        assert!(line_from_disk("{\"rev\":1}").is_err(), "con el cifrado puesto, una línea sin cifrar no se acepta");
+        assert_eq!(line_from_disk("@zz"), Ok(None));
+        set_keys(&keys().off()).unwrap();
+        assert_eq!(line_from_disk("{\"rev\":1}").unwrap().as_deref(), Some("{\"rev\":1}"), "sin cifrado, sí");
+        assert_eq!(line_from_disk(&enc).unwrap().as_deref(), Some("{\"rev\":2}"), "y lo cifrado antes se sigue leyendo");
         set_keys(&DataKeys::default()).unwrap();
     }
 }

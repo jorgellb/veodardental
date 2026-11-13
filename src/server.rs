@@ -3656,7 +3656,7 @@ mod tests {
 
     /// Un apagón a mitad de escribir el diario deja la última línea cortada:
     /// se recupera todo hasta el último cambio entero. Y una línea dañada en
-    /// medio no deja aplicar lo de después (quedaría un hueco sin avisar).
+    /// medio no deja aplicar lo de después, y se avisa (no queda un hueco sin avisar).
     #[test]
     fn a_cut_or_damaged_journal_never_applies_changes_out_of_order() {
         let dir = std::env::temp_dir().join(format!("ds_server_journal_{}", std::process::id()));
@@ -3682,11 +3682,13 @@ mod tests {
         let db = crate::sync::on_disk(&path);
         assert_eq!(db.rev, rev0 + 1);
         assert!(db.payments.iter().any(|p| p.id == ids[0]) && !db.payments.iter().any(|p| p.id == ids[1]));
-        // la primera dañada y la segunda entera: no se aplica la segunda sin la primera
+        // la primera dañada y la segunda entera: no se aplica la segunda sin la primera, y se avisa
         std::fs::write(&journal, format!("{}\n{}\n", lines[0].replace('"', "#"), lines[1])).unwrap();
-        let db = crate::sync::on_disk(&path);
+        let mut db: Db = serde_json::from_str(&crate::datos_cifrados::read_text(&path).unwrap()).unwrap();
+        assert!(crate::sync::replay_journal(&mut db, &path).unwrap_err().contains("dañada"));
         assert_eq!(db.rev, rev0, "se queda en el último cambio entero");
         assert!(!db.payments.iter().any(|p| ids.contains(&p.id)));
+        assert!(Db::load_from(&path, false).1.unwrap().contains("dañada"), "y al abrir se avisa (y no se guarda encima)");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

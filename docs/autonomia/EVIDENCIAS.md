@@ -1041,3 +1041,28 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 445 pasan, 0 fallan, 10 ignoradas |
 - **Prueba existente:** `ui_tests::backup_password_encrypts_the_second_copy` buscaba «sin cifrar», que ahora salía dos veces. Se cambió el texto nuevo, no la prueba.
+
+## E-040 Revisión de seguridad del cifrado de los datos (vuelta atrás a sin cifrar)
+- **Hallazgo (revisión automática del commit de T-F4-04):** con el cifrado puesto, se aceptaban un fichero de datos o líneas del diario sin cifrar. Quien pudiera escribir en la carpeta de los datos podía poner otros sin cifrar en su lugar y saltarse la prueba de integridad.
+- **Corrección (`src/datos_cifrados.rs`, `src/sync.rs`, `src/model.rs`, `src/tools.rs`):**
+  - con el cifrado puesto, `from_disk` rechaza lo que no está cifrado; la carga da error y no se guarda encima;
+  - `line_from_disk` distingue tres casos: línea ilegible (`Ok(None)`), línea sin cifrar con el cifrado puesto (`Err`) y línea buena;
+  - las copias de seguridad de antes de cifrar se siguen restaurando a mano (`from_disk_backup`), porque las elige y confirma quien restaura.
+- **Diario (`replay_journal`):**
+  - una línea ilegible solo se acepta como corte si es la última; antes del final, se avisa en vez de cortar en silencio, así que no se pierde lo de después al reescribir;
+  - una revisión menor que la anterior se rechaza («desordenado»): las líneas se escriben siempre en orden;
+  - una línea sin cifrar con una revisión nueva se rechaza; con revisión ya incluida en el fichero (de antes de cifrar), se ignora.
+- **Cambio de cifrado cortado:** con la nueva regla, un corte entre «guardar las claves» y «poner el fichero» dejaría un fichero sin cifrar con las claves puestas. `finish_conversion`, al abrir y solo quien bloquea los datos, termina el cambio o lo deshace:
+  - termina si el fichero nuevo corresponde a las claves guardadas y se abre entero;
+  - si no, lo quita y sigue el de antes.
+- **Sobre lo de atar la posición de la línea al cifrado:** se ha preferido la comprobación del orden por revisión, que va dentro de lo cifrado y autenticado. Ninguna de las dos impide que alguien con acceso de escritura a la carpeta quite las últimas líneas o el diario entero (volver a un estado anterior). Eso necesitaría un contador guardado fuera de la carpeta y queda anotado como límite. Contra ello están los permisos (0600) y el cifrado del disco.
+- **Pruebas:**
+  - nueva: `datos_cifrados::tests::plain_data_is_refused_when_encrypted_and_cut_conversions_recover`. Cubre el fichero sin cifrar puesto en su lugar, líneas cambiadas de sitio, una dañada antes del final, la última cortada, una sin cifrar nueva, las de antes de cifrar ya incluidas, y los cortes antes y después de guardar las claves al rotar y al descifrar;
+  - cambiadas: `datos_cifrados::tests::journal_lines_round_trip_and_mix` comprueba el rechazo con cifrado y la lectura sin él. `server::tests::a_cut_or_damaged_journal_never_applies_changes_out_of_order` sigue comprobando que no se aplica nada después de la línea dañada y ahora exige además el aviso.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 446 pasan, 0 fallan, 10 ignoradas |

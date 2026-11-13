@@ -1450,7 +1450,12 @@ impl Db {
     /// ejemplo; si no se puede leer, también, con el error.
     pub fn load_from(p: &std::path::Path, rewrite: bool) -> (Db, Option<String>) {
         let p = p.to_path_buf();
-        // cifrado sin la clave, o tocado: es un error (nunca «no hay datos»), y no se guarda encima
+        // un cambio de cifrado cortado a medias se termina o se deshace (solo quien los bloquea)
+        if rewrite && let Err(e) = crate::datos_cifrados::finish_conversion(&p) {
+            return (Db::sample(today()), Some(format!("No se pudieron abrir los datos de {}: {e}", p.display())));
+        }
+        // cifrado sin la clave, tocado o sin cifrar cuando se cifra: es un
+        // error (nunca «no hay datos»), y no se guarda encima
         let read = crate::datos_cifrados::read_text(&p);
         if let Err(e) = &read
             && p.exists()

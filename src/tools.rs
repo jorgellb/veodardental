@@ -190,7 +190,8 @@ pub fn read_backup_with(path: &Path, password: Option<&str>, key: Option<&crate:
             (None, None) => return Err(NEEDS_PASSWORD.into()),
         }
     } else {
-        crate::datos_cifrados::from_disk(bytes)?
+        // la elige y la confirma quien restaura: también las de antes de cifrar
+        crate::datos_cifrados::from_disk_backup(bytes)?
     };
     let txt = String::from_utf8(plain).map_err(|_| "La copia está dañada o no es de esta aplicación.".to_string())?;
     let mut db = serde_json::from_str::<Db>(&txt).map_err(|e| format!("La copia está dañada o no es de esta aplicación: {e}"))?;

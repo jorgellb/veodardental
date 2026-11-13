@@ -674,15 +674,38 @@ struct JournalLine {
 /// cuántas revisiones se han puesto.
 pub fn replay_journal(db: &mut Db, data: &std::path::Path) -> Result<usize, String> {
     let Ok(text) = std::fs::read_to_string(journal_path(data)) else { return Ok(0) };
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     let mut n = 0;
-    for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        // una línea que no se lee es la última, cortada por un apagón, o un
-        // daño: lo de después no se aplica (quedaría un hueco sin avisar);
-        // las cifradas (ver `datos_cifrados`) se descifran antes
-        let Some(line) = crate::datos_cifrados::line_from_disk(line) else { break };
-        let Ok(j) = serde_json::from_str::<JournalLine>(&line) else { break };
+    let mut prev = 0;
+    for (i, raw) in lines.iter().enumerate() {
+        // una línea que no se lee, si es la última, es la que cortó un apagón
+        // (lo de antes vale); antes del final es un daño: se avisa, porque lo
+        // de después no se aplica y quedaría un hueco sin avisar. Las cifradas
+        // (ver `datos_cifrados`) se descifran antes
+        let damaged = || if i + 1 == lines.len() { Ok(()) } else { Err(format!("La línea {} del diario de cambios está dañada: lo de después no se aplica.", i + 1)) };
+        let (line, refused) = match crate::datos_cifrados::line_from_disk(raw) {
+            Ok(Some(l)) => (l, None),
+            Ok(None) => {
+                damaged()?;
+                break;
+            }
+            Err(e) => (raw.to_string(), Some(e)),
+        };
+        let Ok(j) = serde_json::from_str::<JournalLine>(&line) else {
+            damaged()?;
+            break;
+        };
+        // se escriben siempre en orden: si no, alguien las ha cambiado de sitio
+        if j.rev < prev {
+            return Err("El diario de cambios está desordenado: no se aplica.".into());
+        }
+        prev = j.rev;
+        // lo que ya tiene el fichero no se aplica (tampoco lo de antes de cifrar)
         if j.rev <= db.rev {
             continue;
+        }
+        if let Some(e) = refused {
+            return Err(e);
         }
         for ch in &j.changes {
             match (&ch.key, &ch.after) {
