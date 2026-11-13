@@ -355,3 +355,37 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 374 pasan, 0 fallan, 10 ignoradas |
+
+## E-018 T-F1-11: todas las pantallas a 1280×720 y 1280×800
+- **Prueba nueva:** `ui_tests::every_screen_fits_1280_wide`.
+  - **Qué recorre**, a 1280×720 y a 1280×800:
+    - las 21 pantallas del menú;
+    - las 11 pestañas de la ficha del paciente;
+    - las 8 pestañas de Informes;
+    - los 18 apartados de Configuración.
+  - **Cuándo falla:** si algún elemento del árbol de accesibilidad (botones, etiquetas, casillas, tablas) se sale por la derecha o la izquierda de la ventana. El texto de una casilla de escribir más largo que ella no cuenta: la casilla lo recorta. Lo que no cabe de alto se desplaza.
+  - **Primera ejecución (antes de los arreglos):** 34 elementos fuera en 7 pantallas; con las pestañas y apartados, 5 apartados de Configuración más.
+- **Causas y arreglos:**
+  - `Table::scale` no estrechaba las tablas por debajo del 70 %, y la fila ocupaba todo lo «disponible» aunque pasara del borde visible. Ahora se estrecha hasta el 50 % (las celdas ya recortan su texto) y no pasa del borde visible (`visible_width`). Arreglados Listín, Almacén y Caja.
+  - Las páginas con desplazamiento y los apartados de Configuración median lo disponible incluyendo la barra de desplazamiento: ahora usan `theme::fit_width` (el borde visible y el de la ventana).
+  - `field` en una fila que se parte: egui no parte un bloque vertical. Ahora el campo pasa solo a la línea siguiente si no cabe, y si no, se estrecha a lo que queda.
+  - Filas concretas que pasan a partirse:
+    - Colaboradores: comisión y campos;
+    - Almacén: ficha del producto;
+    - Tarifas: cabecera del catálogo;
+    - Correo: horario del envío;
+    - Cita online: huecos;
+    - Exportar fichas: carpeta;
+    - Copias: carpeta.
+
+    En Receta electrónica, la tabla de profesionales va con desplazamiento lateral, porque ensanchaba todo lo de debajo.
+- **Capturas sintéticas tras los arreglos:**
+  - `f1_11_{colaboradores,almacen,tarifas,listin,caja}_1280x800.png`
+  - `f1_11_filiacion_1280x720.png`
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 375 pasan, 0 fallan, 10 ignoradas |

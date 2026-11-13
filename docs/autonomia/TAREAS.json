@@ -1637,8 +1637,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Prueba que recorre las pantallas y falla si algo se sale; capturas sintéticas de evidencia",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-018"
+   ]
   },
   {
    "id": "T-F1-12a",

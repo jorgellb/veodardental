@@ -54,7 +54,8 @@ pub fn batch_panel(app: &mut App, ui: &mut Ui) {
         section(ui, "Exportar fichas de pacientes");
         muted(ui, "Crea una carpeta con la ficha completa de cada paciente (datos, salud, odontograma, tratamientos, cuenta y citas), lista para imprimir o archivar en PDF. Contiene datos de salud: guárdela en un lugar protegido.");
         ui.add_space(4.0);
-        ui.horizontal(|ui| {
+        // (con la carpeta al final: en una fila que no se parte, se salía)
+        ui.horizontal_wrapped(|ui| {
             let n_active = app.db.patients.iter().filter(|p| p.active).count();
             let mut run = None;
             if primary(ui, &format!("Exportar pacientes activos ({n_active})")).clicked() {

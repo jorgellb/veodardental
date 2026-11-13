@@ -368,10 +368,19 @@ pub fn danger(ui: &mut Ui, text: &str) -> egui::Response {
 
 /// Campo con etiqueta encima.
 pub fn field(ui: &mut Ui, label: &str, value: &mut String, width: f32) -> egui::Response {
+    // en una fila que se parte, si no cabe en lo que queda, a la línea
+    // siguiente (egui no sabe partir un bloque vertical como este)
+    let want = width * 1.1;
+    if ui.layout().main_wrap && ui.available_size_before_wrap().x < want && ui.min_rect().width() > 1.0 {
+        ui.end_row();
+    }
+    // y lo que quede en la fila: el último campo se estrecha en vez de salirse
+    // de la ventana (a 1280 px de ancho)
+    let w = want.min(ui.available_width().max(60.0));
     ui.vertical(|ui| {
         ui.label(RichText::new(label).font(mdf(12.8)).color(MUTED));
         ui.add_space(-3.0);
-        ui.add_sized([width * 1.1, 36.0], egui::TextEdit::singleline(value).margin(vec2(10.0, 8.0)))
+        ui.add_sized([w, 36.0], egui::TextEdit::singleline(value).margin(vec2(10.0, 8.0)))
     })
     .inner
 }
@@ -392,6 +401,20 @@ pub fn info_row(ui: &mut Ui, label: &str, value: &str) {
 }
 
 /// Tabla sencilla con cabecera, separadores finos, hover y clic de fila.
+/// Ancho del contenido de una página: lo disponible, pero sin pasar del borde
+/// visible ni del de la ventana (menos el margen del panel y la barra de
+/// desplazamiento). A 1280 px, así nada se sale por la derecha.
+pub fn fit_width(ui: &Ui) -> f32 {
+    let x = ui.cursor().min.x;
+    ui.available_width().min(ui.clip_rect().max.x - x - 6.0).min(ui.ctx().content_rect().max.x - x - 40.0).max(0.0)
+}
+
+/// Ancho que queda hasta el borde visible (el de la ventana o el panel): una
+/// fila de tabla no pasa de ahí aunque el espacio disponible diga más.
+fn visible_width(ui: &Ui) -> f32 {
+    ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 4.0).max(0.0)
+}
+
 pub struct Table<'a> {
     #[allow(dead_code)]
     pub id: &'a str,
@@ -404,16 +427,19 @@ impl<'a> Table<'a> {
         Self { id, cols, row_h: 40.0 }
     }
 
-    /// Factor para que las columnas ocupen todo el ancho disponible.
+    /// Factor para que las columnas ocupen todo el ancho disponible. Se
+    /// estrechan hasta la mitad antes que salirse del panel (cada celda recorta
+    /// su texto): a 1280 px de ancho, una tabla no empuja el panel de al lado
+    /// fuera de la ventana.
     pub fn scale(&self, ui: &Ui) -> f32 {
         let w: f32 = self.cols.iter().map(|c| c.1).sum();
-        (ui.available_width() / w.max(1.0)).clamp(0.7, 2.5)
+        (visible_width(ui) / w.max(1.0)).clamp(0.5, 2.5)
     }
 
     pub fn header(&self, ui: &mut Ui) {
         let k = self.scale(ui);
         let w: f32 = self.cols.iter().map(|c| c.1).sum::<f32>() * k;
-        let (rect, _) = ui.allocate_exact_size(vec2(w.max(ui.available_width()), 34.0), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(vec2(w.max(visible_width(ui)), 34.0), Sense::hover());
         let p = ui.painter();
         p.rect_filled(rect, CornerRadius::same(8), Color32::from_rgb(246, 248, 251));
         let mut x = rect.min.x + 14.0;
@@ -430,7 +456,7 @@ impl<'a> Table<'a> {
         let _ = idx;
         let k = self.scale(ui);
         let w: f32 = self.cols.iter().map(|c| c.1).sum::<f32>() * k;
-        let (rect, resp) = ui.allocate_exact_size(vec2(w.max(ui.available_width()), self.row_h), Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(vec2(w.max(visible_width(ui)), self.row_h), Sense::click());
         let p = ui.painter();
         if selected {
             p.rect_filled(rect, CornerRadius::same(8), tint(ACCENT, 0.10));

@@ -130,7 +130,8 @@ fn products(app: &mut App, ui: &mut Ui) {
             card(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.add_sized([260.0, 34.0], egui::TextEdit::singleline(&mut app.stock.filter).hint_text("Buscar producto, familia o código"));
+                    // (a 1280 px, más estrecha: si no, el botón de la derecha tapa la casilla)
+                    ui.add_sized([(ui.available_width() * 0.4).min(260.0), 34.0], egui::TextEdit::singleline(&mut app.stock.filter).hint_text("Buscar producto, familia o código"));
                     ui.checkbox(&mut app.stock.only_low, "Solo bajo mínimo");
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Producto").clicked() {
@@ -222,16 +223,16 @@ fn product_panel(app: &mut App, ui: &mut Ui) {
                 pill(ui, "Bajo mínimo", DANGER);
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             field(ui, "Nombre", &mut p.name, 220.0);
             field(ui, "Código", &mut p.code, 90.0);
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             field(ui, "Familia", &mut p.family, 140.0);
             field(ui, "Unidad", &mut p.unit, 90.0);
             field(ui, "Ubicación", &mut p.location, 100.0);
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Mínimo");
             ui.add(egui::DragValue::new(&mut p.min_stock).range(0.0..=100000.0));
             ui.label("Coste");

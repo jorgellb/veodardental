@@ -878,27 +878,31 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
         });
         ui.add_space(6.0);
         let docs: Vec<(u32, String, String)> = app.db.collaborators.iter().filter(|c| c.active).map(|c| (c.id, c.alias.clone(), c.license.clone())).collect();
-        egui::Grid::new("erx_docs").num_columns(5).spacing([22.0, 8.0]).show(ui, |ui| {
-            for h in ["Profesional", "Nº colegiado", "Certificado de firma", "Alta en la plataforma", "Estado"] {
-                ui.label(RichText::new(h).color(MUTED).size(13.0));
-            }
-            ui.end_row();
-            for (id, alias, lic) in docs {
-                let mut d = app.db.erx.doctor(id);
-                ui.label(RichText::new(&alias).family(sb()));
-                ui.label(if lic.trim().is_empty() || lic.trim() == "-" { RichText::new("sin número").color(WARN) } else { RichText::new(lic) });
-                let a = ui.checkbox(&mut d.certificate, "Tiene").changed();
-                let b = ui.checkbox(&mut d.registered, "Dado de alta").changed();
-                if a || b {
-                    app.db.erx.set_doctor(d);
-                }
-                if crate::erx::doctor_ready(&app.db, id) {
-                    pill(ui, "Puede recetar", OK);
-                } else {
-                    pill(ui, "Pendiente", WARN);
+        // con desplazamiento lateral: la tabla de profesionales no ensancha la
+        // página (a 1280 px, todo lo de debajo se salía por la derecha)
+        egui::ScrollArea::horizontal().id_salt("erx_docs_sc").show(ui, |ui| {
+            egui::Grid::new("erx_docs").num_columns(5).spacing([22.0, 8.0]).show(ui, |ui| {
+                for h in ["Profesional", "Nº colegiado", "Certificado de firma", "Alta en la plataforma", "Estado"] {
+                    ui.label(RichText::new(h).color(MUTED).size(13.0));
                 }
                 ui.end_row();
-            }
+                for (id, alias, lic) in docs {
+                    let mut d = app.db.erx.doctor(id);
+                    ui.label(RichText::new(&alias).family(sb()));
+                    ui.label(if lic.trim().is_empty() || lic.trim() == "-" { RichText::new("sin número").color(WARN) } else { RichText::new(lic) });
+                    let a = ui.checkbox(&mut d.certificate, "Tiene").changed();
+                    let b = ui.checkbox(&mut d.registered, "Dado de alta").changed();
+                    if a || b {
+                        app.db.erx.set_doctor(d);
+                    }
+                    if crate::erx::doctor_ready(&app.db, id) {
+                        pill(ui, "Puede recetar", OK);
+                    } else {
+                        pill(ui, "Pendiente", WARN);
+                    }
+                    ui.end_row();
+                }
+            });
         });
     });
     ui.add_space(10.0);

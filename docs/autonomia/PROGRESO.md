@@ -27,17 +27,19 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad del área 8 | E-015 | `802798a` |
 | T-F1-A9: cita online y portales | E-016 | `80670ec` |
 | T-F1-A10: telefonía y laboratorio digital | E-017 | `4c09bf7` |
+| T-F1-11: todas las pantallas a 1280×720 y 1280×800 | E-018 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-11: una prueba que recorra todas las pantallas a 1280×720 y 1280×800 y falle si algo se sale; arreglos y capturas.
-2. T-F1-12a a T-F1-12d:
-   - concurrencia por flujo;
-   - desconexión, reenvío, reinicio y fallo de escritura;
-   - protocolo del servidor con entradas inválidas;
-   - fuzzing con semilla.
+1. T-F1-12a a T-F1-12d.
+   - Concurrencia por flujo: cada uno con su prueba de dos puestos. Ya están facturas, cuotas, devoluciones, remesas, stock, banco, correos, ortodoncia y laboratorio; falta inventariarlos y completar recibos, recordatorios y reservas.
+   - Desconexión, reenvío, reinicio y fallo de escritura.
+   - Protocolo del servidor con entradas inválidas.
+   - Fuzzing con semilla de la combinación de cambios, el protocolo, CSV y Norma 43.
+2. Después, el cierre de la fase 1 (T-F1-13) y la fase 2 (migraciones).
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir
+- La anchura a 1280 px la vigila `ui_tests::every_screen_fits_1280_wide`. Una pantalla nueva o cambiada debe pasarla. Para los campos, `field`; para las tablas, `Table`; en filas de campos, `horizontal_wrapped`.
 - Los totales económicos se calculan en `src/informes.rs` (`Filter` y `report_*`). Las pantallas no deben sumar por su cuenta.
 - Las operaciones que no deben hacerse dos veces van como `ChainOp` en src/app.rs, con `run`, `json`, `from_json` y `needs`; el servidor las ejecuta con los datos al día. El banco ya va así (D-09).
 - Hay pruebas que dependen de la hora: a última hora del día quedan pocos huecos libres hoy. Las que piden «la segunda hora del primer día» deben buscar el primer día con dos horas.

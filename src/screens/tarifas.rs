@@ -116,9 +116,10 @@ fn tariffs(app: &mut App, ui: &mut Ui) {
 fn treatments(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
+        // (sin alinear a la derecha: a 1280 px el botón no cabe al lado y se salía)
+        ui.horizontal_wrapped(|ui| {
             section(ui, "Catálogo de tratamientos");
-            right_aligned(ui, |ui| {
+            {
                 if ui.button("＋ Nuevo tratamiento").clicked() {
                     let max = app.db.treatments.iter().filter_map(|t| t.code.parse::<u32>().ok()).filter(|c| *c < 9000).max().unwrap_or(1000);
                     let code = format!("{:04}", max + 1);
@@ -137,9 +138,9 @@ fn treatments(app: &mut App, ui: &mut Ui) {
                     app.lists.treat_sel = Some(code);
                     app.changed();
                 }
-            });
+            }
         });
-        ui.add_sized([300.0, 34.0], egui::TextEdit::singleline(&mut app.lists.treat_filter).hint_text("Buscar tratamiento o grupo"));
+        ui.add_sized([ui.available_width().min(300.0), 34.0], egui::TextEdit::singleline(&mut app.lists.treat_filter).hint_text("Buscar tratamiento o grupo"));
         let q = fold(&app.lists.treat_filter);
         let tbl = Table::new("tt", vec![("Código", 60.0), ("Descripción", 230.0), ("Grupo", 120.0), ("Precio", 90.0), ("Min.", 50.0)]);
         tbl.header(ui);

@@ -181,7 +181,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 sa = sa.vertical_scroll_offset(y);
             }
             sa.show(ui, |ui| {
-                ui.set_width(ui.available_width() - 4.0);
+                // hasta el borde visible (no por debajo de la barra de desplazamiento)
+                let w = crate::theme::fit_width(ui);
+                ui.set_width(w - 4.0);
                 tab_content(app, ui, tab);
                 ui.add_space(16.0);
             });
@@ -533,11 +535,11 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
             let before = serde_json::to_string(c).unwrap_or_default();
             section(ui, &c.alias.clone());
             muted(ui, format!("Producción últimos 30 días: {} · citas hoy: {}", money(month_prod), appts_today));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 field(ui, "Alias (agenda)", &mut c.alias, 160.0);
                 field(ui, "Nombre completo", &mut c.name, 220.0);
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 field(ui, "Especialidad", &mut c.specialty, 200.0);
                 field(ui, "Nº colegiado", &mut c.license, 120.0);
                 field(ui, "Teléfono", &mut c.phone, 120.0);
@@ -550,7 +552,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 }
                 ui.checkbox(&mut c.active, "Activo");
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label("Comisión");
                 ui.add(egui::DragValue::new(&mut c.commission_pct).range(0.0..=100.0).suffix(" %"));
                 ui.checkbox(&mut c.deduct_lab, "descontando el laboratorio").on_hover_text("La comisión se calcula sobre lo producido menos el coste de laboratorio de sus tratamientos");

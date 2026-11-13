@@ -1476,6 +1476,24 @@ impl App {
         self.login.pin.clear();
     }
 
+    /// Pantallas que van en una sola página con desplazamiento vertical.
+    fn page(&mut self, ui: &mut egui::Ui) {
+        match self.screen {
+            Screen::Inicio => screens::inicio::show(self, ui),
+            Screen::Caja => screens::caja::show(self, ui),
+            Screen::Tarifas => screens::tarifas::show(self, ui),
+            Screen::Colaboradores => screens::config::collaborators(self, ui),
+            Screen::Imagenes => screens::imagenes::screen(self, ui),
+            Screen::Almacen => screens::almacen::screen(self, ui),
+            Screen::Laboratorio => screens::laboratorio::screen(self, ui),
+            Screen::Gastos => screens::gastos::screen(self, ui),
+            Screen::Ortodoncia => screens::ortodoncia::screen(self, ui),
+            Screen::Listin => screens::herramientas::listin(self, ui),
+            Screen::Bancos => screens::bancos::screen(self, ui),
+            _ => screens::config::modules(self, ui),
+        }
+    }
+
     fn statusbar(&mut self, ui: &mut Ui) {
         ui.horizontal_centered(|ui| {
             ui.add_space(6.0);
@@ -1628,19 +1646,12 @@ impl eframe::App for App {
                 if let Some(y) = self.lists.scroll_to.take() {
                     sa = sa.vertical_scroll_offset(y);
                 }
-                sa.show(ui, |ui| match self.screen {
-                    Screen::Inicio => screens::inicio::show(self, ui),
-                    Screen::Caja => screens::caja::show(self, ui),
-                    Screen::Tarifas => screens::tarifas::show(self, ui),
-                    Screen::Colaboradores => screens::config::collaborators(self, ui),
-                    Screen::Imagenes => screens::imagenes::screen(self, ui),
-                    Screen::Almacen => screens::almacen::screen(self, ui),
-                    Screen::Laboratorio => screens::laboratorio::screen(self, ui),
-                    Screen::Gastos => screens::gastos::screen(self, ui),
-                    Screen::Ortodoncia => screens::ortodoncia::screen(self, ui),
-                    Screen::Listin => screens::herramientas::listin(self, ui),
-                    Screen::Bancos => screens::bancos::screen(self, ui),
-                    _ => screens::config::modules(self, ui),
+                sa.show(ui, |ui| {
+                    // el contenido no pasa por debajo de la barra de desplazamiento
+                    // (a 1280 px, dos columnas se salían por la derecha)
+                    let w = crate::theme::fit_width(ui);
+                    ui.set_max_width(w);
+                    self.page(ui)
                 });
             }
             // Configuración: menú de apartados fijo y el apartado con su propio desplazamiento

@@ -75,7 +75,7 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
         if !c.ready() {
             ui.label(RichText::new("Primero configure y active el correo de arriba.").size(12.5).color(MUTED));
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Entre las");
             ui.add(egui::DragValue::new(&mut c.auto_hour).range(0..=22).suffix(":00"));
             ui.label("y las");

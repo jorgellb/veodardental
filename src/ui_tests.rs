@@ -2521,3 +2521,96 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert_ne!(c2, net, "los datos de ejemplo tienen cobros en los dos centros");
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
+
+/// Lo que se sale a la derecha de la ventana (o empieza fuera por la
+/// izquierda) en la pantalla que se ve: (nombre del elemento, su borde derecho).
+fn offscreen(h: &Harness<'static, App>, width: f32) -> Vec<(String, f32)> {
+    use egui_kittest::kittest::NodeT;
+    let mut out: Vec<(String, f32)> = h
+        .query_all_by(|_| true)
+        .filter_map(|n| {
+            // el texto de una casilla de escribir más largo que ella no se sale: la
+            // casilla lo recorta y se desplaza al escribir
+            let an = n.accesskit_node();
+            let in_input = an.parent().is_some_and(|p| matches!(p.role(), egui::accesskit::Role::TextInput | egui::accesskit::Role::MultilineTextInput));
+            if in_input {
+                return None;
+            }
+            // (la ventana de prueba va a 1 píxel por punto)
+            let r = an.bounding_box()?;
+            let label = an.label().or_else(|| an.value()).unwrap_or_else(|| {
+                let kids: Vec<String> = an.children().take(4).map(|c| c.label().or_else(|| c.value()).unwrap_or_else(|| format!("{:?}", c.role()))).collect();
+                format!("{:?} x0={:.0} ancho={:.0}: {}", an.role(), r.x0, r.width(), kids.join(" | "))
+            });
+            ((r.x1 as f32 > width + 1.0 || r.x0 < -1.0) && r.width() > 0.0 && r.height() > 0.0).then(|| (format!("{label}» (desde x={:.0}, y={:.0}", r.x0, r.y0), r.x1 as f32))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.dedup_by(|a, b| a.0 == b.0);
+    out
+}
+
+/// Todas las pantallas y todas las pestañas de la ficha a 1280×720 y
+/// 1280×800: nada se sale por los lados (lo que no cabe de alto se desplaza).
+#[test]
+fn every_screen_fits_1280_wide() {
+    let mut problems: Vec<String> = vec![];
+    for (w, hgt) in [(1280.0, 720.0), (1280.0, 800.0)] {
+        let mut h = Harness::builder().with_size(egui::vec2(w, hgt)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+            let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+            a.screenshot = None;
+            a
+        });
+        {
+            let a = h.state_mut();
+            a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        }
+        for (screen, _, name) in crate::app::Screen::NAV {
+            h.state_mut().screen = screen;
+            for _ in 0..3 {
+                h.step();
+            }
+            for (label, x) in offscreen(&h, w) {
+                problems.push(format!("{w}×{hgt} {name}: «{label}» hasta x={x:.0}"));
+            }
+        }
+        for (tab, name) in crate::app::PatTab::ALL {
+            h.state_mut().open_patient(101, tab);
+            for _ in 0..3 {
+                h.step();
+            }
+            for (label, x) in offscreen(&h, w) {
+                problems.push(format!("{w}×{hgt} ficha › {name}: «{label}» hasta x={x:.0}"));
+            }
+        }
+        // las pestañas de Informes y los apartados de Configuración
+        for tab in 0..8 {
+            {
+                let a = h.state_mut();
+                a.screen = crate::app::Screen::Informes;
+                a.lists.report_tab = tab;
+            }
+            for _ in 0..3 {
+                h.step();
+            }
+            for (label, x) in offscreen(&h, w) {
+                problems.push(format!("{w}×{hgt} Informes › pestaña {tab}: «{label}» hasta x={x:.0}"));
+            }
+        }
+        use crate::screens::config::CfgTab::*;
+        for tab in [Clinica, Marcha, Gabinetes, Centros, Usuarios, Facturacion, Correo, CitaOnline, Telefonia, Whatsapp, Receta, Ia, Importar, Copias, Fichas, Duplicados, Registro, Red] {
+            {
+                let a = h.state_mut();
+                a.screen = crate::app::Screen::Config;
+                a.lists.cfg_tab = tab;
+            }
+            for _ in 0..3 {
+                h.step();
+            }
+            for (label, x) in offscreen(&h, w) {
+                problems.push(format!("{w}×{hgt} Configuración › {}: «{label}» hasta x={x:.0}", tab.label()));
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{} elementos fuera:\n{}", problems.len(), problems.join("\n"));
+}

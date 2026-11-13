@@ -53,7 +53,8 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
         });
         second_copy_status(app, ui);
         ui.add_space(4.0);
-        ui.horizontal(|ui| {
+        // (la carpeta puede ser larga: la fila se parte)
+        ui.horizontal_wrapped(|ui| {
             if primary(ui, "💾 Hacer copia ahora").clicked() {
                 match create_backup(&app.db, "manual") {
                     Ok(p) => {

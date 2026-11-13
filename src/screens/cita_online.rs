@@ -1473,11 +1473,11 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             muted(ui, "Cuando se anula una cita, el hueco se ofrece a los pacientes que esperan con ese profesional y a quienes les encaja la hora (mañanas o tardes), empezando por quien más lleva esperando. Se lo queda el primero que lo pide desde su enlace; sin página publicada, el aviso les pide que llamen.");
             ui.add_space(4.0);
             ui.checkbox(&mut c.offer_slots, "Ofrecerlo automáticamente cuando un paciente anula su cita por internet");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 lab(ui, 210.0, RichText::new("Pacientes avisados por hueco").color(TEXT));
                 ui.add(egui::DragValue::new(&mut c.offer_max).range(1..=30));
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 lab(ui, 210.0, RichText::new("Sólo con al menos").color(TEXT));
                 ui.add(egui::DragValue::new(&mut c.offer_min_hours).range(1..=72).suffix(" h"));
                 ui.label(RichText::new("de margen").color(MUTED));
