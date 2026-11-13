@@ -133,3 +133,59 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 330 pasan, 0 fallan, 10 ignoradas |
+
+## E-010 Área 4: bancos y conciliación
+- Revisión en `docs/autonomia/revision/area4.md`: 11 defectos demostrados (B1 a B11).
+- **Demostraciones del comportamiento anterior**, ejecutadas:
+  - `parse_money` anterior, copiado en un programa aparte:
+
+    | Entrada | Resultado anterior |
+    |---|---|
+    | «1,234.56» | `Some(1.23456)` |
+    | «(12,50)» | `Some(12.5)` |
+    | «−12,50» | `Some(12.5)` |
+    | «12,50-» | `None` (fila perdida) |
+    | «1.234.567» | `None` (fila perdida) |
+
+  - `chrono::NaiveDate::parse_from_str("05/11/26", "%d/%m/%Y")` → `Ok(0026-11-05)`: es el primer formato que probaba `parse_any_date`.
+  - Flujo anterior en red, con una prueba temporal que no queda en el repositorio: dos puestos que importan los mismos 2 movimientos en el puesto y los envían dejan el servidor de 3 a 7 movimientos (duplicados).
+- **Por lectura del código anterior (`dee610b`):**
+  - B1: solo se leían los registros 22 y 23.
+  - B3: la comprobación de repetidos incluía los movimientos recién añadidos del mismo extracto.
+  - B5: la primera columna que contenía «importe» era la de cargo.
+  - B7 y B8: `find` tomaba el primer cobro del importe, anulado o no, y no había regla para devoluciones a pacientes.
+  - B9: el panel marcaba el gasto como pagado y deshacer no lo devolvía.
+
+  Las pruebas nuevas describen el comportamiento correcto que el código anterior no tenía.
+- **Pruebas nuevas:**
+  - `bank::tests::norma43_with_several_accounts_and_control_totals`
+  - `bank::tests::a_cut_norma43_file_is_not_imported`
+  - `bank::tests::identical_moves_in_a_statement_are_all_kept_and_not_reimported`
+  - `bank::tests::statement_amounts_keep_their_sign_and_cents`
+  - `bank::tests::statement_tables_are_read_whole_or_not_at_all`
+  - `bank::tests::ambiguous_matches_are_left_for_the_user`
+  - `bank::tests::refunds_are_reconciled_and_cancelled_payments_are_not`
+  - `bank::tests::undoing_a_reconciliation_restores_what_it_changed`
+  - `bank::tests::undoing_a_remittance_match_uncollects_it`
+  - `bank::big_bank_tests::finding_doubtful_moves_in_a_big_clinic_is_quick`
+  - `server::tests::a_statement_imported_and_reconciled_by_two_stations_at_once_counts_once`
+  - `shared::tests::a_statement_imported_by_two_stations_counts_once_in_the_shared_folder`
+  - `ui_tests::a_doubtful_bank_move_is_chosen_by_hand_and_can_be_undone`
+- **Invariantes que siguen pasando:**
+  - `bank::tests::reconcile_transfer_cards_and_expense`
+  - `bank::tests::reconcile_a_remittance_with_a_returned_debit`
+  - `bank::tests::a_remittance_credited_without_the_returned_debits_is_reconciled`
+  - la prueba de remesas y devoluciones en red de `server::tests`
+- **Medición** del cálculo de movimientos dudosos (`bank::big_bank_tests`):
+  - Datos: 100.000 cobros sintéticos en 3 años, semilla 42, y 300 movimientos pendientes; perfil `dev` (optimizado con depuración), este equipo.
+  - Primera versión, recorriendo todos los cobros por movimiento: 682, 715, 681, 684 y 687 ms (5 ejecuciones).
+  - Con índices por importe y por día: 18, 14, 12, 14 y 12 ms.
+  - `match_candidates` de un movimiento: 12 ms.
+- **Capturas sintéticas:** `docs/autonomia/capturas/f1_area4_bancos_1280x800.png` y `docs/autonomia/capturas/f1_area4_bancos_1280x720.png`. La fecha se lee entera. A 720 px la página se desplaza en vertical.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 343 pasan, 0 fallan, 10 ignoradas |

@@ -877,6 +877,26 @@ pub enum ChainOp {
     },
     /// Conciliación automática del banco. Devuelve cuántos movimientos.
     Reconcile,
+    /// Extracto del banco: se añade sin repetir lo que ya hay, también si otro
+    /// puesto acaba de importarlo (devuelve cuántos movimientos son nuevos).
+    ImportBank {
+        account: u32,
+        moves: Vec<crate::bank::RawMove>,
+    },
+    /// Conciliación a mano de un movimiento del banco, si cuadra y nada de lo
+    /// elegido está ya conciliado.
+    MatchBank {
+        bank_move: u32,
+        with: crate::bank::Match,
+    },
+    /// Deshacer la conciliación de un movimiento, y lo que ella cambió.
+    UnmatchBank {
+        bank_move: u32,
+    },
+    /// Gasto nuevo con un cargo del banco, conciliado con él (devuelve el gasto).
+    BankExpense {
+        bank_move: u32,
+    },
     /// Cita pedida por internet: se apunta en la agenda (devuelve la cita) o se rechaza.
     Confirm {
         request: u32,
@@ -936,6 +956,10 @@ impl ChainOp {
                 Ok(id)
             }
             ChainOp::Reconcile => Ok(db.auto_reconcile() as u32),
+            ChainOp::ImportBank { account, moves } => db.import_bank_moves(*account, moves),
+            ChainOp::MatchBank { bank_move, with } => db.match_bank_move(*bank_move, with.clone()),
+            ChainOp::UnmatchBank { bank_move } => db.unmatch_bank_move(*bank_move),
+            ChainOp::BankExpense { bank_move } => db.expense_for_move(*bank_move),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
@@ -962,6 +986,14 @@ impl ChainOp {
             ChainOp::Returned { remittance, item, reason } => json!({ "accion": "recibo_devuelto", "remesa": remittance, "recibo": item, "motivo": reason }),
             ChainOp::Claim { tariff, from, to, date } => json!({ "accion": "liquidacion", "tarifa": tariff, "desde": from, "hasta": to, "fecha": date }),
             ChainOp::Reconcile => json!({ "accion": "conciliar" }),
+            ChainOp::ImportBank { account, moves } => json!({
+                "accion": "importar_extracto",
+                "cuenta": account,
+                "movimientos": moves.iter().map(|m| json!({ "fecha": m.date, "centimos": (m.amount * 100.0).round() as i64, "concepto": m.concept, "referencia": m.reference })).collect::<Vec<_>>(),
+            }),
+            ChainOp::MatchBank { bank_move, with } => json!({ "accion": "conciliar_movimiento", "movimiento": bank_move, "con": with }),
+            ChainOp::UnmatchBank { bank_move } => json!({ "accion": "deshacer_conciliacion", "movimiento": bank_move }),
+            ChainOp::BankExpense { bank_move } => json!({ "accion": "gasto_del_cargo", "movimiento": bank_move }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
@@ -990,6 +1022,10 @@ impl ChainOp {
             "recibo_devuelto" => ChainOp::Returned { remittance: num("remesa")?, item: num("recibo")? as usize, reason: text("motivo") },
             "liquidacion" => ChainOp::Claim { tariff: num("tarifa")?, from: date("desde")?, to: date("hasta")?, date: date("fecha")? },
             "conciliar" => ChainOp::Reconcile,
+            "importar_extracto" => ChainOp::ImportBank { account: num("cuenta")?, moves: bank_moves_json(&v["movimientos"])? },
+            "conciliar_movimiento" => ChainOp::MatchBank { bank_move: num("movimiento")?, with: bank_match_json(&v["con"])? },
+            "deshacer_conciliacion" => ChainOp::UnmatchBank { bank_move: num("movimiento")? },
+            "gasto_del_cargo" => ChainOp::BankExpense { bank_move: num("movimiento")? },
             "confirmar_cita" => ChainOp::Confirm { request: num("solicitud")? },
             "rechazar_cita" => ChainOp::Reject { request: num("solicitud")?, why: text("motivo") },
             "cobrar_cuota" => ChainOp::PayInstallment { budget: num("presupuesto")?, index: num("cuota")?, method: pay_method(&text("forma"))? },
@@ -1007,7 +1043,7 @@ impl ChainOp {
         const CHAIN: &[&str] = &["invoices", "vf_records", "entries", "patients", "config", "verifactu", "next_id"];
         const REMIT: &[&str] = &["remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
         const CLAIM: &[&str] = &["claims", "entries", "patients", "tariffs", "auths", "config", "audit_log", "next_id"];
-        const BANK: &[&str] = &["bank_moves", "expenses", "remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
+        const BANK: &[&str] = &["bank_moves", "bank_accounts", "expenses", "remittances", "budgets", "patients", "payments", "cash", "config", "audit_log", "next_id"];
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
         // el saldo del paciente sale de sus tratamientos y sus cobros
         const PAY: &[&str] = &["payments", "budgets", "remittances", "entries", "patients", "cash", "config", "audit_log", "next_id"];
@@ -1046,7 +1082,7 @@ impl ChainOp {
             ChainOp::Issue { .. } | ChainOp::Rectify { .. } | ChainOp::Correct { .. } | ChainOp::Cancel { .. } => (Some(Facturacion), CHAIN),
             ChainOp::Remit { .. } | ChainOp::Collected { .. } | ChainOp::Returned { .. } => (Some(Economia), REMIT),
             ChainOp::Claim { .. } => (Some(Facturacion), CLAIM),
-            ChainOp::Reconcile => (Some(Gastos), BANK),
+            ChainOp::Reconcile | ChainOp::ImportBank { .. } | ChainOp::MatchBank { .. } | ChainOp::UnmatchBank { .. } | ChainOp::BankExpense { .. } => (Some(Gastos), BANK),
             ChainOp::Confirm { .. } | ChainOp::Reject { .. } => (None, BOOKING),
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
@@ -1055,6 +1091,36 @@ impl ChainOp {
             ChainOp::MergePatients { .. } => (Some(Configuracion), MERGE),
         }
     }
+}
+
+/// Más movimientos que esto no trae un extracto: se importa por partes.
+const MAX_BANK_MOVES: usize = 50_000;
+
+/// Movimientos de un extracto que manda un puesto (acotados).
+fn bank_moves_json(v: &serde_json::Value) -> Result<Vec<crate::bank::RawMove>, String> {
+    let list = v.as_array().ok_or("Faltan los movimientos del extracto.")?;
+    if list.len() > MAX_BANK_MOVES {
+        return Err(format!("El extracto trae más de {MAX_BANK_MOVES} movimientos: impórtelo por partes."));
+    }
+    list.iter()
+        .map(|m| {
+            let date = m["fecha"].as_str().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()).ok_or("Un movimiento no tiene una fecha válida.")?;
+            let cents = m["centimos"].as_i64().filter(|c| c.abs() < 1_000_000_000_000).ok_or("Un movimiento no tiene un importe válido.")?;
+            let text = |k: &str| m[k].as_str().unwrap_or_default().chars().take(500).collect::<String>();
+            Ok(crate::bank::RawMove { date, amount: cents as f64 / 100.0, concept: text("concepto"), reference: text("referencia") })
+        })
+        .collect()
+}
+
+/// Con qué se concilia un movimiento, según lo manda un puesto (acotado).
+fn bank_match_json(v: &serde_json::Value) -> Result<crate::bank::Match, String> {
+    let m: crate::bank::Match = serde_json::from_value(v.clone()).map_err(|_| "Falta con qué se concilia el movimiento.")?;
+    if let crate::bank::Match::Payments(p) = &m
+        && p.len() > 5_000
+    {
+        return Err("Demasiados cobros en una conciliación.".into());
+    }
+    Ok(m)
 }
 
 /// Forma de pago de las que hay (las que llegan de un puesto se comprueban).

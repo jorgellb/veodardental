@@ -657,6 +657,42 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// En carpeta compartida, el extracto y la conciliación a mano se hacen
+    /// con el fichero bloqueado: dos puestos que importan el mismo extracto lo
+    /// añaden una vez y no concilian el mismo cobro dos veces.
+    #[test]
+    fn a_statement_imported_by_two_stations_counts_once_in_the_shared_folder() {
+        use crate::bank::{Match, RawMove};
+        let dir = std::env::temp_dir().join(format!("ds_shared_bank_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let day = NaiveDate::from_ymd_opt(2026, 11, 6).unwrap();
+        prepare_folder(&Db::sample(day), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        let (mut b, mut base_b) = load();
+        a.station = 1;
+        b.station = 2;
+        let before = a.bank_moves.len();
+        let mv = |c: &str| RawMove { date: day, amount: 57.0, concept: c.into(), reference: String::new() };
+        let moves = vec![mv("TRANSFERENCIA ANA"), mv("TRANSFERENCIA LUIS")];
+        assert_eq!(save_synced_with(&mut a, &mut base_a, &path, |db| db.import_bank_moves(1, &moves)).unwrap().1, Ok(2));
+        assert_eq!(save_synced_with(&mut b, &mut base_b, &path, |db| db.import_bank_moves(1, &moves)).unwrap().1, Ok(0));
+        let pid = a.add_payment(102, 57.0, "Transferencia", "Pago");
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        let (disk, _) = load();
+        assert_eq!(disk.bank_moves.len(), before + 2);
+        let id = |c: &str| disk.bank_moves.iter().find(|m| m.concept == c).unwrap().id;
+        assert!(save_synced_with(&mut a, &mut base_a, &path, |db| db.match_bank_move(id("TRANSFERENCIA ANA"), Match::Payments(vec![pid]))).unwrap().1.is_ok());
+        let second = save_synced_with(&mut b, &mut base_b, &path, |db| db.match_bank_move(id("TRANSFERENCIA LUIS"), Match::Payments(vec![pid]))).unwrap().1;
+        assert!(second.unwrap_err().contains("con otro movimiento"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn stock_moves_made_by_two_stations_at_once_are_all_counted() {
         let dir = std::env::temp_dir().join(format!("ds_shared_stock_{}", std::process::id()));

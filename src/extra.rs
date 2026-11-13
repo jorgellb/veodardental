@@ -200,14 +200,36 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
     None
 }
 
+/// Importe escrito como lo exportan bancos y hojas de cálculo:
+/// - «1.234,56», «1,234.56», «1234.56» o «12,5»;
+/// - en negativo, «-12,50», «12,50-», «(12,50)» o con el signo menos tipográfico;
+/// - con símbolo de moneda o espacios.
+///
+/// Con un solo separador que se repite («1.234.567»), son miles. Con uno que
+/// no se repite, es el decimal (como antes).
 pub fn parse_money(s: &str) -> Option<f64> {
-    let t: String = s.chars().filter(|c| c.is_ascii_digit() || *c == ',' || *c == '.' || *c == '-').collect();
-    if t.is_empty() {
+    let s = s.trim();
+    let first = s.find(|c: char| c.is_ascii_digit())?;
+    let last = s.rfind(|c: char| c.is_ascii_digit())?;
+    let (before, after) = (&s[..first], &s[last + 1..]);
+    let minus = |x: &str| x.contains(['-', '−']);
+    let neg = minus(before) || minus(after) || (before.contains('(') && after.contains(')'));
+    // entre las cifras solo separadores (no una fecha ni dos números)
+    let inner = &s[first..=last];
+    if !inner.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '.' | ' ' | '\u{a0}' | '\u{202f}')) {
         return None;
     }
-    // 1.234,56 → 1234.56 ; 1234.56 → 1234.56
-    let t = if t.contains(',') { t.replace('.', "").replace(',', ".") } else { t };
-    t.parse().ok()
+    let t: String = inner.chars().filter(|c| c.is_ascii_digit() || *c == ',' || *c == '.').collect();
+    let t = match (t.rfind(','), t.rfind('.')) {
+        (Some(c), Some(d)) if c > d => t.replace('.', "").replace(',', "."),
+        (Some(_), Some(_)) => t.replace(',', ""),
+        (Some(_), None) if t.matches(',').count() > 1 => t.replace(',', ""),
+        (Some(_), None) => t.replace(',', "."),
+        (None, Some(_)) if t.matches('.').count() > 1 => t.replace('.', ""),
+        _ => t,
+    };
+    let v: f64 = t.parse().ok()?;
+    Some(if neg { -v } else { v })
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -899,6 +921,35 @@ impl Db {
         if let Some(x) = self.remittances.iter_mut().find(|x| x.id == rid) {
             x.state = RemState::Cobrada;
         }
+        Ok(())
+    }
+
+    /// Deshace «remesa cobrada» (la marcó por error una conciliación del
+    /// banco). Los cobros que se apuntaron se anulan con otro en negativo, sin
+    /// borrarlos, y las cuotas vuelven a estar pendientes. Los recibos
+    /// devueltos ya tienen su devolución y no se tocan.
+    pub fn remittance_uncollected(&mut self, rid: u32, why: &str) -> Result<(), String> {
+        let r = self.remittances.iter().find(|r| r.id == rid).cloned().ok_or("Remesa no encontrada")?;
+        if r.state != RemState::Cobrada {
+            return Ok(());
+        }
+        let mut voided: std::collections::HashSet<u32> = self.payments.iter().filter_map(|p| p.cancels).collect();
+        for it in r.items.iter().filter(|i| i.returned.is_none()) {
+            let concept = format!("Cuota {} remesa SEPA #{}", it.installment + 1, rid);
+            let paid = self.payments.iter().find(|p| p.patient_id == it.patient_id && p.method == "Domiciliación" && p.concept == concept && p.cancels.is_none() && !voided.contains(&p.id)).cloned();
+            if let Some(p) = paid {
+                let back = self.add_payment(p.patient_id, -p.amount, "Domiciliación", &format!("Anulación del recibo {}: {why}", p.receipt_no));
+                if let Some(x) = self.payments.iter_mut().find(|x| x.id == back) {
+                    x.cancels = Some(p.id);
+                }
+                voided.insert(p.id);
+            }
+            self.set_installment_paid(it.budget_id, it.installment, false);
+        }
+        if let Some(x) = self.remittances.iter_mut().find(|x| x.id == rid) {
+            x.state = RemState::Generada;
+        }
+        self.audit("Remesa sin cobrar", &format!("remesa #{rid} · {why}"));
         Ok(())
     }
 

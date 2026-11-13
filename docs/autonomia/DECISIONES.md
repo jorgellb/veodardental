@@ -37,3 +37,18 @@ Se avisa cuando la lista de la AEMPS cargada tiene más de 60 días (`nomenclato
 ## D-08 Quién puede recetar
 `Db::prescriber_problem` reconoce a quien no puede recetar por la especialidad del colaborador: higienista, auxiliar, protésico, recepción o administración. Además exige el nº de colegiado y que el colaborador esté de alta.
 No se añade un campo nuevo: la especialidad ya existe y los datos guardados siguen valiendo sin migración.
+
+## D-09 Banco en el servidor
+Importar un extracto, conciliar a mano, deshacer y crear el gasto de un cargo pasan a ser operaciones `ChainOp`, como ya lo era la conciliación automática. En red las hace el servidor y en la carpeta compartida se hacen con el fichero bloqueado, siempre con los datos al día. Así, dos puestos no duplican un extracto ni concilian dos veces lo mismo. Usan el permiso «Gastos», el mismo que la conciliación automática.
+
+## D-10 Deshacer una remesa cobrada por la conciliación
+Si fue la conciliación la que marcó la remesa como cobrada, deshacerla la devuelve a «generada»:
+- sus cobros se anulan con otro en negativo (`cancels`), sin borrarlos;
+- las cuotas vuelven a pendientes.
+
+Si ya estaba cobrada antes de conciliar, no se toca. Se prefiere esto a dejarla cobrada sin un abono del banco que lo respalde.
+
+## D-11 Importes con un solo separador
+`parse_money` toma como decimal el separador que va último cuando hay dos («1.234,56», «1,234.56»), y como miles el que se repite. Con uno solo que no se repite, sigue siendo el decimal, como antes («12,5», «94.25»).
+
+«1.500» queda ambiguo y se lee como 1,5. Los bancos exportan con decimales, así que no se adivina por columna.

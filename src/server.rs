@@ -2699,6 +2699,60 @@ mod tests {
         h.join().unwrap();
     }
 
+    /// Dos puestos importan el mismo extracto a la vez: el servidor lo añade
+    /// una vez. Y no concilian dos veces lo mismo, ni deshacen dos veces, ni
+    /// crean dos gastos con el mismo cargo.
+    #[test]
+    fn a_statement_imported_and_reconciled_by_two_stations_at_once_counts_once() {
+        use crate::app::ChainOp;
+        use crate::bank::{Match, RawMove};
+        let (addr, path, h) = start("CLAVE31");
+        let ra = signed_in(&addr, "CLAVE31", "Administración", 1, "0000");
+        let rb = signed_in(&addr, "CLAVE31", "Dirección", 1, "0000");
+        let rc = signed_in(&addr, "CLAVE31", "Recepción", 2, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        let (mut b, mut sb) = rb.load().unwrap();
+        let (mut c, mut sc) = rc.load().unwrap();
+        a.station = ra.station;
+        b.station = rb.station;
+        c.station = rc.station;
+        let before = crate::sync::on_disk(&path).bank_moves.len();
+        let day = crate::model::today();
+        let mv = |c: &str, amount: f64| RawMove { date: day, amount, concept: c.into(), reference: String::new() };
+        // dos transferencias iguales el mismo día son dos
+        let import = ChainOp::ImportBank { account: 1, moves: vec![mv("TRANSFERENCIA ANA", 57.0), mv("TRANSFERENCIA ANA", 57.0), mv("COMISION", -12.34)] }.json();
+        assert_eq!(ra.chain_op(&mut a, &mut sa, &import).unwrap(), 3);
+        assert_eq!(rb.chain_op(&mut b, &mut sb, &import).unwrap(), 0, "el otro puesto no lo tenía aún, y no lo repite");
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.bank_moves.len(), before + 3);
+        assert_eq!(b.bank_moves.len(), before + 3, "y lo ve");
+        // el mismo cobro con dos movimientos distintos desde dos puestos: el segundo, no
+        let pid = a.add_payment(102, 57.0, "Transferencia", "Pago");
+        ra.push(&mut a, &mut sa).unwrap();
+        let ids: Vec<u32> = disk.bank_moves.iter().filter(|m| m.concept == "TRANSFERENCIA ANA").map(|m| m.id).collect();
+        let pick = |i: usize| ChainOp::MatchBank { bank_move: ids[i], with: Match::Payments(vec![pid]) }.json();
+        ra.chain_op(&mut a, &mut sa, &pick(0)).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &pick(1)).unwrap_err().contains("con otro movimiento"));
+        let undo = ChainOp::UnmatchBank { bank_move: ids[0] }.json();
+        ra.chain_op(&mut a, &mut sa, &undo).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &undo).unwrap_err().contains("no está conciliado"), "no se deshace dos veces");
+        // un gasto con un cargo, una vez
+        let fee = disk.bank_moves.iter().find(|m| m.concept == "COMISION").unwrap().id;
+        let expense = ChainOp::BankExpense { bank_move: fee }.json();
+        ra.chain_op(&mut a, &mut sa, &expense).unwrap();
+        assert!(rb.chain_op(&mut b, &mut sb, &expense).unwrap_err().contains("ya está conciliado"));
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.expenses.iter().filter(|e| e.concept == "COMISION").count(), 1);
+        // lo que llega mal se rechaza, y Recepción no lleva el banco
+        assert!(rc.chain_op(&mut c, &mut sc, &import).unwrap_err().contains("banco"));
+        assert!(rb.chain_op(&mut b, &mut sb, &json!({ "accion": "importar_extracto", "cuenta": 1, "movimientos": [{ "fecha": "2026-11-05", "centimos": 1.5 }] })).is_err());
+        assert!(rb.chain_op(&mut b, &mut sb, &json!({ "accion": "importar_extracto", "cuenta": 99, "movimientos": [{ "fecha": "2026-11-05", "centimos": 150 }] })).unwrap_err().contains("cuenta"));
+        assert!(rb.chain_op(&mut b, &mut sb, &json!({ "accion": "conciliar_movimiento", "movimiento": ids[1], "con": { "Otro": "" } })).is_err());
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
     #[test]
     fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
         use crate::app::ChainOp;

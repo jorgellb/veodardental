@@ -2406,3 +2406,48 @@ fn the_chart_completes_planned_treatments_and_can_undo_them() {
     let e = h.state().db.entries.iter().find(|e| e.id == planned).unwrap().clone();
     assert_eq!((e.state, e.budget_id), (crate::model::TxState::Previsto, Some(4242)));
 }
+
+/// Bancos: un movimiento que casa con dos cobros no se concilia solo; se
+/// ofrecen los dos, se elige uno y se puede deshacer (todo con el servidor
+/// o el fichero bloqueado, como en la clínica).
+#[test]
+fn a_doubtful_bank_move_is_chosen_by_hand_and_can_be_undone() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let (id, p1) = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Bancos;
+        let p1 = a.db.add_payment(102, 57.0, "Transferencia", "Pago");
+        a.db.add_payment(103, 57.0, "Transferencia", "Pago");
+        let today = a.today;
+        a.db.add_bank_moves(1, &[crate::bank::RawMove { date: today, amount: 57.0, concept: "TRANSFERENCIA RECIBIDA".into(), reference: String::new() }]);
+        let id = a.db.bank_moves.iter().find(|m| m.concept == "TRANSFERENCIA RECIBIDA").unwrap().id;
+        a.bank.selected = Some(id);
+        (id, p1)
+    };
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("⟳ Conciliar automáticamente").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().db.bank_moves.iter().find(|m| m.id == id).unwrap().matched.is_none(), "dos cobros posibles: no se concilia solo");
+    assert_eq!(h.state().db.doubtful_moves(), vec![id]);
+    h.get_by_label("Elija con qué se concilia");
+    let receipt = h.state().db.payments.iter().find(|p| p.id == p1).unwrap().receipt_no.clone();
+    h.get_by_label_contains(&receipt).click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.bank_moves.iter().find(|m| m.id == id).unwrap().matched, Some(crate::bank::Match::Payments(vec![p1])));
+    h.get_by_label("Deshacer conciliación").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().db.bank_moves.iter().find(|m| m.id == id).unwrap().matched.is_none());
+}

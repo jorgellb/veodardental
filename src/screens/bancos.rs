@@ -21,7 +21,9 @@ impl Default for BankUi {
     }
 }
 
-fn read_statement(path: &str) -> Result<Vec<RawMove>, String> {
+/// Movimientos del extracto para la cuenta con este IBAN (un Norma 43 puede
+/// traer varias cuentas).
+fn read_statement(path: &str, iban: &str) -> Result<Vec<RawMove>, String> {
     let lower = path.to_lowercase();
     let head = std::fs::read(path).map_err(|e| format!("No se puede leer el fichero: {e}"))?;
     let looks_n43 = head.starts_with(b"11") && (lower.ends_with(".n43") || lower.ends_with(".aeb") || lower.ends_with(".txt") || lower.ends_with(".q43") || !lower.contains('.'));
@@ -30,7 +32,7 @@ fn read_statement(path: &str) -> Result<Vec<RawMove>, String> {
             Ok(t) => t,
             Err(_) => head.iter().map(|&b| b as char).collect(),
         };
-        parse_norma43(&text)
+        parse_norma43_for(&text, iban)
     } else {
         let sheet = crate::extra::read_table(path)?;
         parse_bank_table(&sheet)
@@ -48,6 +50,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
     let acc = app.bank.account;
     let moves: Vec<BankMove> = app.db.bank_moves.iter().filter(|m| m.account_id == acc).cloned().collect();
     let pending = moves.iter().filter(|m| m.matched.is_none()).count();
+    let doubtful: Vec<u32> = app.db.doubtful_moves();
     let w = kpi_w(ui, 3);
     ui.horizontal(|ui| {
         kpi(ui, w, "Saldo según extracto", &money(app.db.bank_balance(acc)), "saldo inicial + movimientos", ACCENT);
@@ -74,26 +77,63 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                     app.dirty = true;
                 }
             }
+            if ui.button("+ Nueva cuenta").clicked() {
+                let id = app.db.new_id();
+                let n = app.db.bank_accounts.len() + 1;
+                app.db.bank_accounts.push(BankAccount { id, name: format!("Cuenta {n}"), iban: String::new(), opening_balance: 0.0 });
+                app.bank.account = id;
+                app.dirty = true;
+            }
         });
+        // un extracto Norma 43 puede traer varias cuentas: se importa la de este IBAN
+        if let Some(a) = app.db.bank_accounts.iter_mut().find(|a| a.id == acc) {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Nombre");
+                if ui.add(egui::TextEdit::singleline(&mut a.name).desired_width(200.0)).changed() {
+                    app.dirty = true;
+                }
+                ui.label("IBAN");
+                if ui.add(egui::TextEdit::singleline(&mut a.iban).desired_width(260.0).hint_text("ES00 0000 0000 0000 0000 0000")).changed() {
+                    app.dirty = true;
+                }
+                if !a.iban.trim().is_empty() && !crate::extra::iban_valid(&a.iban) {
+                    ui.label(RichText::new("IBAN no válido").color(DANGER));
+                }
+            });
+        }
         ui.horizontal(|ui| {
             ui.add_sized([ui.available_width() - 420.0, 34.0], egui::TextEdit::singleline(&mut app.bank.path).hint_text("Extracto del banco: fichero Norma 43 (.n43/.txt) o Excel/CSV"));
             if primary(ui, "Importar extracto").clicked() {
                 let p = app.bank.path.trim().trim_matches('"').to_string();
-                match read_statement(&p) {
+                let iban = app.db.bank_accounts.iter().find(|a| a.id == acc).map(|a| a.iban.clone()).unwrap_or_default();
+                match read_statement(&p, &iban) {
                     Ok(v) => {
-                        let (a, d) = app.db.add_bank_moves(acc, &v);
-                        app.changed();
-                        match app.chain_op(crate::app::ChainOp::Reconcile) {
-                            Ok(c) => app.notify(format!("{a} movimientos importados ({d} ya estaban) · {c} conciliados automáticamente")),
-                            Err(e) => app.warn(format!("{a} movimientos importados ({d} ya estaban), pero no se han podido conciliar: {e}")),
+                        let total = v.len();
+                        // en el servidor (o con el fichero compartido bloqueado): sin repetir lo que ya hay
+                        match app.chain_op(crate::app::ChainOp::ImportBank { account: acc, moves: v }) {
+                            Ok(a) => {
+                                let d = total.saturating_sub(a as usize);
+                                match app.chain_op(crate::app::ChainOp::Reconcile) {
+                                    Ok(c) => {
+                                        let n = app.db.doubtful_moves().len();
+                                        let doubt = if n > 0 { format!(" · {n} dudosos: elija con qué conciliarlos") } else { String::new() };
+                                        app.notify(format!("{a} movimientos importados ({d} ya estaban) · {c} conciliados automáticamente{doubt}"))
+                                    }
+                                    Err(e) => app.warn(format!("{a} movimientos importados ({d} ya estaban), pero no se han podido conciliar: {e}")),
+                                }
+                            }
+                            Err(e) => app.warn(e),
                         }
                     }
                     Err(e) => app.warn(e),
                 }
             }
-            if ui.button("⟳ Conciliar automáticamente").clicked() {
+            if ui.button("⟳ Conciliar automáticamente").on_hover_text("Solo lo que casa sin duda; lo dudoso queda para elegirlo").clicked() {
                 match app.chain_op(crate::app::ChainOp::Reconcile) {
-                    Ok(c) => app.notify(format!("{c} movimientos conciliados")),
+                    Ok(c) => {
+                        let n = app.db.doubtful_moves().len();
+                        app.notify(if n > 0 { format!("{c} movimientos conciliados · {n} dudosos: elija con qué conciliarlos") } else { format!("{c} movimientos conciliados") })
+                    }
                     Err(e) => app.warn(e),
                 }
             }
@@ -101,7 +141,8 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(8.0);
     let avail = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 6.0);
-    let side = 400.0;
+    // a 1280 px de ancho, un panel más estrecho para que la fecha se lea entera
+    let side = if avail < 1100.0 { 340.0 } else { 400.0 };
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(avail - side - 24.0);
@@ -115,7 +156,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                         app.bank.filter_pending = false;
                     }
                 });
-                let tbl = Table::new("bmv", vec![("Fecha", 96.0), ("Concepto", 280.0), ("Importe", 110.0), ("Conciliado con", 260.0)]);
+                let tbl = Table::new("bmv", vec![("Fecha", 110.0), ("Concepto", 240.0), ("Importe", 110.0), ("Conciliado con", 220.0)]);
                 tbl.header(ui);
                 let mut list: Vec<BankMove> = moves.iter().filter(|m| !app.bank.filter_pending || m.matched.is_none()).cloned().collect();
                 list.sort_by_key(|m| std::cmp::Reverse((m.date, m.id)));
@@ -125,7 +166,11 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                 let mut pick = None;
                 egui::ScrollArea::vertical().id_salt("bml").max_height(440.0).show(ui, |ui| {
                     for (i, m) in list.iter().enumerate() {
-                        let desc = m.matched.as_ref().map(|x| app.db.describe_match(x)).unwrap_or_else(|| "— pendiente —".into());
+                        let desc = match &m.matched {
+                            Some(x) => app.db.describe_match(x),
+                            None if doubtful.contains(&m.id) => "— dudoso: elija con qué —".into(),
+                            None => "— pendiente —".into(),
+                        };
                         if tbl
                             .row(ui, i, app.bank.selected == Some(m.id), &[cell(fmt_date(m.date)), cell(&m.concept), cellc(money(m.amount), if m.amount < 0.0 { DANGER } else { OK }), cellc(desc, if m.matched.is_some() { TEXT } else { WARN })])
                             .clicked()
@@ -147,6 +192,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
 }
 
 fn detail(app: &mut App, ui: &mut Ui) {
+    use crate::app::ChainOp;
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         let Some(id) = app.bank.selected else {
@@ -158,71 +204,51 @@ fn detail(app: &mut App, ui: &mut Ui) {
         section(ui, &money(m.amount));
         muted(ui, format!("{} · {}", fmt_date(m.date), m.concept));
         ui.add_space(6.0);
-        let mut set: Option<Option<Match>> = None;
+        let mut op: Option<ChainOp> = None;
         if let Some(cur) = &m.matched {
             ui.label(RichText::new(format!("✔ {}", app.db.describe_match(cur))).color(OK));
-            if ui.button("Deshacer conciliación").clicked() {
-                set = Some(None);
+            let undo_hint = match cur {
+                Match::Remittance(_) if m.set_by_match => "La remesa vuelve a estar sin cobrar: sus cobros se anulan (quedan en el historial) y las cuotas vuelven a pendientes.",
+                Match::Expense(_) if m.set_by_match => "El gasto vuelve a estar pendiente de pago.",
+                _ => "El movimiento vuelve a pendiente de conciliar.",
+            };
+            if ui.button("Deshacer conciliación").on_hover_text(undo_hint).clicked() {
+                op = Some(ChainOp::UnmatchBank { bank_move: id });
             }
         } else {
-            section(ui, "Sugerencias");
-            let mut any = false;
-            if m.amount > 0.0 {
-                let cands: Vec<(u32, String)> = app
-                    .db
-                    .payments
-                    .iter()
-                    .filter(|p| (p.amount - m.amount).abs() < 0.005 && (p.date.date() - m.date).num_days().abs() <= 15)
-                    .map(|p| (p.id, format!("{} · {} · {} · {}", fmt_date(p.date.date()), app.db.patient_name(p.patient_id), p.method, p.receipt_no)))
-                    .collect();
-                for (pid, label) in cands {
-                    any = true;
-                    if ui.button(label).clicked() {
-                        set = Some(Some(Match::Payments(vec![pid])));
-                    }
+            let cands = app.db.match_candidates(id);
+            section(ui, if cands.len() > 1 { "Elija con qué se concilia" } else { "Sugerencias" });
+            if cands.len() > 1 {
+                muted(ui, "Hay varias posibilidades con ese importe: no se concilia sola.");
+            }
+            for (c, label) in &cands {
+                if ui.add(egui::Button::new(label).wrap()).clicked() {
+                    op = Some(ChainOp::MatchBank { bank_move: id, with: c.clone() });
                 }
+            }
+            if cands.is_empty() {
+                muted(ui, if m.amount > 0.0 { "No hay cobros con ese importe." } else { "No hay gastos ni devoluciones con ese importe." });
+            }
+            ui.add_space(4.0);
+            if m.amount > 0.0 {
                 if ui.button("Otro ingreso (no es de un paciente)").clicked() {
-                    set = Some(Some(Match::Other("Otro ingreso".into())));
+                    op = Some(ChainOp::MatchBank { bank_move: id, with: Match::Other("Otro ingreso".into()) });
                 }
             } else {
-                let cands: Vec<(u32, String)> = app.db.expenses.iter().filter(|e| (e.total() + m.amount).abs() < 0.005).map(|e| (e.id, format!("{} · {} · {}", fmt_date(e.date), e.supplier, e.concept))).collect();
-                for (eid, label) in cands {
-                    any = true;
-                    if ui.button(label).clicked() {
-                        set = Some(Some(Match::Expense(eid)));
-                        if let Some(e) = app.db.expenses.iter_mut().find(|e| e.id == eid) {
-                            e.paid = true;
-                        }
-                    }
-                }
                 if primary(ui, "Crear gasto con este cargo").on_hover_text("Apunta el cargo en el libro de gastos (p. ej. comisiones o recibos)").clicked() {
-                    let eid = app.db.new_id();
-                    app.db.expenses.push(crate::finance::Expense {
-                        id: eid,
-                        date: m.date,
-                        supplier: m.concept.chars().take(40).collect(),
-                        concept: m.concept.clone(),
-                        category: "Otros".into(),
-                        base: round2(-m.amount),
-                        vat_pct: 0.0,
-                        invoice_no: m.reference.clone(),
-                        method: "Domiciliación".into(),
-                        paid: true,
-                        due: None,
-                    });
-                    set = Some(Some(Match::Expense(eid)));
+                    op = Some(ChainOp::BankExpense { bank_move: id });
                 }
-            }
-            if !any {
-                muted(ui, "No hay cobros o gastos con ese importe.");
+                if ui.button("Traspaso u otro cargo (no es un gasto)").clicked() {
+                    op = Some(ChainOp::MatchBank { bank_move: id, with: Match::Other("Traspaso u otro cargo".into()) });
+                }
             }
         }
-        if let Some(v) = set {
-            if let Some(x) = app.db.bank_moves.iter_mut().find(|x| x.id == id) {
-                x.matched = v;
-            }
-            app.db.audit("Conciliación manual", &format!("{} {}", fmt_date(m.date), money(m.amount)));
-            app.changed();
+        // en el servidor (o con el fichero compartido bloqueado): lo que otro
+        // puesto acaba de conciliar no se concilia dos veces
+        if let Some(op) = op
+            && let Err(e) = app.chain_op(op)
+        {
+            app.warn(e);
         }
     });
 }
