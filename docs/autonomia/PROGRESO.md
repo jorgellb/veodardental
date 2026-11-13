@@ -23,7 +23,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `7fd53f0` |
 | T-F1-A6: comunicaciones | E-012 | `cdddd05` |
 | T-F1-A7: ortodoncia | E-013 | `d0c52f4` |
-| T-F1-A8: IA de radiografías | E-014 | (este lote) |
+| T-F1-A8: IA de radiografías | E-014 | `6e2a560` |
 
 ## Siguiente acción
 1. T-F1-A9: cita online y portales.
