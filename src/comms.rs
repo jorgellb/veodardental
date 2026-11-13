@@ -351,7 +351,8 @@ impl Db {
 
     fn contact(&self, pid: u32, ch: Channel) -> Option<String> {
         let p = self.patient(pid)?;
-        if !p.accepts_gdpr {
+        // sin consentimiento, o con el tratamiento limitado o los datos bloqueados: nada
+        if !p.accepts_gdpr || p.restricted.is_some() || p.blocked.is_some() {
             return None;
         }
         match ch {

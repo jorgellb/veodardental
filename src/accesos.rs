@@ -62,15 +62,23 @@ fn sha(s: &str) -> String {
     ring::digest::digest(&ring::digest::SHA256, s.as_bytes()).as_ref().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Última línea del fichero (leyendo solo el final).
-fn last_line(path: &Path) -> Option<String> {
-    let mut f = std::fs::File::open(path).ok()?;
-    let len = f.metadata().ok()?.len();
-    let start = len.saturating_sub(64 * 1024);
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut buf = String::new();
-    f.read_to_string(&mut buf).ok()?;
-    buf.lines().rev().find(|l| !l.trim().is_empty()).map(String::from)
+/// Última línea completa del fichero (leyendo solo el final, como bytes).
+/// `Ok(None)`: no hay fichero o está vacío. Si hay algo pero no se puede leer
+/// la última línea, es un error: la cadena no se rompe en silencio.
+fn last_line(path: &Path) -> Result<Option<String>, String> {
+    let Ok(mut f) = std::fs::File::open(path) else { return Ok(None) };
+    let len = f.metadata().map_err(|e| e.to_string())?.len();
+    if len == 0 {
+        return Ok(None);
+    }
+    let start = len.saturating_sub(256 * 1024);
+    f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    let line = buf.split(|b| *b == b'\n').rev().find(|l| !l.iter().all(|b| b.is_ascii_whitespace())).ok_or("El registro de accesos no se puede leer.")?;
+    let text = std::str::from_utf8(line).map_err(|_| "La última línea del registro de accesos está dañada.".to_string())?;
+    serde_json::from_str::<Entry>(text).map_err(|_| "La última línea del registro de accesos está dañada.".to_string())?;
+    Ok(Some(text.to_string()))
 }
 
 /// Añade una entrada al final, encadenada con la anterior.
@@ -78,27 +86,34 @@ pub fn append(path: &Path, mut e: Entry) -> Result<(), String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    e.prev = last_line(path).map(|l| sha(&l)).unwrap_or_default();
+    e.prev = last_line(path)?.map(|l| sha(&l)).unwrap_or_default();
     let mut line = serde_json::to_string(&e).map_err(|e| e.to_string())?;
     line.push('\n');
     let mut f = crate::paths::append_private(path).map_err(|e| format!("No se puede abrir el registro de accesos: {e}"))?;
     f.write_all(line.as_bytes()).and_then(|_| f.sync_data()).map_err(|e| format!("No se pudo apuntar el acceso: {e}"))
 }
 
-/// Comprueba que no falta ni se ha cambiado ninguna línea. Devuelve cuántas hay.
+/// Comprueba que no falta ni se ha cambiado ninguna línea. Devuelve cuántas
+/// hay; si no, dice todas las líneas rotas (no solo la primera).
 pub fn verify(path: &Path) -> Result<usize, String> {
     let Ok(text) = std::fs::read_to_string(path) else { return Ok(0) };
     let mut prev = String::new();
     let mut n = 0;
+    let mut broken = vec![];
     for (i, l) in text.lines().filter(|l| !l.trim().is_empty()).enumerate() {
-        let e: Entry = serde_json::from_str(l).map_err(|_| format!("La línea {} del registro de accesos está dañada.", i + 1))?;
-        if e.prev != prev {
-            return Err(format!("El registro de accesos se ha tocado: la línea {} no sigue a la anterior.", i + 1));
+        match serde_json::from_str::<Entry>(l) {
+            Ok(e) if e.prev == prev => {}
+            _ => broken.push(i + 1),
         }
         prev = sha(l);
         n += 1;
     }
-    Ok(n)
+    if broken.is_empty() {
+        Ok(n)
+    } else {
+        let list: Vec<String> = broken.iter().map(|b| b.to_string()).collect();
+        Err(format!("El registro de accesos se ha tocado: no siguen a la anterior las líneas {}.", list.join(", ")))
+    }
 }
 
 /// Las entradas (de un paciente, o todas), de la más reciente a la más antigua.
@@ -190,9 +205,12 @@ mod tests {
         let text = std::fs::read_to_string(&f).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         std::fs::write(&f, format!("{}\n{}\n", lines[0], lines[2])).unwrap();
-        assert!(verify(&f).unwrap_err().contains("línea 2"));
+        assert!(verify(&f).unwrap_err().contains("líneas 2"));
         std::fs::write(&f, text.replace("Recepción", "Otra")).unwrap();
-        assert!(verify(&f).is_err());
+        assert!(verify(&f).unwrap_err().contains("líneas 2, 3"), "dice todas las rotas");
+        // con la última línea ilegible, no se apunta nada (no se empieza otra cadena)
+        std::fs::write(&f, format!("{text}{{dañada\n")).unwrap();
+        assert!(append(&f, entry(103, Action::Consulta, "Ficha")).unwrap_err().contains("dañada"));
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -998,10 +998,13 @@ impl State {
                 (k, s)
             })
             .collect();
-        // de quién es cada historia que se cambia (para el registro de accesos)
-        let history = crate::accesos::patients_touched(&changes);
         let applied = sync::apply(&mut self.snap, &changes)?;
         let (mut touched, mut previous) = (applied.touched, applied.previous);
+        // de quién es cada historia que se cambia (para el registro de accesos),
+        // con lo que había y lo que queda en el servidor, no con lo que diga el puesto
+        let server_side: Vec<Change> =
+            touched.iter().map(|(f, k)| Change { field: f.clone(), key: k.clone(), before: previous.iter().find(|p| &p.0 == f && &p.1 == k).and_then(|p| p.2.clone()), after: self.snap.get(f, k.as_deref()).cloned() }).collect();
+        let history = crate::accesos::patients_touched(&server_side);
         // si algo falla a partir de aquí, se deshace todo
         let rest = (|| -> Result<(), String> {
             // dos puestos que dan de alta pacientes a la vez sacan el mismo número de
@@ -1049,6 +1052,7 @@ impl State {
             sync::undo(&mut self.snap, previous);
             return Err(e);
         }
+        let station = self.session_station(user).unwrap_or(station);
         self.note_history(user, station, crate::accesos::Action::Modificacion, history);
         Ok(sent)
     }
@@ -1067,7 +1071,14 @@ impl State {
 
     /// Un puesto avisa de que su usuario consulta una historia: el servidor lo
     /// apunta con el usuario de la sesión (no con el que diga el puesto).
-    fn history_access(&mut self, req: &Request, me: u32, station: u32) -> Response {
+    /// Puesto de la sesión abierta de un usuario (el que quedó al entrar, no el
+    /// que diga cada petición).
+    fn session_station(&self, user: u32) -> Option<u32> {
+        self.sessions.values().filter(|s| s.user == user).max_by_key(|s| s.last_used).map(|s| s.station)
+    }
+
+    fn history_access(&mut self, req: &Request, me: u32) -> Response {
+        let station = req.header("X-Sesion").map(token_hash).and_then(|h| self.sessions.get(&h)).map(|s| s.station).unwrap_or(0);
         let v: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
         let Some(patient) = v["paciente"].as_u64().map(|n| n as u32) else { return error(400, "Falta «paciente».") };
         if self.snap.get("patients", Some(&patient.to_string())).is_none() {
@@ -1530,7 +1541,7 @@ impl State {
                         Err(e) => error(400, &e),
                     },
                     ("POST", "/cadena") => self.chain_op(req, me),
-                    ("POST", "/historia") => self.history_access(req, me, station),
+                    ("POST", "/historia") => self.history_access(req, me),
                     ("GET", "/historia") => self.history_read(req, me),
                     ("POST", "/contrasena") => self.set_pin(req, me),
                     ("POST", "/movil") => self.totp(req, me),
@@ -2630,6 +2641,22 @@ mod tests {
         let e = d.entries.iter_mut().find(|e| e.patient_id == 101).unwrap();
         e.notes = secret.into();
         dir.push(&mut d, &mut sd).unwrap();
+        // el puesto que dice ser otro (cabecera X-Puesto) queda con el de su sesión
+        let mut liar = rec.clone();
+        liar.station = 99;
+        liar.note_access(102, "Recetas").unwrap();
+        // un cambio con un «antes» falso que nombra a otro paciente: cuenta lo del servidor
+        let target = d.entries.iter().find(|e| e.patient_id == 101).unwrap().clone();
+        let mut fake_before = serde_json::to_value(&target).unwrap();
+        fake_before["patient_id"] = json!(103);
+        let mut after = target.clone();
+        after.notes = "otra nota".into();
+        let body = json!({ "cambios": [{ "campo": "entries", "clave": target.id.to_string(), "antes": fake_before.to_string(), "ahora": serde_json::to_string(&after).unwrap() }] });
+        dir.post(&format!("/cambios?base={}", d.rev), &body.to_string()).unwrap();
+        let (l103, _) = dir.history_log(103).unwrap();
+        assert!(l103.is_empty(), "no se atribuye a otro paciente: {l103:?}");
+        let (l102, _) = dir.history_log(102).unwrap();
+        assert!(l102.iter().all(|e| e.station != 99 && e.station == rec.station), "{l102:?}");
         // solo Dirección lo lee
         assert!(rec.history_log(101).unwrap_err().contains("Solo Dirección"));
         let (list, integrity) = dir.history_log(101).unwrap();
@@ -2638,11 +2665,12 @@ mod tests {
         assert_eq!(reads.len(), 1, "la consulta repetida no se apunta dos veces: {list:?}");
         assert_eq!((reads[0].user.as_str(), reads[0].user_id, reads[0].context.as_str()), ("Recepción", 2, "Citas"));
         assert!(list.iter().any(|e| e.action == crate::accesos::Action::Modificacion && e.user_id == 1 && e.context == "tratamientos"), "{list:?}");
+        assert_eq!(list.iter().filter(|e| e.action == crate::accesos::Action::Modificacion).count(), 2, "las dos modificaciones del 101: {list:?}");
         // sin copiar la historia, y fuera de los datos que reciben los puestos
         let file = std::fs::read_to_string(crate::accesos::log_file(&path)).unwrap();
         assert!(!file.contains(secret));
         assert!(!rec.get("/datos").unwrap().contains("accesos_historias") && !rec.get("/datos").unwrap().contains("\"Consulta\""));
-        assert_eq!(crate::accesos::verify(&crate::accesos::log_file(&path)).unwrap(), list.len());
+        assert_eq!(crate::accesos::verify(&crate::accesos::log_file(&path)).unwrap(), list.len() + l102.len(), "las del 101 y la del 102");
         rec.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

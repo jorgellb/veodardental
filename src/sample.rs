@@ -270,6 +270,7 @@ impl Db {
             rx_links: vec![].into(),
             imports: vec![].into(),
             measures: vec![].into(),
+            rights_requests: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,
         };

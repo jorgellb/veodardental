@@ -846,3 +846,39 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 429 pasan, 0 fallan, 10 ignoradas |
+
+## E-033 T-F4-03: derechos de protección de datos, y revisión de seguridad del registro de accesos
+- **Revisión de seguridad automática del commit `e1d4ce0`: cuatro hallazgos.**
+  - **Corregidos:**
+    1. **Paciente de una modificación:** el servidor lo saca de sus propios datos (lo que había y lo que queda), no de lo que diga el puesto. Un «antes» falso que nombra a otro paciente no se le atribuye.
+    2. **Puesto:** el de una consulta sale de la sesión, no de la cabecera `X-Puesto`.
+    3. **Última línea del registro:** se lee como bytes. Si no se puede leer, no se apunta nada, en lugar de empezar otra cadena en silencio. `verify` dice todas las líneas rotas.
+  - **Corregido en parte:**
+    4. **Carpeta compartida:** en ese modo se apuntan las consultas.
+       - **Límite declarado:** las modificaciones no, porque ese modo se retira en T-F4-05.
+  - **Pruebas:** ampliadas `server::tests::the_server_records_who_reads_and_changes_each_history` (puesto que miente y «antes» falso) y `accesos::tests::the_log_is_chained_and_tampering_shows` (todas las líneas rotas, y nada apuntado tras una línea dañada).
+- **T-F4-03 (`src/rgpd.rs`, ficha › Filiación › Protección de datos):**
+  - **Solicitudes de derechos:** acceso, rectificación, supresión, limitación, oposición y portabilidad.
+    - Plazo de un mes (RGPD art. 12.3) y aviso de las que están fuera de plazo.
+    - Quién lo pide y en calidad de qué. Un menor de 14 años, por su representante (LOPDGDD art. 7). Representante o autorizado, con el documento que lo acredita.
+    - Queda en el registro de cambios.
+  - **Acceso y portabilidad:** ZIP (0600) con los datos (también ortodoncia, análisis con IA y solicitudes), los ficheros que están en el ordenador y un manifiesto con el SHA-256 de cada uno, quién y cuándo.
+  - **Limitación:** no se le envían mensajes.
+  - **Bloqueo:** sale de la lista de pacientes (Dirección lo sigue viendo) y solo Dirección lo quita.
+  - **Supresión: desactivada** (`SUPPRESSION_ENABLED = false`) hasta la revisión externa (B-10, T-F4-03X). El botón explica por qué:
+    - falta la solicitud;
+    - la conservación mínima de la historia, cinco años desde el último proceso (Ley 41/2002) o más según la comunidad;
+    - las facturas, que se conservan por obligación legal.
+  - **Rectificación:** en la ficha, con la solicitud registrada.
+- **Pruebas con datos ficticios:**
+  - `rgpd::tests::requests_have_a_deadline_and_check_who_asks`
+  - `rgpd::tests::restriction_stops_messages_and_only_management_unblocks`
+  - `rgpd::tests::suppression_is_disabled_and_explains_what_must_be_kept`
+  - `rgpd::tests::the_export_is_complete_traceable_and_private`
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 433 pasan, 0 fallan, 10 ignoradas |

@@ -333,6 +333,10 @@ fn list(app: &mut App, ui: &mut Ui) {
                     continue;
                 }
                 let p = app.db.patient(pid).unwrap();
+                // datos bloqueados: fuera de la lista (Dirección los sigue viendo)
+                if p.blocked.is_some() && !app.can(crate::users::Perm::Configuracion) {
+                    continue;
+                }
                 let next = app.db.next_appt(pid, app.today).map(|a| format!("{} {}", fmt_date(a.date), a.start.format("%H:%M"))).unwrap_or_default();
                 let cells = vec![
                     cell(p.history_no.to_string()),
@@ -676,6 +680,8 @@ fn filiacion(app: &mut App, ui: &mut Ui, pid: u32) {
     if before != after {
         app.changed();
     }
+    ui.add_space(10.0);
+    crate::screens::derechos::panel(app, ui, pid);
 }
 
 pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], docs: &[(u32, String)]) {

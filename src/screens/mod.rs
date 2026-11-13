@@ -9,6 +9,7 @@ pub mod cobros;
 pub mod comunicaciones;
 pub mod config;
 pub mod correo;
+pub mod derechos;
 pub mod documentos;
 pub mod facturas;
 pub mod fichas;

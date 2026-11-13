@@ -196,6 +196,7 @@ pub struct App {
     pub docs_mode: u8,
     pub imp: screens::importar::ImportState,
     pub support: screens::soporte::SupportState,
+    pub rights: screens::derechos::RightsForm,
     /// Pasarela de SMS de este ordenador y el envío en curso.
     pub sms: crate::sms::SmsSettings,
     /// Tarea que se está midiendo para el piloto, y desde cuándo no hay conexión.
@@ -340,6 +341,7 @@ impl App {
             docs_mode: 0,
             imp: screens::importar::ImportState::default(),
             support: Default::default(),
+            rights: Default::default(),
             sms: if live { crate::sms::load_settings() } else { Default::default() },
             sms_job: None,
             timing: None,
@@ -750,7 +752,9 @@ impl App {
             std::thread::spawn(move || {
                 let _ = r.note_access(pid, &ctx);
             });
-        } else if self.local.is_some() {
+        } else if self.local.is_some() || (self.persist && crate::shared::shared()) {
+            // (en la carpeta compartida se apuntan las consultas; las modificaciones,
+            // no: ese modo se retira en favor del servidor)
             self.append_history(user, pid, crate::accesos::Action::Consulta, context.to_string());
         }
     }

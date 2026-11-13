@@ -42,6 +42,7 @@ mod phone;
 mod portal;
 mod record;
 mod registro;
+mod rgpd;
 mod rx_link;
 mod sample;
 mod screens;

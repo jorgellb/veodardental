@@ -2229,8 +2229,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas con datos ficticios; supresión desactivada hasta revisión externa",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-033"
+   ]
   },
   {
    "id": "T-F4-03X",

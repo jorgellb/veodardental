@@ -194,6 +194,12 @@ pub struct Patient {
     /// tutor de un menor, o un familiar). Vacío: el propio paciente.
     #[serde(default, skip_serializing_if = "Payer::is_empty")]
     pub payer: Payer,
+    /// Tratamiento de sus datos limitado (RGPD art. 18): no se le envían mensajes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restricted: Option<crate::rgpd::Mark>,
+    /// Datos bloqueados (se conservan por obligación legal): fuera de las listas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<crate::rgpd::Mark>,
 }
 
 /// Persona responsable de un paciente: paga, recibe las facturas y, si el
@@ -818,6 +824,9 @@ pub struct Db {
     /// Lo importado de otro programa, con su identificador allí (`migracion`).
     #[serde(default)]
     pub imports: Tracked<Vec<crate::migracion::ImportRef>>,
+    /// Solicitudes de derechos de protección de datos (`rgpd`).
+    #[serde(default)]
+    pub rights_requests: Tracked<Vec<crate::rgpd::RightsRequest>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,
