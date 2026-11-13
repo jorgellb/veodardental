@@ -853,7 +853,7 @@ impl State {
         // lo firmado (documentos, cuestionarios) no se cambia ni se borra: solo
         // se anota la revocación o pasa a la ficha que se conserva al fusionar
         let removed: std::collections::HashSet<u32> = changes.iter().filter(|c| c.field == "patients" && c.after.is_none()).filter_map(|c| c.key.as_deref()?.parse().ok()).collect();
-        for c in changes.iter_mut().filter(|c| c.field == "documents" || c.field == "health") {
+        for c in changes.iter_mut().filter(|c| matches!(c.field.as_str(), "documents" | "health" | "prescriptions")) {
             let Some(cur) = c.key.as_deref().and_then(|k| self.snap.get(&c.field, Some(k))).cloned() else { continue };
             if let Some(kept) = crate::firmado::protect_json(&c.field, &cur, c.after.as_deref(), &removed) {
                 c.after = Some(kept);

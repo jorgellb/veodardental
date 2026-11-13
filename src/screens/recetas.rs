@@ -116,6 +116,7 @@ fn nomenclator_panel(app: &mut App, ui: &mut Ui) {
         let busy = app.rx.nomen_job.is_some();
         ui.horizontal_wrapped(|ui| {
             match &app.rx.nomen {
+                Some(n) if n.stale(app.today) => pill(ui, &format!("Lista del {}: tiene más de {} días, descargue la actualizada de la AEMPS", n.date, crate::nomenclator::STALE_DAYS), WARN),
                 Some(n) => pill(ui, &format!("{} medicamentos · lista del {}", n.medicines.len(), n.date), OK),
                 None => pill(ui, "Sin descargar", WARN),
             };
@@ -205,7 +206,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
             });
         });
         if !p.allergies.is_empty() || !p.alerts.is_empty() {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if !p.allergies.is_empty() {
                     pill(ui, &format!("Alergias: {}", p.allergies), DANGER);
                 }
@@ -220,109 +221,177 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
                 ui.label(RichText::new(format!("⚠ {w}")).color(DANGER).family(sb()));
             });
         }
+        // revisión de los avisos por el profesional (el programa no cambia la receta)
+        let unreviewed = app.db.rx_unreviewed(id);
+        if !warns.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                // los revisa un profesional que puede recetar (no la higienista ni recepción)
+                let reviewer = app.user_id.and_then(|u| app.db.user(u)).and_then(|u| u.doctor_id).filter(|d| app.db.prescriber_problem(*d).is_none());
+                if !unreviewed.is_empty() && !r.issued() {
+                    if reviewer.is_none() {
+                        muted(ui, "Los avisos los revisa el profesional que receta antes de imprimir o emitir.");
+                    } else {
+                        if primary(ui, "He revisado los avisos").on_hover_text("Queda anotado quién y cuándo; sin revisarlos no se imprime ni se emite").clicked() {
+                            let by = app.db.config.current_user.clone();
+                            app.db.review_rx_warnings(id, &by);
+                            app.changed();
+                        }
+                        muted(ui, "Revíselos antes de imprimir o emitir la receta.");
+                    }
+                } else if let Some(t) = r.reviewed_at {
+                    muted(ui, format!("Avisos revisados por {} el {}", r.reviewed_by, t.format("%d/%m/%Y %H:%M")));
+                }
+            });
+        }
+        let issued = r.issued();
+        if issued {
+            ui.label(RichText::new("Receta emitida: es el registro de lo prescrito y ya no se cambia ni se borra.").color(INFO));
+        } else {
+            // quién receta: solo quien puede (no una higienista ni sin nº de colegiado)
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Prescriptor").color(MUTED));
+                let cur = app.db.doctor(r.doctor_id).map(|d| d.name.clone()).unwrap_or_default();
+                let mut chosen = r.doctor_id;
+                crate::theme::combo("rx_prescriber").width(260.0).selected_text(cur).show_ui(ui, |ui| {
+                    for d in app.db.prescribers() {
+                        let name = app.db.doctor(d).map(|c| c.name.clone()).unwrap_or_default();
+                        ui.selectable_value(&mut chosen, d, name);
+                    }
+                });
+                if chosen != r.doctor_id
+                    && let Some(x) = app.db.prescriptions.iter_mut().find(|x| x.id == id)
+                {
+                    x.doctor_id = chosen;
+                    app.changed();
+                }
+                if let Some(problem) = app.db.prescriber_problem(r.doctor_id) {
+                    ui.label(RichText::new(format!("⚠ {problem}")).color(DANGER));
+                }
+            });
+        }
         let drugs = app.db.drugs.clone();
         let direct = app.db.erx.direct && r.srep.is_none();
         let mut remove = None;
-        if let Some(rm) = app.db.prescriptions.iter_mut().find(|x| x.id == id) {
-            let before = serde_json::to_string(rm).unwrap_or_default();
-            ui.horizontal(|ui| {
-                field(ui, "Diagnóstico / motivo", &mut rm.diagnosis, 420.0);
-            });
-            ui.add_space(4.0);
-            for (i, it) in rm.items.iter_mut().enumerate() {
-                egui::Frame::new().fill(ROW_ALT).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("℞ {}", it.drug)).family(sb()).size(15.5));
-                        right_aligned(ui, |ui| {
-                            if ui.small_button("✖").clicked() {
-                                remove = Some(i);
-                            }
-                        });
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Dosis");
-                        ui.add_sized([130.0, 32.0], egui::TextEdit::singleline(&mut it.dose));
-                        ui.label("Pauta");
-                        ui.add_sized([200.0, 32.0], egui::TextEdit::singleline(&mut it.frequency));
-                        ui.label("Días");
-                        ui.add(egui::DragValue::new(&mut it.days).range(1..=90));
-                        ui.label("Envases");
-                        ui.add(egui::DragValue::new(&mut it.units).range(1..=10));
-                    });
-                    ui.add_sized([ui.available_width(), 32.0], egui::TextEdit::singleline(&mut it.notes).hint_text("Indicaciones para el paciente"));
-                    if direct {
-                        official_item_fields(ui, i, it);
-                    }
+        ui.scope(|ui| {
+            if issued {
+                ui.disable();
+            }
+            if let Some(rm) = app.db.prescriptions.iter_mut().find(|x| x.id == id) {
+                let before = serde_json::to_string(rm).unwrap_or_default();
+                ui.horizontal(|ui| {
+                    field(ui, "Diagnóstico / motivo", &mut rm.diagnosis, 420.0);
                 });
                 ui.add_space(4.0);
-            }
-            if let Some(i) = remove {
-                rm.items.remove(i);
-            }
-            // buscador en la lista oficial de la AEMPS
-            let hint = if app.rx.nomen.is_some() { "🔍 Buscar en la lista oficial: nombre, principio activo o código nacional" } else { "Lista oficial de medicamentos sin descargar (Configuración › Receta electrónica)" };
-            ui.add_sized([ui.available_width().min(620.0), 34.0], egui::TextEdit::singleline(&mut app.rx.med_query).hint_text(hint));
-            let found: Vec<crate::nomenclator::Medicine> = app.rx.nomen.as_ref().map(|n| n.search(&app.rx.med_query, 12).into_iter().cloned().collect()).unwrap_or_default();
-            if !app.rx.med_query.trim().is_empty() && app.rx.nomen.is_some() && found.is_empty() {
-                muted(ui, "Ningún medicamento comercializado coincide.");
-            }
-            for m in &found {
-                ui.horizontal(|ui| {
-                    if ui.selectable_label(false, RichText::new(format!("＋ {} · CN {}", m.name, m.cn))).on_hover_text(format!("{}\n{} · {}\nPrincipio activo: {}", m.dosage, m.form, m.route, m.dcpf_name)).clicked() {
-                        rm.items.push(crate::nomenclator::rx_item(m));
-                        app.rx.med_query.clear();
-                    }
-                    if m.narcotic {
-                        pill(ui, "Estupefaciente", DANGER);
-                    }
-                    if m.psychotropic {
-                        pill(ui, "Psicótropo", WARN);
-                    }
-                });
-            }
-            ui.horizontal(|ui| {
-                let cur = if app.rx.drug.is_empty() { "Elegir medicamento…".to_string() } else { app.rx.drug.clone() };
-                crate::theme::combo("rx_drug").width(340.0).selected_text(cur).show_ui(ui, |ui| {
-                    let mut last = String::new();
-                    let mut sorted = drugs.clone();
-                    sorted.sort_by(|a, b| a.group.cmp(&b.group));
-                    for d in &sorted {
-                        if d.group != last {
-                            ui.label(RichText::new(&d.group).size(12.0).color(MUTED));
-                            last = d.group.clone();
+                for (i, it) in rm.items.iter_mut().enumerate() {
+                    egui::Frame::new().fill(ROW_ALT).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("℞ {}", it.drug)).family(sb()).size(15.5));
+                            right_aligned(ui, |ui| {
+                                if ui.small_button("✖").clicked() {
+                                    remove = Some(i);
+                                }
+                            });
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("Dosis");
+                            ui.add_sized([130.0, 32.0], egui::TextEdit::singleline(&mut it.dose));
+                            ui.label("Pauta");
+                            ui.add_sized([200.0, 32.0], egui::TextEdit::singleline(&mut it.frequency));
+                            ui.label("Días");
+                            ui.add(egui::DragValue::new(&mut it.days).range(1..=90));
+                            ui.label("Envases");
+                            ui.add(egui::DragValue::new(&mut it.units).range(1..=10));
+                        });
+                        ui.add_sized([ui.available_width(), 32.0], egui::TextEdit::singleline(&mut it.notes).hint_text("Indicaciones para el paciente"));
+                        if direct {
+                            official_item_fields(ui, i, it);
                         }
-                        ui.selectable_value(&mut app.rx.drug, d.name.clone(), &d.name);
+                    });
+                    ui.add_space(4.0);
+                }
+                if let Some(i) = remove {
+                    rm.items.remove(i);
+                }
+                // buscador en la lista oficial de la AEMPS
+                let hint = if app.rx.nomen.is_some() { "🔍 Buscar en la lista oficial: nombre, principio activo o código nacional" } else { "Lista oficial de medicamentos sin descargar (Configuración › Receta electrónica)" };
+                ui.add_sized([ui.available_width().min(620.0), 34.0], egui::TextEdit::singleline(&mut app.rx.med_query).hint_text(hint));
+                let found: Vec<crate::nomenclator::Medicine> = app.rx.nomen.as_ref().map(|n| n.search(&app.rx.med_query, 12).into_iter().cloned().collect()).unwrap_or_default();
+                if !app.rx.med_query.trim().is_empty() && app.rx.nomen.is_some() && found.is_empty() {
+                    muted(ui, "Ningún medicamento comercializado coincide.");
+                }
+                for m in &found {
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(false, RichText::new(format!("＋ {} · CN {}", m.name, m.cn))).on_hover_text(format!("{}\n{} · {}\nPrincipio activo: {}", m.dosage, m.form, m.route, m.dcpf_name)).clicked() {
+                            rm.items.push(crate::nomenclator::rx_item(m));
+                            app.rx.med_query.clear();
+                        }
+                        if m.narcotic {
+                            pill(ui, "Estupefaciente", DANGER);
+                        }
+                        if m.psychotropic {
+                            pill(ui, "Psicótropo", WARN);
+                        }
+                    });
+                }
+                ui.horizontal(|ui| {
+                    let cur = if app.rx.drug.is_empty() { "Elegir medicamento…".to_string() } else { app.rx.drug.clone() };
+                    crate::theme::combo("rx_drug").width(340.0).selected_text(cur).show_ui(ui, |ui| {
+                        let mut last = String::new();
+                        let mut sorted = drugs.clone();
+                        sorted.sort_by(|a, b| a.group.cmp(&b.group));
+                        for d in &sorted {
+                            if d.group != last {
+                                ui.label(RichText::new(&d.group).size(12.0).color(MUTED));
+                                last = d.group.clone();
+                            }
+                            ui.selectable_value(&mut app.rx.drug, d.name.clone(), &d.name);
+                        }
+                    });
+                    if primary(ui, "Añadir").clicked()
+                        && let Some(d) = drugs.iter().find(|d| d.name == app.rx.drug)
+                    {
+                        rm.items.push(rx_item_from_drug(d));
                     }
                 });
-                if primary(ui, "Añadir").clicked()
-                    && let Some(d) = drugs.iter().find(|d| d.name == app.rx.drug)
-                {
-                    rm.items.push(rx_item_from_drug(d));
+                ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
+                ui.add(egui::TextEdit::multiline(&mut rm.notes).desired_rows(2).desired_width(f32::INFINITY));
+                if issued {
+                    // emitida: nada cambia
+                    if let Ok(orig) = serde_json::from_str(&before) {
+                        *rm = orig;
+                    }
+                } else if serde_json::to_string(rm).unwrap_or_default() != before {
+                    app.dirty = true;
                 }
-            });
-            ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
-            ui.add(egui::TextEdit::multiline(&mut rm.notes).desired_rows(2).desired_width(f32::INFINITY));
-            if serde_json::to_string(rm).unwrap_or_default() != before {
-                app.dirty = true;
             }
-        }
+        });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui.button("🖨 Imprimir / exportar").clicked() {
                 let r2 = app.db.prescriptions.iter().find(|x| x.id == id).cloned().unwrap();
-                match export_html(app, &r2) {
-                    Ok(path) => {
-                        ui.ctx().open_url(egui::OpenUrl::new_tab(format!("file://{}", path.display())));
-                        app.notify(format!("Receta exportada en {}", path.display()));
+                if let Some(problem) = app.db.prescriber_problem(r2.doctor_id) {
+                    app.warn(problem);
+                } else if !app.db.rx_unreviewed(id).is_empty() && !r2.issued() {
+                    app.warn("Revise antes los avisos de seguridad de la receta.");
+                } else {
+                    match export_html(app, &r2) {
+                        Ok(path) => {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(format!("file://{}", path.display())));
+                            app.notify(format!("Receta exportada en {}", path.display()));
+                        }
+                        Err(e) => app.warn(e),
+                    }
+                }
+            }
+            if !issued && ui.button("Borrar receta").clicked() {
+                match app.db.delete_prescription(id) {
+                    Ok(()) => {
+                        app.rx.selected = None;
+                        app.changed();
                     }
                     Err(e) => app.warn(e),
                 }
-            }
-            if ui.button("Borrar receta").clicked() {
-                app.db.prescriptions.retain(|x| x.id != id);
-                app.rx.selected = None;
-                app.changed();
             }
         });
     });

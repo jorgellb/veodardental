@@ -73,3 +73,25 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 314 pasan, 0 fallan, 10 ignoradas |
+
+## E-007 Área 2: recetas y vademécum
+- Revisión en `docs/autonomia/revision/area2.md`: 5 defectos demostrados (P1 a P5). Fuentes oficiales en docs/normativa.md.
+- **Pruebas nuevas**, que antes no compilaban porque no existían las funciones:
+  - `finance::tests::only_a_dentist_or_doctor_with_licence_prescribes`
+  - `finance::tests::official_list_drugs_get_the_same_warnings`
+  - `finance::tests::warnings_are_reviewed_before_issuing`
+  - `finance::tests::an_issued_prescription_is_kept_as_issued` (incluye la protección del servidor)
+  - `nomenclator::tests::an_old_official_list_is_flagged`
+  - `ui_tests::a_prescription_needs_a_prescriber_and_reviewed_warnings` (ventana de 1280×1600). Comprueba:
+    - la higienista no queda como prescriptora;
+    - no se imprime sin revisar los avisos;
+    - la higienista no puede darlos por revisados;
+    - la doctora sí, y queda anotado quién.
+- **Captura sintética:** `docs/autonomia/capturas/f1_area2_receta_1280x800.png`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 320 pasan, 0 fallan, 10 ignoradas |

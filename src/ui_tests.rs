@@ -1715,6 +1715,9 @@ fn erx_patient_sheet_goes_by_email() {
             erx_platform: String::new(),
             erx_date: None,
             srep: Some(issue),
+            reviewed_warnings: vec![],
+            reviewed_by: String::new(),
+            reviewed_at: None,
         });
         a.patient = Some(pid);
         a.screen = crate::app::Screen::Pacientes;
@@ -2299,4 +2302,62 @@ fn a_signed_health_form_cannot_be_edited_in_the_file() {
     assert_eq!(after.yes, form.yes, "las respuestas firmadas no cambian");
     assert_eq!(h.state().db.health_integrity(form.id), crate::firmado::Integrity::Intact);
     h.get_by_label_contains("sin cambios desde que se firmó");
+}
+
+/// Recetas: la higienista crea la receta y queda como prescriptor quien puede
+/// recetar; con avisos de alergia no se imprime hasta que los revisa un
+/// profesional que receta, y queda quién los revisó.
+#[test]
+fn a_prescription_needs_a_prescriber_and_reviewed_warnings() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1600.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Hig")).map(|u| u.id);
+        a.db.config.current_user = "Hig. Campos".into();
+        a.db.patient_mut(101).unwrap().allergies = "Penicilina".into();
+        a.open_patient(101, crate::app::PatTab::Documentos);
+        a.docs_mode = 1;
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("＋ Nueva receta").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let id = h.state().rx.selected.unwrap();
+    let doctor = h.state().db.prescriptions.iter().find(|r| r.id == id).unwrap().doctor_id;
+    assert_eq!(h.state().db.prescriber_problem(doctor), None, "la higienista no queda como prescriptor");
+    {
+        let a = h.state_mut();
+        let amox = a.db.drugs.iter().find(|d| d.name.starts_with("Amoxicilina 500")).cloned().unwrap();
+        a.db.prescriptions.iter_mut().find(|r| r.id == id).unwrap().items.push(crate::finance::rx_item_from_drug(&amox));
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("🖨 Imprimir / exportar").click();
+    for _ in 0..2 {
+        h.step();
+    }
+    assert!(h.state().toast.as_ref().is_some_and(|t| t.0.contains("Revise antes los avisos")), "no se imprime sin revisar");
+    // la higienista no los puede dar por revisados: los revisa quien receta
+    assert!(h.query_by_label("He revisado los avisos").is_none());
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name == "Dra. Ruiz").map(|u| u.id);
+        a.db.config.current_user = "Dra. Ruiz".into();
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("He revisado los avisos").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let r = h.state().db.prescriptions.iter().find(|r| r.id == id).unwrap().clone();
+    assert_eq!(r.reviewed_by, "Dra. Ruiz");
+    assert!(h.state().db.rx_unreviewed(id).is_empty());
+    h.get_by_label_contains("Avisos revisados por Dra. Ruiz");
 }

@@ -115,6 +115,12 @@ fn split_name(full: &str) -> (String, String) {
 /// Datos que faltan para emitir por conexión directa (paciente, prescriptor y cada medicamento).
 pub fn direct_missing(db: &Db, r: &Prescription) -> Vec<String> {
     let mut v = vec![];
+    if let Some(problem) = db.prescriber_problem(r.doctor_id) {
+        v.push(problem);
+    }
+    if !db.rx_unreviewed(r.id).is_empty() {
+        v.push("Revisar los avisos de seguridad".to_string());
+    }
     match db.patient(r.patient_id) {
         Some(p) => {
             if p.first_name.trim().is_empty() || p.last_name.trim().is_empty() {
@@ -323,6 +329,12 @@ pub fn doctor_ready(db: &Db, doctor_id: u32) -> bool {
 /// Datos obligatorios de la receta que faltan (paciente, prescriptor y medicamentos).
 pub fn missing_data(db: &Db, r: &Prescription) -> Vec<String> {
     let mut v = vec![];
+    if let Some(problem) = db.prescriber_problem(r.doctor_id) {
+        v.push(problem);
+    }
+    if !db.rx_unreviewed(r.id).is_empty() {
+        v.push("Revisar los avisos de seguridad".to_string());
+    }
     match db.patient(r.patient_id) {
         Some(p) => {
             if p.nif.trim().is_empty() {

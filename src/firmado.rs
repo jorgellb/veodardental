@@ -9,6 +9,7 @@
 //! paciente, pasarlo a la que se conserva.
 
 use crate::comms::PatientDoc;
+use crate::finance::Prescription;
 use crate::health::HealthForm;
 use crate::model::*;
 use serde::Serialize;
@@ -167,6 +168,28 @@ pub fn keep_signed_health(current: &HealthForm, proposed: Option<&HealthForm>, m
     out
 }
 
+// ───────────────────────────── recetas emitidas ─────────────────────────────
+
+/// Una receta emitida es el registro de lo prescrito: no cambia. Sí se
+/// actualiza lo que pasa después (su estado en las farmacias, el código de la
+/// plataforma que se anotó por error) y pasa a la ficha que se conserva al
+/// fusionar.
+pub fn keep_issued_rx(current: &Prescription, proposed: Option<&Prescription>, may_move: bool) -> Prescription {
+    let mut out = current.clone();
+    if let Some(p) = proposed {
+        (out.erx_code, out.erx_platform, out.erx_date) = (p.erx_code.clone(), p.erx_platform.clone(), p.erx_date);
+        if let (Some(o), Some(n)) = (out.srep.as_mut(), p.srep.as_ref()) {
+            o.status = n.status.clone();
+            o.checked_at = n.checked_at;
+            o.events = n.events.clone();
+        }
+        if may_move {
+            out.patient_id = p.patient_id;
+        }
+    }
+    out
+}
+
 // ───────────────────────── protección en red y en carpeta ─────────────────────────
 
 /// Servidor: versión que se acepta de un registro firmado de `documents` o
@@ -190,6 +213,7 @@ pub fn protect_json(field: &str, current: &str, after: Option<&str>, removed: &H
     match field {
         "documents" => fix::<PatientDoc>(current, after, |d| d.signed, |d| d.patient_id, keep_signed_doc, removed),
         "health" => fix::<HealthForm>(current, after, |f| f.signed, |f| f.patient_id, keep_signed_health, removed),
+        "prescriptions" => fix::<Prescription>(current, after, |r| r.issued(), |r| r.patient_id, keep_issued_rx, removed),
         _ => None,
     }
 }
@@ -199,12 +223,17 @@ pub fn protect_json(field: &str, current: &str, after: Option<&str>, removed: &H
 pub struct SignedOnDisk {
     docs: Vec<PatientDoc>,
     health: Vec<HealthForm>,
+    rx: Vec<Prescription>,
 }
 
 impl SignedOnDisk {
     pub fn read(disk: &serde_json::Value) -> SignedOnDisk {
         let take = |field: &str| disk[field].as_array().into_iter().flatten().filter(|v| v["signed"] == true).cloned().collect::<Vec<_>>();
-        SignedOnDisk { docs: take("documents").into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(), health: take("health").into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect() }
+        SignedOnDisk {
+            docs: take("documents").into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+            health: take("health").into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+            rx: disk["prescriptions"].as_array().into_iter().flatten().filter_map(|v| serde_json::from_value::<Prescription>(v.clone()).ok()).filter(|r| r.issued()).collect(),
+        }
     }
 }
 
@@ -228,6 +257,15 @@ impl Db {
                 Some(i) if self.documents[i] != kept => self.documents[i] = kept,
                 Some(_) => {}
                 None => self.documents.push(kept),
+            }
+        }
+        for cur in &disk.rx {
+            let ours = self.prescriptions.iter().position(|r| r.id == cur.id);
+            let kept = keep_issued_rx(cur, ours.map(|i| &self.prescriptions[i]), !alive.contains(&cur.patient_id));
+            match ours {
+                Some(i) if self.prescriptions[i] != kept => self.prescriptions[i] = kept,
+                Some(_) => {}
+                None => self.prescriptions.push(kept),
             }
         }
         for cur in &disk.health {

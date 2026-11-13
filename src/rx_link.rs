@@ -240,6 +240,9 @@ pub fn sample_issue(db: &mut Db, patient_id: u32, today: NaiveDate) -> u32 {
         erx_platform: String::new(),
         erx_date: None,
         srep: Some(issue),
+        reviewed_warnings: vec![],
+        reviewed_by: String::new(),
+        reviewed_at: None,
     });
     rid
 }
@@ -293,6 +296,9 @@ mod tests {
             erx_platform: String::new(),
             erx_date: None,
             srep: Some(crate::finance::SrepIssue { issued: vec![item], test: true, ..Default::default() }),
+            reviewed_warnings: vec![],
+            reviewed_by: String::new(),
+            reviewed_at: None,
         });
         assert!(publish_rx(&db, today).is_empty(), "sin enlace no se publica nada");
         let t = db.rx_token(pid);

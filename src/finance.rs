@@ -42,7 +42,7 @@ pub struct Drug {
     pub group: String,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RxItem {
     /// Denominación del medicamento (lo que se imprime).
     pub drug: String,
@@ -89,6 +89,10 @@ pub struct RxItem {
     pub narcotic: bool,
     #[serde(default)]
     pub psychotropic: bool,
+    /// Código ATC (de la lista oficial): con él se reconocen el grupo del
+    /// medicamento para los avisos (penicilinas J01C, antiinflamatorios M01A).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub atc: String,
 }
 
 /// Lo que queda de una receta emitida por conexión directa (SREP).
@@ -111,7 +115,7 @@ pub struct SrepIssue {
     pub events: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Prescription {
     pub id: u32,
     pub patient_id: u32,
@@ -130,6 +134,22 @@ pub struct Prescription {
     /// Emitida por conexión directa con el Sistema de Receta Electrónica Privada.
     #[serde(default)]
     pub srep: Option<SrepIssue>,
+    /// Avisos de seguridad que el profesional revisó antes de imprimir o
+    /// emitir, quién y cuándo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reviewed_warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reviewed_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed_at: Option<chrono::NaiveDateTime>,
+}
+
+impl Prescription {
+    /// Emitida: con el código de la plataforma o por conexión directa. Ya es
+    /// el registro de lo prescrito: no se cambia ni se borra.
+    pub fn issued(&self) -> bool {
+        self.srep.is_some() || !self.erx_code.trim().is_empty()
+    }
 }
 
 /// «cada 8 horas» → 3 veces al día; «cada 12 h» → 2; «cada 24 horas» → 1.
@@ -193,8 +213,17 @@ pub fn rx_warnings(p: &Patient, items: &[RxItem], drugs: &[Drug]) -> Vec<String>
     let mut w = vec![];
     for it in items {
         let name = fold(&it.drug);
-        let group = drugs.iter().find(|d| d.name == it.drug).map(|d| fold(&d.group)).unwrap_or_default();
-        if alg.contains("penicilin") && (group.contains("penicilina") || name.contains("amoxicilin")) {
+        let mut group = drugs.iter().find(|d| d.name == it.drug).map(|d| fold(&d.group)).unwrap_or_default();
+        // los de la lista oficial no están en el vademécum: su grupo sale del
+        // código ATC (J01C penicilinas, M01A antiinflamatorios no esteroideos)
+        let atc = it.atc.trim().to_uppercase();
+        if atc.starts_with("J01C") {
+            group.push_str(" penicilina");
+        }
+        if atc.starts_with("M01A") {
+            group.push_str(" aine");
+        }
+        if alg.contains("penicilin") && (group.contains("penicilina") || name.contains("amoxicilin") || name.contains("penicilin")) {
             w.push(format!("ALERGIA: el paciente es alérgico a penicilina y se prescribe {}", it.drug));
         }
         if (alg.contains("aine") || alg.contains("ibuprofeno") || alg.contains("aspirina")) && group.contains("aine") {
@@ -343,10 +372,89 @@ impl Db {
         self.expenses.push(e);
     }
 
+    /// Receta nueva. Si quien la crea no puede recetar (una higienista), el
+    /// prescriptor propuesto es el doctor del paciente o el primero que pueda.
     pub fn new_prescription(&mut self, pid: u32, doctor_id: u32) -> u32 {
         let id = self.new_id();
-        self.prescriptions.push(Prescription { id, patient_id: pid, doctor_id, date: today(), diagnosis: String::new(), items: vec![], notes: String::new(), erx_code: String::new(), erx_platform: String::new(), erx_date: None, srep: None });
+        let doctor_id = if self.prescriber_problem(doctor_id).is_none() {
+            doctor_id
+        } else {
+            let own = self.patient(pid).map(|p| p.doctor_id).filter(|d| self.prescriber_problem(*d).is_none());
+            own.or_else(|| self.prescribers().first().copied()).unwrap_or(doctor_id)
+        };
+        self.prescriptions.push(Prescription {
+            id,
+            patient_id: pid,
+            doctor_id,
+            date: today(),
+            diagnosis: String::new(),
+            items: vec![],
+            notes: String::new(),
+            erx_code: String::new(),
+            erx_platform: String::new(),
+            erx_date: None,
+            srep: None,
+            reviewed_warnings: vec![],
+            reviewed_by: String::new(),
+            reviewed_at: None,
+        });
         id
+    }
+
+    /// Por qué no puede recetar este profesional (`None`: puede). Solo
+    /// recetan médicos, odontólogos y podólogos (RD 1718/2010, art. 1; RDL
+    /// 1/2015, art. 79.1), y con su número de colegiado.
+    pub fn prescriber_problem(&self, doctor_id: u32) -> Option<String> {
+        let Some(c) = self.doctor(doctor_id) else { return Some("Elija quién receta.".into()) };
+        let spec = fold(&c.specialty);
+        if ["higien", "auxiliar", "protes", "recepc", "administ"].iter().any(|k| spec.contains(k)) {
+            return Some(format!("{} no puede recetar: solo recetan odontólogos, médicos y podólogos.", c.name));
+        }
+        if !c.active {
+            return Some(format!("{} está de baja.", c.name));
+        }
+        let lic = c.license.trim();
+        if lic.is_empty() || lic == "-" {
+            return Some(format!("Falta el nº de colegiado de {} (Colaboradores).", c.name));
+        }
+        None
+    }
+
+    /// Profesionales que pueden recetar.
+    pub fn prescribers(&self) -> Vec<u32> {
+        self.collaborators.iter().filter(|c| self.prescriber_problem(c.id).is_none()).map(|c| c.id).collect()
+    }
+
+    /// Avisos de seguridad de la receta que el profesional aún no ha revisado.
+    pub fn rx_unreviewed(&self, id: u32) -> Vec<String> {
+        let Some(r) = self.prescriptions.iter().find(|r| r.id == id) else { return vec![] };
+        let Some(p) = self.patient(r.patient_id) else { return vec![] };
+        rx_warnings(p, &r.items, &self.drugs).into_iter().filter(|w| !r.reviewed_warnings.contains(w)).collect()
+    }
+
+    /// El profesional ha revisado los avisos de la receta (los decide él: el
+    /// programa no cambia la prescripción). Queda quién y cuándo.
+    pub fn review_rx_warnings(&mut self, id: u32, by: &str) {
+        let Some(r) = self.prescriptions.iter().find(|r| r.id == id) else { return };
+        let Some(p) = self.patient(r.patient_id) else { return };
+        let all = rx_warnings(p, &r.items, &self.drugs);
+        let who = p.full_name();
+        if let Some(r) = self.prescriptions.iter_mut().find(|r| r.id == id) {
+            r.reviewed_warnings = all.clone();
+            r.reviewed_by = by.to_string();
+            r.reviewed_at = Some(now());
+        }
+        self.audit("Avisos de receta revisados", &format!("receta {id} de {who} · {by} · {}", all.join(" | ")));
+    }
+
+    /// Borra una receta sin emitir; la emitida queda en la historia.
+    pub fn delete_prescription(&mut self, id: u32) -> Result<(), String> {
+        let r = self.prescriptions.iter().find(|r| r.id == id).ok_or("La receta ya no existe.")?;
+        if r.issued() {
+            return Err("La receta ya está emitida: no se borra, queda en la historia del paciente.".into());
+        }
+        self.prescriptions.retain(|r| r.id != id);
+        Ok(())
     }
 }
 
@@ -438,6 +546,92 @@ mod tests {
         assert_eq!(db.payments.iter().find(|p| p.id == r).unwrap().amount, -300.0);
         assert!(db.patient_balance(pid).abs() < 0.005);
         assert!(db.audit_log.iter().any(|a| a.action == "Devolver dinero"));
+    }
+
+    /// Solo receta un odontólogo o un médico con nº de colegiado (RD 1718/2010,
+    /// art. 1; RDL 1/2015, art. 79.1): ni una higienista ni quien no tenga número.
+    #[test]
+    fn only_a_dentist_or_doctor_with_licence_prescribes() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(d);
+        let hyg = db.collaborators.iter().find(|c| fold(&c.specialty).contains("higien")).map(|c| c.id).unwrap();
+        let dentist = db.collaborators.iter().find(|c| !fold(&c.specialty).contains("higien")).map(|c| c.id).unwrap();
+        assert!(db.prescriber_problem(hyg).unwrap().contains("no puede recetar"));
+        assert_eq!(db.prescriber_problem(dentist), None);
+        db.collaborators.iter_mut().find(|c| c.id == dentist).unwrap().license = "-".into();
+        assert!(db.prescriber_problem(dentist).unwrap().contains("colegiado"));
+        db.collaborators.iter_mut().find(|c| c.id == dentist).unwrap().license = "28-0137".into();
+        // la higienista crea la receta: el prescriptor propuesto es quien puede recetar
+        let id = db.new_prescription(101, hyg);
+        let r = db.prescriptions.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(db.prescriber_problem(r.doctor_id), None, "propone un prescriptor válido, no a la higienista");
+    }
+
+    /// Los avisos de alergia y de anticoagulación valen también para los
+    /// medicamentos de la lista oficial (por su código ATC), no solo para los
+    /// del vademécum de la clínica.
+    #[test]
+    fn official_list_drugs_get_the_same_warnings() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let db = Db::sample(d);
+        let mut p = db.patient(101).unwrap().clone();
+        p.allergies = "Penicilina".into();
+        p.alerts = "Anticoagulado (Sintrom)".into();
+        let cloxa = RxItem { drug: "CLOXACILINA NORMON 500 mg CAPSULAS".into(), atc: "J01CF02".into(), ..Default::default() };
+        let diclo = RxItem { drug: "DICLOFENACO NORMON 50 mg COMPRIMIDOS".into(), atc: "M01AB05".into(), ..Default::default() };
+        let w = rx_warnings(&p, &[cloxa, diclo], &db.drugs);
+        assert!(w.iter().any(|x| x.contains("penicilina") && x.contains("CLOXACILINA")), "{w:?}");
+        assert!(w.iter().any(|x| x.contains("anticoagulado") && x.contains("DICLOFENACO")), "{w:?}");
+        // el código ATC llega a la línea desde la lista oficial
+        let m = crate::nomenclator::Medicine { name: "DICLOFENACO X".into(), atc: "M01AB05".into(), ..Default::default() };
+        assert_eq!(crate::nomenclator::rx_item(&m).atc, "M01AB05");
+    }
+
+    /// El profesional revisa los avisos antes de imprimir o emitir, y queda
+    /// apuntado quién y cuándo; si cambian los avisos, hay que revisarlos otra vez.
+    #[test]
+    fn warnings_are_reviewed_before_issuing() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(d);
+        db.patient_mut(101).unwrap().allergies = "Penicilina".into();
+        let id = db.new_prescription(101, 1);
+        db.prescriptions.iter_mut().find(|r| r.id == id).unwrap().items.push(rx_item_from_drug(&db.drugs[0].clone()));
+        assert_eq!(db.rx_unreviewed(id).len(), 1);
+        db.review_rx_warnings(id, "Dra. Ruiz");
+        assert!(db.rx_unreviewed(id).is_empty());
+        let r = db.prescriptions.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(r.reviewed_by, "Dra. Ruiz");
+        assert!(r.reviewed_at.is_some());
+        assert!(db.audit_log.iter().any(|a| a.action == "Avisos de receta revisados"));
+        // otro medicamento con aviso: hay que revisarlo de nuevo
+        db.patient_mut(101).unwrap().alerts = "Anticoagulado".into();
+        let ibu = db.drugs.iter().find(|x| x.name.starts_with("Ibuprofeno")).cloned().unwrap();
+        db.prescriptions.iter_mut().find(|r| r.id == id).unwrap().items.push(rx_item_from_drug(&ibu));
+        assert_eq!(db.rx_unreviewed(id).len(), 1);
+    }
+
+    /// Una receta emitida (con código de la plataforma o por conexión directa)
+    /// no se borra ni se cambia: es el registro de lo prescrito.
+    #[test]
+    fn an_issued_prescription_is_kept_as_issued() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let mut db = Db::sample(d);
+        let id = db.new_prescription(101, 1);
+        db.prescriptions.iter_mut().find(|r| r.id == id).unwrap().items.push(rx_item_from_drug(&db.drugs[7].clone()));
+        assert!(db.delete_prescription(id).is_ok(), "sin emitir se puede borrar");
+        let id = db.new_prescription(101, 1);
+        let r = db.prescriptions.iter_mut().find(|r| r.id == id).unwrap();
+        r.items.push(rx_item_from_drug(&db.drugs[7].clone()));
+        r.erx_code = "AB12CD34EF".into();
+        assert!(db.prescriptions.iter().find(|r| r.id == id).unwrap().issued());
+        assert!(db.delete_prescription(id).unwrap_err().contains("emitida"));
+        // en red: un puesto no la cambia ni la borra; el estado en las farmacias sí se actualiza
+        let cur = serde_json::to_string(db.prescriptions.iter().find(|r| r.id == id).unwrap()).unwrap();
+        let mut changed: Prescription = serde_json::from_str(&cur).unwrap();
+        changed.items[0].days = 30;
+        let kept = crate::firmado::protect_json("prescriptions", &cur, Some(&serde_json::to_string(&changed).unwrap()), &Default::default()).expect("se corrige");
+        assert_eq!(serde_json::from_str::<Prescription>(&kept).unwrap().items[0].days, db.drugs[7].days);
+        assert!(crate::firmado::protect_json("prescriptions", &cur, None, &Default::default()).is_some(), "no se borra");
     }
 
     #[test]

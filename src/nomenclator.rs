@@ -16,6 +16,9 @@ use std::path::PathBuf;
 
 pub const URL: &str = "https://listadomedicamentos.aemps.gob.es/prescripcion.zip";
 
+/// Días a partir de los cuales se avisa de que la lista oficial cargada es antigua.
+pub const STALE_DAYS: i64 = 60;
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Medicine {
     /// Código nacional (6 cifras, sin el dígito de control).
@@ -186,6 +189,18 @@ pub fn load() -> Option<Nomenclator> {
 }
 
 impl Nomenclator {
+    /// Días que tiene la lista cargada (`None`: fecha ilegible).
+    pub fn age_days(&self, today: chrono::NaiveDate) -> Option<i64> {
+        let d = chrono::NaiveDate::parse_from_str(self.date.trim(), "%Y-%m-%d").ok()?;
+        Some((today - d).num_days())
+    }
+
+    /// Lista con más de 60 días (o sin fecha legible): conviene descargar la
+    /// actualizada de la AEMPS antes de recetar con ella.
+    pub fn stale(&self, today: chrono::NaiveDate) -> bool {
+        self.age_days(today).is_none_or(|d| d > STALE_DAYS)
+    }
+
     /// Prepara la búsqueda rápida (una vez, al cargar).
     pub fn index(&mut self) {
         self.keys = self.medicines.iter().map(|m| fold(&format!("{} {} {}", m.name, m.dcpf_name, m.cn))).collect();
@@ -238,6 +253,7 @@ pub fn rx_item(m: &Medicine) -> crate::finance::RxItem {
         per_unit: "día".into(),
         narcotic: m.narcotic,
         psychotropic: m.psychotropic,
+        atc: m.atc.clone(),
         ..Default::default()
     }
 }
@@ -245,6 +261,18 @@ pub fn rx_item(m: &Medicine) -> crate::finance::RxItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La lista oficial se actualiza: si la cargada tiene más de 60 días, se avisa.
+    #[test]
+    fn an_old_official_list_is_flagged() {
+        let n = Nomenclator { date: "2026-08-01".into(), ..Default::default() };
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 13).unwrap();
+        assert_eq!(n.age_days(today), Some(104));
+        assert!(n.stale(today));
+        let fresh = Nomenclator { date: "2026-11-06".into(), ..Default::default() };
+        assert!(!fresh.stale(today));
+        assert!(Nomenclator { date: "sin fecha".into(), ..Default::default() }.stale(today), "sin fecha legible también se avisa");
+    }
 
     const P: &str = r#"<?xml version="1.0" encoding="UTF-8"?><aemps_prescripcion><header><listprescriptiondate>2026-11-06</listprescriptiondate></header>
 <prescription><cod_nacion>654321</cod_nacion><des_nomco>IBUPROFENO EJEMPLO 600 mg</des_nomco><des_prese>IBUPROFENO EJEMPLO 600 mg COMPRIMIDOS RECUBIERTOS EFG, 40 comprimidos</des_prese><cod_dcpf>111</cod_dcpf><des_dosific>600 mg</des_dosific><nro_conte>40 comprimidos</nro_conte><sw_psicotropo>0</sw_psicotropo><sw_estupefaciente>0</sw_estupefaciente><sw_generico>1</sw_generico><sw_envase_clinico>0</sw_envase_clinico><sw_uso_hospitalario>0</sw_uso_hospitalario><sw_comercializado>1</sw_comercializado><formasfarmaceuticas><cod_forfar>5</cod_forfar><viasadministracion><cod_via_admin>48</cod_via_admin></viasadministracion></formasfarmaceuticas><atc><cod_atc>M01AE01</cod_atc></atc></prescription>

@@ -30,3 +30,10 @@ La fase 0 pide conservar el encargo en el repositorio. `VEODARDENTAL_GOAL.md` se
 El modelo existente guarda los importes en `f64` y redondea al céntimo. Cambiar el formato de todos los datos sería una reescritura general con migración, y el encargo pide evitarla sin mediciones que lo justifiquen. Por eso:
 - el código nuevo hace sus cálculos en céntimos enteros (`i64`) con redondeo explícito, mediante el tipo `Cents` de T-R7-1;
 - las sumas existentes se auditan con pruebas de que cuadran al céntimo.
+
+## D-07 Antigüedad de la lista oficial de medicamentos
+Se avisa cuando la lista de la AEMPS cargada tiene más de 60 días (`nomenclator::STALE_DAYS`) o no tiene fecha legible. Es un umbral de mantenimiento, no una regla clínica, y es configurable en el código.
+
+## D-08 Quién puede recetar
+`Db::prescriber_problem` reconoce a quien no puede recetar por la especialidad del colaborador: higienista, auxiliar, protésico, recepción o administración. Además exige el nº de colegiado y que el colaborador esté de alta.
+No se añade un campo nuevo: la especialidad ya existe y los datos guardados siguen valiendo sin migración.
