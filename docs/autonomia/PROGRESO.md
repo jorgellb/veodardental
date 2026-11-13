@@ -38,7 +38,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F3-04: registro de errores e informe para soporte; firma solo con etiqueta y sesión caducada (revisión de seguridad) | E-025 | `2945231` |
 | T-F3-05: ensayo de restauración y clave de recuperación; nombres fuera del registro (revisión de seguridad) | E-026 | `9bdf3b7` |
 | T-F3-06: VERI*FACTU contra una AEAT simulada (rechazo, caída, reintento idéntico y conciliación) | E-027 | `8a5bb6a` |
-| T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | (pendiente) |
+| T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | `3f51833` |
 
 ## Siguiente acción
 Las fases 1 y 2 están terminadas en la parte de ingeniería. El mapeo real de GESDEN, Novaclinic, Clinic Cloud y Dentalink sigue en B-03, B-04 y B-05. Toca la fase 3: instalación y operación.
