@@ -938,6 +938,10 @@ impl State {
         // registro de jornada (ver `jornada`): solo se añade, nunca se cambia ni se
         // borra; cada uno ficha lo suyo y a la hora del servidor; corrige Dirección
         let now = crate::model::now();
+        let me_name = self.user(user).map(|u| u.name).unwrap_or_default();
+        let me_station = self.session_station(user).unwrap_or(station);
+        // lo que ya hay de este usuario (para comprobar el orden: entrada, pausa…)
+        let mut mine: Vec<crate::jornada::Punch> = self.snap.records.get("punches").into_iter().flat_map(|r| r.iter()).filter_map(|(_, j)| serde_json::from_str::<crate::jornada::Punch>(j).ok()).filter(|p| p.user_id == user).collect();
         let snap = &self.snap;
         changes.retain_mut(|c| {
             if c.field != "punches" {
@@ -949,14 +953,24 @@ impl State {
                 return false;
             }
             let correction = p.corrects.is_some() || !p.reason.is_empty() || p.void;
-            if correction && !admin {
-                return false;
-            }
-            if !correction {
+            if correction {
+                if !admin || p.reason.trim().is_empty() {
+                    return false;
+                }
+                // quien corrige es el usuario de la sesión, no lo que diga el puesto
+                p.by = me_name.clone();
+            } else {
                 if p.user_id != user {
                     return false;
                 }
                 p.at = now;
+                p.by.clear();
+                p.station = me_station;
+                let today = crate::jornada::effective(&mine, user, now.date());
+                if !crate::jornada::next_allowed(&today).contains(&p.kind) {
+                    return false;
+                }
+                mine.push(p.clone());
             }
             c.after = serde_json::to_string(&p).ok();
             c.after.is_some()
@@ -2783,6 +2797,13 @@ mod tests {
         assert_eq!(disk.punches.len(), 1, "{:?}", disk.punches);
         let mine = disk.punches[0].clone();
         assert!((crate::model::now() - mine.at).num_minutes().abs() < 5, "hora del servidor, no la del puesto");
+        assert_eq!(mine.station, rec.station, "el puesto, el de la sesión");
+        // una segunda entrada seguida: no (el orden lo comprueba el servidor)
+        let (mut r, mut sr) = rec.load().unwrap();
+        let c = r.new_id();
+        r.punches.push(Punch { id: c, user_id: 2, at: early, kind: Kind::Entrada, station: 0, corrects: None, reason: String::new(), by: String::new(), void: false });
+        rec.push(&mut r, &mut sr).unwrap();
+        assert_eq!(crate::sync::on_disk(&path).punches.len(), 1);
         // cambiarla o borrarla: no
         let (mut r, mut sr) = rec.load().unwrap();
         r.punches.iter_mut().for_each(|p| p.at = early);
@@ -2796,7 +2817,7 @@ mod tests {
         dir.push(&mut d, &mut sd).unwrap();
         let disk = crate::sync::on_disk(&path);
         assert_eq!(disk.punches.len(), 2);
-        assert!(disk.punches.iter().any(|p| p.corrects == Some(mine.id) && p.at == early));
+        assert!(disk.punches.iter().any(|p| p.corrects == Some(mine.id) && p.at == early && p.by == "Dirección"), "{:?}", disk.punches);
         // cada uno recibe solo su registro de jornada; Dirección, el de todos
         let (r2, _) = rec.load().unwrap();
         d.punch(1, Kind::Entrada, crate::model::now()).unwrap();

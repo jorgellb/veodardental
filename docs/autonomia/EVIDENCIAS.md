@@ -947,3 +947,14 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 439 pasan, 0 fallan, 10 ignoradas |
+
+## E-036 Revisión de seguridad del registro de jornada en red
+- **Revisión de seguridad automática del commit `e7d3b06`: dos hallazgos, corregidos.**
+  1. **Orden de los fichajes.**
+     - **Hallazgo:** el servidor no comprobaba el orden: una segunda entrada seguida, o una salida sin entrada, enviadas desde el puesto.
+     - **Ahora:** la comprueba con lo que ya tiene de esa persona (`jornada::next_allowed`), y pone el puesto de la sesión.
+  2. **Autor de la corrección.**
+     - **Hallazgo:** quién corrige lo ponía el puesto.
+     - **Ahora:** lo pone el servidor con el usuario de la sesión. Una corrección sin motivo se rechaza.
+  - **Prueba:** ampliada `server::tests::the_time_record_only_grows_on_the_server` (puesto de la sesión, segunda entrada rechazada y autor de la corrección).
+- **Batería:** fmt 0, clippy 0; `cargo test --workspace --all-targets --locked` con código 0, 439 pasan, 0 fallan y 10 ignoradas.
