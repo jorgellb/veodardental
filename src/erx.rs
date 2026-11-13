@@ -188,7 +188,15 @@ pub fn build_srep(db: &Db, r: &Prescription, id_acceso: &str, pin: Option<&str>,
     let (nombre, apellidos) = split_name(&d.as_ref().map(|d| d.name.clone()).unwrap_or_default());
     let email = Some(db.erx.doctor(r.doctor_id).email).filter(|e| !e.trim().is_empty()).unwrap_or_else(|| db.config.email.clone());
     let telefono = d.as_ref().map(|d| d.phone.clone()).filter(|t| !t.trim().is_empty()).unwrap_or_else(|| db.config.phone.clone());
-    let destinatario = p.age(today).map(|a| if a < 2 { 0 } else if a < 14 { 1 } else { 2 });
+    let destinatario = p.age(today).map(|a| {
+        if a < 2 {
+            0
+        } else if a < 14 {
+            1
+        } else {
+            2
+        }
+    });
     r.items
         .iter()
         .enumerate()
@@ -204,7 +212,14 @@ pub fn build_srep(db: &Db, r: &Prescription, id_acceso: &str, pin: Option<&str>,
                 fecha_prescripcion: today,
                 id_entidad: db.erx.id_entidad_or_test(),
                 id_centro: cid(db.config.current_center).to_string(),
-                prescriptor: RPrescriptor { id: d.as_ref().map(|d| d.license.trim().to_string()).unwrap_or_default(), nombre: nombre.clone(), apellidos: apellidos.clone(), especialidad: d.as_ref().map(|d| d.specialty.clone()).unwrap_or_default(), email: email.trim().into(), telefono: telefono.trim().into() },
+                prescriptor: RPrescriptor {
+                    id: d.as_ref().map(|d| d.license.trim().to_string()).unwrap_or_default(),
+                    nombre: nombre.clone(),
+                    apellidos: apellidos.clone(),
+                    especialidad: d.as_ref().map(|d| d.specialty.clone()).unwrap_or_default(),
+                    email: email.trim().into(),
+                    telefono: telefono.trim().into(),
+                },
                 producto: RProducto {
                     cod_producto: it.cn.trim().into(),
                     tipo: it.product_type,
@@ -228,10 +243,7 @@ pub fn build_srep(db: &Db, r: &Prescription, id_acceso: &str, pin: Option<&str>,
                 ud_duracion: "días".into(),
                 observaciones: it.notes.trim().into(),
                 pin_hash: pin.map(|x| crate::srep::pin_hash(&id, x)).unwrap_or_default(),
-                recetas: plan(today, it.days, it.units)
-                    .into_iter()
-                    .map(|(ini, fin, n)| RReceta { id_receta: crate::srep::new_id32(), fecha_ini: ini, fecha_fin: fin, num_envases: n, estado: 1, ..Default::default() })
-                    .collect(),
+                recetas: plan(today, it.days, it.units).into_iter().map(|(ini, fin, n)| RReceta { id_receta: crate::srep::new_id32(), fecha_ini: ini, fecha_fin: fin, num_envases: n, estado: 1, ..Default::default() }).collect(),
                 pruebas: !db.erx.certified(),
                 ..Default::default()
             }
@@ -348,7 +360,9 @@ pub fn transfer_text(db: &Db, r: &Prescription) -> String {
     s.push_str(&format!("PACIENTE: {}\n", p.map(|p| p.full_name()).unwrap_or_default()));
     s.push_str(&format!("DNI/NIE: {}\n", p.map(|p| p.nif.clone()).unwrap_or_default()));
     s.push_str(&format!("Fecha de nacimiento: {}\n", p.and_then(|p| p.birth).map(fmt_date).unwrap_or_default()));
-    if let Some(p) = p && !p.allergies.trim().is_empty() {
+    if let Some(p) = p
+        && !p.allergies.trim().is_empty()
+    {
         s.push_str(&format!("Alergias: {}\n", p.allergies));
     }
     s.push_str(&format!("PRESCRIPTOR: {} · Nº colegiado {}\n", d.map(|d| d.name.clone()).unwrap_or_default(), d.map(|d| d.license.clone()).unwrap_or_default()));

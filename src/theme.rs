@@ -178,7 +178,13 @@ pub fn vgradient(p: &Painter, r: Rect, top: Color32, bottom: Color32) {
 pub fn chevron(_ui: &Ui, rect: Rect, v: &egui::style::WidgetVisuals, open: bool) {
     let c = rect.center();
     let (w, h) = (4.6, 2.6);
-    let col = if open { ACCENT } else if v.bg_stroke.color == ACCENT { ACCENT_DARK } else { MUTED };
+    let col = if open {
+        ACCENT
+    } else if v.bg_stroke.color == ACCENT {
+        ACCENT_DARK
+    } else {
+        MUTED
+    };
     let s = Stroke::new(1.6, col);
     let dir = if open { -1.0 } else { 1.0 };
     let pts = vec![pos2(c.x - w, c.y - h * dir), pos2(c.x, c.y + h * dir), pos2(c.x + w, c.y - h * dir)];
@@ -210,14 +216,12 @@ pub fn combo(id: impl egui::AsIdSalt) -> egui::ComboBox<'static> {
 /// Diálogo modal con márgenes amplios, esquinas redondeadas y sombra profunda.
 pub fn modal(id: &str) -> egui::Modal {
     egui::Modal::new(egui::Id::unique(id))
-        .frame(
-            Frame::new()
-                .fill(CARD)
-                .corner_radius(CornerRadius::same(20))
-                .inner_margin(Margin::symmetric(30, 26))
-                .stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(15, 30, 60, 16)))
-                .shadow(egui::Shadow { offset: [0, 24], blur: 64, spread: 0, color: Color32::from_rgba_unmultiplied(8, 17, 31, 60) }),
-        )
+        .frame(Frame::new().fill(CARD).corner_radius(CornerRadius::same(20)).inner_margin(Margin::symmetric(30, 26)).stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(15, 30, 60, 16))).shadow(egui::Shadow {
+            offset: [0, 24],
+            blur: 64,
+            spread: 0,
+            color: Color32::from_rgba_unmultiplied(8, 17, 31, 60),
+        }))
         .backdrop_color(Color32::from_rgba_unmultiplied(8, 17, 31, 110))
 }
 
@@ -254,14 +258,7 @@ pub fn radial_glow(p: &Painter, center: egui::Pos2, radius: f32, color: Color32,
 }
 
 pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    Frame::new()
-        .fill(CARD)
-        .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(CornerRadius::same(16))
-        .inner_margin(Margin::symmetric(22, 20))
-        .shadow(shadow())
-        .show(ui, add)
-        .inner
+    Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER)).corner_radius(CornerRadius::same(16)).inner_margin(Margin::symmetric(22, 20)).shadow(shadow()).show(ui, add).inner
 }
 
 /// Título de pantalla con subtítulo.
@@ -357,13 +354,7 @@ pub fn kpi_icon(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, co
 }
 
 pub fn primary(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(RichText::new(text).color(Color32::WHITE).font(sbf(14.5)))
-            .fill(ACCENT)
-            .stroke(Stroke::new(1.0, ACCENT_DARK))
-            .corner_radius(CornerRadius::same(10))
-            .min_size(vec2(0.0, 38.0)),
-    )
+    ui.add(egui::Button::new(RichText::new(text).color(Color32::WHITE).font(sbf(14.5))).fill(ACCENT).stroke(Stroke::new(1.0, ACCENT_DARK)).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 38.0)))
 }
 
 /// Botón secundario: blanco con borde.
@@ -372,13 +363,7 @@ pub fn secondary(ui: &mut Ui, text: &str) -> egui::Response {
 }
 
 pub fn danger(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(RichText::new(text).color(Color32::WHITE).font(sbf(14.5)))
-            .fill(DANGER)
-            .stroke(Stroke::new(1.0, mix(DANGER, HEADING, 0.2)))
-            .corner_radius(CornerRadius::same(10))
-            .min_size(vec2(0.0, 38.0)),
-    )
+    ui.add(egui::Button::new(RichText::new(text).color(Color32::WHITE).font(sbf(14.5))).fill(DANGER).stroke(Stroke::new(1.0, mix(DANGER, HEADING, 0.2))).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 38.0)))
 }
 
 /// Campo con etiqueta encima.

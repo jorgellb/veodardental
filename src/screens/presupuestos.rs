@@ -69,14 +69,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         });
         ui.add_space(6.0);
         let q = fold(&app.lists.budget_text);
-        let mut list: Vec<Budget> = app
-            .db
-            .budgets
-            .iter()
-            .filter(|b| app.lists.budget_filter.map(|f| b.state == f).unwrap_or(true))
-            .filter(|b| q.is_empty() || fold(&app.db.patient_name(b.patient_id)).contains(&q) || fold(&b.title).contains(&q))
-            .cloned()
-            .collect();
+        let mut list: Vec<Budget> =
+            app.db.budgets.iter().filter(|b| app.lists.budget_filter.map(|f| b.state == f).unwrap_or(true)).filter(|b| q.is_empty() || fold(&app.db.patient_name(b.patient_id)).contains(&q) || fold(&b.title).contains(&q)).cloned().collect();
         list.sort_by_key(|b| std::cmp::Reverse((b.date, b.id)));
         table(app, ui, &list, true);
     });
@@ -128,7 +122,10 @@ pub fn patient_list(app: &mut App, ui: &mut Ui, pid: u32) {
                     app.dialog = Dialog::Budget(id);
                 }
                 let n = app.db.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto && e.budget_id.is_none()).count();
-                if n > 0 && ui.button(format!("Desde previstos del odontograma ({n})")).clicked() && let Some(id) = app.db.budget_from_planned(pid) {
+                if n > 0
+                    && ui.button(format!("Desde previstos del odontograma ({n})")).clicked()
+                    && let Some(id) = app.db.budget_from_planned(pid)
+                {
                     app.changed();
                     app.dialog = Dialog::Budget(id);
                 }
@@ -394,7 +391,9 @@ fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
         let tariff = b.tariff_id;
         crate::screens::treatment_picker(ui, &format!("bl_tto{}", b.id), &app.db, tariff, &mut st.0, 320.0, |t| t.odg != OdgKind::Ausente, |t| format!("{} · {} · {}", t.code, t.description, money(app.db.price_for(&t.code, tariff))));
         ui.add_sized([110.0, 32.0], egui::TextEdit::singleline(&mut st.1).hint_text("Piezas: 36 37"));
-        if ui.button("＋ Añadir").clicked() && let Some(t) = app.db.treatment(&st.0).filter(|t| app.db.treatment_offered(t, tariff)) {
+        if ui.button("＋ Añadir").clicked()
+            && let Some(t) = app.db.treatment(&st.0).filter(|t| app.db.treatment_offered(t, tariff))
+        {
             let teeth: Vec<u8> = st.1.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).filter(|t| crate::screens::pacientes::valid_tooth(*t)).collect();
             let units = if t.per_tooth { teeth.len().max(1) as u32 } else { 1 };
             b.lines.push(BudgetLine {

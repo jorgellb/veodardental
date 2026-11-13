@@ -67,9 +67,7 @@ fn decode_text(bytes: &[u8]) -> String {
 
 /// Carácter de Windows-1252 (de 0x80 a 0x9F no es Latin-1: «€», comillas…).
 fn cp1252(b: u8) -> char {
-    const HIGH: [char; 32] = [
-        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
-    ];
+    const HIGH: [char; 32] = ['€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ'];
     match b {
         0x80..=0x9F => HIGH[(b - 0x80) as usize],
         _ => b as char,
@@ -164,9 +162,7 @@ pub fn guess_mapping(kind: ImportKind, headers: &[String]) -> Vec<Option<usize>>
     targets(kind)
         .iter()
         .map(|(name, keys)| {
-            let pos = h.iter().enumerate().position(|(i, col)| {
-                !used[i] && keys.iter().any(|k| col.contains(&fold(k))) && !(*name == "Nombre" && col.contains("apellido"))
-            });
+            let pos = h.iter().enumerate().position(|(i, col)| !used[i] && keys.iter().any(|k| col.contains(&fold(k))) && !(*name == "Nombre" && col.contains("apellido")));
             if let Some(p) = pos {
                 used[p] = true;
             }
@@ -196,7 +192,9 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
         return NaiveDate::from_ymd_opt(year, m, d);
     }
     // número de serie de Excel
-    if let Ok(n) = s.parse::<f64>() && (1000.0..80000.0).contains(&n) {
+    if let Ok(n) = s.parse::<f64>()
+        && (1000.0..80000.0).contains(&n)
+    {
         return NaiveDate::from_ymd_opt(1899, 12, 30).map(|b| b + Duration::days(n as i64));
     }
     None
@@ -275,19 +273,15 @@ impl Db {
             let (mobile, phone) = phones(get(row, 6), get(row, 7));
             let tokens = name_tokens(&format!("{first} {last}"));
             let same = |i: usize| same_name(&known.tokens[i], &tokens);
-            let existing = hist
-                .and_then(|h| known.hist.get(&h).copied())
-                .filter(|&i| same(i))
-                .or_else(|| known.nif.get(&nif).and_then(|v| v.iter().copied().find(|&i| same(i))))
-                .or_else(|| {
-                    known.name.get(&tokens).and_then(|v| {
-                        v.iter().copied().find(|&i| {
-                            let p = &self.patients[i];
-                            let other_nif = norm_nif(&p.nif);
-                            (nif.is_empty() || other_nif.is_empty() || other_nif == nif) && ((birth.is_some() && p.birth == birth) || crate::phone::same_number(&p.mobile, &mobile))
-                        })
+            let existing = hist.and_then(|h| known.hist.get(&h).copied()).filter(|&i| same(i)).or_else(|| known.nif.get(&nif).and_then(|v| v.iter().copied().find(|&i| same(i)))).or_else(|| {
+                known.name.get(&tokens).and_then(|v| {
+                    v.iter().copied().find(|&i| {
+                        let p = &self.patients[i];
+                        let other_nif = norm_nif(&p.nif);
+                        (nif.is_empty() || other_nif.is_empty() || other_nif == nif) && ((birth.is_some() && p.birth == birth) || crate::phone::same_number(&p.mobile, &mobile))
                     })
-                });
+                })
+            });
             let fill = |dst: &mut String, v: String| {
                 if dst.trim().is_empty() && !v.trim().is_empty() {
                     *dst = v;
@@ -332,7 +326,13 @@ impl Db {
                         last_name: title_case(&last),
                         nif,
                         birth,
-                        sex: if sex.starts_with('m') && !sex.starts_with("mas") || sex.starts_with('f') { "F".into() } else if sex.is_empty() { String::new() } else { "M".into() },
+                        sex: if sex.starts_with('m') && !sex.starts_with("mas") || sex.starts_with('f') {
+                            "F".into()
+                        } else if sex.is_empty() {
+                            String::new()
+                        } else {
+                            "M".into()
+                        },
                         mobile,
                         phone,
                         email: get(row, 8).to_lowercase(),
@@ -538,11 +538,7 @@ fn is_landline(n: &str) -> bool {
 /// teléfono.
 fn phones(mobile: String, phone: String) -> (String, String) {
     let empty = |n: &str| crate::phone::normalize(n).is_empty();
-    if (empty(&mobile) || is_landline(&mobile)) && is_mobile(&phone) || is_landline(&mobile) && empty(&phone) {
-        (phone, mobile)
-    } else {
-        (mobile, phone)
-    }
+    if (empty(&mobile) || is_landline(&mobile)) && is_mobile(&phone) || is_landline(&mobile) && empty(&phone) { (phone, mobile) } else { (mobile, phone) }
 }
 
 /// Código postal: Excel guarda «08001» como el número 8001.
@@ -688,7 +684,18 @@ impl Db {
             Some(r) => r.date = due,
             None => {
                 let id = self.new_id();
-                self.recalls.push(Recall { id, patient_id: pid, date: due, reason: "Control de ortodoncia".into(), doctor_id: doc, state: RecallState::Pendiente, channel: String::new(), comment: "Programado desde el caso de ortodoncia".into(), contacted_on: None, appt_id: None });
+                self.recalls.push(Recall {
+                    id,
+                    patient_id: pid,
+                    date: due,
+                    reason: "Control de ortodoncia".into(),
+                    doctor_id: doc,
+                    state: RecallState::Pendiente,
+                    channel: String::new(),
+                    comment: "Programado desde el caso de ortodoncia".into(),
+                    contacted_on: None,
+                    appt_id: None,
+                });
             }
         }
     }
@@ -959,7 +966,9 @@ impl Db {
 
     /// Marca la cuota `i` del plan del presupuesto como pagada (o no).
     pub fn set_installment_paid(&mut self, budget_id: u32, i: u32, paid: bool) {
-        if let Some(b) = self.budgets.iter_mut().find(|b| b.id == budget_id) && let Some(pl) = &mut b.plan {
+        if let Some(b) = self.budgets.iter_mut().find(|b| b.id == budget_id)
+            && let Some(pl) = &mut b.plan
+        {
             if pl.paid.len() < pl.installments as usize {
                 pl.paid.resize(pl.installments as usize, false);
             }
@@ -990,10 +999,34 @@ pub fn sample_extra(db: &mut Db, today: NaiveDate) {
             visits: visits.iter().map(|(ago, work, wire, hy)| OrthoVisit { date: today - Duration::days(*ago), work: (*work).into(), wire: (*wire).into(), hygiene_ok: *hy, next_weeks: 5, notes: String::new() }).collect(),
         });
     };
-    mk(db, 103, 260, 24, "Brackets metálicos", "Clase II división 1", "Apiñamiento moderado superior e inferior, resalte aumentado.", 2900.0, &[(250, "Colocación de brackets", "0.014 NiTi", true), (215, "Cambio de arco", "0.016 NiTi", true), (180, "Cambio de arco", "0.016x0.022 NiTi", false), (35, "Activación y elásticos clase II", "0.019x0.025 acero", true)]);
+    mk(
+        db,
+        103,
+        260,
+        24,
+        "Brackets metálicos",
+        "Clase II división 1",
+        "Apiñamiento moderado superior e inferior, resalte aumentado.",
+        2900.0,
+        &[(250, "Colocación de brackets", "0.014 NiTi", true), (215, "Cambio de arco", "0.016 NiTi", true), (180, "Cambio de arco", "0.016x0.022 NiTi", false), (35, "Activación y elásticos clase II", "0.019x0.025 acero", true)],
+    );
     mk(db, 116, 90, 18, "Alineadores transparentes", "Clase I", "Apiñamiento leve anterior, diastemas.", 3200.0, &[(85, "Entrega alineadores 1-3", "Alineador 3", true), (45, "Revisión y attachments", "Alineador 9", true)]);
     let id = db.new_id();
-    db.ortho.push(OrthoCase { id, patient_id: 111, doctor_id: 3, start: today, months: 20, appliance: "Disyuntor / ortopedia".into(), arches: "Superior".into(), class: "Clase III".into(), diagnosis: "Mordida cruzada posterior bilateral.".into(), objectives: "Expansión maxilar.".into(), state: OrthoState::Estudio, fee: 1800.0, visits: vec![] });
+    db.ortho.push(OrthoCase {
+        id,
+        patient_id: 111,
+        doctor_id: 3,
+        start: today,
+        months: 20,
+        appliance: "Disyuntor / ortopedia".into(),
+        arches: "Superior".into(),
+        class: "Clase III".into(),
+        diagnosis: "Mordida cruzada posterior bilateral.".into(),
+        objectives: "Expansión maxilar.".into(),
+        state: OrthoState::Estudio,
+        fee: 1800.0,
+        visits: vec![],
+    });
     // datos SEPA de ejemplo (IBAN de prueba válido)
     db.config.creditor_id = "ES12000B00000000".into();
     db.config.clinic_iban = "ES9121000418450200051332".into();
@@ -1028,7 +1061,8 @@ mod tests {
         let dir = std::env::temp_dir().join("ds_import_test");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("pac.csv");
-        std::fs::write(&p, "Nº Historia;Apellidos;Nombre;D.N.I.;F. Nacimiento;Teléfono móvil;E-mail;Población;Mutua\n5001;PÉREZ GÓMEZ;LUIS;12345678Z;03/04/1980;600111222;LUIS@MAIL.ES;MADRID;Aseguradora Nueva\n1001;García López;Ana;;;611222333;;;\n").unwrap();
+        std::fs::write(&p, "Nº Historia;Apellidos;Nombre;D.N.I.;F. Nacimiento;Teléfono móvil;E-mail;Población;Mutua\n5001;PÉREZ GÓMEZ;LUIS;12345678Z;03/04/1980;600111222;LUIS@MAIL.ES;MADRID;Aseguradora Nueva\n1001;García López;Ana;;;611222333;;;\n")
+            .unwrap();
         let sheet = read_table(p.to_str().unwrap()).unwrap();
         let map = guess_mapping(ImportKind::Pacientes, &sheet.headers);
         assert_eq!(map[1], Some(2)); // Nombre
@@ -1142,11 +1176,7 @@ mod tests {
     fn a_mobile_in_the_phone_column_gets_the_reminders() {
         let mut db = Db::sample(d());
         let tariffs = db.tariffs.len();
-        let (sheet, map) = pac_sheet(&[
-            "7001;Vidal;Rosa;;;;;+34 612 34 56 78;;;8001;Barcelona;Barcelona;Particular",
-            "7002;Soler;Joan;;;;915551030;;;;28001;;;Sin mutua",
-            "7003;Puig;Marc;;;;;93 555 10 30",
-        ]);
+        let (sheet, map) = pac_sheet(&["7001;Vidal;Rosa;;;;;+34 612 34 56 78;;;8001;Barcelona;Barcelona;Particular", "7002;Soler;Joan;;;;915551030;;;;28001;;;Sin mutua", "7003;Puig;Marc;;;;;93 555 10 30"]);
         db.import_patients(&sheet, &map);
         let (rosa, joan, marc) = (by_history(&db, 7001), by_history(&db, 7002), by_history(&db, 7003));
         assert_eq!((rosa.mobile.as_str(), rosa.phone.as_str(), rosa.zip.as_str()), ("+34 612 34 56 78", "", "08001"));
@@ -1230,7 +1260,10 @@ mod tests {
 
     #[test]
     fn import_treatments_and_tariff_prices() {
-        let sheet = Sheet { headers: vec!["Código".into(), "Descripción".into(), "Precio".into()], rows: vec![vec!["0301".into(), "Obturación simple".into(), "60,00 €".into()], vec!["".into(), "Corona cerámica sobre diente".into(), "1.250,50".into()]] };
+        let sheet = Sheet {
+            headers: vec!["Código".into(), "Descripción".into(), "Precio".into()],
+            rows: vec![vec!["0301".into(), "Obturación simple".into(), "60,00 €".into()], vec!["".into(), "Corona cerámica sobre diente".into(), "1.250,50".into()]],
+        };
         let map = guess_mapping(ImportKind::Tratamientos, &sheet.headers);
         let mut db = Db::sample(d());
         let r = db.import_treatments(&sheet, &map, 1);

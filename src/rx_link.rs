@@ -181,7 +181,8 @@ pub fn rx_json(p: &crate::booking::Published, d: &PubRx, today: NaiveDate) -> se
 /// Hoja de información de una de sus recetas, con los códigos para la farmacia.
 pub fn rx_sheet(p: &crate::booking::Published, d: &PubRx, i: usize) -> Option<String> {
     let s = d.issues.get(i)?;
-    let h = crate::srep_doc::HipHeader { clinic: &p.clinic, clinic_address: &p.address, clinic_phone: &p.phone, id_repositorio: &d.ids.0, id_entidad: &d.ids.1, id_sistema: &d.ids.2, test_mode: s.test, confidential: s.confidential, signer: &s.signer };
+    let h =
+        crate::srep_doc::HipHeader { clinic: &p.clinic, clinic_address: &p.address, clinic_phone: &p.phone, id_repositorio: &d.ids.0, id_entidad: &d.ids.1, id_sistema: &d.ids.2, test_mode: s.test, confidential: s.confidential, signer: &s.signer };
     Some(crate::srep_doc::hip_html(&h, &s.issued))
 }
 
@@ -227,7 +228,19 @@ pub fn sample_issue(db: &mut Db, patient_id: u32, today: NaiveDate) -> u32 {
     let mut status = BTreeMap::new();
     status.insert("rb1".to_string(), 8u8);
     let issue = crate::finance::SrepIssue { id_acceso: crate::srep::new_id32(), issued: vec![a, b], issued_at: Some(now()), signer: "Dra. Ruiz".into(), test: true, confidential: false, status, checked_at: Some(now()), events: vec![] };
-    db.prescriptions.push(crate::finance::Prescription { id: rid, patient_id, doctor_id: 1, date: today, diagnosis: "Infección tras extracción".into(), items: vec![], notes: String::new(), erx_code: String::new(), erx_platform: String::new(), erx_date: None, srep: Some(issue) });
+    db.prescriptions.push(crate::finance::Prescription {
+        id: rid,
+        patient_id,
+        doctor_id: 1,
+        date: today,
+        diagnosis: "Infección tras extracción".into(),
+        items: vec![],
+        notes: String::new(),
+        erx_code: String::new(),
+        erx_platform: String::new(),
+        erx_date: None,
+        srep: Some(issue),
+    });
     rid
 }
 
@@ -263,8 +276,24 @@ mod tests {
         db.patients[0].nif = "12345678Z".into();
         db.patients[0].birth = NaiveDate::from_ymd_opt(1985, 2, 7);
         let rid = db.new_id();
-        let item = RPrescripcion { producto: crate::srep::RProducto { denominacion: "AMOXICILINA 750 MG".into(), ..Default::default() }, recetas: vec![crate::srep::RReceta { id_receta: "r1".into(), fecha_ini: today, fecha_fin: today + chrono::Duration::days(10), num_envases: 1, estado: 1, ..Default::default() }], ..Default::default() };
-        db.prescriptions.push(crate::finance::Prescription { id: rid, patient_id: pid, doctor_id: 1, date: today, diagnosis: String::new(), items: vec![], notes: String::new(), erx_code: String::new(), erx_platform: String::new(), erx_date: None, srep: Some(crate::finance::SrepIssue { issued: vec![item], test: true, ..Default::default() }) });
+        let item = RPrescripcion {
+            producto: crate::srep::RProducto { denominacion: "AMOXICILINA 750 MG".into(), ..Default::default() },
+            recetas: vec![crate::srep::RReceta { id_receta: "r1".into(), fecha_ini: today, fecha_fin: today + chrono::Duration::days(10), num_envases: 1, estado: 1, ..Default::default() }],
+            ..Default::default()
+        };
+        db.prescriptions.push(crate::finance::Prescription {
+            id: rid,
+            patient_id: pid,
+            doctor_id: 1,
+            date: today,
+            diagnosis: String::new(),
+            items: vec![],
+            notes: String::new(),
+            erx_code: String::new(),
+            erx_platform: String::new(),
+            erx_date: None,
+            srep: Some(crate::finance::SrepIssue { issued: vec![item], test: true, ..Default::default() }),
+        });
         assert!(publish_rx(&db, today).is_empty(), "sin enlace no se publica nada");
         let t = db.rx_token(pid);
         assert_eq!(db.rx_token(pid), t, "un enlace por paciente");

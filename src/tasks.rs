@@ -82,7 +82,9 @@ impl Db {
         let tomorrow = today + Duration::days(1);
         for a in self.appointments.iter().filter(|a| (a.date == today || a.date == tomorrow) && !a.state.is_cancelled()) {
             let Some(pid) = a.patient_id else { continue };
-            if a.date == tomorrow && let Some(s) = self.health_status(pid, today) {
+            if a.date == tomorrow
+                && let Some(s) = self.health_status(pid, today)
+            {
                 new.push((format!("salud:{}", a.id), Some(pid), format!("{s}: pedirlo en la cita de mañana a las {}", a.start.format("%H:%M")), tomorrow));
             }
             let bal = self.patient_balance(pid);
@@ -150,7 +152,18 @@ mod tests {
         let pid = db.patients.iter().map(|p| p.id).find(|&p| !db.has_future_appt(p, d())).unwrap();
         db.recalls.retain(|r| r.patient_id != pid);
         let rid = db.new_id();
-        db.recalls.push(Recall { id: rid, patient_id: pid, date: d() - Duration::days(10), reason: "Higiene anual".into(), doctor_id: 4, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
+        db.recalls.push(Recall {
+            id: rid,
+            patient_id: pid,
+            date: d() - Duration::days(10),
+            reason: "Higiene anual".into(),
+            doctor_id: 4,
+            state: RecallState::Pendiente,
+            channel: String::new(),
+            comment: String::new(),
+            contacted_on: None,
+            appt_id: None,
+        });
         let r = |db: &Db| db.recalls.iter().find(|r| r.id == rid).unwrap().clone();
         let mut a = db.appointments[0].clone();
         a.id = db.new_id();

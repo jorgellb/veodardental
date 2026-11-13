@@ -68,7 +68,17 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                     let sel = app.docs.selected == Some(d.id);
                     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 62.0), Sense::click());
                     let p = ui.painter();
-                    p.rect_filled(rect, CornerRadius::same(10), if sel { Color32::from_rgb(214, 238, 234) } else if resp.hovered() { ROW_HOVER } else { ROW_ALT });
+                    p.rect_filled(
+                        rect,
+                        CornerRadius::same(10),
+                        if sel {
+                            Color32::from_rgb(214, 238, 234)
+                        } else if resp.hovered() {
+                            ROW_HOVER
+                        } else {
+                            ROW_ALT
+                        },
+                    );
                     p.with_clip_rect(rect.shrink(4.0)).text(rect.min + vec2(12.0, 10.0), egui::Align2::LEFT_TOP, &d.title, sbf(14.5), TEXT);
                     p.text(rect.min + vec2(12.0, 34.0), egui::Align2::LEFT_TOP, format!("{} · {}", fmt_date(d.date), d.category), egui::FontId::proportional(12.5), MUTED);
                     let (t, c) = if d.signed { ("Firmado", OK) } else { ("Sin firmar", WARN) };
@@ -103,71 +113,67 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
     let Some(d) = app.db.documents.iter().find(|d| d.id == id).cloned() else { return };
     let vw = ui.available_width();
     // «papel»
-    egui::Frame::new()
-        .fill(Color32::WHITE)
-        .stroke(Stroke::new(1.0, BORDER))
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(egui::Margin::symmetric(40, 30))
-        .shadow(shadow())
-        .show(ui, |ui| {
-            ui.set_width(vw - 80.0);
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                crate::screens::odontograma::draw_logo(ui.painter(), r);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(&app.db.config.name).family(sb()).size(16.0));
-                    muted(ui, format!("{} · {}", app.db.config.address, app.db.config.phone));
-                });
-            });
-            ui.add_space(14.0);
-            ui.label(RichText::new(d.title.to_uppercase()).family(sb()).size(18.0));
-            ui.add_space(10.0);
-            egui::ScrollArea::vertical().id_salt(("docbody", id)).max_height(330.0).show(ui, |ui| {
-                ui.label(RichText::new(&d.body).size(15.0).color(Color32::from_rgb(40, 44, 52)));
-            });
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
-                // firma del paciente
-                ui.vertical(|ui| {
-                    let rep = app.db.representative(d.patient_id, app.today);
-                    ui.label(RichText::new(if rep.is_some() { "Firma del padre, madre o tutor (paciente menor de 16 años)" } else { "Firma del paciente" }).size(13.0).color(MUTED));
-                    let (rect, resp) = ui.allocate_exact_size(vec2(320.0, 120.0), Sense::drag());
-                    let p = ui.painter();
-                    p.rect_filled(rect, CornerRadius::same(8), if d.signed { Color32::WHITE } else { Color32::from_rgb(248, 250, 253) });
-                    p.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, if d.signed { BORDER } else { ACCENT }), StrokeKind::Inside);
-                    p.line_segment([rect.left_bottom() + vec2(16.0, -26.0), rect.right_bottom() + vec2(-16.0, -26.0)], Stroke::new(1.0, Color32::from_rgb(210, 216, 226)));
-                    if d.signed {
-                        draw_strokes(p, rect, &d.signature, Color32::from_rgb(20, 40, 110));
-                    } else {
-                        if resp.drag_started() {
-                            app.docs.strokes.push(vec![]);
-                        }
-                        if resp.dragged() && let (Some(pp), Some(last)) = (resp.interact_pointer_pos(), app.docs.strokes.last_mut()) {
-                            let q = [((pp.x - rect.min.x) / rect.width()).clamp(0.0, 1.0), ((pp.y - rect.min.y) / rect.height()).clamp(0.0, 1.0)];
-                            last.push(q);
-                        }
-                        draw_strokes(p, rect, &app.docs.strokes, Color32::from_rgb(20, 40, 110));
-                        if app.docs.strokes.is_empty() {
-                            p.text(rect.center(), egui::Align2::CENTER_CENTER, "Firme aquí con el ratón o la tableta", egui::FontId::proportional(13.0), MUTED);
-                        }
-                        if resp.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
-                        }
-                    }
-                });
-                ui.add_space(20.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new("Profesional").size(13.0).color(MUTED));
-                    ui.label(RichText::new(app.db.doctor(d.doctor_id).map(|c| c.name.clone()).unwrap_or_default()).family(sb()));
-                    muted(ui, app.db.doctor(d.doctor_id).map(|c| format!("Nº colegiado {}", c.license)).unwrap_or_default());
-                    if d.signed {
-                        ui.add_space(8.0);
-                        ui.label(RichText::new(format!("✔ Firmado por {}", d.signer)).color(OK).family(sb()));
-                        muted(ui, d.signed_at.map(|t| t.format("%d/%m/%Y %H:%M").to_string()).unwrap_or_default());
-                    }
-                });
+    egui::Frame::new().fill(Color32::WHITE).stroke(Stroke::new(1.0, BORDER)).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(40, 30)).shadow(shadow()).show(ui, |ui| {
+        ui.set_width(vw - 80.0);
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
+            crate::screens::odontograma::draw_logo(ui.painter(), r);
+            ui.vertical(|ui| {
+                ui.label(RichText::new(&app.db.config.name).family(sb()).size(16.0));
+                muted(ui, format!("{} · {}", app.db.config.address, app.db.config.phone));
             });
         });
+        ui.add_space(14.0);
+        ui.label(RichText::new(d.title.to_uppercase()).family(sb()).size(18.0));
+        ui.add_space(10.0);
+        egui::ScrollArea::vertical().id_salt(("docbody", id)).max_height(330.0).show(ui, |ui| {
+            ui.label(RichText::new(&d.body).size(15.0).color(Color32::from_rgb(40, 44, 52)));
+        });
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
+            // firma del paciente
+            ui.vertical(|ui| {
+                let rep = app.db.representative(d.patient_id, app.today);
+                ui.label(RichText::new(if rep.is_some() { "Firma del padre, madre o tutor (paciente menor de 16 años)" } else { "Firma del paciente" }).size(13.0).color(MUTED));
+                let (rect, resp) = ui.allocate_exact_size(vec2(320.0, 120.0), Sense::drag());
+                let p = ui.painter();
+                p.rect_filled(rect, CornerRadius::same(8), if d.signed { Color32::WHITE } else { Color32::from_rgb(248, 250, 253) });
+                p.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, if d.signed { BORDER } else { ACCENT }), StrokeKind::Inside);
+                p.line_segment([rect.left_bottom() + vec2(16.0, -26.0), rect.right_bottom() + vec2(-16.0, -26.0)], Stroke::new(1.0, Color32::from_rgb(210, 216, 226)));
+                if d.signed {
+                    draw_strokes(p, rect, &d.signature, Color32::from_rgb(20, 40, 110));
+                } else {
+                    if resp.drag_started() {
+                        app.docs.strokes.push(vec![]);
+                    }
+                    if resp.dragged()
+                        && let (Some(pp), Some(last)) = (resp.interact_pointer_pos(), app.docs.strokes.last_mut())
+                    {
+                        let q = [((pp.x - rect.min.x) / rect.width()).clamp(0.0, 1.0), ((pp.y - rect.min.y) / rect.height()).clamp(0.0, 1.0)];
+                        last.push(q);
+                    }
+                    draw_strokes(p, rect, &app.docs.strokes, Color32::from_rgb(20, 40, 110));
+                    if app.docs.strokes.is_empty() {
+                        p.text(rect.center(), egui::Align2::CENTER_CENTER, "Firme aquí con el ratón o la tableta", egui::FontId::proportional(13.0), MUTED);
+                    }
+                    if resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                    }
+                }
+            });
+            ui.add_space(20.0);
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Profesional").size(13.0).color(MUTED));
+                ui.label(RichText::new(app.db.doctor(d.doctor_id).map(|c| c.name.clone()).unwrap_or_default()).family(sb()));
+                muted(ui, app.db.doctor(d.doctor_id).map(|c| format!("Nº colegiado {}", c.license)).unwrap_or_default());
+                if d.signed {
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(format!("✔ Firmado por {}", d.signer)).color(OK).family(sb()));
+                    muted(ui, d.signed_at.map(|t| t.format("%d/%m/%Y %H:%M").to_string()).unwrap_or_default());
+                }
+            });
+        });
+    });
     // firmarlo por internet (con la página de la clínica activada)
     if app.db.booking.enabled && app.db.booking.docs && (!d.signed || app.db.doc_link(id).is_some()) {
         ui.add_space(8.0);

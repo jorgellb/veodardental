@@ -10,15 +10,13 @@ use egui::{Align2, Color32, ColorImage, CornerRadius, FontId, Rect, RichText, Se
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub struct Adjust {
     pub brightness: i32,
     pub contrast: i32,
     pub invert: bool,
     pub rot: u8,
 }
-
 
 pub struct ImgState {
     pub selected: Option<u32>,
@@ -35,18 +33,7 @@ pub struct ImgState {
 
 impl Default for ImgState {
     fn default() -> Self {
-        ImgState {
-            selected: None,
-            filter: None,
-            zoom: 1.0,
-            pan: egui::Vec2::ZERO,
-            adjust: Adjust::default(),
-            cache: HashMap::new(),
-            new_path: String::new(),
-            new_kind: ImageKind::Periapical,
-            new_teeth: String::new(),
-            edit_connector: Some(1),
-        }
+        ImgState { selected: None, filter: None, zoom: 1.0, pan: egui::Vec2::ZERO, adjust: Adjust::default(), cache: HashMap::new(), new_path: String::new(), new_kind: ImageKind::Periapical, new_teeth: String::new(), edit_connector: Some(1) }
     }
 }
 
@@ -381,7 +368,9 @@ impl ImgState {
     /// Textura de una imagen (con ajustes si `adjusted`), cacheada.
     fn texture(&mut self, ctx: &egui::Context, img: &PatientImage, adjusted: bool) -> Option<(egui::TextureId, [usize; 2])> {
         let a = if adjusted { self.adjust } else { Adjust::default() };
-        if let Some((t, s, aa)) = self.cache.get(&(img.id, adjusted)) && *aa == a {
+        if let Some((t, s, aa)) = self.cache.get(&(img.id, adjusted))
+            && *aa == a
+        {
             return Some((t.id(), *s));
         }
         let base = if img.demo {
@@ -424,11 +413,7 @@ fn split_args(s: &str) -> Vec<String> {
 }
 
 pub fn bridge_path(c: &Connector) -> PathBuf {
-    if c.bridge_path.trim().is_empty() {
-        crate::paths::data().join(crate::brand::DIR).join("IMCONECT.ini")
-    } else {
-        PathBuf::from(c.bridge_path.trim())
-    }
+    if c.bridge_path.trim().is_empty() { crate::paths::data().join(crate::brand::DIR).join("IMCONECT.ini") } else { PathBuf::from(c.bridge_path.trim()) }
 }
 
 /// Lanza el programa del enlace para el paciente: escribe el fichero puente,
@@ -516,7 +501,13 @@ pub fn import_folder(app: &mut App, pid: u32) -> usize {
             if app.db.images.iter().any(|i| i.path == s) {
                 continue;
             }
-            let kind = if fold(&s).contains("pano") || fold(&s).contains("opg") { ImageKind::Panoramica } else if fold(&s).contains("foto") || fold(&s).contains("intra") { ImageKind::FotoIntraoral } else { kind };
+            let kind = if fold(&s).contains("pano") || fold(&s).contains("opg") {
+                ImageKind::Panoramica
+            } else if fold(&s).contains("foto") || fold(&s).contains("intra") {
+                ImageKind::FotoIntraoral
+            } else {
+                kind
+            };
             let id = app.db.new_id();
             app.db.images.push(PatientImage { id, patient_id: pid, kind, date: app.today, teeth: vec![], path: s, source: "Importada".into(), notes: String::new(), demo: false });
             added += 1;
@@ -615,7 +606,17 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                         let sel = app.img.selected == Some(img.id);
                         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 86.0), Sense::click());
                         let p = ui.painter().clone();
-                        p.rect_filled(rect, CornerRadius::same(10), if sel { Color32::from_rgb(214, 238, 234) } else if resp.hovered() { ROW_HOVER } else { ROW_ALT });
+                        p.rect_filled(
+                            rect,
+                            CornerRadius::same(10),
+                            if sel {
+                                Color32::from_rgb(214, 238, 234)
+                            } else if resp.hovered() {
+                                ROW_HOVER
+                            } else {
+                                ROW_ALT
+                            },
+                        );
                         let th = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(100.0, 70.0));
                         p.rect_filled(th, CornerRadius::same(6), Color32::BLACK);
                         if let Some((tid, size)) = app.img.texture(&ctx, img, false) {
@@ -815,7 +816,19 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nuevo enlace").clicked() {
                             let id = app.db.new_id();
-                            app.db.connectors.push(Connector { id, name: "Nuevo enlace".into(), vendor: String::new(), kind: ImageKind::Periapical, exe: String::new(), args: "[NUMPAC]".into(), bridge_file: true, bridge_path: String::new(), image_folder: String::new(), enabled: true, notes: String::new() });
+                            app.db.connectors.push(Connector {
+                                id,
+                                name: "Nuevo enlace".into(),
+                                vendor: String::new(),
+                                kind: ImageKind::Periapical,
+                                exe: String::new(),
+                                args: "[NUMPAC]".into(),
+                                bridge_file: true,
+                                bridge_path: String::new(),
+                                image_folder: String::new(),
+                                enabled: true,
+                                notes: String::new(),
+                            });
                             app.img.edit_connector = Some(id);
                             app.changed();
                         }
@@ -829,7 +842,17 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                     let found = !c.exe.trim().is_empty() && Path::new(c.exe.trim()).exists();
                     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 58.0), Sense::click());
                     let p = ui.painter();
-                    p.rect_filled(rect, CornerRadius::same(10), if sel { Color32::from_rgb(214, 238, 234) } else if resp.hovered() { ROW_HOVER } else { ROW_ALT });
+                    p.rect_filled(
+                        rect,
+                        CornerRadius::same(10),
+                        if sel {
+                            Color32::from_rgb(214, 238, 234)
+                        } else if resp.hovered() {
+                            ROW_HOVER
+                        } else {
+                            ROW_ALT
+                        },
+                    );
                     p.text(rect.min + vec2(14.0, rect.height() / 2.0), Align2::LEFT_CENTER, kind_icon(c.kind), FontId::proportional(22.0), if c.enabled { ACCENT } else { MUTED });
                     p.text(rect.min + vec2(50.0, 10.0), Align2::LEFT_TOP, &c.name, sbf(15.0), if c.enabled { TEXT } else { MUTED });
                     p.text(rect.min + vec2(50.0, 32.0), Align2::LEFT_TOP, format!("{} · {}", c.vendor, c.kind.short()), FontId::proportional(13.0), MUTED);

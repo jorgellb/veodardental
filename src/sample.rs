@@ -9,18 +9,7 @@ fn t(h: u32, m: u32) -> NaiveTime {
 
 #[allow(clippy::too_many_arguments)]
 fn tr(code: &str, desc: &str, group: &str, price: f64, min: u32, odg: OdgKind, per_tooth: bool, recall: u32) -> Treatment {
-    Treatment {
-        code: code.into(),
-        description: desc.into(),
-        group: group.into(),
-        price,
-        minutes: min,
-        odg,
-        per_tooth,
-        recall_months: recall,
-        active: true,
-        only_tariff: None,
-    }
+    Treatment { code: code.into(), description: desc.into(), group: group.into(), price, minutes: min, odg, per_tooth, recall_months: recall, active: true, only_tariff: None }
 }
 
 fn plain(s: &str) -> String {
@@ -84,14 +73,7 @@ impl Db {
         };
         let tariffs = vec![
             tariff(1, "Privado", false, 0.0, vec![], "Tarifa general de la clínica"),
-            tariff(
-                2,
-                "Aseguradora Dental A",
-                true,
-                20.0,
-                vec![("0101", 0.0), ("0102", 0.0), ("0201", 0.0), ("0501", 0.0), ("0103", 0.0)],
-                "Póliza dental con actos incluidos",
-            ),
+            tariff(2, "Aseguradora Dental A", true, 20.0, vec![("0101", 0.0), ("0102", 0.0), ("0201", 0.0), ("0501", 0.0), ("0103", 0.0)], "Póliza dental con actos incluidos"),
             tariff(3, "Mutua Colectivos B", true, 15.0, vec![("0101", 0.0), ("0201", 30.0)], ""),
             tariff(4, "Convenio Empresa C", true, 10.0, vec![], "10% de descuento para empleados"),
         ];
@@ -471,48 +453,16 @@ impl Db {
             });
         }
 
-        let rc = [
-            (104, "Revisión semestral", -5, 1),
-            (106, "Higiene anual", -2, 4),
-            (110, "Revisión semestral", 3, 1),
-            (114, "Higiene anual", 8, 4),
-            (117, "Revisión semestral", 14, 2),
-            (102, "Seguimiento de presupuesto", 1, 1),
-        ];
+        let rc = [(104, "Revisión semestral", -5, 1), (106, "Higiene anual", -2, 4), (110, "Revisión semestral", 3, 1), (114, "Higiene anual", 8, 4), (117, "Revisión semestral", 14, 2), (102, "Seguimiento de presupuesto", 1, 1)];
         for (pid, reason, off, doc) in rc {
             let id = db.new_id();
-            db.recalls.push(Recall {
-                id,
-                patient_id: pid,
-                date: today + Duration::days(off),
-                reason: reason.into(),
-                doctor_id: doc,
-                state: RecallState::Pendiente,
-                channel: String::new(),
-                comment: String::new(),
-                contacted_on: None,
-                appt_id: None,
-            });
+            db.recalls.push(Recall { id, patient_id: pid, date: today + Duration::days(off), reason: reason.into(), doctor_id: doc, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
         }
 
         let wid = db.new_id();
-        db.waitlist.push(WaitItem {
-            id: wid,
-            patient_id: 106,
-            doctor_id: 4,
-            reason: "Higiene (adelantar si hay hueco)".into(),
-            since: today - Duration::days(3),
-            preference: "Mañanas".into(),
-        });
+        db.waitlist.push(WaitItem { id: wid, patient_id: 106, doctor_id: 4, reason: "Higiene (adelantar si hay hueco)".into(), since: today - Duration::days(3), preference: "Mañanas".into() });
         let wid = db.new_id();
-        db.waitlist.push(WaitItem {
-            id: wid,
-            patient_id: 115,
-            doctor_id: 1,
-            reason: "Revisión molestia 26".into(),
-            since: today - Duration::days(1),
-            preference: "Tardes".into(),
-        });
+        db.waitlist.push(WaitItem { id: wid, patient_id: 115, doctor_id: 1, reason: "Revisión molestia 26".into(), since: today - Duration::days(1), preference: "Tardes".into() });
 
         // Facturas emitidas (en orden cronológico para que la cadena sea coherente).
         for (pid, ago) in [(101, 140), (109, 65), (100, 25)] {
@@ -540,7 +490,14 @@ impl Db {
         // Un análisis con IA de ejemplo (la panorámica de Carlos Martínez).
         if let Some(img) = db.images.iter().find(|i| i.patient_id == 101 && i.kind == ImageKind::Panoramica).map(|i| i.id) {
             use crate::ia::{Analysis, Attempt, Finding, IaReport, Proposal};
-            let f = |t: u8, kind: &str, faces: &[&str], desc: &str, sev: &str, conf: f32| Finding { tooth: Some(t), kind: kind.into(), faces: faces.iter().map(|x| x.to_string()).collect(), description: desc.into(), severity: sev.into(), confidence: conf };
+            let f = |t: u8, kind: &str, faces: &[&str], desc: &str, sev: &str, conf: f32| Finding {
+                tooth: Some(t),
+                kind: kind.into(),
+                faces: faces.iter().map(|x| x.to_string()).collect(),
+                description: desc.into(),
+                severity: sev.into(),
+                confidence: conf,
+            };
             let analysis = Analysis {
                 summary: "Panorámica de adulto con implante osteointegrado en 46 y ausencia de 36 con buen volumen óseo aparente. Posible caries oclusal en 17 y cálculo en la zona anteroinferior.".into(),
                 quality: "buena".into(),
@@ -583,10 +540,12 @@ impl Db {
                     [0.08 + t * 0.55, 0.55 + 0.18 * (t * 18.0 + seed).sin() * (1.0 - t * 0.5) - 0.1 * t]
                 })
                 .collect();
-            let b: Vec<[f32; 2]> = (0..30).map(|i| {
-                let t = i as f32 / 29.0;
-                [0.6 + t * 0.3, 0.62 - 0.12 * (t * 9.0 + seed).cos()]
-            }).collect();
+            let b: Vec<[f32; 2]> = (0..30)
+                .map(|i| {
+                    let t = i as f32 / 29.0;
+                    [0.6 + t * 0.3, 0.62 - 0.12 * (t * 9.0 + seed).cos()]
+                })
+                .collect();
             vec![a, b, vec![[0.12, 0.78], [0.85, 0.74]]]
         };
         for (pid, tpl, teeth, seed) in [(100u32, 1u32, vec![], 0.3f32), (100, 4, vec![36u8], 1.1), (101, 1, vec![], 2.0), (101, 3, vec![36], 0.7), (101, 2, vec![37], 1.7)] {
@@ -779,7 +738,12 @@ mod tests {
         a.station = 2;
         let mut b = db.clone();
         b.station = 3;
-        let ra: Vec<String> = (0..2).map(|_| { let id = a.add_payment(100, 10.0, "Efectivo", ""); a.payments.iter().find(|p| p.id == id).unwrap().receipt_no.clone() }).collect();
+        let ra: Vec<String> = (0..2)
+            .map(|_| {
+                let id = a.add_payment(100, 10.0, "Efectivo", "");
+                a.payments.iter().find(|p| p.id == id).unwrap().receipt_no.clone()
+            })
+            .collect();
         let id = b.add_payment(101, 10.0, "Tarjeta", "");
         let rb = b.payments.iter().find(|p| p.id == id).unwrap().receipt_no.clone();
         assert_eq!(ra, vec![format!("{}2-00001", db.config.receipt_series), format!("{}2-00002", db.config.receipt_series)]);

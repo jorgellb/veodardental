@@ -386,10 +386,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub fn from_db(db: &Db) -> Snapshot {
-        Snapshot {
-            records: RECORD_FIELDS.iter().filter_map(|f| Some((f.to_string(), records_of(db, f)?))).collect(),
-            plain: PLAIN_FIELDS.iter().filter_map(|f| Some((f.to_string(), plain_of(db, f)?))).collect(),
-        }
+        Snapshot { records: RECORD_FIELDS.iter().filter_map(|f| Some((f.to_string(), records_of(db, f)?))).collect(), plain: PLAIN_FIELDS.iter().filter_map(|f| Some((f.to_string(), plain_of(db, f)?))).collect() }
     }
 
     /// Los datos enteros como texto JSON, pasando cada registro por `f(lista,

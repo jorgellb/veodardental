@@ -1,10 +1,10 @@
 //! Datos de la clínica: pacientes, tratamientos, tarifas, citas, presupuestos,
 //! cobros, caja y recalls. Todo se guarda en un único fichero JSON.
 
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
 pub use crate::sync::Tracked;
-use std::collections::HashMap;
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Cómo se dibuja un tratamiento en el odontograma.
@@ -465,17 +465,7 @@ pub enum ApptState {
 }
 
 impl ApptState {
-    pub const ALL: [ApptState; 9] = [
-        ApptState::Planificada,
-        ApptState::Confirmada,
-        ApptState::Recepcion,
-        ApptState::SalaEspera,
-        ApptState::EnConsulta,
-        ApptState::Finalizada,
-        ApptState::NoAcude,
-        ApptState::Anulada,
-        ApptState::Reprogramada,
-    ];
+    pub const ALL: [ApptState; 9] = [ApptState::Planificada, ApptState::Confirmada, ApptState::Recepcion, ApptState::SalaEspera, ApptState::EnConsulta, ApptState::Finalizada, ApptState::NoAcude, ApptState::Anulada, ApptState::Reprogramada];
     pub fn label(self) -> &'static str {
         match self {
             ApptState::Planificada => "Planificada",
@@ -857,17 +847,7 @@ pub enum ImageKind {
 }
 
 impl ImageKind {
-    pub const ALL: [ImageKind; 9] = [
-        ImageKind::Periapical,
-        ImageKind::AletaMordida,
-        ImageKind::Panoramica,
-        ImageKind::Cefalometrica,
-        ImageKind::Tac,
-        ImageKind::FotoIntraoral,
-        ImageKind::FotoExtraoral,
-        ImageKind::Escaneo3D,
-        ImageKind::Documento,
-    ];
+    pub const ALL: [ImageKind; 9] = [ImageKind::Periapical, ImageKind::AletaMordida, ImageKind::Panoramica, ImageKind::Cefalometrica, ImageKind::Tac, ImageKind::FotoIntraoral, ImageKind::FotoExtraoral, ImageKind::Escaneo3D, ImageKind::Documento];
     pub fn label(self) -> &'static str {
         match self {
             ImageKind::Periapical => "Radiografía periapical",
@@ -962,7 +942,15 @@ pub fn default_connectors() -> Vec<Connector> {
         notes: notes.into(),
     };
     vec![
-        c(1, "Radiovisiógrafo (RVG)", "Carestream / Kodak Dental Imaging", ImageKind::Periapical, r"C:\Program Files (x86)\Carestream\Dental Imaging Software\TW.exe", "-P\\GESDEN\\[NUMPAC] -N[NOMPAC] [APELPAC]", "Captura de periapicales y aletas. Equivale al enlace enl_kodak del original."),
+        c(
+            1,
+            "Radiovisiógrafo (RVG)",
+            "Carestream / Kodak Dental Imaging",
+            ImageKind::Periapical,
+            r"C:\Program Files (x86)\Carestream\Dental Imaging Software\TW.exe",
+            "-P\\GESDEN\\[NUMPAC] -N[NOMPAC] [APELPAC]",
+            "Captura de periapicales y aletas. Equivale al enlace enl_kodak del original.",
+        ),
         c(2, "Ortopantomógrafo", "Carestream CS / Trophy", ImageKind::Panoramica, r"C:\Program Files (x86)\Carestream\Dental Imaging Software\TW.exe", "-P\\GESDEN\\[NUMPAC] -N[NOMPAC] [APELPAC]", "Panorámicas y telerradiografías."),
         c(3, "TAC / CBCT 3D", "CS 3D Imaging / visor 3D", ImageKind::Tac, r"C:\Program Files\Carestream\CS 3D Imaging\CS3DImaging.exe", "/patientid=[NUMPAC] /name=\"[APELPAC], [NOMPAC]\"", "Abre los estudios volumétricos del paciente."),
         c(4, "Cámara intraoral", "Sopro Imaging (Acteon)", ImageKind::FotoIntraoral, r"C:\Program Files\Sopro Imaging\SoproImaging.exe", "[IDPAC]", "Equivale al enlace enl_sopro del original."),
@@ -1239,15 +1227,11 @@ pub fn fmt_date(d: NaiveDate) -> String {
 }
 
 pub fn weekday_es(d: NaiveDate) -> &'static str {
-    ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-        [d.weekday().num_days_from_monday() as usize]
+    ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][d.weekday().num_days_from_monday() as usize]
 }
 
 pub fn month_es(m: u32) -> &'static str {
-    [
-        "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
-        "octubre", "noviembre", "diciembre",
-    ][(m - 1) as usize]
+    ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"][(m - 1) as usize]
 }
 
 pub fn long_date(d: NaiveDate) -> String {
@@ -1350,10 +1334,7 @@ impl Db {
                     db.reset_hidden_credentials();
                     (db, err)
                 }
-                Err(e) => (
-                    Db::sample(today()),
-                    Some(format!("No se pudo leer {}: {e}. Se cargaron datos de ejemplo.", p.display())),
-                ),
+                Err(e) => (Db::sample(today()), Some(format!("No se pudo leer {}: {e}. Se cargaron datos de ejemplo.", p.display()))),
             };
         }
         (Db::sample(today()), None)
@@ -1456,13 +1437,7 @@ impl Db {
     }
 
     pub fn patient_debit(&self, pid: u32) -> f64 {
-        round2(
-            self.entries
-                .iter()
-                .filter(|e| e.patient_id == pid && e.state == TxState::Realizado)
-                .map(|e| e.amount())
-                .sum(),
-        )
+        round2(self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado).map(|e| e.amount()).sum())
     }
     pub fn patient_paid(&self, pid: u32) -> f64 {
         round2(self.payments.iter().filter(|p| p.patient_id == pid).map(|p| p.amount).sum())
@@ -1472,28 +1447,13 @@ impl Db {
         round2(self.patient_debit(pid) - self.patient_paid(pid))
     }
     pub fn patient_planned(&self, pid: u32) -> f64 {
-        round2(
-            self.entries
-                .iter()
-                .filter(|e| e.patient_id == pid && e.state == TxState::Previsto)
-                .map(|e| e.amount())
-                .sum(),
-        )
+        round2(self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto).map(|e| e.amount()).sum())
     }
     pub fn last_visit(&self, pid: u32) -> Option<NaiveDate> {
-        self.appointments
-            .iter()
-            .filter(|a| a.patient_id == Some(pid) && a.state == ApptState::Finalizada)
-            .map(|a| a.date)
-            .max()
+        self.appointments.iter().filter(|a| a.patient_id == Some(pid) && a.state == ApptState::Finalizada).map(|a| a.date).max()
     }
     pub fn next_appt(&self, pid: u32, from: NaiveDate) -> Option<&Appointment> {
-        self.appointments
-            .iter()
-            .filter(|a| {
-                a.patient_id == Some(pid) && a.date >= from && !a.state.is_cancelled() && a.state != ApptState::Finalizada
-            })
-            .min_by_key(|a| (a.date, a.start))
+        self.appointments.iter().filter(|a| a.patient_id == Some(pid) && a.date >= from && !a.state.is_cancelled() && a.state != ApptState::Finalizada).min_by_key(|a| (a.date, a.start))
     }
 
     /// Caja abierta del centro activo.
@@ -1611,22 +1571,10 @@ impl Db {
 
     /// Añade una entrada médica con el precio de la tarifa del paciente.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_entry(
-        &mut self,
-        pid: u32,
-        code: &str,
-        teeth: Vec<u8>,
-        faces: Vec<String>,
-        state: TxState,
-        doctor_id: u32,
-        date: NaiveDate,
-    ) -> u32 {
+    pub fn add_entry(&mut self, pid: u32, code: &str, teeth: Vec<u8>, faces: Vec<String>, state: TxState, doctor_id: u32, date: NaiveDate) -> u32 {
         let tariff = self.patient(pid).map(|p| p.tariff_id).unwrap_or(1);
         let disc = self.patient(pid).map(|p| p.discount_pct).unwrap_or(0.0);
-        let (desc, odg, per_tooth) = self
-            .treatment(code)
-            .map(|t| (t.description.clone(), t.odg, t.per_tooth))
-            .unwrap_or((code.to_string(), OdgKind::Ninguno, false));
+        let (desc, odg, per_tooth) = self.treatment(code).map(|t| (t.description.clone(), t.odg, t.per_tooth)).unwrap_or((code.to_string(), OdgKind::Ninguno, false));
         let price = if state == TxState::Previo { 0.0 } else { self.price_for(code, tariff) };
         let units = if per_tooth { teeth.len().max(1) as u32 } else { 1 };
         let id = self.new_id();
@@ -1675,7 +1623,10 @@ impl Db {
         let bid = self.entries.iter().find(|e| e.id == id).and_then(|e| e.budget_id);
         if let Some(bid) = bid {
             let pending = self.entries.iter().any(|e| e.budget_id == Some(bid) && e.state == TxState::Previsto);
-            if !pending && let Some(b) = self.budgets.iter_mut().find(|b| b.id == bid) && b.state == BudgetState::Aceptado {
+            if !pending
+                && let Some(b) = self.budgets.iter_mut().find(|b| b.id == bid)
+                && b.state == BudgetState::Aceptado
+            {
                 b.state = BudgetState::Cerrado;
             }
         }
@@ -1697,10 +1648,7 @@ impl Db {
             _ => "Revisión semestral",
         };
         let due = add_months(e.date, t.recall_months);
-        let existing = self
-            .recalls
-            .iter_mut()
-            .find(|r| r.patient_id == e.patient_id && r.reason == reason && r.state == RecallState::Pendiente);
+        let existing = self.recalls.iter_mut().find(|r| r.patient_id == e.patient_id && r.reason == reason && r.state == RecallState::Pendiente);
         match existing {
             Some(r) => {
                 if r.date < due {
@@ -1800,14 +1748,7 @@ impl Db {
         // quedan en uno
         let mut used: Vec<u32> = vec![];
         for l in &b.lines {
-            let linked = self.entries.iter_mut().find(|e| {
-                e.patient_id == b.patient_id
-                    && e.state == TxState::Previsto
-                    && e.code == l.code
-                    && e.teeth == l.teeth
-                    && (e.budget_id.is_none() || e.budget_id == Some(bid))
-                    && !used.contains(&e.id)
-            });
+            let linked = self.entries.iter_mut().find(|e| e.patient_id == b.patient_id && e.state == TxState::Previsto && e.code == l.code && e.teeth == l.teeth && (e.budget_id.is_none() || e.budget_id == Some(bid)) && !used.contains(&e.id));
             if let Some(e) = linked {
                 e.budget_id = Some(bid);
                 e.price = l.price;
@@ -1867,29 +1808,13 @@ impl Db {
 
     /// Crea un presupuesto con los tratamientos previstos sin presupuestar.
     pub fn budget_from_planned(&mut self, pid: u32) -> Option<u32> {
-        let planned: Vec<MedEntry> = self
-            .entries
-            .iter()
-            .filter(|e| e.patient_id == pid && e.state == TxState::Previsto && e.budget_id.is_none())
-            .cloned()
-            .collect();
+        let planned: Vec<MedEntry> = self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto && e.budget_id.is_none()).cloned().collect();
         if planned.is_empty() {
             return None;
         }
         let p = self.patient(pid)?.clone();
         let id = self.new_id();
-        let lines = planned
-            .iter()
-            .map(|e| BudgetLine {
-                code: e.code.clone(),
-                description: e.description.clone(),
-                teeth: e.teeth.clone(),
-                units: e.units,
-                price: e.price,
-                discount_pct: e.discount_pct,
-                odg: e.odg,
-            })
-            .collect();
+        let lines = planned.iter().map(|e| BudgetLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, odg: e.odg }).collect();
         self.budgets.push(Budget {
             id,
             patient_id: pid,
@@ -1915,15 +1840,7 @@ impl Db {
     }
 
     /// Huecos libres de `minutes` para un doctor a partir de una fecha.
-    pub fn find_gaps(
-        &self,
-        doctor_id: u32,
-        from: NaiveDate,
-        minutes: u32,
-        earliest: NaiveTime,
-        latest: NaiveTime,
-        days: u32,
-    ) -> Vec<(NaiveDate, NaiveTime)> {
+    pub fn find_gaps(&self, doctor_id: u32, from: NaiveDate, minutes: u32, earliest: NaiveTime, latest: NaiveTime, days: u32) -> Vec<(NaiveDate, NaiveTime)> {
         let mut out = vec![];
         let step = self.config.slot_minutes.max(5) as i64;
         for d in 0..days as i64 {
@@ -1958,27 +1875,15 @@ impl Db {
 
     /// El profesional ya tiene otra cita (o un bloqueo) que se cruza con esa hora.
     pub fn overlaps(&self, doctor_id: u32, date: NaiveDate, s: NaiveTime, e: NaiveTime, ignore: Option<u32>) -> bool {
-        let busy = self.appointments.iter().any(|a| {
-            Some(a.id) != ignore
-                && a.doctor_id == doctor_id
-                && a.date == date
-                && !a.state.is_cancelled()
-                && a.start < e
-                && s < a.end()
-        });
-        let blocked = self.blocks.iter().any(|b| {
-            b.doctor_id == doctor_id && b.date.map(|d| d == date).unwrap_or(true) && b.start < e && s < b.end
-        });
+        let busy = self.appointments.iter().any(|a| Some(a.id) != ignore && a.doctor_id == doctor_id && a.date == date && !a.state.is_cancelled() && a.start < e && s < a.end());
+        let blocked = self.blocks.iter().any(|b| b.doctor_id == doctor_id && b.date.map(|d| d == date).unwrap_or(true) && b.start < e && s < b.end);
         busy || blocked
     }
 
     // ── facturación ──
 
     pub fn uninvoiced(&self, pid: u32) -> Vec<&MedEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none() && e.amount() > 0.0)
-            .collect()
+        self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none() && e.amount() > 0.0).collect()
     }
 
     pub fn invoice(&self, id: u32) -> Option<&Invoice> {
@@ -2006,16 +1911,13 @@ impl Db {
     /// La numeración es correlativa por serie y año, sin huecos.
     pub fn issue_invoice(&mut self, pid: u32, entry_ids: &[u32], date: NaiveDate) -> Result<u32, String> {
         let p = self.patient(pid).cloned().ok_or("Paciente no encontrado")?;
-        let entries: Vec<MedEntry> = self
-            .entries
-            .iter()
-            .filter(|e| entry_ids.contains(&e.id) && e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none())
-            .cloned()
-            .collect();
+        let entries: Vec<MedEntry> = self.entries.iter().filter(|e| entry_ids.contains(&e.id) && e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none()).cloned().collect();
         if entries.is_empty() {
             return Err("No hay tratamientos realizados pendientes de facturar.".into());
         }
-        if let Some(last) = self.invoices.iter().filter(|i| i.series == format!("F{}", date.year())).map(|i| i.date).max() && date < last {
+        if let Some(last) = self.invoices.iter().filter(|i| i.series == format!("F{}", date.year())).map(|i| i.date).max()
+            && date < last
+        {
             return Err(format!("La fecha no puede ser anterior a la última factura de la serie ({}).", fmt_date(last)));
         }
         // a nombre del responsable (el padre o la madre de un menor…) si lo tiene
@@ -2047,18 +1949,7 @@ impl Db {
             client_name,
             client_nif,
             client_address,
-            lines: entries
-                .iter()
-                .map(|e| InvoiceLine {
-                    code: e.code.clone(),
-                    description: e.description.clone(),
-                    teeth: e.teeth.clone(),
-                    units: e.units,
-                    price: e.price,
-                    discount_pct: e.discount_pct,
-                    vat_pct: 0.0,
-                })
-                .collect(),
+            lines: entries.iter().map(|e| InvoiceLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, vat_pct: 0.0 }).collect(),
             rectifies: None,
             rectified_by: None,
             reason: String::new(),
@@ -2145,20 +2036,13 @@ impl Db {
     /// Nuevo periodontograma: copia el anterior (si lo hay) o empieza en blanco,
     /// marcando como ausentes las piezas extraídas o ausentes del odontograma.
     pub fn new_perio(&mut self, pid: u32, doctor_id: u32) -> u32 {
-        let gone: Vec<u8> = self
-            .entries
-            .iter()
-            .filter(|e| e.patient_id == pid && matches!(e.odg, OdgKind::Ausente | OdgKind::Extraccion) && e.state != TxState::Previsto)
-            .flat_map(|e| e.teeth.clone())
-            .collect();
+        let gone: Vec<u8> = self.entries.iter().filter(|e| e.patient_id == pid && matches!(e.odg, OdgKind::Ausente | OdgKind::Extraccion) && e.state != TxState::Previsto).flat_map(|e| e.teeth.clone()).collect();
         let prev = self.patient_perio(pid).last().map(|c| c.teeth.clone());
         let teeth = match prev {
             Some(t) => t,
-            None => crate::screens::odontograma::UPPER_ADULT
-                .iter()
-                .chain(crate::screens::odontograma::LOWER_ADULT.iter())
-                .map(|&t| PerioTooth { tooth: t, depth: [2; 6], recession: [0; 6], missing: gone.contains(&t), ..Default::default() })
-                .collect(),
+            None => {
+                crate::screens::odontograma::UPPER_ADULT.iter().chain(crate::screens::odontograma::LOWER_ADULT.iter()).map(|&t| PerioTooth { tooth: t, depth: [2; 6], recession: [0; 6], missing: gone.contains(&t), ..Default::default() }).collect()
+            }
         };
         let id = self.new_id();
         self.perio.push(PerioChart { id, patient_id: pid, date: today(), doctor_id, teeth, notes: String::new() });

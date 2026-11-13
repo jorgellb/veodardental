@@ -18,11 +18,7 @@ pub fn search(db: &Db, q: &str, limit: usize) -> Vec<u32> {
         .iter()
         .filter(|p| {
             let name = fold(&format!("{} {} {}", p.first_name, p.last_name, p.first_name));
-            q.split_whitespace().all(|w| name.contains(w))
-                || p.history_no.to_string() == q
-                || fold(&p.nif).contains(&q)
-                || (digits.len() >= 4
-                    && (p.mobile.replace(' ', "").contains(&digits) || p.phone.replace(' ', "").contains(&digits)))
+            q.split_whitespace().all(|w| name.contains(w)) || p.history_no.to_string() == q || fold(&p.nif).contains(&q) || (digits.len() >= 4 && (p.mobile.replace(' ', "").contains(&digits) || p.phone.replace(' ', "").contains(&digits)))
         })
         .take(limit)
         .map(|p| p.id)
@@ -30,17 +26,7 @@ pub fn search(db: &Db, q: &str, limit: usize) -> Vec<u32> {
 }
 
 pub fn blank_patient(db: &Db, today: NaiveDate) -> Patient {
-    Patient {
-        id: 0,
-        history_no: db.next_history_no(),
-        province: "Madrid".into(),
-        tariff_id: 1,
-        doctor_id: 1,
-        registered: Some(today),
-        accepts_sms: true,
-        active: true,
-        ..Default::default()
-    }
+    Patient { id: 0, history_no: db.next_history_no(), province: "Madrid".into(), tariff_id: 1, doctor_id: 1, registered: Some(today), accepts_sms: true, active: true, ..Default::default() }
 }
 
 /// Valida un NIF/NIE español. Devuelve None si es correcto o vacío.
@@ -130,11 +116,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
             });
             ui.add_space(6.0);
-            if app.docs_mode == 0 {
-                crate::screens::documentos::patient_tab(app, ui, pid)
-            } else {
-                crate::screens::recetas::patient_view(app, ui, pid)
-            }
+            if app.docs_mode == 0 { crate::screens::documentos::patient_tab(app, ui, pid) } else { crate::screens::recetas::patient_view(app, ui, pid) }
         }
         PatTab::Historial => historial(app, ui, pid),
         PatTab::Presupuestos => crate::screens::presupuestos::patient_list(app, ui, pid),
@@ -233,14 +215,7 @@ fn header(app: &mut App, ui: &mut Ui, pid: u32) {
                     }
                 });
                 let age = p.age(app.today).map(|a| format!("{a} años")).unwrap_or_default();
-                muted(ui, format!(
-                    "{}  ·  {}  ·  Tarifa: {}  ·  Dr.: {}  ·  📞 {}",
-                    age,
-                    if p.nif.is_empty() { "sin NIF".into() } else { p.nif.clone() },
-                    app.db.tariff_name(p.tariff_id),
-                    app.db.doctor_alias(p.doctor_id),
-                    p.mobile
-                ));
+                muted(ui, format!("{}  ·  {}  ·  Tarifa: {}  ·  Dr.: {}  ·  📞 {}", age, if p.nif.is_empty() { "sin NIF".into() } else { p.nif.clone() }, app.db.tariff_name(p.tariff_id), app.db.doctor_alias(p.doctor_id), p.mobile));
             });
             right_aligned(ui, |ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
@@ -308,10 +283,7 @@ fn list(app: &mut App, ui: &mut Ui) {
             ui.checkbox(&mut app.lists.patient_only_debt, "Solo con deuda pendiente");
         });
         ui.add_space(6.0);
-        let tbl = Table::new(
-            "pats",
-            vec![("Nº", 64.0), ("Paciente", 230.0), ("NIF", 110.0), ("Móvil", 120.0), ("Tarifa", 180.0), ("Doctor", 110.0), ("Última visita", 110.0), ("Próxima cita", 130.0), ("Saldo", 100.0)],
-        );
+        let tbl = Table::new("pats", vec![("Nº", 64.0), ("Paciente", 230.0), ("NIF", 110.0), ("Móvil", 120.0), ("Tarifa", 180.0), ("Doctor", 110.0), ("Última visita", 110.0), ("Próxima cita", 130.0), ("Saldo", 100.0)]);
         tbl.header(ui);
         let ids = search(&app.db, &app.lists.patient_filter, usize::MAX);
         let mut open = None;
@@ -381,12 +353,7 @@ fn resumen(app: &mut App, ui: &mut Ui, pid: u32) {
         card(&mut cols[1], |ui| {
             ui.set_width(ui.available_width());
             section(ui, "Próximas citas");
-            let mut future: Vec<&Appointment> = app
-                .db
-                .appointments
-                .iter()
-                .filter(|a| a.patient_id == Some(pid) && a.date >= app.today && !a.state.is_cancelled() && a.state != ApptState::Finalizada)
-                .collect();
+            let mut future: Vec<&Appointment> = app.db.appointments.iter().filter(|a| a.patient_id == Some(pid) && a.date >= app.today && !a.state.is_cancelled() && a.state != ApptState::Finalizada).collect();
             future.sort_by_key(|a| (a.date, a.start));
             if future.is_empty() {
                 muted(ui, "Sin citas programadas.");
@@ -427,10 +394,7 @@ fn resumen(app: &mut App, ui: &mut Ui, pid: u32) {
 }
 
 fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
-    let tbl = Table::new(
-        "entries",
-        vec![("Fecha", 96.0), ("Código", 64.0), ("Tratamiento", 260.0), ("Piezas", 110.0), ("Estado", 96.0), ("Doctor", 110.0), ("Importe", 96.0), ("Presup.", 70.0)],
-    );
+    let tbl = Table::new("entries", vec![("Fecha", 96.0), ("Código", 64.0), ("Tratamiento", 260.0), ("Piezas", 110.0), ("Estado", 96.0), ("Doctor", 110.0), ("Importe", 96.0), ("Presup.", 70.0)]);
     tbl.header(ui);
     if es.is_empty() {
         empty_state(ui, "Sin tratamientos registrados");
@@ -492,13 +456,7 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
         });
         add_entry_row(app, ui, pid);
         ui.add_space(6.0);
-        let mut es: Vec<MedEntry> = app
-            .db
-            .entries
-            .iter()
-            .filter(|e| e.patient_id == pid && app.lists.history_filter.map(|f| e.state == f).unwrap_or(true))
-            .cloned()
-            .collect();
+        let mut es: Vec<MedEntry> = app.db.entries.iter().filter(|e| e.patient_id == pid && app.lists.history_filter.map(|f| e.state == f).unwrap_or(true)).cloned().collect();
         es.sort_by_key(|e| std::cmp::Reverse((e.date, e.id)));
         entries_table(app, ui, &es, true);
         muted(ui, "Doble clic en un tratamiento previsto para marcarlo como realizado · clic derecho para más opciones.");
@@ -589,7 +547,14 @@ fn implants(app: &mut App, ui: &mut Ui, pid: u32) {
                 lab(ui, 90.0, expiry.map(crate::stock::fmt_expiry).unwrap_or_default());
             });
         }
-        muted(ui, if clinical { "Se apunta solo al realizar el tratamiento (del lote que antes caduca); si se usó otro, cámbielo aquí." } else { "Se apunta solo al realizar el tratamiento; si el lote no es el que se usó, lo corrige el doctor o la higienista." });
+        muted(
+            ui,
+            if clinical {
+                "Se apunta solo al realizar el tratamiento (del lote que antes caduca); si se usó otro, cámbielo aquí."
+            } else {
+                "Se apunta solo al realizar el tratamiento; si el lote no es el que se usó, lo corrige el doctor o la higienista."
+            },
+        );
     });
     ui.add_space(10.0);
     if let Some((mid, lot)) = set
@@ -823,11 +788,7 @@ pub fn new_dialog(app: &mut App, ctx: &egui::Context, mut p: Box<Patient>) -> Di
             app.db
                 .patients
                 .iter()
-                .filter(|x| {
-                    (!p.nif.is_empty() && fold(&x.nif) == fold(&p.nif))
-                        || (!p.mobile.is_empty() && x.mobile.replace(' ', "") == p.mobile.replace(' ', ""))
-                        || (p.last_name.len() >= 3 && fold(&x.full_name()) == fold(&p.full_name()))
-                })
+                .filter(|x| (!p.nif.is_empty() && fold(&x.nif) == fold(&p.nif)) || (!p.mobile.is_empty() && x.mobile.replace(' ', "") == p.mobile.replace(' ', "")) || (p.last_name.len() >= 3 && fold(&x.full_name()) == fold(&p.full_name())))
                 .map(|x| format!("{} (Nº {})", x.full_name(), x.history_no))
                 .collect()
         } else {
@@ -883,7 +844,20 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
         kpi(ui, w, "Haber (cobros)", &money(paid), "", OK);
         ui.add_space(4.0);
         let bal = debit - paid;
-        kpi(ui, w, "Saldo", &money(bal), if bal > 0.005 { "pendiente de cobro" } else if bal < -0.005 { "a favor del paciente" } else { "al día" }, if bal > 0.005 { DANGER } else { OK });
+        kpi(
+            ui,
+            w,
+            "Saldo",
+            &money(bal),
+            if bal > 0.005 {
+                "pendiente de cobro"
+            } else if bal < -0.005 {
+                "a favor del paciente"
+            } else {
+                "al día"
+            },
+            if bal > 0.005 { DANGER } else { OK },
+        );
     });
     ui.add_space(10.0);
     card(ui, |ui| {
@@ -921,13 +895,18 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
         for (i, (d, c, de, ha, pay)) in movs.iter().enumerate() {
             bal += de - ha;
             // las devoluciones y anulaciones van en negativo en el haber
-            let r = tbl.row(ui, i, false, &[
-                cell(fmt_date(d.date())),
-                cell(c),
-                cell(if *de > 0.0 { money(*de) } else { String::new() }),
-                cellc(if ha.abs() > 0.004 { money(*ha) } else { String::new() }, if *ha < 0.0 { DANGER } else { OK }),
-                cellc(money(bal), if bal > 0.005 { DANGER } else { TEXT }),
-            ]);
+            let r = tbl.row(
+                ui,
+                i,
+                false,
+                &[
+                    cell(fmt_date(d.date())),
+                    cell(c),
+                    cell(if *de > 0.0 { money(*de) } else { String::new() }),
+                    cellc(if ha.abs() > 0.004 { money(*ha) } else { String::new() }, if *ha < 0.0 { DANGER } else { OK }),
+                    cellc(money(bal), if bal > 0.005 { DANGER } else { TEXT }),
+                ],
+            );
             if let Some(id) = pay {
                 r.context_menu(|ui| {
                     if ui.button("✖ Anular este cobro…").clicked() {
@@ -949,13 +928,7 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
     ui.add_space(10.0);
     crate::screens::facturas::patient_block(app, ui, pid);
     // Planes de financiación de presupuestos aceptados.
-    let plans: Vec<(u32, String, f64, FinancePlan)> = app
-        .db
-        .budgets
-        .iter()
-        .filter(|b| b.patient_id == pid && b.plan.is_some())
-        .map(|b| (b.id, b.title.clone(), b.total(), b.plan.clone().unwrap()))
-        .collect();
+    let plans: Vec<(u32, String, f64, FinancePlan)> = app.db.budgets.iter().filter(|b| b.patient_id == pid && b.plan.is_some()).map(|b| (b.id, b.title.clone(), b.total(), b.plan.clone().unwrap())).collect();
     for (bid, t, total, plan) in plans {
         ui.add_space(10.0);
         card(ui, |ui| {
@@ -968,7 +941,13 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                     let paid = plan.paid.get(i as usize).copied().unwrap_or(false);
                     let due = plan.due_date(i);
                     let overdue = !paid && due < app.today;
-                    let col = if paid { OK } else if overdue { DANGER } else { MUTED };
+                    let col = if paid {
+                        OK
+                    } else if overdue {
+                        DANGER
+                    } else {
+                        MUTED
+                    };
                     egui::Frame::new().fill(tint(col, 0.1)).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
                         ui.vertical(|ui| {
                             ui.label(RichText::new(format!("Cuota {}", i + 1)).family(crate::theme::sb()).color(col));
@@ -976,7 +955,8 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                             if paid {
                                 ui.label(RichText::new("Pagada").size(13.5).color(OK));
                             } else if let Some(rid) = app.db.installment_remittance(bid, i) {
-                                ui.label(RichText::new(format!("En remesa #{rid}")).size(13.5).color(INFO)).on_hover_text("Se ha enviado al banco para cobrarla por domiciliación. Si el banco la devuelve, regístrelo en Remesas SEPA y se podrá cobrar aquí.");
+                                ui.label(RichText::new(format!("En remesa #{rid}")).size(13.5).color(INFO))
+                                    .on_hover_text("Se ha enviado al banco para cobrarla por domiciliación. Si el banco la devuelve, regístrelo en Remesas SEPA y se podrá cobrar aquí.");
                             } else if ui.small_button("Cobrar").clicked() {
                                 pay_idx = Some(i);
                             }

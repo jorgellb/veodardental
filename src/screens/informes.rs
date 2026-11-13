@@ -89,7 +89,22 @@ fn daybook(app: &mut App, ui: &mut Ui) {
         for (i, e) in es.iter().enumerate() {
             let p = app.db.patient(e.patient_id).cloned().unwrap_or_default();
             let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
-            tbl.row(ui, i, false, &[cell(fmt_date(e.date)), cell(p.history_no.to_string()), cell(p.full_name()), cell(&e.code), cell(&e.description), cell(teeth.join("-")), cell(app.db.doctor_alias(e.doctor_id)), cell(app.db.tariff_name(if e.tariff_id != 0 { e.tariff_id } else { p.tariff_id })), cell(money(e.amount()))]);
+            tbl.row(
+                ui,
+                i,
+                false,
+                &[
+                    cell(fmt_date(e.date)),
+                    cell(p.history_no.to_string()),
+                    cell(p.full_name()),
+                    cell(&e.code),
+                    cell(&e.description),
+                    cell(teeth.join("-")),
+                    cell(app.db.doctor_alias(e.doctor_id)),
+                    cell(app.db.tariff_name(if e.tariff_id != 0 { e.tariff_id } else { p.tariff_id })),
+                    cell(money(e.amount())),
+                ],
+            );
         }
         if es.is_empty() {
             empty_state(ui, "Sin actos en el periodo");

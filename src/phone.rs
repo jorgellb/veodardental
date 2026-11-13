@@ -48,11 +48,7 @@ pub fn same_number(a: &str, b: &str) -> bool {
     if x.len() < 6 || y.len() < 6 {
         return false;
     }
-    if x.len() >= 9 && y.len() >= 9 {
-        x[x.len() - 9..] == y[y.len() - 9..]
-    } else {
-        x == y
-    }
+    if x.len() >= 9 && y.len() >= 9 { x[x.len() - 9..] == y[y.len() - 9..] } else { x == y }
 }
 
 /// Número legible (600 123 456 / 91 555 10 30); otros formatos se dejan tal cual.
@@ -134,7 +130,10 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() && let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2]))
+        {
             out.push(h * 16 + l);
             i += 3;
             continue;

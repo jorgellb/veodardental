@@ -135,7 +135,20 @@ fn products(app: &mut App, ui: &mut Ui) {
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Producto").clicked() {
                             let id = app.db.new_id();
-                            app.db.products.push(Product { id, code: format!("P{id:03}"), name: "Nuevo producto".into(), family: "General".into(), unit: "unidad".into(), stock: 0.0, min_stock: 1.0, cost: 0.0, supplier_id: app.db.suppliers.first().map(|s| s.id).unwrap_or(0), location: String::new(), active: true, traced: false });
+                            app.db.products.push(Product {
+                                id,
+                                code: format!("P{id:03}"),
+                                name: "Nuevo producto".into(),
+                                family: "General".into(),
+                                unit: "unidad".into(),
+                                stock: 0.0,
+                                min_stock: 1.0,
+                                cost: 0.0,
+                                supplier_id: app.db.suppliers.first().map(|s| s.id).unwrap_or(0),
+                                location: String::new(),
+                                active: true,
+                                traced: false,
+                            });
                             app.stock.product = Some(id);
                             app.changed();
                         }
@@ -332,15 +345,14 @@ fn lots_card(app: &mut App, ui: &mut Ui, id: u32) {
                 .collect();
             let gone = l.expiry.is_some_and(|e| e < app.today);
             let soon = l.expiry.is_some_and(|e| e <= app.today + chrono::Duration::days(EXPIRY_DAYS));
-            let head = format!(
-                "{} · quedan {}{} · {} paciente{}",
-                l.lot,
-                qty(l.qty),
-                l.expiry.map(|e| format!(" · caduca {}", fmt_expiry(e))).unwrap_or_default(),
-                who.len(),
-                if who.len() == 1 { "" } else { "s" }
-            );
-            let col = if gone && l.qty > 1e-9 { DANGER } else if soon && l.qty > 1e-9 { WARN } else { TEXT };
+            let head = format!("{} · quedan {}{} · {} paciente{}", l.lot, qty(l.qty), l.expiry.map(|e| format!(" · caduca {}", fmt_expiry(e))).unwrap_or_default(), who.len(), if who.len() == 1 { "" } else { "s" });
+            let col = if gone && l.qty > 1e-9 {
+                DANGER
+            } else if soon && l.qty > 1e-9 {
+                WARN
+            } else {
+                TEXT
+            };
             egui::CollapsingHeader::new(RichText::new(head).size(13.5).color(col)).id_salt(("lot", id, l.lot.clone())).show(ui, |ui| {
                 if who.is_empty() {
                     muted(ui, "Ningún paciente lo lleva.");
@@ -395,7 +407,10 @@ fn orders(app: &mut App, ui: &mut Ui) {
                         OrderState::Recibido => OK,
                         OrderState::Cancelado => DANGER,
                     };
-                    if tbl.row(ui, i, app.stock.order == Some(o.id), &[cell(format!("#{}", o.id)), cell(fmt_date(o.date)), cell(app.db.supplier_name(o.supplier_id)), cell(o.lines.len().to_string()), cell(money(o.total())), cellc(o.state.label(), col)]).clicked() {
+                    if tbl
+                        .row(ui, i, app.stock.order == Some(o.id), &[cell(format!("#{}", o.id)), cell(fmt_date(o.date)), cell(app.db.supplier_name(o.supplier_id)), cell(o.lines.len().to_string()), cell(money(o.total())), cellc(o.state.label(), col)])
+                        .clicked()
+                    {
                         pick = Some(o.id);
                     }
                 }
@@ -493,16 +508,13 @@ fn orders(app: &mut App, ui: &mut Ui) {
                                 app.changed();
                             }
                         }
-                        OrderState::Enviado
-                            if primary(ui, "✔ Recibir mercancía").clicked() => {
-                                match app.db.receive_order(id) {
-                                    Ok(()) => {
-                                        app.changed();
-                                        app.notify("Pedido recibido: el material ha entrado en el almacén.");
-                                    }
-                                    Err(e) => app.warn(e),
-                                }
+                        OrderState::Enviado if primary(ui, "✔ Recibir mercancía").clicked() => match app.db.receive_order(id) {
+                            Ok(()) => {
+                                app.changed();
+                                app.notify("Pedido recibido: el material ha entrado en el almacén.");
                             }
+                            Err(e) => app.warn(e),
+                        },
                         _ => {}
                     }
                     if matches!(o.state, OrderState::Borrador | OrderState::Enviado) && ui.button("Cancelar pedido").clicked() {
@@ -630,7 +642,12 @@ fn consumptions(app: &mut App, ui: &mut Ui) {
         let mut remove = None;
         egui::ScrollArea::vertical().id_salt("consl").max_height(420.0).show(ui, |ui| {
             for (i, c) in list.iter().enumerate() {
-                let r = tbl.row(ui, i, false, &[cell(&c.code), cell(app.db.treatment(&c.code).map(|t| t.description.clone()).unwrap_or_default()), cell(app.db.product(c.product_id).map(|p| p.name.clone()).unwrap_or_default()), cell(qty(c.qty)), cellc("quitar", DANGER)]);
+                let r = tbl.row(
+                    ui,
+                    i,
+                    false,
+                    &[cell(&c.code), cell(app.db.treatment(&c.code).map(|t| t.description.clone()).unwrap_or_default()), cell(app.db.product(c.product_id).map(|p| p.name.clone()).unwrap_or_default()), cell(qty(c.qty)), cellc("quitar", DANGER)],
+                );
                 if r.clicked() && r.interact_pointer_pos().map(|p| p.x > r.rect.max.x - 90.0).unwrap_or(false) {
                     remove = Some(i);
                 }

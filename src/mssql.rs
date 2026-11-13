@@ -248,24 +248,12 @@ pub fn gesden_catalog(src: &SqlSource) -> Result<GCatalogo, String> {
 }
 
 pub fn catalog_from_rows(tarifas: &[Vec<String>], tratamientos: &[Vec<String>], origen: &str) -> Result<GCatalogo, String> {
-    let mut list: Vec<GTarifa> = tarifas
-        .iter()
-        .filter(|r| r.len() >= 6)
-        .map(|r| GTarifa { id: num(&r[0]), codigo: r[1].clone(), nombre: r[2].clone(), inactiva: num(&r[3]), telefono: r[4].clone(), pacientes: num(&r[5]), tratamientos: vec![] })
-        .collect();
+    let mut list: Vec<GTarifa> =
+        tarifas.iter().filter(|r| r.len() >= 6).map(|r| GTarifa { id: num(&r[0]), codigo: r[1].clone(), nombre: r[2].clone(), inactiva: num(&r[3]), telefono: r[4].clone(), pacientes: num(&r[5]), tratamientos: vec![] }).collect();
     for r in tratamientos.iter().filter(|r| r.len() >= 13) {
         let id: i64 = num(&r[0]);
         let Some(t) = list.iter_mut().find(|t| t.id == id) else { continue };
-        t.tratamientos.push(GTto {
-            codigo: r[1].clone(),
-            desc_medico: r[2].clone(),
-            grupo: r[4].clone(),
-            tipo_odg: r[5].clone(),
-            precio: num(&r[7]),
-            minutos: num(&r[8]),
-            piezas: num(&r[9]),
-            inactivo: num(&r[10]),
-        });
+        t.tratamientos.push(GTto { codigo: r[1].clone(), desc_medico: r[2].clone(), grupo: r[4].clone(), tipo_odg: r[5].clone(), precio: num(&r[7]), minutos: num(&r[8]), piezas: num(&r[9]), inactivo: num(&r[10]) });
     }
     if list.is_empty() {
         return Err("La base de datos no tiene tarifas de GESDEN.".into());
@@ -327,10 +315,7 @@ mod tests {
 
     #[test]
     fn catalog_from_gesden_rows() {
-        let tar = vec![
-            vec!["2227".into(), "".into(), "- TARIFA PRIVADA -".into(), "0".into(), "".into(), "50".into()],
-            vec!["83".into(), "AV2".into(), "MUTUA 2013".into(), "1".into(), "".into(), "3".into()],
-        ];
+        let tar = vec![vec!["2227".into(), "".into(), "- TARIFA PRIVADA -".into(), "0".into(), "".into(), "50".into()], vec!["83".into(), "AV2".into(), "MUTUA 2013".into(), "1".into(), "".into(), "3".into()]];
         let tto = vec![vec!["2227".into(), "BLANQ".into(), "BLANQUEAMIENTO".into(), "".into(), "ESTETICA DENTAL".into(), "Genérico".into(), "0".into(), "240".into(), "0".into(), "2".into(), "0".into(), "0".into(), "0".into()]];
         let cat = catalog_from_rows(&tar, &tto, "prueba").unwrap();
         assert_eq!(cat.tarifas[0].tratamientos[0].precio, 240.0);

@@ -4,23 +4,27 @@ pub mod avisos;
 pub mod bancos;
 pub mod caja;
 pub mod centros;
+pub mod cita_online;
 pub mod cobros;
 pub mod comunicaciones;
 pub mod config;
+pub mod correo;
 pub mod documentos;
 pub mod facturas;
 pub mod fichas;
 pub mod gastos;
 pub mod herramientas;
+pub mod ia;
 pub mod imagenes;
 pub mod importar;
 pub mod informes;
 pub mod inicio;
 pub mod laboratorio;
 pub mod llamadas;
+pub mod login;
 pub mod marcha;
 pub mod mutuas;
-pub mod login;
+pub mod odg_paint;
 pub mod odontograma;
 pub mod ortodoncia;
 pub mod pacientes;
@@ -33,13 +37,9 @@ pub mod remesas;
 pub mod salud;
 pub mod tareas;
 pub mod tarifas;
-pub mod whatsapp;
-pub mod ia;
-pub mod verifactu;
-pub mod correo;
-pub mod cita_online;
-pub mod odg_paint;
 pub mod teeth;
+pub mod verifactu;
+pub mod whatsapp;
 
 use crate::app::{App, ConfirmAction, Dialog};
 use crate::theme::*;
@@ -165,57 +165,43 @@ pub fn date_picker(ui: &mut egui::Ui, id: &str, d: &mut NaiveDate) -> bool {
 /// escribe parte del nombre, del código o del grupo y se elige. Solo ofrece
 /// los tratamientos de la tarifa del paciente. Devuelve si cambió.
 #[allow(clippy::too_many_arguments)]
-pub fn treatment_picker(
-    ui: &mut egui::Ui,
-    id: &str,
-    db: &crate::model::Db,
-    tariff_id: u32,
-    code: &mut String,
-    width: f32,
-    keep: impl Fn(&crate::model::Treatment) -> bool,
-    show: impl Fn(&crate::model::Treatment) -> String,
-) -> bool {
+pub fn treatment_picker(ui: &mut egui::Ui, id: &str, db: &crate::model::Db, tariff_id: u32, code: &mut String, width: f32, keep: impl Fn(&crate::model::Treatment) -> bool, show: impl Fn(&crate::model::Treatment) -> String) -> bool {
     use crate::model::fold;
     let mut changed = false;
     let cur = db.treatment(code).filter(|t| db.treatment_offered(t, tariff_id)).map(&show).unwrap_or_else(|| "Elegir tratamiento…".into());
     let qkey = egui::Id::unique(("tpick_q", id));
-    crate::theme::combo(("tpick", id))
-        .width(width)
-        .height(440.0)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .selected_text(cur)
-        .show_ui(ui, |ui| {
-            let mut q: String = ui.data_mut(|d| d.get_temp(qkey)).unwrap_or_default();
-            let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text("🔍 Buscar por nombre, código o grupo").desired_width(width.max(280.0)));
-            if r.changed() {
-                ui.data_mut(|d| d.insert_temp(qkey, q.clone()));
+    crate::theme::combo(("tpick", id)).width(width).height(440.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).selected_text(cur).show_ui(ui, |ui| {
+        let mut q: String = ui.data_mut(|d| d.get_temp(qkey)).unwrap_or_default();
+        let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text("🔍 Buscar por nombre, código o grupo").desired_width(width.max(280.0)));
+        if r.changed() {
+            ui.data_mut(|d| d.insert_temp(qkey, q.clone()));
+        }
+        if q.is_empty() && !r.has_focus() {
+            r.request_focus();
+        }
+        let f = fold(q.trim());
+        let mut last = String::new();
+        let mut n = 0;
+        for t in db.treatments_for(tariff_id).filter(|t| keep(t)) {
+            if !f.is_empty() && !(fold(&t.description).contains(&f) || fold(&t.group).contains(&f) || fold(&t.code).contains(&f)) {
+                continue;
             }
-            if q.is_empty() && !r.has_focus() {
-                r.request_focus();
+            if t.group != last {
+                ui.label(RichText::new(&t.group).size(12.5).color(MUTED));
+                last = t.group.clone();
             }
-            let f = fold(q.trim());
-            let mut last = String::new();
-            let mut n = 0;
-            for t in db.treatments_for(tariff_id).filter(|t| keep(t)) {
-                if !f.is_empty() && !(fold(&t.description).contains(&f) || fold(&t.group).contains(&f) || fold(&t.code).contains(&f)) {
-                    continue;
-                }
-                if t.group != last {
-                    ui.label(RichText::new(&t.group).size(12.5).color(MUTED));
-                    last = t.group.clone();
-                }
-                if ui.selectable_label(*code == t.code, show(t)).clicked() {
-                    *code = t.code.clone();
-                    changed = true;
-                    ui.data_mut(|d| d.remove::<String>(qkey));
-                    ui.close();
-                }
-                n += 1;
+            if ui.selectable_label(*code == t.code, show(t)).clicked() {
+                *code = t.code.clone();
+                changed = true;
+                ui.data_mut(|d| d.remove::<String>(qkey));
+                ui.close();
             }
-            if n == 0 {
-                ui.label(RichText::new("Ningún tratamiento coincide con la búsqueda").color(MUTED));
-            }
-        });
+            n += 1;
+        }
+        if n == 0 {
+            ui.label(RichText::new("Ningún tratamiento coincide con la búsqueda").color(MUTED));
+        }
+    });
     changed
 }
 
@@ -314,4 +300,3 @@ fn run_confirm(app: &mut App, action: ConfirmAction) {
     }
     app.changed();
 }
-

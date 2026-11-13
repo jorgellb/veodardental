@@ -10,7 +10,13 @@ use egui::{CornerRadius, RichText, Sense, Ui, vec2};
 pub fn show(app: &mut App, ui: &mut Ui) {
     let today = app.today;
     let hour = chrono::Local::now().format("%H").to_string().parse::<u32>().unwrap_or(10);
-    let greet = if hour < 14 { "Buenos días" } else if hour < 21 { "Buenas tardes" } else { "Buenas noches" };
+    let greet = if hour < 14 {
+        "Buenos días"
+    } else if hour < 21 {
+        "Buenas tardes"
+    } else {
+        "Buenas noches"
+    };
     title(ui, &format!("{greet}, {}", app.db.config.current_user), &format!("Resumen de {}", long_date(today)));
 
     let center = cid(app.db.config.current_center);
@@ -75,7 +81,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         let pill_x = rect.max.x - if has_next { 262.0 } else { 140.0 };
                         let text_w = (pill_x - 12.0 - (x + 60.0)).max(80.0);
                         let clip = p.with_clip_rect(egui::Rect::from_min_size(egui::pos2(x + 60.0, rect.min.y), vec2(text_w, rect.height())));
-                        clip.text(egui::pos2(x + 62.0, rect.min.y + 13.0), egui::Align2::LEFT_TOP, format!("{}{}", name, if alert { "  ⚠" } else { "" }), sbf(15.0), if a.state.is_cancelled() { MUTED } else if alert { mix(DANGER, HEADING, 0.3) } else { HEADING });
+                        clip.text(
+                            egui::pos2(x + 62.0, rect.min.y + 13.0),
+                            egui::Align2::LEFT_TOP,
+                            format!("{}{}", name, if alert { "  ⚠" } else { "" }),
+                            sbf(15.0),
+                            if a.state.is_cancelled() {
+                                MUTED
+                            } else if alert {
+                                mix(DANGER, HEADING, 0.3)
+                            } else {
+                                HEADING
+                            },
+                        );
                         clip.text(egui::pos2(x + 62.0, rect.min.y + 36.0), egui::Align2::LEFT_TOP, format!("{} · {} · {}", a.reason, app.db.doctor_alias(a.doctor_id), app.db.box_name(a.box_id)), egui::FontId::proportional(13.0), MUTED);
                         let pr = egui::Rect::from_min_size(egui::pos2(pill_x, rect.min.y + 19.0), vec2(126.0, 26.0));
                         p.rect_filled(pr, CornerRadius::same(13), tint(sc, 0.11));

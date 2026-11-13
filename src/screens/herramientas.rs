@@ -39,7 +39,10 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Copias de seguridad");
-        muted(ui, "Se hace una copia automática cada día al abrir el programa. Se guardan todas las de las dos últimas semanas, una por semana de los últimos tres meses y una por mes del último año; de las manuales, las 10 últimas. Elija también una carpeta fuera de este ordenador (disco USB, carpeta en la nube…) para tener una segunda copia por si se estropea el disco.");
+        muted(
+            ui,
+            "Se hace una copia automática cada día al abrir el programa. Se guardan todas las de las dos últimas semanas, una por semana de los últimos tres meses y una por mes del último año; de las manuales, las 10 últimas. Elija también una carpeta fuera de este ordenador (disco USB, carpeta en la nube…) para tener una segunda copia por si se estropea el disco.",
+        );
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             let before = app.db.config.backup_extra.clone();
@@ -61,7 +64,9 @@ pub fn backups_panel(app: &mut App, ui: &mut Ui) {
                 }
                 app.tools.extra_info = None;
             }
-            if ui.button("📂 Abrir carpeta de copias").clicked() && let Err(e) = crate::screens::imagenes::open_folder(&backup_dir()) {
+            if ui.button("📂 Abrir carpeta de copias").clicked()
+                && let Err(e) = crate::screens::imagenes::open_folder(&backup_dir())
+            {
                 app.warn(e);
             }
             muted(ui, backup_dir().display().to_string());
@@ -149,7 +154,9 @@ fn password_card(app: &mut App, ui: &mut Ui) {
         }
         let key = crate::cifrado::current_key();
         match &key {
-            None => muted(ui, "La segunda copia lleva los datos de salud de todos los pacientes. Con una contraseña se guarda cifrada: sin ella nadie puede abrirla, ni en el disco ni en la nube. Las copias que ya hay en esa carpeta también se cifran."),
+            None => {
+                muted(ui, "La segunda copia lleva los datos de salud de todos los pacientes. Con una contraseña se guarda cifrada: sin ella nadie puede abrirla, ni en el disco ni en la nube. Las copias que ya hay en esa carpeta también se cifran.")
+            }
             Some(k) => {
                 ui.label(RichText::new(format!("✔ La segunda copia se guarda cifrada desde el {}.", fmt_date(k.since.date()))).size(14.5).color(OK));
                 muted(ui, "Para restaurar una copia cifrada en otro ordenador hará falta la contraseña. Si la cambia, las copias que ya hay en la segunda carpeta pasan a la nueva.");
@@ -215,10 +222,13 @@ fn set_password(app: &mut App, old: Option<crate::cifrado::BackupKey>) {
     let extra = app.db.config.backup_extra.trim().to_string();
     let moved = if extra.is_empty() || !std::path::Path::new(&extra).is_dir() { Ok(0) } else { rekey_folder(std::path::Path::new(&extra), old.as_ref(), &new) };
     let first = old.is_none();
-    app.db.audit(if first { "Cifrar las copias" } else { "Cambiar la contraseña de las copias" }, &match &moved {
-        Ok(n) => format!("Copias de la segunda carpeta pasadas a la contraseña: {n}"),
-        Err(e) => e.clone(),
-    });
+    app.db.audit(
+        if first { "Cifrar las copias" } else { "Cambiar la contraseña de las copias" },
+        &match &moved {
+            Ok(n) => format!("Copias de la segunda carpeta pasadas a la contraseña: {n}"),
+            Err(e) => e.clone(),
+        },
+    );
     app.changed();
     let head = if first { "Contraseña puesta: la segunda copia se guardará cifrada desde ahora" } else { "Contraseña cambiada" };
     let cloud = "Si la carpeta está en la nube, vacíe también su papelera, que guarda las copias antiguas.";
@@ -512,11 +522,18 @@ pub fn consultas(app: &mut App, ui: &mut Ui) {
             opt_num(ui, "hasta", &mut q.age_max, 120);
             ui.separator();
             ui.label("Sexo");
-            crate::theme::combo("q_sex").width(90.0).selected_text(match q.sex.as_deref() { Some("F") => "Mujer", Some("M") => "Hombre", _ => "Todos" }).show_ui(ui, |ui| {
-                ui.selectable_value(&mut q.sex, None, "Todos");
-                ui.selectable_value(&mut q.sex, Some("F".into()), "Mujer");
-                ui.selectable_value(&mut q.sex, Some("M".into()), "Hombre");
-            });
+            crate::theme::combo("q_sex")
+                .width(90.0)
+                .selected_text(match q.sex.as_deref() {
+                    Some("F") => "Mujer",
+                    Some("M") => "Hombre",
+                    _ => "Todos",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut q.sex, None, "Todos");
+                    ui.selectable_value(&mut q.sex, Some("F".into()), "Mujer");
+                    ui.selectable_value(&mut q.sex, Some("M".into()), "Hombre");
+                });
             ui.separator();
             ui.label("Tarifa");
             let cur = q.tariff.and_then(|t| tariffs.iter().find(|x| x.0 == t)).map(|x| x.1.clone()).unwrap_or_else(|| "Todas".into());
@@ -623,7 +640,22 @@ pub fn consultas(app: &mut App, ui: &mut Ui) {
                     let ch = if p.accepts_whatsapp { crate::comms::Channel::WhatsApp } else { crate::comms::Channel::Sms };
                     let mid = app.db.new_id();
                     let text = app.db.fill(&app.tools.msg_text, *id, &[]);
-                    app.db.messages.push(crate::comms::Message { id: mid, patient_id: *id, kind: crate::comms::MsgKind::Libre, channel: ch, to: p.mobile.clone(), subject: String::new(), text, created: now(), sent_at: None, state: crate::comms::MsgState::Pendiente, related: None, user: app.db.config.current_user.clone(), error: String::new(), attempts: 0 });
+                    app.db.messages.push(crate::comms::Message {
+                        id: mid,
+                        patient_id: *id,
+                        kind: crate::comms::MsgKind::Libre,
+                        channel: ch,
+                        to: p.mobile.clone(),
+                        subject: String::new(),
+                        text,
+                        created: now(),
+                        sent_at: None,
+                        state: crate::comms::MsgState::Pendiente,
+                        related: None,
+                        user: app.db.config.current_user.clone(),
+                        error: String::new(),
+                        attempts: 0,
+                    });
                     n += 1;
                 }
                 app.changed();
@@ -637,7 +669,24 @@ pub fn consultas(app: &mut App, ui: &mut Ui) {
             for (i, id) in ids.iter().enumerate() {
                 let Some(p) = app.db.patient(*id) else { continue };
                 let bal = app.db.patient_balance(*id);
-                if tbl.row(ui, i, false, &[cell(p.history_no.to_string()), cell(p.full_name()), cell(p.age(today).map(|a| a.to_string()).unwrap_or_default()), cell(&p.mobile), cell(&p.city), cell(app.db.tariff_name(p.tariff_id)), cell(app.db.last_visit(*id).map(fmt_date).unwrap_or_else(|| "nunca".into())), cellc(money(bal), if bal > 0.005 { DANGER } else { MUTED })]).clicked() {
+                if tbl
+                    .row(
+                        ui,
+                        i,
+                        false,
+                        &[
+                            cell(p.history_no.to_string()),
+                            cell(p.full_name()),
+                            cell(p.age(today).map(|a| a.to_string()).unwrap_or_default()),
+                            cell(&p.mobile),
+                            cell(&p.city),
+                            cell(app.db.tariff_name(p.tariff_id)),
+                            cell(app.db.last_visit(*id).map(fmt_date).unwrap_or_else(|| "nunca".into())),
+                            cellc(money(bal), if bal > 0.005 { DANGER } else { MUTED }),
+                        ],
+                    )
+                    .clicked()
+                {
                     open = Some(*id);
                 }
             }

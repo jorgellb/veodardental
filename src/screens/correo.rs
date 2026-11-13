@@ -60,7 +60,10 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
                 }
             });
         });
-        muted(ui, "Cada día, a la hora elegida, el programa prepara los recordatorios de cita, los avisos de revisión, las felicitaciones y los seguimientos de presupuesto, y envía por correo los de los pacientes que aceptan recibir correos. A los demás se les preparan por WhatsApp o SMS, como hasta ahora. Si la página de la clínica está publicada, cada correo lleva su enlace (gestionar la cita, pedir cita o firmar el presupuesto).");
+        muted(
+            ui,
+            "Cada día, a la hora elegida, el programa prepara los recordatorios de cita, los avisos de revisión, las felicitaciones y los seguimientos de presupuesto, y envía por correo los de los pacientes que aceptan recibir correos. A los demás se les preparan por WhatsApp o SMS, como hasta ahora. Si la página de la clínica está publicada, cada correo lleva su enlace (gestionar la cita, pedir cita o firmar el presupuesto).",
+        );
         ui.add_space(6.0);
         let was = c.auto_send;
         ui.add_enabled_ui(c.ready(), |ui| {
@@ -151,7 +154,10 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             ui.horizontal_wrapped(|ui| {
                 for (name, host, port, sec) in PRESETS {
                     let sel = c.host.eq_ignore_ascii_case(host);
-                    let b = egui::Button::new(RichText::new(name).size(12.8).color(if sel { ACCENT_DARK } else { TEXT })).fill(if sel { ACCENT_SOFT } else { CARD }).stroke(Stroke::new(1.0, if sel { ACCENT } else { BORDER })).corner_radius(CornerRadius::same(10));
+                    let b = egui::Button::new(RichText::new(name).size(12.8).color(if sel { ACCENT_DARK } else { TEXT }))
+                        .fill(if sel { ACCENT_SOFT } else { CARD })
+                        .stroke(Stroke::new(1.0, if sel { ACCENT } else { BORDER }))
+                        .corner_radius(CornerRadius::same(10));
                     if ui.add(b).clicked() {
                         c.host = host.into();
                         c.port = port;

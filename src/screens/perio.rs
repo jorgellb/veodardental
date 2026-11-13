@@ -107,7 +107,14 @@ pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
         _ => bad,
     };
     ui.horizontal(|ui| {
-        kpi(ui, w, "Profundidad media", &format!("{:.1} mm", st.mean_depth), &format!("{} · {} puntos", delta(st.mean_depth, pst.map(|p| p.mean_depth), " mm"), st.sites), better(st.mean_depth, pst.map(|p| p.mean_depth), if st.mean_depth >= 3.5 { WARN } else { OK }));
+        kpi(
+            ui,
+            w,
+            "Profundidad media",
+            &format!("{:.1} mm", st.mean_depth),
+            &format!("{} · {} puntos", delta(st.mean_depth, pst.map(|p| p.mean_depth), " mm"), st.sites),
+            better(st.mean_depth, pst.map(|p| p.mean_depth), if st.mean_depth >= 3.5 { WARN } else { OK }),
+        );
         ui.add_space(4.0);
         kpi(ui, w, "Bolsas ≥ 4 mm", &st.pockets4.to_string(), &delta(st.pockets4 as f32, pst.map(|p| p.pockets4 as f32), ""), better(st.pockets4 as f32, pst.map(|p| p.pockets4 as f32), WARN));
         ui.add_space(4.0);
@@ -142,7 +149,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Notas del sondaje");
-        if let Some(c) = app.db.perio.iter_mut().find(|c| c.id == sel) && ui.add(egui::TextEdit::multiline(&mut c.notes).desired_rows(3).desired_width(f32::INFINITY)).changed() {
+        if let Some(c) = app.db.perio.iter_mut().find(|c| c.id == sel)
+            && ui.add(egui::TextEdit::multiline(&mut c.notes).desired_rows(3).desired_width(f32::INFINITY)).changed()
+        {
             app.dirty = true;
         }
     });
@@ -233,11 +242,7 @@ fn arch_block(ui: &mut Ui, arch: &[u8], upper: bool, chart: &PerioChart, prev: O
     let full: [Row; 6] = [Mobility, Furcation, Bleeding, Plaque, Recession, Depth];
     let short: [Row; 4] = [Bleeding, Plaque, Recession, Depth];
     // filas de fuera hacia dentro (las de abajo se leen al revés)
-    let (top_rows, bottom_rows): (Vec<Row>, Vec<Row>) = if upper {
-        (full.to_vec(), short.iter().rev().cloned().collect())
-    } else {
-        (short.to_vec(), full.iter().rev().cloned().collect())
-    };
+    let (top_rows, bottom_rows): (Vec<Row>, Vec<Row>) = if upper { (full.to_vec(), short.iter().rev().cloned().collect()) } else { (short.to_vec(), full.iter().rev().cloned().collect()) };
     let title_h = 22.0;
     let num_h = 26.0;
     let h = title_h + top_rows.len() as f32 * ROW_H + 4.0 + band_h + num_h + band_h + 4.0 + bottom_rows.len() as f32 * ROW_H;

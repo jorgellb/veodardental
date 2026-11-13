@@ -838,28 +838,71 @@ impl App {
 /// algo (remesas, liquidaciones a mutuas, conciliación del banco). Ver
 /// [`App::chain_op`].
 pub enum ChainOp {
-    Issue { patient: u32, entries: Vec<u32>, date: chrono::NaiveDate },
-    Rectify { invoice: u32, reason: String },
-    Correct { invoice: u32 },
-    Cancel { invoice: u32, reason: String },
+    Issue {
+        patient: u32,
+        entries: Vec<u32>,
+        date: chrono::NaiveDate,
+    },
+    Rectify {
+        invoice: u32,
+        reason: String,
+    },
+    Correct {
+        invoice: u32,
+    },
+    Cancel {
+        invoice: u32,
+        reason: String,
+    },
     /// Remesa SEPA con las cuotas domiciliables hasta `until` (las que aún
     /// estén sin remesar al hacerla).
-    Remit { until: chrono::NaiveDate, collection: chrono::NaiveDate },
-    Collected { remittance: u32 },
-    Returned { remittance: u32, item: usize, reason: String },
+    Remit {
+        until: chrono::NaiveDate,
+        collection: chrono::NaiveDate,
+    },
+    Collected {
+        remittance: u32,
+    },
+    Returned {
+        remittance: u32,
+        item: usize,
+        reason: String,
+    },
     /// Liquidación a la mutua con los actos aún sin liquidar del periodo.
-    Claim { tariff: u32, from: chrono::NaiveDate, to: chrono::NaiveDate, date: chrono::NaiveDate },
+    Claim {
+        tariff: u32,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+        date: chrono::NaiveDate,
+    },
     /// Conciliación automática del banco. Devuelve cuántos movimientos.
     Reconcile,
     /// Cita pedida por internet: se apunta en la agenda (devuelve la cita) o se rechaza.
-    Confirm { request: u32 },
-    Reject { request: u32, why: String },
+    Confirm {
+        request: u32,
+    },
+    Reject {
+        request: u32,
+        why: String,
+    },
     /// Cobro en la clínica de una cuota (devuelve el cobro).
-    PayInstallment { budget: u32, index: u32, method: String },
+    PayInstallment {
+        budget: u32,
+        index: u32,
+        method: String,
+    },
     /// Anulación de un cobro equivocado (devuelve la anulación).
-    CancelPayment { payment: u32, reason: String },
+    CancelPayment {
+        payment: u32,
+        reason: String,
+    },
     /// Devolución al paciente de dinero que tiene a favor.
-    Refund { patient: u32, amount: f64, method: String, reason: String },
+    Refund {
+        patient: u32,
+        amount: f64,
+        method: String,
+        reason: String,
+    },
 }
 
 impl ChainOp {
@@ -984,7 +1027,6 @@ pub fn login_shell(info: &crate::server::AccessInfo, last_user: &str, today: chr
 }
 
 impl App {
-
     fn handle_screenshot(&mut self, ctx: &egui::Context) {
         let Some(s) = &mut self.screenshot else { return };
         s.frames += 1;
@@ -1066,7 +1108,13 @@ impl App {
                 } else if resp.hovered() {
                     p.rect_filled(r, CornerRadius::same(10), Color32::from_rgba_unmultiplied(255, 255, 255, 12));
                 }
-                let col = if sel { Color32::WHITE } else if resp.hovered() { Color32::from_rgb(222, 230, 241) } else { soft };
+                let col = if sel {
+                    Color32::WHITE
+                } else if resp.hovered() {
+                    Color32::from_rgb(222, 230, 241)
+                } else {
+                    soft
+                };
                 crate::icons::nav_icon(p, scr, r.min + vec2(24.0, r.height() / 2.0), if sel { Color32::from_rgb(94, 234, 212) } else { col });
                 p.text(r.min + vec2(46.0, r.height() / 2.0), Align2::LEFT_CENTER, name, if sel { theme::sbf(14.5) } else { theme::mdf(14.5) }, col);
                 // contador
@@ -1121,7 +1169,13 @@ impl App {
     fn topbar(&mut self, ui: &mut Ui) {
         // en ventanas estrechas el buscador y la ficha del paciente se compactan
         let total = ui.available_width();
-        let tier = if total > 1120.0 { 0 } else if total > 1000.0 { 1 } else { 2 };
+        let tier = if total > 1120.0 {
+            0
+        } else if total > 1000.0 {
+            1
+        } else {
+            2
+        };
         ui.horizontal_centered(|ui| {
             ui.add_space(4.0);
             if self.db.multi_center() {
@@ -1189,7 +1243,9 @@ impl App {
                 }
             }
             ui.add_space(if tier == 2 { 4.0 } else { 8.0 });
-            if let Some(pid) = self.patient && let Some(p) = self.db.patient(pid).cloned() {
+            if let Some(pid) = self.patient
+                && let Some(p) = self.db.patient(pid).cloned()
+            {
                 let alert = !p.alerts.is_empty() || !p.allergies.is_empty();
                 let short: String = format!("{} {}", p.first_name, p.last_name.split_whitespace().next().unwrap_or("")).chars().take([20, 12, 0][tier]).collect();
                 let txt = if tier == 2 { format!("      {}", if alert { "⚠" } else { "" }) } else { format!("        {}{}", short.trim(), if alert { "  ⚠" } else { "" }) };
@@ -1305,13 +1361,11 @@ impl App {
                 } else if self.dirty {
                     ui.label(RichText::new("Guardando…").size(12.5).color(MUTED));
                 } else {
-                    ui.label(RichText::new("✔ Datos guardados").size(12.5).color(OK))
-                        .on_hover_text(Db::path().display().to_string());
+                    ui.label(RichText::new("✔ Datos guardados").size(12.5).color(OK)).on_hover_text(Db::path().display().to_string());
                 }
                 if self.persist && self.remote.is_some() {
                     ui.separator();
-                    ui.label(RichText::new(format!("🖧 Servidor de la clínica · puesto {}", self.db.station)).size(12.5).color(INFO))
-                        .on_hover_text(crate::shared::station().server.clone());
+                    ui.label(RichText::new(format!("🖧 Servidor de la clínica · puesto {}", self.db.station)).size(12.5).color(INFO)).on_hover_text(crate::shared::station().server.clone());
                 } else if self.persist && crate::shared::shared() {
                     ui.separator();
                     ui.label(RichText::new(format!("🖧 En red · {}", crate::shared::station_label())).size(12.5).color(INFO));
@@ -1325,26 +1379,23 @@ impl App {
         if let Some((text, left, color)) = &mut self.toast {
             *left -= dt;
             let rect = ctx.content_rect();
-            egui::Area::new(egui::Id::unique("toast"))
-                .fixed_pos(rect.center_bottom() - vec2(180.0, 70.0))
-                .order(egui::Order::Tooltip)
-                .show(ctx, |ui| {
-                    // aviso oscuro con una marca del color del mensaje
-                    let accent = *color;
-                    Frame::new()
-                        .fill(Color32::from_rgb(17, 27, 44))
-                        .corner_radius(CornerRadius::same(14))
-                        .inner_margin(Margin { left: 40, right: 20, top: 13, bottom: 13 })
-                        .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_rgba_unmultiplied(10, 20, 40, 60) })
-                        .show(ui, |ui| {
-                            ui.set_min_width(330.0);
-                            ui.set_max_width(560.0);
-                            let r = ui.label(RichText::new(text.as_str()).font(theme::mdf(14.0)).color(Color32::from_rgb(236, 241, 247)));
-                            let c = egui::pos2(r.rect.min.x - 20.0, r.rect.center().y);
-                            ui.painter().circle_filled(c, 9.0, mix(accent, Color32::WHITE, 0.15));
-                            ui.painter().circle_filled(c, 3.5, Color32::WHITE);
-                        });
-                });
+            egui::Area::new(egui::Id::unique("toast")).fixed_pos(rect.center_bottom() - vec2(180.0, 70.0)).order(egui::Order::Tooltip).show(ctx, |ui| {
+                // aviso oscuro con una marca del color del mensaje
+                let accent = *color;
+                Frame::new()
+                    .fill(Color32::from_rgb(17, 27, 44))
+                    .corner_radius(CornerRadius::same(14))
+                    .inner_margin(Margin { left: 40, right: 20, top: 13, bottom: 13 })
+                    .shadow(egui::Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_rgba_unmultiplied(10, 20, 40, 60) })
+                    .show(ui, |ui| {
+                        ui.set_min_width(330.0);
+                        ui.set_max_width(560.0);
+                        let r = ui.label(RichText::new(text.as_str()).font(theme::mdf(14.0)).color(Color32::from_rgb(236, 241, 247)));
+                        let c = egui::pos2(r.rect.min.x - 20.0, r.rect.center().y);
+                        ui.painter().circle_filled(c, 9.0, mix(accent, Color32::WHITE, 0.15));
+                        ui.painter().circle_filled(c, 3.5, Color32::WHITE);
+                    });
+            });
             ctx.request_repaint();
             if *left <= 0.0 {
                 self.toast = None;
@@ -1417,58 +1468,49 @@ impl eframe::App for App {
             self.handle_screenshot(&ctx);
             return;
         }
-        egui::Panel::left("nav")
-            .exact_size(258.0)
-            .resizable(false)
-            .frame(Frame::new().fill(SIDEBAR))
-            .show(ui, |ui| {
-                let r = ui.max_rect();
-                theme::vgradient(ui.painter(), r, SIDEBAR_TOP, SIDEBAR);
-                egui::ScrollArea::vertical().id_salt("nav_scroll").show(ui, |ui| self.sidebar(ui));
-            });
+        egui::Panel::left("nav").exact_size(258.0).resizable(false).frame(Frame::new().fill(SIDEBAR)).show(ui, |ui| {
+            let r = ui.max_rect();
+            theme::vgradient(ui.painter(), r, SIDEBAR_TOP, SIDEBAR);
+            egui::ScrollArea::vertical().id_salt("nav_scroll").show(ui, |ui| self.sidebar(ui));
+        });
         egui::Panel::top("top")
             .exact_size(66.0)
             .frame(Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER)).inner_margin(Margin::symmetric(20, 0)).shadow(egui::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 8) }))
             .show(ui, |ui| self.topbar(ui));
-        egui::Panel::bottom("status")
-            .exact_size(32.0)
-            .frame(Frame::new().fill(Color32::from_rgb(250, 251, 253)).stroke(Stroke::new(1.0, BORDER)).inner_margin(Margin::symmetric(14, 0)))
-            .show(ui, |ui| self.statusbar(ui));
-        egui::CentralPanel::default()
-            .frame(Frame::new().fill(BG).inner_margin(Margin::symmetric(26, 22)))
-            .show(ui, |ui| match self.screen {
-                Screen::Inicio | Screen::Caja | Screen::Tarifas | Screen::Colaboradores | Screen::Modulos | Screen::Imagenes | Screen::Almacen | Screen::Laboratorio | Screen::Gastos | Screen::Ortodoncia | Screen::Listin | Screen::Bancos => {
-                    let mut sa = egui::ScrollArea::vertical().id_salt(("page", self.screen as u8)).auto_shrink([false, false]);
-                    if let Some(y) = self.lists.scroll_to.take() {
-                        sa = sa.vertical_scroll_offset(y);
-                    }
-                    sa.show(ui, |ui| match self.screen {
-                        Screen::Inicio => screens::inicio::show(self, ui),
-                        Screen::Caja => screens::caja::show(self, ui),
-                        Screen::Tarifas => screens::tarifas::show(self, ui),
-                        Screen::Colaboradores => screens::config::collaborators(self, ui),
-                        Screen::Imagenes => screens::imagenes::screen(self, ui),
-                        Screen::Almacen => screens::almacen::screen(self, ui),
-                        Screen::Laboratorio => screens::laboratorio::screen(self, ui),
-                        Screen::Gastos => screens::gastos::screen(self, ui),
-                        Screen::Ortodoncia => screens::ortodoncia::screen(self, ui),
-                        Screen::Listin => screens::herramientas::listin(self, ui),
-                        Screen::Bancos => screens::bancos::screen(self, ui),
-                        _ => screens::config::modules(self, ui),
-                    });
+        egui::Panel::bottom("status").exact_size(32.0).frame(Frame::new().fill(Color32::from_rgb(250, 251, 253)).stroke(Stroke::new(1.0, BORDER)).inner_margin(Margin::symmetric(14, 0))).show(ui, |ui| self.statusbar(ui));
+        egui::CentralPanel::default().frame(Frame::new().fill(BG).inner_margin(Margin::symmetric(26, 22))).show(ui, |ui| match self.screen {
+            Screen::Inicio | Screen::Caja | Screen::Tarifas | Screen::Colaboradores | Screen::Modulos | Screen::Imagenes | Screen::Almacen | Screen::Laboratorio | Screen::Gastos | Screen::Ortodoncia | Screen::Listin | Screen::Bancos => {
+                let mut sa = egui::ScrollArea::vertical().id_salt(("page", self.screen as u8)).auto_shrink([false, false]);
+                if let Some(y) = self.lists.scroll_to.take() {
+                    sa = sa.vertical_scroll_offset(y);
                 }
-                // Configuración: menú de apartados fijo y el apartado con su propio desplazamiento
-                Screen::Config => screens::config::show(self, ui),
-                Screen::Pacientes => screens::pacientes::show(self, ui),
-                Screen::Agenda => screens::agenda::show(self, ui),
-                Screen::Presupuestos => screens::presupuestos::show(self, ui),
-                Screen::Cobros => screens::cobros::show(self, ui),
-                Screen::Facturas => screens::facturas::show(self, ui),
-                Screen::Recalls => screens::recalls::show(self, ui),
-                Screen::Comunicaciones => screens::comunicaciones::screen(self, ui),
-                Screen::Pizarra => screens::herramientas::pizarra(self, ui),
-                Screen::Informes => screens::informes::show(self, ui),
-            });
+                sa.show(ui, |ui| match self.screen {
+                    Screen::Inicio => screens::inicio::show(self, ui),
+                    Screen::Caja => screens::caja::show(self, ui),
+                    Screen::Tarifas => screens::tarifas::show(self, ui),
+                    Screen::Colaboradores => screens::config::collaborators(self, ui),
+                    Screen::Imagenes => screens::imagenes::screen(self, ui),
+                    Screen::Almacen => screens::almacen::screen(self, ui),
+                    Screen::Laboratorio => screens::laboratorio::screen(self, ui),
+                    Screen::Gastos => screens::gastos::screen(self, ui),
+                    Screen::Ortodoncia => screens::ortodoncia::screen(self, ui),
+                    Screen::Listin => screens::herramientas::listin(self, ui),
+                    Screen::Bancos => screens::bancos::screen(self, ui),
+                    _ => screens::config::modules(self, ui),
+                });
+            }
+            // Configuración: menú de apartados fijo y el apartado con su propio desplazamiento
+            Screen::Config => screens::config::show(self, ui),
+            Screen::Pacientes => screens::pacientes::show(self, ui),
+            Screen::Agenda => screens::agenda::show(self, ui),
+            Screen::Presupuestos => screens::presupuestos::show(self, ui),
+            Screen::Cobros => screens::cobros::show(self, ui),
+            Screen::Facturas => screens::facturas::show(self, ui),
+            Screen::Recalls => screens::recalls::show(self, ui),
+            Screen::Comunicaciones => screens::comunicaciones::screen(self, ui),
+            Screen::Pizarra => screens::herramientas::pizarra(self, ui),
+            Screen::Informes => screens::informes::show(self, ui),
+        });
         screens::dialogs(self, &ctx);
         screens::avisos::window(self, &ctx);
         screens::avisos::popups(self, &ctx);

@@ -223,11 +223,7 @@ pub fn load_p12(bytes: &[u8], password: &str) -> Result<Signer, String> {
     use p12_keystore::{KeyStore, Pkcs12ImportPolicy};
     let ks = KeyStore::from_pkcs12(bytes, password, Pkcs12ImportPolicy::Relaxed).map_err(|e| {
         let t = e.to_string().to_lowercase();
-        if t.contains("mac") || t.contains("password") || t.contains("decrypt") || t.contains("unpad") {
-            "La contraseña del certificado no es correcta.".to_string()
-        } else {
-            format!("No se puede abrir el certificado: {e}")
-        }
+        if t.contains("mac") || t.contains("password") || t.contains("decrypt") || t.contains("unpad") { "La contraseña del certificado no es correcta.".to_string() } else { format!("No se puede abrir el certificado: {e}") }
     })?;
     let (_, chain) = ks.private_key_chain().ok_or("El fichero no contiene un certificado con su clave privada (exporte el certificado «con clave privada»).")?;
     let pk = chain.key().as_der().to_vec();
@@ -441,15 +437,8 @@ pub mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("f.der"), &cms).unwrap();
             std::fs::write(dir.join("doc.json"), doc).unwrap();
-            let out = std::process::Command::new("openssl")
-                .args(["cms", "-verify", "-binary", "-inform", "DER", "-noverify", "-in"])
-                .arg(dir.join("f.der"))
-                .arg("-content")
-                .arg(dir.join("doc.json"))
-                .arg("-out")
-                .arg(dir.join("salida"))
-                .output()
-                .unwrap();
+            let out =
+                std::process::Command::new("openssl").args(["cms", "-verify", "-binary", "-inform", "DER", "-noverify", "-in"]).arg(dir.join("f.der")).arg("-content").arg(dir.join("doc.json")).arg("-out").arg(dir.join("salida")).output().unwrap();
             let _ = std::fs::remove_dir_all(&dir);
             assert!(out.status.success(), "openssl: {}", String::from_utf8_lossy(&out.stderr));
         }

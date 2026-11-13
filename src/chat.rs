@@ -46,7 +46,9 @@ impl Db {
     }
 
     pub fn mark_read(&mut self, id: u32, user: &str) {
-        if let Some(m) = self.chat.iter_mut().find(|m| m.id == id) && !m.read_by.iter().any(|u| u == user) {
+        if let Some(m) = self.chat.iter_mut().find(|m| m.id == id)
+            && !m.read_by.iter().any(|u| u == user)
+        {
             m.read_by.push(user.into());
         }
     }

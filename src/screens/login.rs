@@ -100,12 +100,9 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
     egui::ScrollArea::vertical().id_salt("login_scroll").auto_shrink([false, false]).show(ui, |ui| {
         ui.add_space(top);
         ui.vertical_centered(|ui| {
-            egui::Frame::new()
-                .fill(CARD)
-                .corner_radius(CornerRadius::same(22))
-                .inner_margin(egui::Margin::symmetric(36, 32))
-                .shadow(egui::Shadow { offset: [0, 18], blur: 48, spread: 0, color: Color32::from_rgba_unmultiplied(0, 0, 0, 70) })
-                .show(ui, |ui| {
+            egui::Frame::new().fill(CARD).corner_radius(CornerRadius::same(22)).inner_margin(egui::Margin::symmetric(36, 32)).shadow(egui::Shadow { offset: [0, 18], blur: 48, spread: 0, color: Color32::from_rgba_unmultiplied(0, 0, 0, 70) }).show(
+                ui,
+                |ui| {
                     ui.set_width(card_w - 72.0);
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.horizontal(|ui| {
@@ -157,10 +154,7 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                         let r = if coding {
                             ui.add_sized([ui.available_width(), 46.0], egui::TextEdit::singleline(&mut app.login.code).id_salt("login_code").char_limit(6).hint_text("000000").font(sbf(18.0)).margin(vec2(14.0, 11.0)))
                         } else {
-                            ui.add_sized(
-                                [ui.available_width(), 46.0],
-                                egui::TextEdit::singleline(&mut app.login.pin).id_salt("login_pin").password(true).hint_text("••••").font(sbf(18.0)).margin(vec2(14.0, 11.0)),
-                            )
+                            ui.add_sized([ui.available_width(), 46.0], egui::TextEdit::singleline(&mut app.login.pin).id_salt("login_pin").password(true).hint_text("••••").font(sbf(18.0)).margin(vec2(14.0, 11.0)))
                         };
                         if app.login.focus_pin {
                             r.request_focus();
@@ -180,11 +174,7 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing = vec2(kgap, kgap);
                             for k in keys {
-                                let b = egui::Button::new(RichText::new(k).font(sbf(16.0)).color(TEXT))
-                                    .fill(Color32::from_rgb(246, 248, 251))
-                                    .stroke(Stroke::new(1.0, HAIRLINE))
-                                    .min_size(vec2(kw, 42.0))
-                                    .corner_radius(CornerRadius::same(10));
+                                let b = egui::Button::new(RichText::new(k).font(sbf(16.0)).color(TEXT)).fill(Color32::from_rgb(246, 248, 251)).stroke(Stroke::new(1.0, HAIRLINE)).min_size(vec2(kw, 42.0)).corner_radius(CornerRadius::same(10));
                                 if ui.add(b).clicked() {
                                     let (t, max) = if coding { (&mut app.login.code, 6) } else { (&mut app.login.pin, 32) };
                                     if k == "⌫" {
@@ -226,7 +216,8 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                             });
                         }
                     });
-                });
+                },
+            );
         });
     });
 }
@@ -470,11 +461,19 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                         }
                     }
                 });
-                let perms: Vec<&str> = [(Perm::Economia, "cobros y presupuestos"), (Perm::Caja, "caja"), (Perm::Facturacion, "facturas"), (Perm::Informes, "informes"), (Perm::Gastos, "gastos"), (Perm::Almacen, "almacén"), (Perm::Configuracion, "configuración y usuarios")]
-                    .iter()
-                    .filter(|(p, _)| u.profile.can(*p))
-                    .map(|(_, n)| *n)
-                    .collect();
+                let perms: Vec<&str> = [
+                    (Perm::Economia, "cobros y presupuestos"),
+                    (Perm::Caja, "caja"),
+                    (Perm::Facturacion, "facturas"),
+                    (Perm::Informes, "informes"),
+                    (Perm::Gastos, "gastos"),
+                    (Perm::Almacen, "almacén"),
+                    (Perm::Configuracion, "configuración y usuarios"),
+                ]
+                .iter()
+                .filter(|(p, _)| u.profile.can(*p))
+                .map(|(_, n)| *n)
+                .collect();
                 muted(ui, format!("Puede acceder a: agenda, pacientes, historia clínica{}{}", if perms.is_empty() { "" } else { ", " }, perms.join(", ")));
                 if serde_json::to_string(u).unwrap_or_default() != before {
                     app.dirty = true;

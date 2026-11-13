@@ -250,9 +250,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         }
                     } else {
                         let sel = app.agenda.week_doctor == c.id;
-                        let b = egui::Button::new(RichText::new(&c.alias).color(if sel { Color32::WHITE } else { rgb(c.color) }))
-                            .fill(if sel { rgb(c.color) } else { tint(rgb(c.color), 0.12) })
-                            .corner_radius(CornerRadius::same(12));
+                        let b = egui::Button::new(RichText::new(&c.alias).color(if sel { Color32::WHITE } else { rgb(c.color) })).fill(if sel { rgb(c.color) } else { tint(rgb(c.color), 0.12) }).corner_radius(CornerRadius::same(12));
                         if ui.add(b).clicked() {
                             app.agenda.week_doctor = c.id;
                         }
@@ -307,12 +305,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
             (0..days)
                 .map(|i| {
                     let d = monday + Duration::days(i);
-                    Col {
-                        doctor: app.agenda.week_doctor,
-                        date: d,
-                        title: format!("{} {}", weekday_es(d), d.format("%d/%m")),
-                        color: c.as_ref().map(|c| rgb(c.color)).unwrap_or(ACCENT),
-                    }
+                    Col { doctor: app.agenda.week_doctor, date: d, title: format!("{} {}", weekday_es(d), d.format("%d/%m")), color: c.as_ref().map(|c| rgb(c.color)).unwrap_or(ACCENT) }
                 })
                 .collect()
         }
@@ -341,7 +334,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
         let is_today = c.date == app.today;
         p.rect_filled(hr.shrink(2.0), CornerRadius::same(6), if is_today && app.agenda.view == View::Semana { tint(ACCENT, 0.15) } else { tint(c.color, 0.12) });
         p.with_clip_rect(hr.shrink2(vec2(6.0, 0.0)).with_max_x(hr.max.x - 22.0)).text(hr.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, &c.title, FontId::proportional(14.5), TEXT);
-        let n =app.db.appointments.iter().filter(|a| a.date == c.date && a.doctor_id == c.doctor && !a.state.is_cancelled()).count();
+        let n = app.db.appointments.iter().filter(|a| a.date == c.date && a.doctor_id == c.doctor && !a.state.is_cancelled()).count();
         p.text(hr.right_center() - vec2(8.0, 0.0), Align2::RIGHT_CENTER, n.to_string(), FontId::proportional(12.5), MUTED);
         if i > 0 {
             p.line_segment([pos2(x, rect.min.y + head_h), pos2(x, rect.max.y)], Stroke::new(1.0, BORDER));
@@ -425,13 +418,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
     }
 
     // citas
-    let appts: Vec<Appointment> = app
-        .db
-        .appointments
-        .iter()
-        .filter(|a| cid(a.center_id) == cid(app.db.config.current_center) && cols.iter().any(|c| c.date == a.date && c.doctor == a.doctor_id))
-        .cloned()
-        .collect();
+    let appts: Vec<Appointment> = app.db.appointments.iter().filter(|a| cid(a.center_id) == cid(app.db.config.current_center) && cols.iter().any(|c| c.date == a.date && c.doctor == a.doctor_id)).cloned().collect();
     // las que se solapan (dadas a la vez a propósito, o por dos puestos o la
     // cita online), una al lado de otra; las anuladas, debajo de las demás
     let mut lane_of = std::collections::HashMap::new();
@@ -455,7 +442,9 @@ fn grid(app: &mut App, ui: &mut Ui) {
         if resp.drag_started() {
             app.agenda.drag = Some((a.id, egui::Vec2::ZERO));
         }
-        if let Some((did, off)) = &mut app.agenda.drag && *did == a.id {
+        if let Some((did, off)) = &mut app.agenda.drag
+            && *did == a.id
+        {
             if resp.dragged() {
                 *off += resp.drag_delta();
             }
@@ -496,18 +485,10 @@ fn grid(app: &mut App, ui: &mut Ui) {
             line1.push_str("  ★");
         }
         // respuesta al recordatorio de WhatsApp, en la esquina
-        let wa_badge = if a.state != ApptState::SalaEspera {
-            crate::screens::whatsapp::appt_badge(&app.db, a.id)
-        } else {
-            None
-        };
+        let wa_badge = if a.state != ApptState::SalaEspera { crate::screens::whatsapp::appt_badge(&app.db, a.id) } else { None };
         let mut line1_right = r.right() - 4.0;
         // tiempo de espera en la esquina: el nombre se corta antes
-        let wait_text = if a.state == ApptState::SalaEspera && a.date == app.today {
-            a.arrived_at.map(|arr| format!("⏱ {}′", (minutes_of(now.with_second(0).unwrap_or(now)) - minutes_of(arr)).max(0)))
-        } else {
-            None
-        };
+        let wait_text = if a.state == ApptState::SalaEspera && a.date == app.today { a.arrived_at.map(|arr| format!("⏱ {}′", (minutes_of(now.with_second(0).unwrap_or(now)) - minutes_of(arr)).max(0))) } else { None };
         if let Some(t) = &wait_text {
             let gw = p.layout_no_wrap(t.clone(), mdf(12.0), WARN).size().x;
             line1_right = (r.right() - gw - 10.0).max(r.left() + 40.0);
@@ -589,7 +570,11 @@ fn grid(app: &mut App, ui: &mut Ui) {
         }
     }
     // clic en hueco vacío → nueva cita
-    if bg_resp.clicked() && open_dialog.is_none() && let Some(pp) = bg_resp.interact_pointer_pos() && let Some(slot) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols) {
+    if bg_resp.clicked()
+        && open_dialog.is_none()
+        && let Some(pp) = bg_resp.interact_pointer_pos()
+        && let Some(slot) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols)
+    {
         let (date, doc, t) = slot;
         let mut d = ApptDraft::new_at(app, date, Some((t, doc)), app.patient);
         d.a.patient_id = None;
@@ -599,7 +584,10 @@ fn grid(app: &mut App, ui: &mut Ui) {
     if let Some(a) = open_dialog {
         app.dialog = Dialog::Appointment(ApptDraft::from(&a));
     }
-    if bg_resp.hovered() && let Some(pp) = bg_resp.hover_pos() && let Some((_, _, t)) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols) {
+    if bg_resp.hovered()
+        && let Some(pp) = bg_resp.hover_pos()
+        && let Some((_, _, t)) = slot_at(pp, rect, time_w, col_w, head_h, ppm, open, &cols)
+    {
         let ci = ((pp.x - rect.min.x - time_w) / col_w).floor();
         let x = rect.min.x + time_w + ci * col_w;
         let y = y_of(minutes_of(t));
@@ -702,11 +690,7 @@ fn side(app: &mut App, ui: &mut Ui) {
         });
         ui.checkbox(&mut app.agenda.gap_afternoon, "Solo por la tarde");
         if ui.button("🔍 Buscar desde la fecha mostrada").clicked() {
-            let (from, to) = if app.agenda.gap_afternoon {
-                (NaiveTime::from_hms_opt(15, 30, 0).unwrap(), app.db.config.close_time)
-            } else {
-                (app.db.config.open_time, app.db.config.close_time)
-            };
+            let (from, to) = if app.agenda.gap_afternoon { (NaiveTime::from_hms_opt(15, 30, 0).unwrap(), app.db.config.close_time) } else { (app.db.config.open_time, app.db.config.close_time) };
             let start = date.max(app.today);
             app.agenda.gaps = app.db.find_gaps(app.agenda.gap_doctor, start, app.agenda.gap_minutes, from, to, 21);
             if app.agenda.gaps.is_empty() {
@@ -758,7 +742,9 @@ fn side(app: &mut App, ui: &mut Ui) {
             app.db.waitlist.retain(|w| w.id != id);
             app.changed();
         }
-        if let Some(pid) = app.patient && ui.button(format!("＋ Añadir a {}", app.db.patient_name(pid))).clicked() {
+        if let Some(pid) = app.patient
+            && ui.button(format!("＋ Añadir a {}", app.db.patient_name(pid))).clicked()
+        {
             let id = app.db.new_id();
             let doc = app.db.patient(pid).map(|p| p.doctor_id).unwrap_or(1);
             app.db.waitlist.push(WaitItem { id, patient_id: pid, doctor_id: doc, reason: "Adelantar cita".into(), since: app.today, preference: "Cualquier hora".into() });
@@ -906,7 +892,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     let before = d.a.treatment_code.clone();
                     let tariff = d.a.patient_id.and_then(|pid| app.db.patient(pid)).map(|p| p.tariff_id).unwrap_or(1);
                     crate::screens::treatment_picker(ui, "dlg_tto", &app.db, tariff, &mut d.a.treatment_code, 260.0, |t| t.minutes > 0, |t| format!("{} ({} min)", t.description, t.minutes));
-                    if before != d.a.treatment_code && let Some(t) = app.db.treatment(&d.a.treatment_code) {
+                    if before != d.a.treatment_code
+                        && let Some(t) = app.db.treatment(&d.a.treatment_code)
+                    {
                         d.a.minutes = t.minutes;
                         d.a.reason = t.description.clone();
                     }
@@ -954,7 +942,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     muted(ui, format!("· Terminó {}", hm(t)));
                 }
             });
-            if !d.is_new && let Some(t) = crate::screens::whatsapp::appt_line(&app.db, d.a.id) {
+            if !d.is_new
+                && let Some(t) = crate::screens::whatsapp::appt_line(&app.db, d.a.id)
+            {
                 ui.label(RichText::new(t).color(crate::screens::whatsapp::WA_GREEN));
             }
             ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
@@ -1044,7 +1034,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
         if d.is_new {
             d.a.id = app.db.new_id();
             app.db.appointments.push(d.a.clone());
-            if let Some(f) = d.from_id && let Some(o) = app.db.appointments.iter_mut().find(|o| o.id == f) {
+            if let Some(f) = d.from_id
+                && let Some(o) = app.db.appointments.iter_mut().find(|o| o.id == f)
+            {
                 o.state = ApptState::Reprogramada;
             }
             let rep = match d.repeat {

@@ -443,7 +443,9 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 if app.db.wa_sender == me {
                     app.db.wa_sender.clear();
                 }
-                if let Some(h) = &app.wa.hook && let Ok(mut g) = h.cfg.lock() {
+                if let Some(h) = &app.wa.hook
+                    && let Ok(mut g) = h.cfg.lock()
+                {
                     g.accepting = false;
                 }
                 app.db.audit("WhatsApp automático desactivado", &me);
@@ -601,7 +603,9 @@ pub fn log_tab(app: &mut App, ui: &mut Ui) {
             app.changed();
             app.notify("Se volverá a enviar en unos segundos si la cita sigue pendiente.");
         }
-        if let Some((id, yes)) = act && let Some(m) = app.db.whatsapp.iter().find(|m| m.id == id).cloned() {
+        if let Some((id, yes)) = act
+            && let Some(m) = app.db.whatsapp.iter().find(|m| m.id == id).cloned()
+        {
             app.wa.sim += 1;
             let text = if yes == Some(true) { BUTTON_YES } else { BUTTON_NO };
             let ev = WaEvent::Message { id: format!("sim{}-{}", id, app.wa.sim), from: String::new(), user_id: String::new(), name: String::new(), context: m.wamid.clone(), text: text.into(), button: true };

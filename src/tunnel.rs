@@ -55,7 +55,10 @@ impl Drop for Tunnel {
 
 impl Tunnel {
     pub fn snapshot(&mut self) -> State {
-        if let Ok(Some(st)) = self.child.try_wait() && let Ok(mut g) = self.state.lock() && g.exited.is_none() {
+        if let Ok(Some(st)) = self.child.try_wait()
+            && let Ok(mut g) = self.state.lock()
+            && g.exited.is_none()
+        {
             g.exited = Some(format!("cloudflared se ha cerrado ({st})."));
             g.connections = 0;
         }
@@ -233,7 +236,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("veodardental-tunel-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let exe = dir.join("cloudflared");
-        std::fs::write(&exe, "#!/bin/sh\necho \"2026-11-08T10:00:00Z INF args: $*\" >&2\necho \"2026-11-08T10:00:00Z INF token=$TUNNEL_TOKEN\" >&2\necho \"2026-11-08T10:00:01Z INF Registered tunnel connection connIndex=0\" >&2\nexec sleep 30\n").unwrap();
+        std::fs::write(&exe, "#!/bin/sh\necho \"2026-11-08T10:00:00Z INF args: $*\" >&2\necho \"2026-11-08T10:00:00Z INF token=$TUNNEL_TOKEN\" >&2\necho \"2026-11-08T10:00:01Z INF Registered tunnel connection connIndex=0\" >&2\nexec sleep 30\n")
+            .unwrap();
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(find(exe.to_str().unwrap()), Some(exe.clone()));
         let mut t = start(&exe, Mode::Named, 8791, "abc123secreto").unwrap();

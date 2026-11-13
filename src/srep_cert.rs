@@ -165,14 +165,24 @@ pub fn circuit_test(hoy: NaiveDate) -> Vec<Step> {
     let mut bad = q("");
     bad.id_transaccion.clear();
     let (e_tx, e_json, e_unknown) = (code(&s.consultar(&bad, "", hoy).1), code(&s.registrar("no es json", ahora).1), code(&s.registrar(&act(&new_id32(), 1, Some(1), json!({}), "Z", hoy), ahora).1));
-    step("IN01", "Ante datos incorrectos el repositorio responde con los códigos de error del diseño técnico", e_tx == "ERR016" && e_json == "ERR004" && e_unknown == "ERR036", format!("sin transacción {e_tx}, mensaje roto {e_json}, receta desconocida {e_unknown}"));
+    step(
+        "IN01",
+        "Ante datos incorrectos el repositorio responde con los códigos de error del diseño técnico",
+        e_tx == "ERR016" && e_json == "ERR004" && e_unknown == "ERR036",
+        format!("sin transacción {e_tx}, mensaje roto {e_json}, receta desconocida {e_unknown}"),
+    );
 
     // plan del tratamiento (art. 8.3 del RD 1718/2010)
     let plan = crate::erx::plan(hoy, 400, 20);
     let monthly = plan.windows(2).all(|w| (w[1].0 - w[0].0).num_days() <= 31);
     let within_year = plan.last().is_some_and(|l| l.0 < hoy + Duration::days(365));
     let windows = plan.iter().all(|(a, b, _)| (*b - *a).num_days() == 10);
-    step("FT03", "Un tratamiento largo se reparte en recetas de un mes como mucho y no pasa de un año", !plan.is_empty() && monthly && within_year && windows, format!("{} recetas, la última se recoge desde el {}", plan.len(), plan.last().map(|l| fmt_date(l.0)).unwrap_or_default()));
+    step(
+        "FT03",
+        "Un tratamiento largo se reparte en recetas de un mes como mucho y no pasa de un año",
+        !plan.is_empty() && monthly && within_year && windows,
+        format!("{} recetas, la última se recoge desde el {}", plan.len(), plan.last().map(|l| fmt_date(l.0)).unwrap_or_default()),
+    );
 
     // hoja del paciente
     let zeros = "0".repeat(32);
@@ -228,7 +238,12 @@ const fn c(code: &'static str, title: &'static str, kind: Kind, how: &'static st
 /// Los 30 controles de la auditoría de certificación.
 pub const CONTROLS: [Control; 30] = [
     c("FT01", "Medicamentos y productos de cada receta", Kind::Programa, "Cada medicamento o producto de la receta del programa se emite como una prescripción propia, con sus recetas (dispensaciones) según el plan."),
-    c("FT02", "Relación de medicamentos y productos prescribibles", Kind::Programa, "Se eligen del Nomenclátor oficial de la AEMPS (solo los comercializados, con su código nacional y marcados los estupefacientes y psicótropos) o como fórmula magistral con su composición."),
+    c(
+        "FT02",
+        "Relación de medicamentos y productos prescribibles",
+        Kind::Programa,
+        "Se eligen del Nomenclátor oficial de la AEMPS (solo los comercializados, con su código nacional y marcados los estupefacientes y psicótropos) o como fórmula magistral con su composición.",
+    ),
     c("FT03", "Plan terapéutico", Kind::Programa, "Las recetas siguen el plan del tratamiento: dispensaciones de un mes como mucho y plan de un año como mucho (art. 8.3 del RD 1718/2010)."),
     c("FT04", "Periodicidad de la dispensación", Kind::Programa, "Cada receta tiene su plazo de recogida; el repositorio no deja dispensarla antes y la da por caducada al pasar el plazo."),
     c("FT05", "Control de estupefacientes y psicótropos", Kind::Programa, "Vienen marcados del Nomenclátor y se limitan: en los estupefacientes, como mucho 3 meses de tratamiento y 4 envases por receta."),
@@ -236,16 +251,36 @@ pub const CONTROLS: [Control; 30] = [
     c("FT07", "Aseguramiento del paciente", Kind::Parcial, "La receta lleva la identificación del paciente (DNI/NIE, tarjeta sanitaria o representante). Falta enviar los datos de su aseguradora o mutualidad si el diseño funcional los pide."),
     c("FT08", "Seguimiento de las dispensaciones", Kind::Programa, "Desde la receta, el dentista ve qué ha dispensado o bloqueado cada farmacia y puede anular lo que queda."),
     c("FT09", "Protección y confidencialidad en la dispensación", Kind::Programa, "El paciente puede pedir tratamiento confidencial: la farmacia solo lo ve si el paciente le dice su PIN de 4 cifras."),
-    c("FT10", "Soportes de la receta (art. 3.1 del RD 1718/2010)", Kind::Documento, "La receta oficial es electrónica y firmada; el programa también imprime la receta en papel cuando no se emite por la vía electrónica. Hay que justificarlo con el texto del control."),
+    c(
+        "FT10",
+        "Soportes de la receta (art. 3.1 del RD 1718/2010)",
+        Kind::Documento,
+        "La receta oficial es electrónica y firmada; el programa también imprime la receta en papel cuando no se emite por la vía electrónica. Hay que justificarlo con el texto del control.",
+    ),
     c("FT11", "Impresión de la hoja de información al paciente", Kind::Programa, "La hoja lleva el código del sistema, un DataMatrix por receta, el plan, la posología y la cláusula de protección de datos."),
     c("FT12", "Envío telemático de la hoja al paciente", Kind::Programa, "La hoja se envía por correo electrónico al paciente desde la receta. Es una página accesible: se amplía y la leen los lectores de pantalla."),
-    c("FT13", "Información completa para la farmacia y el paciente", Kind::Programa, "El repositorio entrega a Nodofarma los datos del paciente, del dentista, del producto, la posología y el estado de cada receta. Falta la prueba conjunta con Nodofarma."),
+    c(
+        "FT13",
+        "Información completa para la farmacia y el paciente",
+        Kind::Programa,
+        "El repositorio entrega a Nodofarma los datos del paciente, del dentista, del producto, la posología y el estado de cada receta. Falta la prueba conjunta con Nodofarma.",
+    ),
     c("FT14", "Registro de la actividad de dispensación", Kind::Programa, "Se guardan dispensaciones (también parciales y con sustitución), anulaciones, bloqueos y fórmulas magistrales, sin contar dos veces un aviso repetido."),
     c("FD01", "Contenidos mínimos de la receta", Kind::Programa, "Antes de firmar se comprueban los datos obligatorios del paciente, del dentista y de cada medicamento; si falta alguno, no se emite."),
     c("FD02", "Firma electrónica", Kind::Programa, "Cada prescripción se firma (CAdES) con el certificado cualificado personal del dentista, cuya vigencia se comprueba antes de firmar."),
-    c("SC01", "Acceso del prescriptor al sistema", Kind::Programa, "Cada usuario entra con su contraseña personal y, como segundo factor, con el código de 6 cifras de una app de autenticación del móvil (TOTP, RFC 6238); la clínica puede exigirlo para firmar recetas. Bloqueo tras 5 intentos fallidos y por inactividad, registro de accesos, y cada receta firmada además con el certificado cualificado del dentista."),
+    c(
+        "SC01",
+        "Acceso del prescriptor al sistema",
+        Kind::Programa,
+        "Cada usuario entra con su contraseña personal y, como segundo factor, con el código de 6 cifras de una app de autenticación del móvil (TOTP, RFC 6238); la clínica puede exigirlo para firmar recetas. Bloqueo tras 5 intentos fallidos y por inactividad, registro de accesos, y cada receta firmada además con el certificado cualificado del dentista.",
+    ),
     c("SC02", "Seguridad de la información de la receta", Kind::Programa, "Recetas firmadas, registro encadenado de toda la actividad, registro de cambios y copias diarias, la de fuera del ordenador cifrada."),
-    c("SC03", "Acceso del paciente", Kind::Programa, "Con su enlace personal «Mis recetas», el paciente ve en el móvil sus recetas, su estado y la hoja para la farmacia. Como el DNI electrónico no está generalizado, entra con el mecanismo alternativo que admite el control: el enlace secreto más su DNI/NIE y su fecha de nacimiento (de los que solo se publica una huella), con bloqueo de media hora tras 5 intentos fallidos y registro de cada acceso."),
+    c(
+        "SC03",
+        "Acceso del paciente",
+        Kind::Programa,
+        "Con su enlace personal «Mis recetas», el paciente ve en el móvil sus recetas, su estado y la hoja para la farmacia. Como el DNI electrónico no está generalizado, entra con el mecanismo alternativo que admite el control: el enlace secreto más su DNI/NIE y su fecha de nacimiento (de los que solo se publica una huella), con bloqueo de media hora tras 5 intentos fallidos y registro de cada acceso.",
+    ),
     c("SC04", "Seguridad del equipo de acceso", Kind::Instalacion, "Los ordenadores entran con usuario y contraseña. La clínica debe tenerlos actualizados, con antivirus, bloqueo de pantalla y disco cifrado."),
     c("SC05", "Custodia y conservación", Kind::Programa, "Toda la actividad del repositorio queda en un registro encadenado con huellas SHA-256 que el programa comprueba, y se guarda en las copias."),
     c("SC06", "Disponibilidad 24 horas, todo el año", Kind::Instalacion, "El repositorio es un servicio aparte (veodardental --repositorio-recetas) que debe estar en un servidor siempre encendido o en un alojamiento con vigilancia y copia."),
@@ -256,7 +291,12 @@ pub const CONTROLS: [Control; 30] = [
     c("IN02", "Autenticación delegada", Kind::Opcional, "Control opcional: el programa no delega la autenticación en un sistema externo."),
     c("IN03", "Verificación interoperable de certificados", Kind::Parcial, "Se comprueban la vigencia y los datos del certificado. Falta consultar al prestador si está revocado (OCSP o lista de revocación)."),
     c("PD01", "Cláusula de protección de datos", Kind::Programa, "La hoja del paciente lleva la cláusula: responsable, finalidad, base legal (art. 9.2.h del RGPD), destinatarios y derechos."),
-    c("PD02", "Medidas de seguridad por confidencialidad", Kind::Documento, "El programa da acceso por usuario, registro de accesos y de cambios, PIN de confidencialidad y copias cifradas; la clínica aporta su registro de actividades y su análisis de riesgos."),
+    c(
+        "PD02",
+        "Medidas de seguridad por confidencialidad",
+        Kind::Documento,
+        "El programa da acceso por usuario, registro de accesos y de cambios, PIN de confidencialidad y copias cifradas; la clínica aporta su registro de actividades y su análisis de riesgos.",
+    ),
 ];
 
 /// Controles que el programa cubre solo en parte, por su título («a, b y c»).

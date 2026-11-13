@@ -62,14 +62,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.add_space(6.0);
         let tbl = Table::new("recalls", vec![("Fecha", 96.0), ("Paciente", 210.0), ("Móvil", 120.0), ("Motivo", 190.0), ("Doctor", 110.0), ("Estado", 100.0), ("Canal", 90.0), ("Comentario", 220.0)]);
         tbl.header(ui);
-        let mut list: Vec<Recall> = app
-            .db
-            .recalls
-            .iter()
-            .filter(|r| app.lists.recall_filter.map(|f| r.state == f && (f != RecallState::Pendiente || app.db.recall_due(r))).unwrap_or(true))
-            .filter(|r| !app.lists.recall_until_today || r.date <= app.today)
-            .cloned()
-            .collect();
+        let mut list: Vec<Recall> =
+            app.db.recalls.iter().filter(|r| app.lists.recall_filter.map(|f| r.state == f && (f != RecallState::Pendiente || app.db.recall_due(r))).unwrap_or(true)).filter(|r| !app.lists.recall_until_today || r.date <= app.today).cloned().collect();
         list.sort_by_key(|r| r.date);
         if list.is_empty() {
             empty_state(ui, "No hay recalls con este filtro");

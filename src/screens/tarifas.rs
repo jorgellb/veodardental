@@ -32,29 +32,13 @@ fn tariffs(app: &mut App, ui: &mut Ui) {
                 }
                 if ui.button("＋ Nueva tarifa").clicked() {
                     let id = app.db.new_id();
-                    app.db.tariffs.push(Tariff {
-                        id,
-                        name: format!("Nueva tarifa {id}"),
-                        is_insurer: true,
-                        discount_pct: 0.0,
-                        prices: vec![],
-                        phone: String::new(),
-                        notes: String::new(),
-                        valid_from: app.today,
-                        valid_to: None,
-                        inactive: false,
-                    });
+                    app.db.tariffs.push(Tariff { id, name: format!("Nueva tarifa {id}"), is_insurer: true, discount_pct: 0.0, prices: vec![], phone: String::new(), notes: String::new(), valid_from: app.today, valid_to: None, inactive: false });
                     app.lists.tariff_sel = id;
                     app.changed();
                 }
             });
         });
-        let list: Vec<(u32, String, usize, bool)> = app
-            .db
-            .tariffs
-            .iter()
-            .map(|t| (t.id, t.name.clone(), app.db.patients.iter().filter(|p| p.tariff_id == t.id).count(), t.inactive))
-            .collect();
+        let list: Vec<(u32, String, usize, bool)> = app.db.tariffs.iter().map(|t| (t.id, t.name.clone(), app.db.patients.iter().filter(|p| p.tariff_id == t.id).count(), t.inactive)).collect();
         ui.horizontal_wrapped(|ui| {
             for (id, n, count, inactive) in &list {
                 let txt = format!("{n} ({count}){}", if *inactive { " · inactiva" } else { "" });

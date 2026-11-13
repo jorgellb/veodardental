@@ -129,7 +129,13 @@ fn open(app: &mut App, ui: &mut Ui, s: CashSession) {
             section(ui, "Arqueo: recuento del efectivo");
             egui::Grid::new("denoms").num_columns(6).spacing([10.0, 4.0]).show(ui, |ui| {
                 for (i, d) in DENOMS.iter().enumerate() {
-                    let label = if *d >= 5.0 { format!("Billete {d:.0} €") } else if *d >= 1.0 { format!("Moneda {d:.0} €") } else { format!("Moneda {:.0} cts", d * 100.0) };
+                    let label = if *d >= 5.0 {
+                        format!("Billete {d:.0} €")
+                    } else if *d >= 1.0 {
+                        format!("Moneda {d:.0} €")
+                    } else {
+                        format!("Moneda {:.0} cts", d * 100.0)
+                    };
                     ui.label(RichText::new(label).size(14.0));
                     ui.add(egui::DragValue::new(&mut app.lists.cash_counts[i]).range(0..=9999));
                     if i % 2 == 1 {
@@ -176,15 +182,20 @@ fn history(app: &mut App, ui: &mut Ui) {
         list.sort_by_key(|c| std::cmp::Reverse(c.opened));
         for (i, c) in list.iter().enumerate() {
             let exp = app.db.cash_expected(c);
-            tbl.row(ui, i, false, &[
-                cell(c.opened.format("%d/%m/%Y %H:%M").to_string()),
-                cell(c.closed.map(|d| d.format("%d/%m/%Y %H:%M").to_string()).unwrap_or_else(|| "abierta".into())),
-                cell(&c.user),
-                cell(money(c.opening_balance)),
-                cell(money(exp)),
-                cell(c.counted.map(money).unwrap_or_default()),
-                cellc(if c.state == CashState::Abierta { "En curso".to_string() } else { c.notes.clone() }, if c.notes.starts_with("Descuadre") { DANGER } else { OK }),
-            ]);
+            tbl.row(
+                ui,
+                i,
+                false,
+                &[
+                    cell(c.opened.format("%d/%m/%Y %H:%M").to_string()),
+                    cell(c.closed.map(|d| d.format("%d/%m/%Y %H:%M").to_string()).unwrap_or_else(|| "abierta".into())),
+                    cell(&c.user),
+                    cell(money(c.opening_balance)),
+                    cell(money(exp)),
+                    cell(c.counted.map(money).unwrap_or_default()),
+                    cellc(if c.state == CashState::Abierta { "En curso".to_string() } else { c.notes.clone() }, if c.notes.starts_with("Descuadre") { DANGER } else { OK }),
+                ],
+            );
         }
     });
 }

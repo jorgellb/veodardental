@@ -447,7 +447,10 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() && let (Some(h), Some(l)) = (hexd(b[i + 1]), hexd(b[i + 2])) {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let (Some(h), Some(l)) = (hexd(b[i + 1]), hexd(b[i + 2]))
+        {
             out.push(h * 16 + l);
             i += 3;
             continue;
@@ -513,9 +516,7 @@ impl Db {
             .filter(|a| a.date.and_time(a.start) - now >= Duration::hours(2))
             .filter(|a| self.wa_send_day(a.date, s.days_before) <= today)
             .filter(|a| self.wa_for_appt(a.id).is_none())
-            .filter(|a| {
-                a.patient_id.and_then(|p| self.patient(p)).is_some_and(|p| p.active && p.accepts_gdpr && p.accepts_whatsapp && intl(&p.mobile).is_some())
-            })
+            .filter(|a| a.patient_id.and_then(|p| self.patient(p)).is_some_and(|p| p.active && p.accepts_gdpr && p.accepts_whatsapp && intl(&p.mobile).is_some()))
             .collect();
         v.sort_by_key(|a| (a.date, a.start));
         let mut ids: Vec<u32> = v.into_iter().map(|a| a.id).collect();
@@ -530,13 +531,7 @@ impl Db {
     /// Texto del recordatorio para la pasarela, con los datos de la cita.
     pub fn wa_text(&self, s: &WaSettings, a: &Appointment) -> String {
         let text = s.gw_text.replace("[CLINICA]", &self.clinic_for(a));
-        let extra = [
-            ("[FECHA]", date_text(a.date)),
-            ("[HORA]", a.start.format("%H:%M").to_string()),
-            ("[DOCTOR]", self.doctor_alias(a.doctor_id)),
-            ("[MOTIVO]", a.reason.clone()),
-            ("[ENLACE]", self.existing_link_url(a.id).unwrap_or_default()),
-        ];
+        let extra = [("[FECHA]", date_text(a.date)), ("[HORA]", a.start.format("%H:%M").to_string()), ("[DOCTOR]", self.doctor_alias(a.doctor_id)), ("[MOTIVO]", a.reason.clone()), ("[ENLACE]", self.existing_link_url(a.id).unwrap_or_default())];
         self.fill(&text, a.patient_id.unwrap_or(0), &extra)
     }
 
@@ -590,7 +585,9 @@ impl Db {
 
     /// Identificador oculto de WhatsApp (@lid) del paciente, para reconocer sus respuestas.
     pub fn wa_set_user(&mut self, log_id: u32, user_id: &str) {
-        if let Some(m) = self.whatsapp.iter_mut().find(|m| m.id == log_id) && !user_id.is_empty() {
+        if let Some(m) = self.whatsapp.iter_mut().find(|m| m.id == log_id)
+            && !user_id.is_empty()
+        {
             m.user_id = user_id.to_string();
         }
     }
@@ -607,14 +604,15 @@ impl Db {
     }
 
     fn wa_find(&self, ev_context: &str, user_id: &str, from: &str, today: NaiveDate) -> Option<usize> {
-        if !ev_context.is_empty() && let Some(i) = self.whatsapp.iter().position(|m| same_msg_id(&m.wamid, ev_context)) {
+        if !ev_context.is_empty()
+            && let Some(i) = self.whatsapp.iter().position(|m| same_msg_id(&m.wamid, ev_context))
+        {
             return Some(i);
         }
-        let open = |m: &WaMessage| {
-            (m.state.waiting() || matches!(m.state, WaState::Confirmada | WaState::NoViene | WaState::Respuesta))
-                && self.appointments.iter().find(|a| a.id == m.appt_id).is_some_and(|a| a.date >= today)
-        };
-        if !user_id.is_empty() && let Some((i, _)) = self.whatsapp.iter().enumerate().filter(|(_, m)| m.user_id == user_id && open(m)).max_by_key(|(_, m)| m.id) {
+        let open = |m: &WaMessage| (m.state.waiting() || matches!(m.state, WaState::Confirmada | WaState::NoViene | WaState::Respuesta)) && self.appointments.iter().find(|a| a.id == m.appt_id).is_some_and(|a| a.date >= today);
+        if !user_id.is_empty()
+            && let Some((i, _)) = self.whatsapp.iter().enumerate().filter(|(_, m)| m.user_id == user_id && open(m)).max_by_key(|(_, m)| m.id)
+        {
             return Some(i);
         }
         let num = intl(from)?;
@@ -998,10 +996,17 @@ pub fn parse_gateway(body: &str) -> Vec<WaEvent> {
                 let jid = [&k["remoteJid"], &k["remoteJidAlt"], &k["senderPn"]].iter().map(|x| jstr(x)).find(|x| x.ends_with("@s.whatsapp.net") || x.ends_with("@c.us")).unwrap_or_else(|| jstr(&k["remoteJid"]));
                 let (from, user) = jid_parts(&jid);
                 let m = &d["message"];
-                let text = [&m["conversation"], &m["extendedTextMessage"]["text"], &m["buttonsResponseMessage"]["selectedDisplayText"], &m["templateButtonReplyMessage"]["selectedDisplayText"], &m["listResponseMessage"]["title"], &m["reactionMessage"]["text"]]
-                    .iter()
-                    .find_map(|x| x.as_str().filter(|s| !s.is_empty()).map(String::from))
-                    .unwrap_or_else(|| format!("[{}]", jstr(&d["messageType"])));
+                let text = [
+                    &m["conversation"],
+                    &m["extendedTextMessage"]["text"],
+                    &m["buttonsResponseMessage"]["selectedDisplayText"],
+                    &m["templateButtonReplyMessage"]["selectedDisplayText"],
+                    &m["listResponseMessage"]["title"],
+                    &m["reactionMessage"]["text"],
+                ]
+                .iter()
+                .find_map(|x| x.as_str().filter(|s| !s.is_empty()).map(String::from))
+                .unwrap_or_else(|| format!("[{}]", jstr(&d["messageType"])));
                 let context = [&m["extendedTextMessage"]["contextInfo"]["stanzaId"], &d["contextInfo"]["stanzaId"]].iter().find_map(|x| x.as_str().map(String::from)).unwrap_or_default();
                 out.push(WaEvent::Message { id: jstr(&k["id"]), from, user_id: user, name: jstr(&d["pushName"]), context, text, button: false });
             }
@@ -1311,7 +1316,10 @@ mod tests {
         // ejemplo de la documentación de Meta (respuesta con botón)
         let button = r#"{"object":"whatsapp_business_account","entry":[{"id":"102290129340398","changes":[{"value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"15550783881","phone_number_id":"106540352242922"},"contacts":[{"profile":{"name":"Sheena Nelson"},"wa_id":"16505551234","user_id":"US.13491208655302741918"}],"messages":[{"context":{"from":"15550783881","id":"wamid.ORIGINAL"},"from":"16505551234","from_user_id":"US.13491208655302741918","id":"wamid.REPLY","timestamp":"1739321024","type":"button","button":{"payload":"Sí, confirmo","text":"Sí, confirmo"}}]},"field":"messages"}]}]}"#;
         let ev = parse_webhook(button);
-        assert_eq!(ev, vec![WaEvent::Message { id: "wamid.REPLY".into(), from: "16505551234".into(), user_id: "US.13491208655302741918".into(), name: "Sheena Nelson".into(), context: "wamid.ORIGINAL".into(), text: "Sí, confirmo".into(), button: true }]);
+        assert_eq!(
+            ev,
+            vec![WaEvent::Message { id: "wamid.REPLY".into(), from: "16505551234".into(), user_id: "US.13491208655302741918".into(), name: "Sheena Nelson".into(), context: "wamid.ORIGINAL".into(), text: "Sí, confirmo".into(), button: true }]
+        );
         let status = r#"{"entry":[{"changes":[{"value":{"statuses":[{"id":"wamid.X","status":"failed","timestamp":"1","recipient_id":"16505551234","recipient_user_id":"US.1","errors":[{"code":131026,"title":"Message undeliverable","error_data":{"details":"Receiver is incapable of receiving this message"}}]},{"id":"wamid.Y","status":"read","recipient_user_id":"US.2"}]}}]}]}"#;
         let ev = parse_webhook(status);
         assert_eq!(ev.len(), 2);
@@ -1452,7 +1460,18 @@ mod tests {
     }
 
     fn gw_cfg(url: &str, kind: GwKind) -> WaSettings {
-        WaSettings { provider: Provider::Pasarela, gw_kind: kind, gw_url: url.into(), gw_key: "K".into(), gw_session: if kind == GwKind::Waha { "default".into() } else { "clinica".into() }, gw_min_pause: 0, gw_max_pause: 0, gw_risk_ok: true, verify_token: "clave1".into(), ..Default::default() }
+        WaSettings {
+            provider: Provider::Pasarela,
+            gw_kind: kind,
+            gw_url: url.into(),
+            gw_key: "K".into(),
+            gw_session: if kind == GwKind::Waha { "default".into() } else { "clinica".into() },
+            gw_min_pause: 0,
+            gw_max_pause: 0,
+            gw_risk_ok: true,
+            verify_token: "clave1".into(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1646,7 +1665,9 @@ mod tests {
         let ch = agent.get(&format!("{base}/whatsapp?hub.mode=subscribe&hub.challenge=4242&hub.verify_token=verifica")).call().unwrap().into_string().unwrap();
         assert_eq!(ch, "4242");
         assert!(matches!(agent.get(&format!("{base}/whatsapp?hub.mode=subscribe&hub.challenge=1&hub.verify_token=mal")).call(), Err(ureq::Error::Status(403, _))));
-        let payload = format!(r#"{{"object":"whatsapp_business_account","entry":[{{"id":"1","changes":[{{"value":{{"messages":[{{"context":{{"id":"{wamid}"}},"from":"34000","id":"wamid.IN1","type":"button","button":{{"payload":"No puedo ir","text":"No puedo ir"}}}}]}},"field":"messages"}}]}}]}}"#);
+        let payload = format!(
+            r#"{{"object":"whatsapp_business_account","entry":[{{"id":"1","changes":[{{"value":{{"messages":[{{"context":{{"id":"{wamid}"}},"from":"34000","id":"wamid.IN1","type":"button","button":{{"payload":"No puedo ir","text":"No puedo ir"}}}}]}},"field":"messages"}}]}}]}}"#
+        );
         // sin firma o con firma falsa: rechazado
         assert!(matches!(agent.post(&format!("{base}/whatsapp")).send_string(&payload), Err(ureq::Error::Status(403, _))));
         assert!(matches!(agent.post(&format!("{base}/whatsapp")).set("X-Hub-Signature-256", "sha256=00").send_string(&payload), Err(ureq::Error::Status(403, _))));

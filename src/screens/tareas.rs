@@ -34,7 +34,20 @@ pub fn bell(app: &mut App, ui: &mut Ui) {
     let n = pend.len();
     let late = pend.iter().any(|t| t.overdue(app.today));
     let txt = if n == 0 { "🔔".to_string() } else { format!("🔔 {n}") };
-    let b = egui::Button::new(RichText::new(txt).color(if late { DANGER } else if n > 0 { WARN } else { TEXT })).fill(if late { tint(DANGER, 0.12) } else if n > 0 { tint(WARN, 0.12) } else { Color32::TRANSPARENT });
+    let b = egui::Button::new(RichText::new(txt).color(if late {
+        DANGER
+    } else if n > 0 {
+        WARN
+    } else {
+        TEXT
+    }))
+    .fill(if late {
+        tint(DANGER, 0.12)
+    } else if n > 0 {
+        tint(WARN, 0.12)
+    } else {
+        Color32::TRANSPARENT
+    });
     if ui.add(b).on_hover_text(if late { "Hay tareas vencidas" } else { "Tareas y avisos del equipo" }).clicked() {
         app.tasks.open = true;
         let made = app.db.generate_tasks(app.today);
@@ -52,7 +65,13 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
             out = Some((t.id, done));
         }
         ui.vertical(|ui| {
-            let col = if !t.pending() { MUTED } else if t.overdue(app.today) { DANGER } else { TEXT };
+            let col = if !t.pending() {
+                MUTED
+            } else if t.overdue(app.today) {
+                DANGER
+            } else {
+                TEXT
+            };
             let mut text = RichText::new(&t.text).color(col);
             if !t.pending() {
                 text = text.strikethrough();
@@ -60,7 +79,9 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
             ui.label(text);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if let Some(pid) = t.patient_id && ui.link(RichText::new(format!("👤 {}", app.db.patient_name(pid))).size(13.0)).clicked() {
+                if let Some(pid) = t.patient_id
+                    && ui.link(RichText::new(format!("👤 {}", app.db.patient_name(pid))).size(13.0)).clicked()
+                {
                     app.open_patient(pid, PatTab::Resumen);
                     app.tasks.open = false;
                 }
@@ -68,7 +89,13 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
                     let txt = if d == app.today { "hoy".to_string() } else { fmt_date(d) };
                     ui.label(RichText::new(format!("📅 {txt}")).size(13.0).color(if t.overdue(app.today) { DANGER } else { MUTED }));
                 }
-                let to = if t.to.is_empty() { "todo el equipo".to_string() } else if t.to == me { "para mí".to_string() } else { format!("para {}", t.to) };
+                let to = if t.to.is_empty() {
+                    "todo el equipo".to_string()
+                } else if t.to == me {
+                    "para mí".to_string()
+                } else {
+                    format!("para {}", t.to)
+                };
                 ui.label(RichText::new(format!("{to} · de {}", t.by)).size(13.0).color(MUTED));
                 if let Some(d) = t.done_on {
                     ui.label(RichText::new(format!("hecha el {} por {}", fmt_date(d), t.done_by)).size(13.0).color(OK));
@@ -93,13 +120,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             ui.checkbox(&mut app.tasks.show_done, "Mostrar hechas");
         });
         ui.add_space(4.0);
-        let mut list: Vec<Task> = app
-            .db
-            .tasks
-            .iter()
-            .filter(|t| (app.tasks.all_users || t.for_user(&me)) && (app.tasks.show_done || t.pending()))
-            .cloned()
-            .collect();
+        let mut list: Vec<Task> = app.db.tasks.iter().filter(|t| (app.tasks.all_users || t.for_user(&me)) && (app.tasks.show_done || t.pending())).cloned().collect();
         list.sort_by_key(|t| (!t.pending(), t.due.unwrap_or(chrono::NaiveDate::MAX), t.id));
         let mut change = None;
         egui::ScrollArea::vertical().id_salt("tasks_list").max_height(380.0).show(ui, |ui| {

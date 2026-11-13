@@ -168,20 +168,7 @@ pub fn check_new_pin(pin: &str) -> Result<(), String> {
 
 pub fn new_user(id: u32, name: &str, profile: Profile, doctor_id: Option<u32>, pin: &str) -> User {
     let salt = make_salt(id);
-    User {
-        id,
-        name: name.into(),
-        profile,
-        doctor_id,
-        pin_hash: hash_pin(&salt, pin),
-        salt,
-        must_change: true,
-        active: true,
-        totp_secret: String::new(),
-        totp_last: 0,
-        failed_logins: 0,
-        last_failed: None,
-    }
+    User { id, name: name.into(), profile, doctor_id, pin_hash: hash_pin(&salt, pin), salt, must_change: true, active: true, totp_secret: String::new(), totp_last: 0, failed_logins: 0, last_failed: None }
 }
 
 /// Usuarios de una clínica nueva, todos con la contraseña inicial 0000 (que
@@ -190,12 +177,7 @@ pub fn new_user(id: u32, name: &str, profile: Profile, doctor_id: Option<u32>, p
 pub fn default_users() -> Vec<User> {
     let first = new_user(1, "Dirección", Profile::Direccion, None, "0000");
     let like = |id: u32, name: &str, profile: Profile, doctor_id: Option<u32>| User { id, name: name.into(), profile, doctor_id, ..first.clone() };
-    let rest = [
-        like(2, "Recepción", Profile::Recepcion, None),
-        like(3, "Dra. Ruiz", Profile::Doctor, Some(1)),
-        like(4, "Dr. Navarro", Profile::Doctor, Some(2)),
-        like(5, "Hig. Campos", Profile::Higienista, Some(4)),
-    ];
+    let rest = [like(2, "Recepción", Profile::Recepcion, None), like(3, "Dra. Ruiz", Profile::Doctor, Some(1)), like(4, "Dr. Navarro", Profile::Doctor, Some(2)), like(5, "Hig. Campos", Profile::Higienista, Some(4))];
     std::iter::once(first.clone()).chain(rest).collect()
 }
 

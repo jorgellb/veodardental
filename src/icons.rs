@@ -86,7 +86,10 @@ pub fn nav_icon(p: &Painter, scr: Screen, c: Pos2, col: Color32) {
             p.line_segment([c + vec2(0.0, 0.5), c + vec2(0.0, 10.0)], st);
         }
         Screen::Laboratorio => {
-            p.add(Shape::line(pts(c, s, &[(-7.0, -6.0), (-4.0, -9.0), (0.0, -7.0), (4.0, -9.0), (7.0, -6.0), (7.5, -1.0), (5.5, 4.0), (4.5, 9.0), (2.5, 9.0), (1.0, 2.5), (-1.0, 2.5), (-2.5, 9.0), (-4.5, 9.0), (-5.5, 4.0), (-7.5, -1.0), (-7.0, -6.0)]), st));
+            p.add(Shape::line(
+                pts(c, s, &[(-7.0, -6.0), (-4.0, -9.0), (0.0, -7.0), (4.0, -9.0), (7.0, -6.0), (7.5, -1.0), (5.5, 4.0), (4.5, 9.0), (2.5, 9.0), (1.0, 2.5), (-1.0, 2.5), (-2.5, 9.0), (-4.5, 9.0), (-5.5, 4.0), (-7.5, -1.0), (-7.0, -6.0)]),
+                st,
+            ));
         }
         Screen::Ortodoncia => {
             for x in [-6.0, 0.0, 6.0] {
@@ -208,7 +211,9 @@ pub fn settings_icon(p: &Painter, key: &str, c: Pos2, col: Color32) {
         }
         // destellos (inteligencia artificial)
         "ia" => {
-            let star = |cx: f32, cy: f32, k: f32| pts(c, s, &[(cx, cy - 7.0 * k), (cx + 1.6 * k, cy - 1.6 * k), (cx + 7.0 * k, cy), (cx + 1.6 * k, cy + 1.6 * k), (cx, cy + 7.0 * k), (cx - 1.6 * k, cy + 1.6 * k), (cx - 7.0 * k, cy), (cx - 1.6 * k, cy - 1.6 * k), (cx, cy - 7.0 * k)]);
+            let star = |cx: f32, cy: f32, k: f32| {
+                pts(c, s, &[(cx, cy - 7.0 * k), (cx + 1.6 * k, cy - 1.6 * k), (cx + 7.0 * k, cy), (cx + 1.6 * k, cy + 1.6 * k), (cx, cy + 7.0 * k), (cx - 1.6 * k, cy + 1.6 * k), (cx - 7.0 * k, cy), (cx - 1.6 * k, cy - 1.6 * k), (cx, cy - 7.0 * k)])
+            };
             p.add(Shape::line(star(-2.0, 1.5, 1.15), st));
             p.add(Shape::line(star(6.5, -6.0, 0.55), Stroke::new(1.4, col)));
         }

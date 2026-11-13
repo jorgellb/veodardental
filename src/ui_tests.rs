@@ -289,13 +289,15 @@ fn direct_prescription_sign_and_issue() {
     assert!(issued.test && h.state().rx.password.is_empty(), "la contraseña no se queda en memoria");
     // la farmacia la ve
     let tx = crate::srep::new_id32();
-    let (code, v) = crate::srep::farmacia_post(&format!("http://127.0.0.1:{port}"), &format!("/prescriptions/idFarmacia/F9/idAcceso/{}", issued.id_acceso), &[("idTransaccion", tx.as_str()), ("swNodo", "Nodofarma")], &serde_json::json!({}), false).unwrap();
+    let (code, v) =
+        crate::srep::farmacia_post(&format!("http://127.0.0.1:{port}"), &format!("/prescriptions/idFarmacia/F9/idAcceso/{}", issued.id_acceso), &[("idTransaccion", tx.as_str()), ("swNodo", "Nodofarma")], &serde_json::json!({}), false).unwrap();
     assert_eq!((code, v["codResultado"].as_str().unwrap()), (200, "CONOK"));
     assert_eq!(v["prescripciones"].as_array().unwrap().len(), r.items.len());
     // y el programa ve lo que hace la farmacia
     let id_receta = issued.issued[0].recetas[0].id_receta.clone();
     let ahora = crate::model::now().format("%d/%m/%Y %H:%M:%S").to_string();
-    let body = serde_json::json!({"idReceta": id_receta, "idTransaccion": crate::srep::new_id32(), "idAccionFarmacia": "A1", "accion": 1, "idFarmacia": "F9", "envasesDispensados": 1, "fechaHoraAccion": ahora, "versionSoftware": {"swNodo": "Nodofarma"}});
+    let body =
+        serde_json::json!({"idReceta": id_receta, "idTransaccion": crate::srep::new_id32(), "idAccionFarmacia": "A1", "accion": 1, "idFarmacia": "F9", "envasesDispensados": 1, "fechaHoraAccion": ahora, "versionSoftware": {"swNodo": "Nodofarma"}});
     assert_eq!(crate::srep::farmacia_post(&format!("http://127.0.0.1:{port}"), "/receta", &[], &body, false).unwrap().1["codResultado"], "RACOK");
     h.get_by_label("↻ Ver qué han hecho las farmacias").click();
     for _ in 0..3 {
@@ -563,10 +565,16 @@ fn verifactu_send_from_invoices_tab() {
         let codes: Vec<String> = body.split("<sum1:IDFactura>").skip(1).map(|s| s.split("<sum1:NumSerieFactura>").nth(1).unwrap().split('<').next().unwrap().to_string()).collect();
         let mut lines = String::new();
         for (k, c) in codes.iter().enumerate() {
-            let st = if k == 0 { "<tikR:EstadoRegistro>Incorrecto</tikR:EstadoRegistro><tikR:CodigoErrorRegistro>1104</tikR:CodigoErrorRegistro><tikR:DescripcionErrorRegistro>El NIF del destinatario no está identificado</tikR:DescripcionErrorRegistro>" } else { "<tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro>" };
+            let st = if k == 0 {
+                "<tikR:EstadoRegistro>Incorrecto</tikR:EstadoRegistro><tikR:CodigoErrorRegistro>1104</tikR:CodigoErrorRegistro><tikR:DescripcionErrorRegistro>El NIF del destinatario no está identificado</tikR:DescripcionErrorRegistro>"
+            } else {
+                "<tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro>"
+            };
             lines += &format!("<tikR:RespuestaLinea><tikR:IDFactura><tik:NumSerieFactura>{c}</tik:NumSerieFactura></tikR:IDFactura>{st}</tikR:RespuestaLinea>");
         }
-        let resp = format!("<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>A-PRUEBA</tikR:CSV><tikR:TiempoEsperaEnvio>60</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>ParcialmenteCorrecto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>");
+        let resp = format!(
+            "<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>A-PRUEBA</tikR:CSV><tikR:TiempoEsperaEnvio>60</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>ParcialmenteCorrecto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>"
+        );
         rq.respond(tiny_http::Response::from_string(resp)).unwrap();
         codes.len()
     });
@@ -662,9 +670,13 @@ fn verifactu_correct_and_cancel_from_invoice() {
         for part in body.split("<sum:RegistroFactura>").skip(1) {
             let (op, tag) = if part.starts_with("<sum1:RegistroAnulacion>") { ("Anulacion", "NumSerieFacturaAnulada") } else { ("Alta", "NumSerieFactura") };
             let num = part.split(&format!("<sum1:{tag}>")).nth(1).unwrap().split('<').next().unwrap();
-            lines += &format!("<tikR:RespuestaLinea><tikR:IDFactura><tik:NumSerieFactura>{num}</tik:NumSerieFactura></tikR:IDFactura><tikR:Operacion><tik:TipoOperacion>{op}</tik:TipoOperacion></tikR:Operacion><tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro></tikR:RespuestaLinea>");
+            lines += &format!(
+                "<tikR:RespuestaLinea><tikR:IDFactura><tik:NumSerieFactura>{num}</tik:NumSerieFactura></tikR:IDFactura><tikR:Operacion><tik:TipoOperacion>{op}</tik:TipoOperacion></tikR:Operacion><tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro></tikR:RespuestaLinea>"
+            );
         }
-        let resp = format!("<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>A-CORR</tikR:CSV><tikR:TiempoEsperaEnvio>60</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>Correcto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>");
+        let resp = format!(
+            "<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>A-CORR</tikR:CSV><tikR:TiempoEsperaEnvio>60</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>Correcto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>"
+        );
         rq.respond(tiny_http::Response::from_string(resp)).unwrap();
         body
     });
@@ -999,7 +1011,27 @@ fn patient_link_actions_reach_the_agenda() {
             day += chrono::Duration::days(1);
         }
         id = a.db.new_id();
-        a.db.appointments.push(crate::model::Appointment { id, date: day, start: chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap(), minutes: 30, patient_id: Some(101), free_name: String::new(), phone: String::new(), doctor_id: 2, box_id: 2, reason: "Revisión implante".into(), treatment_code: "0102".into(), state: crate::model::ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+        a.db.appointments.push(crate::model::Appointment {
+            id,
+            date: day,
+            start: chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            minutes: 30,
+            patient_id: Some(101),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 2,
+            box_id: 2,
+            reason: "Revisión implante".into(),
+            treatment_code: "0102".into(),
+            state: crate::model::ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
         token = a.db.appt_token(id);
         a.screen = crate::app::Screen::Agenda;
     }
@@ -1007,10 +1039,12 @@ fn patient_link_actions_reach_the_agenda() {
         h.step();
     }
     let port = h.state().booking.server.as_ref().map(|s| s.port).expect("la página no se abrió");
-    let post = |p: &str, v: serde_json::Value| ureq::post(&format!("http://127.0.0.1:{port}/api/cita/{token}/{p}")).set("Content-Type", "application/json").send_string(&v.to_string()).map(|r| r.status()).unwrap_or_else(|e| match e {
-        ureq::Error::Status(c, _) => c,
-        _ => 0,
-    });
+    let post = |p: &str, v: serde_json::Value| {
+        ureq::post(&format!("http://127.0.0.1:{port}/api/cita/{token}/{p}")).set("Content-Type", "application/json").send_string(&v.to_string()).map(|r| r.status()).unwrap_or_else(|e| match e {
+            ureq::Error::Status(c, _) => c,
+            _ => 0,
+        })
+    };
     let wait = |h: &mut Harness<'static, App>, f: &dyn Fn(&App) -> bool| {
         for _ in 0..200 {
             h.step();
@@ -1107,7 +1141,11 @@ fn budget_signed_online_reaches_the_patient_file() {
     }
     let v: serde_json::Value = serde_json::from_str(&info).expect("el enlace no llegó a publicarse");
     let firma: Vec<Vec<[f32; 2]>> = vec![(0..25).map(|i| [i as f32 / 25.0, 0.4 + (i % 5) as f32 * 0.05]).collect()];
-    let status = ureq::post(&format!("{url}/aceptar")).set("Content-Type", "application/json").send_string(&serde_json::json!({"nombre": "Ana García López", "firma": firma, "cuotas": 0, "huella": v["huella"], "acepta": true}).to_string()).map(|r| r.status()).unwrap_or(0);
+    let status = ureq::post(&format!("{url}/aceptar"))
+        .set("Content-Type", "application/json")
+        .send_string(&serde_json::json!({"nombre": "Ana García López", "firma": firma, "cuotas": 0, "huella": v["huella"], "acepta": true}).to_string())
+        .map(|r| r.status())
+        .unwrap_or(0);
     assert_eq!(status, 200);
     let mut ok = false;
     for _ in 0..200 {
@@ -1233,7 +1271,8 @@ fn document_signed_online_reaches_the_patient_file() {
     }
     let v: serde_json::Value = serde_json::from_str(&info).expect("el enlace no llegó a publicarse");
     let firma: Vec<Vec<[f32; 2]>> = vec![(0..25).map(|i| [i as f32 / 25.0, 0.4 + (i % 5) as f32 * 0.05]).collect()];
-    let status = ureq::post(&format!("{url}/firmar")).set("Content-Type", "application/json").send_string(&serde_json::json!({"nombre": "Paciente Firmante", "firma": firma, "huella": v["huella"], "acepta": true}).to_string()).map(|r| r.status()).unwrap_or(0);
+    let status =
+        ureq::post(&format!("{url}/firmar")).set("Content-Type", "application/json").send_string(&serde_json::json!({"nombre": "Paciente Firmante", "firma": firma, "huella": v["huella"], "acepta": true}).to_string()).map(|r| r.status()).unwrap_or(0);
     assert_eq!(status, 200);
     let mut ok = false;
     for _ in 0..200 {
@@ -1289,9 +1328,40 @@ fn daily_emails_are_sent_automatically() {
             p.accepts_email = true;
             p.email = format!("p{pid}@example.com");
             let id = a.db.new_id();
-            a.db.appointments.push(crate::model::Appointment { id, date: tomorrow, start: chrono::NaiveTime::from_hms_opt(9 + k as u32, 0, 0).unwrap(), minutes: 30, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: 1, box_id: 1, reason: "Revisión".into(), treatment_code: "0102".into(), state: crate::model::ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+            a.db.appointments.push(crate::model::Appointment {
+                id,
+                date: tomorrow,
+                start: chrono::NaiveTime::from_hms_opt(9 + k as u32, 0, 0).unwrap(),
+                minutes: 30,
+                patient_id: Some(pid),
+                free_name: String::new(),
+                phone: String::new(),
+                doctor_id: 1,
+                box_id: 1,
+                reason: "Revisión".into(),
+                treatment_code: "0102".into(),
+                state: crate::model::ApptState::Planificada,
+                notes: String::new(),
+                arrived_at: None,
+                seen_at: None,
+                finished_at: None,
+                reminder_sent: false,
+                first_visit: false,
+                center_id: 1,
+            });
         }
-        a.db.mail = crate::mail::MailConfig { enabled: true, host: "127.0.0.1".into(), port, security: crate::mail::Security::Ninguna, from_email: "clinica@example.com".into(), auto_send: true, auto_hour: 0, auto_until: 24, auto_station: crate::shared::machine_name(), ..Default::default() };
+        a.db.mail = crate::mail::MailConfig {
+            enabled: true,
+            host: "127.0.0.1".into(),
+            port,
+            security: crate::mail::Security::Ninguna,
+            from_email: "clinica@example.com".into(),
+            auto_send: true,
+            auto_hour: 0,
+            auto_until: 24,
+            auto_station: crate::shared::machine_name(),
+            ..Default::default()
+        };
         a.screen = crate::app::Screen::Comunicaciones;
     }
     let done = |a: &App| a.db.mail.last_auto == Some(a.today) && a.comms.outbox.is_none() && a.db.messages.len() == 2 && a.db.messages.iter().all(|m| m.state == MsgState::Enviado);
@@ -1352,7 +1422,27 @@ fn cancelled_slot_goes_to_the_waiting_list() {
         // la higienista sólo tiene, ese día, la cita de Carlos a las 10:00; Javier (106) espera con ella por las mañanas
         a.db.appointments.retain(|x| !(x.date == day && x.doctor_id == 4));
         appt = a.db.new_id();
-        a.db.appointments.push(crate::model::Appointment { id: appt, date: day, start: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(), minutes: 45, patient_id: Some(101), free_name: String::new(), phone: String::new(), doctor_id: 4, box_id: 4, reason: "Higiene".into(), treatment_code: "0201".into(), state: crate::model::ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+        a.db.appointments.push(crate::model::Appointment {
+            id: appt,
+            date: day,
+            start: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+            minutes: 45,
+            patient_id: Some(101),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 4,
+            box_id: 4,
+            reason: "Higiene".into(),
+            treatment_code: "0201".into(),
+            state: crate::model::ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
         token = a.db.appt_token(appt);
         assert!(a.db.waitlist.iter().any(|w| w.patient_id == 106 && w.doctor_id == 4));
         a.screen = crate::app::Screen::Agenda;
@@ -1362,10 +1452,12 @@ fn cancelled_slot_goes_to_the_waiting_list() {
         h.step();
     }
     let port = h.state().booking.server.as_ref().map(|s| s.port).expect("la página no se abrió");
-    let post = |p: &str| ureq::post(&format!("http://127.0.0.1:{port}{p}")).set("Content-Type", "application/json").send_string("{}").map(|r| r.status()).unwrap_or_else(|e| match e {
-        ureq::Error::Status(c, _) => c,
-        _ => 0,
-    });
+    let post = |p: &str| {
+        ureq::post(&format!("http://127.0.0.1:{port}{p}")).set("Content-Type", "application/json").send_string("{}").map(|r| r.status()).unwrap_or_else(|e| match e {
+            ureq::Error::Status(c, _) => c,
+            _ => 0,
+        })
+    };
     let wait = |h: &mut Harness<'static, App>, f: &dyn Fn(&App) -> bool| {
         for _ in 0..200 {
             h.step();
@@ -1611,7 +1703,19 @@ fn erx_patient_sheet_goes_by_email() {
             ..Default::default()
         };
         let issue = crate::finance::SrepIssue { id_acceso: "b".repeat(32), issued: vec![item], issued_at: Some(crate::model::now()), signer: "Dra. Ruiz".into(), test: true, confidential: true, ..Default::default() };
-        a.db.prescriptions.push(crate::finance::Prescription { id: rid, patient_id: pid, doctor_id: 1, date: today, diagnosis: "Dolor tras extracción".into(), items: vec![], notes: String::new(), erx_code: String::new(), erx_platform: String::new(), erx_date: None, srep: Some(issue) });
+        a.db.prescriptions.push(crate::finance::Prescription {
+            id: rid,
+            patient_id: pid,
+            doctor_id: 1,
+            date: today,
+            diagnosis: "Dolor tras extracción".into(),
+            items: vec![],
+            notes: String::new(),
+            erx_code: String::new(),
+            erx_platform: String::new(),
+            erx_date: None,
+            srep: Some(issue),
+        });
         a.patient = Some(pid);
         a.screen = crate::app::Screen::Pacientes;
         a.pat_tab = crate::app::PatTab::Documentos;
@@ -1958,7 +2062,10 @@ fn installment_paid_in_cash_and_cancelled_from_the_dialog() {
     for _ in 0..4 {
         h.step();
     }
-    let cash_before = { let a = h.state(); a.db.cash_expected(a.db.open_cash().unwrap()) };
+    let cash_before = {
+        let a = h.state();
+        a.db.cash_expected(a.db.open_cash().unwrap())
+    };
     h.get_all_by_label("Cobrar").last().unwrap().click();
     for _ in 0..3 {
         h.step();

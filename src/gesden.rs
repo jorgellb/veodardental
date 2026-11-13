@@ -304,7 +304,9 @@ impl Db {
                 }
             }
         }
-        if let Some(t) = self.tariffs.iter_mut().find(|t| t.id == 1) && !t.notes.contains(&marker(base.id)) {
+        if let Some(t) = self.tariffs.iter_mut().find(|t| t.id == 1)
+            && !t.notes.contains(&marker(base.id))
+        {
             t.notes = format!("{} {}", marker(base.id), t.notes.trim()).trim().to_string();
         }
 
@@ -360,7 +362,9 @@ impl Db {
                         None => self.treatments.push(t),
                     }
                 }
-                if gt.inactivo == 0 && let Some(t) = self.tariffs.iter_mut().find(|t| t.id == tid) {
+                if gt.inactivo == 0
+                    && let Some(t) = self.tariffs.iter_mut().find(|t| t.id == tid)
+                {
                     let price = round2(gt.precio.max(0.0));
                     match t.prices.iter_mut().find(|p| p.code == code) {
                         Some(p) => p.price = price,

@@ -122,11 +122,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
                             let alg = if p.allergies.is_empty() { String::new() } else { format!(" · Alergia: {}", p.allergies) };
                             ui.label(RichText::new(format!("⚠ {}{alg}", p.alerts)).color(DANGER).size(13.5));
                         }
-                        let next = app
-                            .db
-                            .next_appt(p.id, today)
-                            .map(|a| format!("Próxima cita: {} a las {} con {}", fmt_date(a.date), a.start.format("%H:%M"), app.db.doctor_alias(a.doctor_id)))
-                            .unwrap_or_else(|| "Sin próxima cita".into());
+                        let next = app.db.next_appt(p.id, today).map(|a| format!("Próxima cita: {} a las {} con {}", fmt_date(a.date), a.start.format("%H:%M"), app.db.doctor_alias(a.doctor_id))).unwrap_or_else(|| "Sin próxima cita".into());
                         let last = app.db.last_visit(p.id).map(|d| format!(" · Última visita {}", fmt_date(d))).unwrap_or_default();
                         ui.label(RichText::new(format!("{next}{last}")).size(14.5));
                         let bal = app.db.patient_balance(p.id);
@@ -210,13 +206,13 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             (None, Some(e)) => ui.label(RichText::new(format!("⚠ Los avisos de llamada no están activos en este puesto: {e}")).color(WARN)),
             _ => ui.label(RichText::new("Desactivado en el modo demostración.").color(MUTED)),
         };
-        muted(ui, "En el programa de teléfono del ordenador (softphone) o en la centralita, busque la opción «al recibir una llamada, ejecutar un programa» o «abrir una dirección» y ponga una de estas dos. Cambie NÚMERO por la palabra con la que su programa indica el número que llama.");
+        muted(
+            ui,
+            "En el programa de teléfono del ordenador (softphone) o en la centralita, busque la opción «al recibir una llamada, ejecutar un programa» o «abrir una dirección» y ponga una de estas dos. Cambie NÚMERO por la palabra con la que su programa indica el número que llama.",
+        );
         ui.add_space(4.0);
         let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "veodardental".into());
-        let rows = [
-            ("Ejecutar programa", format!("\"{exe}\" --llamada NÚMERO")),
-            ("Abrir dirección", format!("http://127.0.0.1:{}/llamada?numero=NÚMERO", app.phone.port.unwrap_or(CALL_PORT))),
-        ];
+        let rows = [("Ejecutar programa", format!("\"{exe}\" --llamada NÚMERO")), ("Abrir dirección", format!("http://127.0.0.1:{}/llamada?numero=NÚMERO", app.phone.port.unwrap_or(CALL_PORT)))];
         for (label, text) in rows {
             ui.horizontal(|ui| {
                 lab(ui, 150.0, RichText::new(label).color(MUTED));

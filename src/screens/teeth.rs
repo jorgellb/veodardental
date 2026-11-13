@@ -455,7 +455,6 @@ pub fn pulp_chamber(p: &Painter, pose: &Pose, fill: Color32, edge: Stroke) {
     crown_patch(p, pose, (-a, a), (0.50, 0.97), fill, edge);
 }
 
-
 /// Apicectomía: se corta el ápice (se difumina) y se marca la línea de corte.
 pub fn apex_cut(p: &Painter, pose: &Pose, look: &Look, color: Color32) {
     for r in roots(pose.t).iter().filter(|r| !r.back) {
@@ -673,12 +672,44 @@ fn side_face(t: u8, ang: f32) -> usize {
     let mesial_right = mesial_right(t);
     let up = is_upper(t);
     // 0: derecha, 1: abajo, 2: izquierda, 3: arriba
-    let side = if !(45.0..315.0).contains(&deg) { 0 } else if deg < 135.0 { 1 } else if deg < 225.0 { 2 } else { 3 };
+    let side = if !(45.0..315.0).contains(&deg) {
+        0
+    } else if deg < 135.0 {
+        1
+    } else if deg < 225.0 {
+        2
+    } else {
+        3
+    };
     match side {
-        0 => if mesial_right { 0 } else { 1 },
-        2 => if mesial_right { 1 } else { 0 },
-        1 => if up { 4 } else { 3 },
-        _ => if up { 3 } else { 4 },
+        0 => {
+            if mesial_right {
+                0
+            } else {
+                1
+            }
+        }
+        2 => {
+            if mesial_right {
+                1
+            } else {
+                0
+            }
+        }
+        1 => {
+            if up {
+                4
+            } else {
+                3
+            }
+        }
+        _ => {
+            if up {
+                3
+            } else {
+                4
+            }
+        }
     }
 }
 

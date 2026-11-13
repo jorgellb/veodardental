@@ -416,7 +416,9 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
         });
     }
     let mut pick: Option<(String, Option<bool>)> = None;
-    if let Some((mid, res)) = &app.ia.models && *mid == id {
+    if let Some((mid, res)) = &app.ia.models
+        && *mid == id
+    {
         match res {
             Err(e) => {
                 ui.label(RichText::new(format!("No se pudo obtener la lista: {e}")).color(DANGER));
@@ -428,12 +430,8 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
                     ui.checkbox(&mut app.ia.all_models, "Mostrar también los que no admiten imágenes");
                 });
                 let f = fold(&app.ia.model_filter);
-                let shown: Vec<&ia::ModelInfo> = list
-                    .iter()
-                    .filter(|m| f.is_empty() || fold(&m.id).contains(&f) || fold(&m.name).contains(&f))
-                    .filter(|m| !app.ia.only_free || m.free == Some(true))
-                    .filter(|m| app.ia.all_models || m.vision != Some(false))
-                    .collect();
+                let shown: Vec<&ia::ModelInfo> =
+                    list.iter().filter(|m| f.is_empty() || fold(&m.id).contains(&f) || fold(&m.name).contains(&f)).filter(|m| !app.ia.only_free || m.free == Some(true)).filter(|m| app.ia.all_models || m.vision != Some(false)).collect();
                 muted(ui, format!("{} modelos", shown.len()));
                 egui::ScrollArea::vertical().id_salt(("ia_models", id)).max_height(220.0).show(ui, |ui| {
                     for m in shown.iter().take(300) {
@@ -577,7 +575,9 @@ fn analyze_controls(app: &mut App, ui: &mut Ui, img: &PatientImage, ctx: &egui::
         } else if busy_other {
             muted(ui, "Hay otro análisis en marcha; espere a que termine.");
         }
-        if let Some((iid, e, attempts)) = &app.ia.error && *iid == img.id {
+        if let Some((iid, e, attempts)) = &app.ia.error
+            && *iid == img.id
+        {
             egui::Frame::new().fill(tint(DANGER, 0.06)).stroke(Stroke::new(1.0, tint(DANGER, 0.25))).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(RichText::new(e).font(sbf(13.5)).color(DANGER));
@@ -722,7 +722,11 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
         ui.add_space(4.0);
         let any = an.proposals.iter().enumerate().any(|(i, p)| !r.planned.contains(&i) && !app.ia.unchecked.contains(&(r.id, i)) && treatment_for(&app.db, p).is_some());
         ui.horizontal(|ui| {
-            if ui.add_enabled(any, egui::Button::new(RichText::new("Añadir al plan de tratamiento").color(Color32::WHITE)).fill(ACCENT)).on_hover_text("Se añaden como «previsto» al historial y al odontograma; luego puede hacer el presupuesto").clicked() {
+            if ui
+                .add_enabled(any, egui::Button::new(RichText::new("Añadir al plan de tratamiento").color(Color32::WHITE)).fill(ACCENT))
+                .on_hover_text("Se añaden como «previsto» al historial y al odontograma; luego puede hacer el presupuesto")
+                .clicked()
+            {
                 plan = true;
             }
         });

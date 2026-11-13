@@ -1,0 +1,3 @@
+# Estilo del proyecto: líneas largas, como el código existente.
+max_width = 250
+use_small_heuristics = "Max"

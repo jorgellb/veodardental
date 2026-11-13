@@ -292,7 +292,14 @@ fn record_actions(app: &mut App, ui: &mut Ui, f: &Invoice) {
     if app.vf.fix == Some(f.id) {
         egui::Frame::new().fill(tint(INFO, 0.05)).stroke(Stroke::new(1.0, tint(INFO, 0.25))).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            muted(ui, if st.state == "Incorrecto" { "La AEAT rechazó el registro. Corrija los datos y se enviará de nuevo indicando el rechazo previo." } else { "La AEAT aceptó el registro con errores. Corrija los datos y se enviará una subsanación." });
+            muted(
+                ui,
+                if st.state == "Incorrecto" {
+                    "La AEAT rechazó el registro. Corrija los datos y se enviará de nuevo indicando el rechazo previo."
+                } else {
+                    "La AEAT aceptó el registro con errores. Corrija los datos y se enviará una subsanación."
+                },
+            );
             ui.horizontal(|ui| {
                 field(ui, "Nombre del cliente", &mut app.vf.fix_name, 280.0);
                 field(ui, "NIF", &mut app.vf.fix_nif, 130.0);
@@ -352,10 +359,7 @@ pub fn print_block(db: &Db, f: &Invoice) -> String {
         return String::new();
     }
     let url = verifactu::qr_url(&db.verifactu, f, &db.config.nif);
-    format!(
-        "<div style='display:flex;align-items:center;gap:14px;margin:6px 0 14px 0'>{}<div><b>VERI*FACTU</b><br><span style='font-size:13px'>Factura verificable en la sede electrónica de la AEAT</span></div></div>",
-        verifactu::qr_svg(&url, 35.0)
-    )
+    format!("<div style='display:flex;align-items:center;gap:14px;margin:6px 0 14px 0'>{}<div><b>VERI*FACTU</b><br><span style='font-size:13px'>Factura verificable en la sede electrónica de la AEAT</span></div></div>", verifactu::qr_svg(&url, 35.0))
 }
 
 // ───────────────────────────── pestaña de Facturas ─────────────────────────────
@@ -544,7 +548,13 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
             if !s.error.is_empty() {
                 ui.label(RichText::new(format!("Último envío: {}", s.error)).color(DANGER));
             } else if s.sent > 0 {
-                ui.label(RichText::new(format!("Último envío: {} registros · {} correctos · {} con errores · {} rechazados{}", s.sent, s.ok, s.warn, s.bad, if s.csv.is_empty() { String::new() } else { format!(" · CSV {}", s.csv) })).color(if s.bad > 0 { WARN } else { OK }));
+                ui.label(
+                    RichText::new(format!("Último envío: {} registros · {} correctos · {} con errores · {} rechazados{}", s.sent, s.ok, s.warn, s.bad, if s.csv.is_empty() { String::new() } else { format!(" · CSV {}", s.csv) })).color(if s.bad > 0 {
+                        WARN
+                    } else {
+                        OK
+                    }),
+                );
             }
         }
         if !app.db.verifactu.enabled {
@@ -564,15 +574,35 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 let f = app.db.invoice(it.invoice_id())?;
                 let st = it.aeat();
                 let before = since.map(|s| it.created() < s).unwrap_or(false) && st.state.is_empty();
-                let (label, col) = if !enabled && st.state.is_empty() { ("Sin enviar", MUTED) } else if before { ("Anterior a VERI*FACTU", MUTED) } else { (st.label(), state_color(st)) };
-                let note = if !st.csv.is_empty() && st.sent_ok() { st.csv.clone() } else if !st.message.is_empty() { format!("{} {}", st.code, st.message).trim().to_string() } else { String::new() };
+                let (label, col) = if !enabled && st.state.is_empty() {
+                    ("Sin enviar", MUTED)
+                } else if before {
+                    ("Anterior a VERI*FACTU", MUTED)
+                } else {
+                    (st.label(), state_color(st))
+                };
+                let note = if !st.csv.is_empty() && st.sent_ok() {
+                    st.csv.clone()
+                } else if !st.message.is_empty() {
+                    format!("{} {}", st.code, st.message).trim().to_string()
+                } else {
+                    String::new()
+                };
                 let kind = match it {
                     verifactu::Item::Rec(r) => r.label().to_string(),
                     verifactu::Item::Inv(_) => f.kind().to_string(),
                 };
                 Some((
                     f.id,
-                    [cell(f.code()), cell(fmt_date(f.date)), cellc(kind, if matches!(it, verifactu::Item::Rec(_)) { INFO } else { TEXT }), cell(&f.client_name), cell(money(f.total())), cellc(label, col), cellc(note, if st.sent_ok() { MUTED } else { DANGER })],
+                    [
+                        cell(f.code()),
+                        cell(fmt_date(f.date)),
+                        cellc(kind, if matches!(it, verifactu::Item::Rec(_)) { INFO } else { TEXT }),
+                        cell(&f.client_name),
+                        cell(money(f.total())),
+                        cellc(label, col),
+                        cellc(note, if st.sent_ok() { MUTED } else { DANGER }),
+                    ],
                 ))
             })
             .collect();

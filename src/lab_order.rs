@@ -27,7 +27,12 @@ pub fn tooth_chart_svg(teeth: &[u8]) -> String {
             let x = i as f32 * (w + gap) + if i >= 8 { mid } else { 0.0 };
             let on = teeth.contains(t);
             let (fill, stroke, text) = if on { ("#0d9488", "#0f766e", "#ffffff") } else { ("#f8fafc", "#cbd5e1", "#64748b") };
-            s += &format!("<rect x='{x}' y='{y}' width='{w}' height='{h}' rx='7' fill='{fill}' stroke='{stroke}'/><text x='{}' y='{}' text-anchor='middle' font-size='12' font-weight='{}' fill='{text}'>{t}</text>", x + w / 2.0, y + h / 2.0 + 4.0, if on { 700 } else { 500 });
+            s += &format!(
+                "<rect x='{x}' y='{y}' width='{w}' height='{h}' rx='7' fill='{fill}' stroke='{stroke}'/><text x='{}' y='{}' text-anchor='middle' font-size='12' font-weight='{}' fill='{text}'>{t}</text>",
+                x + w / 2.0,
+                y + h / 2.0 + 4.0,
+                if on { 700 } else { 500 }
+            );
         }
     }
     let midx = 8.0 * (w + gap) + mid / 2.0 - gap / 2.0;
@@ -50,11 +55,7 @@ pub fn attached<'a>(db: &'a Db, w: &LabWork) -> Vec<&'a PatientImage> {
 
 /// Nombre con el que va cada adjunto dentro del paquete.
 fn attachment_name(k: usize, img: &PatientImage) -> String {
-    let ext = if img.demo {
-        "png".to_string()
-    } else {
-        std::path::Path::new(&img.path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "dat".into())
-    };
+    let ext = if img.demo { "png".to_string() } else { std::path::Path::new(&img.path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "dat".into()) };
     let teeth: Vec<String> = img.teeth.iter().map(|t| t.to_string()).collect();
     format!("{:02}_{}{}_{}.{ext}", k + 1, safe(img.kind.short()), if teeth.is_empty() { String::new() } else { format!("_{}", teeth.join("-")) }, img.date.format("%Y%m%d"))
 }

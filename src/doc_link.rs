@@ -138,11 +138,7 @@ impl Db {
 
     /// Documentos sin firmar del paciente que ya tienen enlace (para la página «Mi cita»).
     pub fn docs_to_sign(&self, pid: u32) -> Vec<(String, String)> {
-        self.documents
-            .iter()
-            .filter(|d| d.patient_id == pid && !d.signed)
-            .filter_map(|d| self.doc_link(d.id).filter(|l| l.declined.is_none()).map(|l| (l.token.clone(), d.title.clone())))
-            .collect()
+        self.documents.iter().filter(|d| d.patient_id == pid && !d.signed).filter_map(|d| self.doc_link(d.id).filter(|l| l.declined.is_none()).map(|l| (l.token.clone(), d.title.clone()))).collect()
     }
 }
 

@@ -4,57 +4,57 @@ mod agenda_extra;
 mod app;
 mod bank;
 mod booking;
-mod budget_link;
-mod doc_link;
 mod brand;
+mod budget_link;
 mod chat;
 mod cifrado;
-mod disco;
 mod colegiado;
 mod comms;
+mod disco;
+mod doc_link;
 mod erx;
 mod extra;
-mod paths;
 mod finance;
 mod firma;
 mod gesden;
 mod golive;
-mod ia;
-mod mail;
 mod health;
 mod horario;
-mod insurer;
+mod ia;
 mod icons;
+mod insurer;
 mod lab_order;
 mod local;
+mod mail;
 mod model;
 mod mssql;
 mod nomenclator;
+mod paths;
 mod phone;
 mod portal;
 mod record;
 mod rx_link;
 mod sample;
+mod screens;
 mod server;
+mod shared;
+mod slot_offer;
 mod srep;
 mod srep_cert;
 mod srep_doc;
-mod sync;
 mod stock;
+mod sync;
 mod tasks;
-mod screens;
-mod shared;
-mod slot_offer;
 mod theme;
 mod tools;
 mod totp;
 mod tunnel;
+#[cfg(test)]
+mod ui_tests;
 mod users;
 mod verifactu;
 mod vista;
 mod whatsapp;
-#[cfg(test)]
-mod ui_tests;
 
 use std::path::PathBuf;
 
@@ -93,7 +93,10 @@ fn main() -> eframe::Result<()> {
     // Aviso de llamada desde la centralita: si VeodarDental ya está abierto en
     // este ordenador se le pasa el número y no se abre otra ventana.
     let call_arg = arg("--llamada");
-    if let Some(n) = &call_arg && shot.is_none() && phone::forward(n, phone::CALL_PORT).is_ok() {
+    if let Some(n) = &call_arg
+        && shot.is_none()
+        && phone::forward(n, phone::CALL_PORT).is_ok()
+    {
         return Ok(());
     }
     let login_flag = args.iter().any(|x| x == "--login");
@@ -106,16 +109,9 @@ fn main() -> eframe::Result<()> {
         app::PatTab::ALL.iter().find(|(_, n)| model::fold(n).starts_with(&f)).map(|x| x.0)
     });
 
-    let size: [f32; 2] = arg("--size")
-        .and_then(|s| s.split_once('x').and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?])))
-        .unwrap_or([1440.0, 900.0]);
+    let size: [f32; 2] = arg("--size").and_then(|s| s.split_once('x').and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?]))).unwrap_or([1440.0, 900.0]);
     let mut options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("VeodarDental — Gestión de clínica dental")
-            .with_inner_size(size)
-            .with_min_inner_size([1100.0, 680.0])
-            .with_app_id("veodardental")
-            .with_icon(std::sync::Arc::new(brand::window_icon())),
+        viewport: egui::ViewportBuilder::default().with_title("VeodarDental — Gestión de clínica dental").with_inner_size(size).with_min_inner_size([1100.0, 680.0]).with_app_id("veodardental").with_icon(std::sync::Arc::new(brand::window_icon())),
         ..Default::default()
     };
     // suavizado de bordes (MSAA) para los dibujos del odontograma y el periodontograma
@@ -203,8 +199,30 @@ fn main() -> eframe::Result<()> {
                 for (doc, pid, start, mins) in [(1u32, 100u32, t(16, 30), 30u32), (4, 103, t(10, 0), 45)] {
                     a.db.appointments.retain(|x| !(x.date == d && x.doctor_id == doc && x.start < start + chrono::Duration::minutes(mins as i64) && start < x.end()));
                     let id = a.db.new_id();
-                    a.db.appointments.push(model::Appointment { id, date: d, start, minutes: mins, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: doc, box_id: doc, reason: "Revisión".into(), treatment_code: String::new(), state: model::ApptState::Anulada, notes: "Anulada por el paciente".into(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
-                    if doc == 4 && let Ok(o) = a.db.create_offer(slot_offer::FreeSlot { doctor: doc, date: d, start, minutes: mins, center: 1 }, Some(id), model::now()) {
+                    a.db.appointments.push(model::Appointment {
+                        id,
+                        date: d,
+                        start,
+                        minutes: mins,
+                        patient_id: Some(pid),
+                        free_name: String::new(),
+                        phone: String::new(),
+                        doctor_id: doc,
+                        box_id: doc,
+                        reason: "Revisión".into(),
+                        treatment_code: String::new(),
+                        state: model::ApptState::Anulada,
+                        notes: "Anulada por el paciente".into(),
+                        arrived_at: None,
+                        seen_at: None,
+                        finished_at: None,
+                        reminder_sent: false,
+                        first_visit: false,
+                        center_id: 1,
+                    });
+                    if doc == 4
+                        && let Ok(o) = a.db.create_offer(slot_offer::FreeSlot { doctor: doc, date: d, start, minutes: mins, center: 1 }, Some(id), model::now())
+                    {
                         a.db.offer_messages(o);
                     }
                 }
@@ -231,7 +249,9 @@ fn main() -> eframe::Result<()> {
             }
             // código del móvil: «--doble-factor» abre su activación para la Dra. Ruiz;
             // «--doble-factor entrar», el segundo paso de la pantalla de acceso
-            if std::env::args().any(|x| x == "--doble-factor") && let Some(id) = a.db.users.iter().find(|u| u.name.starts_with("Dra. Ruiz")).map(|u| u.id) {
+            if std::env::args().any(|x| x == "--doble-factor")
+                && let Some(id) = a.db.users.iter().find(|u| u.name.starts_with("Dra. Ruiz")).map(|u| u.id)
+            {
                 let secret = totp::new_secret().unwrap_or_default();
                 if arg("--doble-factor").as_deref() == Some("entrar") {
                     if let Some(u) = a.db.users.iter_mut().find(|u| u.id == id) {

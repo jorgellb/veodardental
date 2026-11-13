@@ -290,7 +290,15 @@ impl Db {
         let mut v = vec![];
         for c in &self.contacts {
             if hit(&[&c.name, &c.company, &c.category], &[&c.phone, &c.mobile]) {
-                v.push(DirEntry { kind: "Contacto", name: c.name.clone(), detail: format!("{} {}", c.category, if c.company.is_empty() { String::new() } else { format!("· {}", c.company) }), phone: if c.phone.is_empty() { c.mobile.clone() } else { c.phone.clone() }, email: c.email.clone(), patient_id: None, contact_id: Some(c.id) });
+                v.push(DirEntry {
+                    kind: "Contacto",
+                    name: c.name.clone(),
+                    detail: format!("{} {}", c.category, if c.company.is_empty() { String::new() } else { format!("· {}", c.company) }),
+                    phone: if c.phone.is_empty() { c.mobile.clone() } else { c.phone.clone() },
+                    email: c.email.clone(),
+                    patient_id: None,
+                    contact_id: Some(c.id),
+                });
             }
         }
         for c in &self.collaborators {
@@ -402,7 +410,8 @@ impl Db {
 }
 
 pub fn sample_contacts(db: &mut Db) {
-    let c = |id: u32, name: &str, company: &str, cat: &str, phone: &str, email: &str| Contact { id, name: name.into(), company: company.into(), category: cat.into(), phone: phone.into(), mobile: String::new(), email: email.into(), notes: String::new() };
+    let c =
+        |id: u32, name: &str, company: &str, cat: &str, phone: &str, email: &str| Contact { id, name: name.into(), company: company.into(), category: cat.into(), phone: phone.into(), mobile: String::new(), email: email.into(), notes: String::new() };
     *db.contacts = vec![
         c(1, "Servicio técnico de equipos", "Técnico Ejemplo", "Mantenimiento", "900 300 300", "sat@tecnico-ejemplo.es"),
         c(2, "Gestoría", "Gestoría Ejemplo", "Administración", "91 500 50 50", "info@gestoria-ejemplo.es"),

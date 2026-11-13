@@ -156,12 +156,7 @@ impl Db {
 
     /// Pasa a la ficha los cuestionarios de pacientes nuevos cuando ya tienen ficha. Devuelve cuántos.
     pub fn portal_attach_health(&mut self) -> usize {
-        let waiting: Vec<(u32, u32)> = self
-            .appt_links
-            .iter()
-            .filter(|l| l.health.is_some())
-            .filter_map(|l| self.appointments.iter().find(|a| a.id == l.appointment_id).and_then(|a| a.patient_id).map(|p| (l.appointment_id, p)))
-            .collect();
+        let waiting: Vec<(u32, u32)> = self.appt_links.iter().filter(|l| l.health.is_some()).filter_map(|l| self.appointments.iter().find(|a| a.id == l.appointment_id).and_then(|a| a.patient_id).map(|p| (l.appointment_id, p))).collect();
         for (appt, pid) in &waiting {
             let Some(mut f) = self.link_mut(*appt).and_then(|l| l.health.take()) else { continue };
             f.id = self.new_id();
@@ -257,11 +252,7 @@ pub fn can_modify(p: &Published, l: &PubLink, now: NaiveDateTime) -> bool {
 pub fn link_json(p: &Published, l: &PubLink, now: NaiveDateTime) -> serde_json::Value {
     let past = l.date.and_time(l.start) < now;
     let questions: Vec<serde_json::Value> = if l.health_needed && !l.health_sent && !past && l.state != "anulada" {
-        QUESTIONS
-            .iter()
-            .filter(|q| l.female || !q.female)
-            .map(|q| serde_json::json!({"clave": q.key, "texto": q.text, "parte": if q.part == Part::General { "general" } else { "dental" }, "detalle": q.detail}))
-            .collect()
+        QUESTIONS.iter().filter(|q| l.female || !q.female).map(|q| serde_json::json!({"clave": q.key, "texto": q.text, "parte": if q.part == Part::General { "general" } else { "dental" }, "detalle": q.detail})).collect()
     } else {
         vec![]
     };
@@ -313,7 +304,9 @@ pub fn health_from(b: &HealthBody) -> Result<HealthForm, String> {
     for q in QUESTIONS {
         let y = b.respuestas.get(q.key).copied().unwrap_or(false);
         yes.insert(q.key.to_string(), y);
-        if y && q.detail && let Some(d) = b.detalles.get(q.key) {
+        if y && q.detail
+            && let Some(d) = b.detalles.get(q.key)
+        {
             let d = clip(d, 200);
             if !d.is_empty() {
                 details.insert(q.key.to_string(), d);

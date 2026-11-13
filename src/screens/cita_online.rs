@@ -268,7 +268,10 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
                 }
             });
         });
-        muted(ui, "Con Cloudflare Tunnel la página se publica en una dirección https de la clínica sin abrir puertos en el router: este ordenador abre una conexión cifrada hacia Cloudflare. Es gratis con una cuenta de Cloudflare y el dominio de la clínica.");
+        muted(
+            ui,
+            "Con Cloudflare Tunnel la página se publica en una dirección https de la clínica sin abrir puertos en el router: este ordenador abre una conexión cifrada hacia Cloudflare. Es gratis con una cuenta de Cloudflare y el dominio de la clínica.",
+        );
         ui.add_space(6.0);
         // cloudflared
         ui.horizontal_wrapped(|ui| {
@@ -315,21 +318,35 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
                 if ui.button("Desconectar").clicked() {
                     action = 2;
                 }
-            } else if ui.add_enabled(here && exe.is_some() && !app.db.booking.tunnel_token.trim().is_empty(), egui::Button::new(RichText::new("Conectar").color(Color32::WHITE).font(sbf(14.0))).fill(ACCENT).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 34.0))).clicked() {
+            } else if ui
+                .add_enabled(
+                    here && exe.is_some() && !app.db.booking.tunnel_token.trim().is_empty(),
+                    egui::Button::new(RichText::new("Conectar").color(Color32::WHITE).font(sbf(14.0))).fill(ACCENT).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 34.0)),
+                )
+                .clicked()
+            {
                 action = 1;
             }
             let base = app.db.booking.public_url.trim().to_string();
             if app.booking.check.is_some() {
                 ui.add(egui::Spinner::new().size(16.0));
                 ui.label(RichText::new("Comprobando desde internet…").color(MUTED));
-            } else if ui.add_enabled(base.starts_with("https://") && app.booking.server.is_some(), egui::Button::new("Comprobar desde internet")).on_hover_text("Abre la dirección para los pacientes por internet y comprueba que llega a esta página").clicked() {
+            } else if ui
+                .add_enabled(base.starts_with("https://") && app.booking.server.is_some(), egui::Button::new("Comprobar desde internet"))
+                .on_hover_text("Abre la dirección para los pacientes por internet y comprueba que llega a esta página")
+                .clicked()
+            {
                 action = 3;
             }
             if st.as_ref().is_some_and(|(m, s)| *m == Mode::Quick && s.exited.is_none()) {
                 if ui.button("Cerrar la dirección temporal").clicked() {
                     action = 2;
                 }
-            } else if ui.add_enabled(here && exe.is_some() && app.booking.server.is_some(), egui::Button::new("Probar con una dirección temporal")).on_hover_text("Sin cuenta: Cloudflare da una dirección aleatoria que cambia cada vez (sólo para probar)").clicked() {
+            } else if ui
+                .add_enabled(here && exe.is_some() && app.booking.server.is_some(), egui::Button::new("Probar con una dirección temporal"))
+                .on_hover_text("Sin cuenta: Cloudflare da una dirección aleatoria que cambia cada vez (sólo para probar)")
+                .clicked()
+            {
                 action = 4;
             }
         });
@@ -343,7 +360,9 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             if let Some(e) = s.error.as_ref().or(s.exited.as_ref()) {
                 ui.label(RichText::new(e).size(12.5).color(DANGER));
             }
-            if *mode == Mode::Quick && let Some(u) = &s.url {
+            if *mode == Mode::Quick
+                && let Some(u) = &s.url
+            {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("Dirección temporal:").size(12.5).color(MUTED));
                     ui.label(RichText::new(u).size(12.5).color(ACCENT_DARK));
@@ -487,7 +506,13 @@ pub fn appt_link_row(app: &mut App, ui: &mut Ui, appt: u32) {
                 act = 1;
             }
             let can_mail = !email.is_empty() && app.db.mail.ready();
-            let hint = if email.is_empty() { "El paciente no tiene correo en su ficha" } else if !app.db.mail.ready() { "Configure el correo en Configuración › Correo electrónico" } else { "Le envía el enlace y la cita para su calendario" };
+            let hint = if email.is_empty() {
+                "El paciente no tiene correo en su ficha"
+            } else if !app.db.mail.ready() {
+                "Configure el correo en Configuración › Correo electrónico"
+            } else {
+                "Le envía el enlace y la cita para su calendario"
+            };
             if ui.add_enabled(can_mail, egui::Button::new("Enviar por correo")).on_hover_text(hint).on_disabled_hover_text(hint).clicked() {
                 act = 2;
             }
@@ -563,7 +588,10 @@ fn doc_action(app: &mut App, doc_id: u32, action: crate::doc_link::DocAction) {
                 app.notify(format!("{who} ha firmado por internet «{}».", d.title));
                 // copia firmada para el paciente
                 let email = app.db.patient(d.patient_id).map(|p| p.email.trim().to_string()).unwrap_or_default();
-                if app.db.mail.ready() && !email.is_empty() && let Some(signed) = app.db.documents.iter().find(|x| x.id == doc_id).cloned() {
+                if app.db.mail.ready()
+                    && !email.is_empty()
+                    && let Some(signed) = app.db.documents.iter().find(|x| x.id == doc_id).cloned()
+                {
                     let html = crate::doc_link::doc_html(&app.db, &signed);
                     let c = &app.db.config;
                     let subject = format!("{} firmado · {}", d.title, c.name);
@@ -640,7 +668,13 @@ pub fn doc_link_row(app: &mut App, ui: &mut Ui, doc_id: u32) {
                     act = 1;
                 }
                 let can_mail = !email.is_empty() && app.db.mail.ready();
-                let hint = if email.is_empty() { "El paciente no tiene correo en su ficha" } else if !app.db.mail.ready() { "Configure el correo en Configuración › Correo electrónico" } else { "Le envía el enlace para leerlo y firmarlo" };
+                let hint = if email.is_empty() {
+                    "El paciente no tiene correo en su ficha"
+                } else if !app.db.mail.ready() {
+                    "Configure el correo en Configuración › Correo electrónico"
+                } else {
+                    "Le envía el enlace para leerlo y firmarlo"
+                };
                 if ui.add_enabled(can_mail, egui::Button::new("Enviar para firmar")).on_hover_text(hint).on_disabled_hover_text(hint).clicked() {
                     act = 2;
                 }
@@ -728,14 +762,13 @@ fn budget_action(app: &mut App, bid: u32, action: crate::budget_link::BudgetActi
             Ok(_) => {
                 app.changed();
                 let pay = installments.to_string();
-                app.notify(format!(
-                    "{who} ha aceptado y firmado por internet el presupuesto nº {bid} ({}){}.",
-                    money(b.total()),
-                    if installments > 0 { format!(", en {pay} cuotas") } else { String::new() }
-                ));
+                app.notify(format!("{who} ha aceptado y firmado por internet el presupuesto nº {bid} ({}){}.", money(b.total()), if installments > 0 { format!(", en {pay} cuotas") } else { String::new() }));
                 // copia firmada para el paciente
                 let email = app.db.patient(b.patient_id).map(|p| p.email.trim().to_string()).unwrap_or_default();
-                if app.db.mail.ready() && !email.is_empty() && let Some(html) = crate::budget_link::signed_html(&app.db, bid) {
+                if app.db.mail.ready()
+                    && !email.is_empty()
+                    && let Some(html) = crate::budget_link::signed_html(&app.db, bid)
+                {
                     let c = &app.db.config;
                     let subject = format!("Presupuesto nº {bid} aceptado · {}", c.name);
                     let text = format!("Hola:\n\nGracias por aceptar el presupuesto nº {bid} ({}). Le adjuntamos la copia firmada. Le llamaremos para dar las citas.\n\nUn saludo,\n{}\n{}", b.title, c.name, c.phone);
@@ -808,7 +841,13 @@ pub fn budget_link_row(app: &mut App, ui: &mut Ui, bid: u32) {
                     act = 1;
                 }
                 let can_mail = !email.is_empty() && app.db.mail.ready();
-                let hint = if email.is_empty() { "El paciente no tiene correo en su ficha" } else if !app.db.mail.ready() { "Configure el correo en Configuración › Correo electrónico" } else { "Le envía el enlace para revisarlo y firmarlo" };
+                let hint = if email.is_empty() {
+                    "El paciente no tiene correo en su ficha"
+                } else if !app.db.mail.ready() {
+                    "Configure el correo en Configuración › Correo electrónico"
+                } else {
+                    "Le envía el enlace para revisarlo y firmarlo"
+                };
                 if ui.add_enabled(can_mail, egui::Button::new("Enviar por correo")).on_hover_text(hint).on_disabled_hover_text(hint).clicked() {
                     act = 2;
                 }
@@ -904,13 +943,23 @@ fn offer_action(app: &mut App, token: &str, action: crate::slot_offer::OfferActi
                 app.changed();
                 app.notify(format!("{who} se ha quedado el hueco libre del {when} (lista de espera): cita confirmada en la agenda."));
                 // confirmación por correo, con la cita para el calendario y su enlace
-                if app.db.mail.ready() && app.db.can_email(inv.patient_id) && let Some(a) = app.db.appointments.iter().find(|a| a.id == appt).cloned() {
+                if app.db.mail.ready()
+                    && app.db.can_email(inv.patient_id)
+                    && let Some(a) = app.db.appointments.iter().find(|a| a.id == appt).cloned()
+                {
                     let link = app.db.appt_link_url(appt).map(|u| format!("\n\nDesde este enlace puede confirmar, cambiar o anular la cita:\n{u}")).unwrap_or_default();
                     let c = &app.db.config;
                     let doctor = app.db.doctor(a.doctor_id).map(|d| d.alias.clone()).unwrap_or_default();
                     let first = app.db.patient(inv.patient_id).map(|p| p.first_name.clone()).unwrap_or_default();
                     let subject = format!("Cita confirmada en {}: {} a las {}", c.name, day_label(a.date), a.start.format("%H:%M"));
-                    let text = format!("Hola, {first}:\n\nEl hueco es suyo. Su cita queda confirmada:\n\n  {} a las {}\n  con {doctor}\n  {}{link}\n\nSi no puede venir, avísenos llamando al {}.\n\nUn saludo,\n{}", long_date(a.date), a.start.format("%H:%M"), c.address, c.phone, c.name);
+                    let text = format!(
+                        "Hola, {first}:\n\nEl hueco es suyo. Su cita queda confirmada:\n\n  {} a las {}\n  con {doctor}\n  {}{link}\n\nSi no puede venir, avísenos llamando al {}.\n\nUn saludo,\n{}",
+                        long_date(a.date),
+                        a.start.format("%H:%M"),
+                        c.address,
+                        c.phone,
+                        c.name
+                    );
                     let ics = ics_event(a.id, &c.name, &c.address, &c.phone, a.date, a.start, a.minutes, &format!("Cita con {doctor}"));
                     let to = app.db.patient(inv.patient_id).map(|p| p.email.clone()).unwrap_or_default();
                     send_mail(app, who.clone(), to, subject, text, vec![crate::mail::FileAttachment { name: "cita.ics".into(), mime: "text/calendar; charset=utf-8".into(), bytes: ics.into_bytes() }]);
@@ -941,7 +990,11 @@ pub fn offers_card(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("{} {} · {} · {}", weekday_es(a.date).chars().take(3).collect::<String>(), a.date.format("%d/%m"), a.start.format("%H:%M"), app.db.doctor_alias(a.doctor_id))).size(13.0).color(TEXT));
                 right_aligned(ui, |ui| {
-                    if ui.add(egui::Button::new(RichText::new(format!("Ofrecer ({n})")).size(12.5).color(Color32::WHITE)).fill(VIOLET).corner_radius(CornerRadius::same(8))).on_hover_text(format!("Avisa a {n} paciente(s) de la lista de espera; se lo queda el primero que lo pida")).clicked() {
+                    if ui
+                        .add(egui::Button::new(RichText::new(format!("Ofrecer ({n})")).size(12.5).color(Color32::WHITE)).fill(VIOLET).corner_radius(CornerRadius::same(8)))
+                        .on_hover_text(format!("Avisa a {n} paciente(s) de la lista de espera; se lo queda el primero que lo pida"))
+                        .clicked()
+                    {
                         offer = Some(a.id);
                     }
                 });
@@ -1062,87 +1115,81 @@ pub fn agenda_card(app: &mut App, ui: &mut Ui) {
     }
     list.sort_by_key(|r| (r.date, r.start));
     let mut action: Option<(u32, u8)> = None;
-    egui::Frame::new()
-        .fill(CARD)
-        .stroke(Stroke::new(1.0, tint(VIOLET, 0.35)))
-        .corner_radius(CornerRadius::same(16))
-        .inner_margin(egui::Margin::same(16))
-        .shadow(shadow())
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(30.0, 30.0), egui::Sense::hover());
-                ui.painter().rect_filled(r, CornerRadius::same(9), tint(VIOLET, 0.12));
-                crate::icons::settings_icon(ui.painter(), "web", r.center(), VIOLET);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.label(RichText::new("Citas pedidas por internet").font(sbf(15.0)).color(HEADING));
-                    ui.label(RichText::new(format!("{} por confirmar", list.len())).font(mdf(12.5)).color(MUTED));
-                });
+    egui::Frame::new().fill(CARD).stroke(Stroke::new(1.0, tint(VIOLET, 0.35))).corner_radius(CornerRadius::same(16)).inner_margin(egui::Margin::same(16)).shadow(shadow()).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(30.0, 30.0), egui::Sense::hover());
+            ui.painter().rect_filled(r, CornerRadius::same(9), tint(VIOLET, 0.12));
+            crate::icons::settings_icon(ui.painter(), "web", r.center(), VIOLET);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.label(RichText::new("Citas pedidas por internet").font(sbf(15.0)).color(HEADING));
+                ui.label(RichText::new(format!("{} por confirmar", list.len())).font(mdf(12.5)).color(MUTED));
             });
-            for r in list.iter().take(6) {
-                ui.add_space(8.0);
-                egui::Frame::new().fill(Color32::from_rgb(250, 249, 255)).stroke(Stroke::new(1.0, tint(VIOLET, 0.16))).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.spacing_mut().item_spacing.y = 3.0;
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(&r.name).font(sbf(14.0)).color(HEADING));
-                        right_aligned(ui, |ui| {
-                            ui.label(RichText::new(ago(r.received)).size(11.5).color(SUBTLE));
-                        });
-                    });
-                    let doc = app.db.doctor(r.doctor_id).map(|d| d.alias.clone()).unwrap_or_default();
-                    if let Some(old) = r.replaces.and_then(|id| app.db.appointments.iter().find(|a| a.id == id)) {
-                        ui.horizontal(|ui| {
-                            pill(ui, "Cambio de hora", INFO);
-                            ui.label(RichText::new(format!("antes: {} {} · {}", weekday_es(old.date).chars().take(3).collect::<String>(), old.date.format("%d/%m"), old.start.format("%H:%M"))).size(12.0).color(MUTED).strikethrough());
-                        });
-                    }
-                    ui.label(RichText::new(format!("{} {} · {}", weekday_es(r.date).chars().take(3).collect::<String>(), r.date.format("%d/%m"), r.start.format("%H:%M"))).font(sbf(13.5)).color(mix(VIOLET, HEADING, 0.35)));
-                    ui.label(RichText::new(format!("{} · {doc} · {} min", r.reason, r.minutes)).size(12.5).color(TEXT));
-                    let who = match r.patient_id {
-                        Some(pid) => format!("Ficha: {}", app.db.patient_name(pid)),
-                        None if r.first_visit => "Paciente nuevo (primera visita)".into(),
-                        None => "Sin ficha con ese teléfono".into(),
-                    };
-                    ui.label(RichText::new(format!("{} · {}", r.phone, who)).size(12.0).color(MUTED));
-                    if !r.notes.trim().is_empty() && r.replaces.is_none() {
-                        ui.label(RichText::new(format!("«{}»", r.notes.trim())).size(12.0).italics().color(TEXT));
-                    }
-                    if !app.db.is_free(r.doctor_id, r.date, r.start, r.end(), r.replaces) {
-                        ui.label(RichText::new("⚠ Esa hora ya está ocupada en la agenda").size(12.0).color(DANGER));
-                    }
-                    if app.booking.rejecting == Some(r.id) {
-                        ui.add(egui::TextEdit::singleline(&mut app.booking.reject_text).hint_text("Motivo (se le dirá al paciente)").desired_width(f32::INFINITY));
-                        ui.horizontal(|ui| {
-                            if ui.add(egui::Button::new(RichText::new("Rechazar solicitud").color(Color32::WHITE).size(13.0)).fill(DANGER).corner_radius(CornerRadius::same(8))).clicked() {
-                                action = Some((r.id, 2));
-                            }
-                            if ui.button("Cancelar").clicked() {
-                                action = Some((r.id, 3));
-                            }
-                        });
-                    } else {
-                        ui.add_space(2.0);
-                        ui.horizontal(|ui| {
-                            if ui.add(egui::Button::new(RichText::new("Confirmar").color(Color32::WHITE).font(sbf(13.0))).fill(ACCENT).corner_radius(CornerRadius::same(8))).on_hover_text("Apunta la cita en la agenda y avisa al paciente").clicked() {
-                                action = Some((r.id, 0));
-                            }
-                            if ui.button(RichText::new("Ver el día").size(13.0)).clicked() {
-                                action = Some((r.id, 4));
-                            }
-                            if ui.button(RichText::new("Rechazar").size(13.0).color(DANGER)).clicked() {
-                                action = Some((r.id, 1));
-                            }
-                        });
-                    }
-                });
-            }
-            if list.len() > 6 {
-                ui.add_space(4.0);
-                muted(ui, format!("Y {} más: véalas en Configuración › Cita online.", list.len() - 6));
-            }
         });
+        for r in list.iter().take(6) {
+            ui.add_space(8.0);
+            egui::Frame::new().fill(Color32::from_rgb(250, 249, 255)).stroke(Stroke::new(1.0, tint(VIOLET, 0.16))).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 3.0;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&r.name).font(sbf(14.0)).color(HEADING));
+                    right_aligned(ui, |ui| {
+                        ui.label(RichText::new(ago(r.received)).size(11.5).color(SUBTLE));
+                    });
+                });
+                let doc = app.db.doctor(r.doctor_id).map(|d| d.alias.clone()).unwrap_or_default();
+                if let Some(old) = r.replaces.and_then(|id| app.db.appointments.iter().find(|a| a.id == id)) {
+                    ui.horizontal(|ui| {
+                        pill(ui, "Cambio de hora", INFO);
+                        ui.label(RichText::new(format!("antes: {} {} · {}", weekday_es(old.date).chars().take(3).collect::<String>(), old.date.format("%d/%m"), old.start.format("%H:%M"))).size(12.0).color(MUTED).strikethrough());
+                    });
+                }
+                ui.label(RichText::new(format!("{} {} · {}", weekday_es(r.date).chars().take(3).collect::<String>(), r.date.format("%d/%m"), r.start.format("%H:%M"))).font(sbf(13.5)).color(mix(VIOLET, HEADING, 0.35)));
+                ui.label(RichText::new(format!("{} · {doc} · {} min", r.reason, r.minutes)).size(12.5).color(TEXT));
+                let who = match r.patient_id {
+                    Some(pid) => format!("Ficha: {}", app.db.patient_name(pid)),
+                    None if r.first_visit => "Paciente nuevo (primera visita)".into(),
+                    None => "Sin ficha con ese teléfono".into(),
+                };
+                ui.label(RichText::new(format!("{} · {}", r.phone, who)).size(12.0).color(MUTED));
+                if !r.notes.trim().is_empty() && r.replaces.is_none() {
+                    ui.label(RichText::new(format!("«{}»", r.notes.trim())).size(12.0).italics().color(TEXT));
+                }
+                if !app.db.is_free(r.doctor_id, r.date, r.start, r.end(), r.replaces) {
+                    ui.label(RichText::new("⚠ Esa hora ya está ocupada en la agenda").size(12.0).color(DANGER));
+                }
+                if app.booking.rejecting == Some(r.id) {
+                    ui.add(egui::TextEdit::singleline(&mut app.booking.reject_text).hint_text("Motivo (se le dirá al paciente)").desired_width(f32::INFINITY));
+                    ui.horizontal(|ui| {
+                        if ui.add(egui::Button::new(RichText::new("Rechazar solicitud").color(Color32::WHITE).size(13.0)).fill(DANGER).corner_radius(CornerRadius::same(8))).clicked() {
+                            action = Some((r.id, 2));
+                        }
+                        if ui.button("Cancelar").clicked() {
+                            action = Some((r.id, 3));
+                        }
+                    });
+                } else {
+                    ui.add_space(2.0);
+                    ui.horizontal(|ui| {
+                        if ui.add(egui::Button::new(RichText::new("Confirmar").color(Color32::WHITE).font(sbf(13.0))).fill(ACCENT).corner_radius(CornerRadius::same(8))).on_hover_text("Apunta la cita en la agenda y avisa al paciente").clicked() {
+                            action = Some((r.id, 0));
+                        }
+                        if ui.button(RichText::new("Ver el día").size(13.0)).clicked() {
+                            action = Some((r.id, 4));
+                        }
+                        if ui.button(RichText::new("Rechazar").size(13.0).color(DANGER)).clicked() {
+                            action = Some((r.id, 1));
+                        }
+                    });
+                }
+            });
+        }
+        if list.len() > 6 {
+            ui.add_space(4.0);
+            muted(ui, format!("Y {} más: véalas en Configuración › Cita online.", list.len() - 6));
+        }
+    });
     ui.add_space(8.0);
     if let Some((id, a)) = action {
         match a {

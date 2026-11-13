@@ -16,15 +16,7 @@ pub struct RemState2 {
 }
 
 /// Motivos de devolución más frecuentes (códigos SEPA).
-const REASONS: [&str; 7] = [
-    "AM04 Saldo insuficiente",
-    "MD06 Devuelto a petición del titular",
-    "AC04 Cuenta cancelada",
-    "AC01 IBAN incorrecto",
-    "MD01 Sin mandato",
-    "MS02 Motivo no indicado por el titular",
-    "Otro",
-];
+const REASONS: [&str; 7] = ["AM04 Saldo insuficiente", "MD06 Devuelto a petición del titular", "AC04 Cuenta cancelada", "AC01 IBAN incorrecto", "MD01 Sin mandato", "MS02 Motivo no indicado por el titular", "Otro"];
 
 impl Default for RemState2 {
     fn default() -> Self {
@@ -70,10 +62,17 @@ pub fn view(app: &mut App, ui: &mut Ui) {
         }
         let mut open = None;
         for (i, d) in due.iter().enumerate() {
-            let cells = [cell(fmt_date(d.due)), cell(app.db.patient_name(d.patient_id)), cell(format!("#{}", d.budget_id)), cell((d.index + 1).to_string()), cell(money(d.amount)), match &d.problem {
-                None => cellc("Lista para remesar", OK),
-                Some(p) => cellc(format!("⚠ {p} (pulse para completar)"), WARN),
-            }];
+            let cells = [
+                cell(fmt_date(d.due)),
+                cell(app.db.patient_name(d.patient_id)),
+                cell(format!("#{}", d.budget_id)),
+                cell((d.index + 1).to_string()),
+                cell(money(d.amount)),
+                match &d.problem {
+                    None => cellc("Lista para remesar", OK),
+                    Some(p) => cellc(format!("⚠ {p} (pulse para completar)"), WARN),
+                },
+            ];
             if tbl.row(ui, i, false, &cells).clicked() && d.problem.is_some() {
                 open = Some(d.patient_id);
             }
@@ -119,7 +118,29 @@ pub fn view(app: &mut App, ui: &mut Ui) {
             };
             let total = if back > 0 { format!("{} de {}", money(r.collected()), money(r.total())) } else { money(r.total()) };
             let open = app.rem.open == Some(r.id);
-            let resp = tbl.row(ui, i, open, &[cell(format!("#{}", r.id)), cell(r.created.format("%d/%m/%Y %H:%M").to_string()), cell(fmt_date(r.collection)), cell(r.items.len().to_string()), cell(total), cellc(state, if back > 0 { WARN } else if cobrada { OK } else { INFO }), cell(&r.file)]);
+            let resp = tbl.row(
+                ui,
+                i,
+                open,
+                &[
+                    cell(format!("#{}", r.id)),
+                    cell(r.created.format("%d/%m/%Y %H:%M").to_string()),
+                    cell(fmt_date(r.collection)),
+                    cell(r.items.len().to_string()),
+                    cell(total),
+                    cellc(
+                        state,
+                        if back > 0 {
+                            WARN
+                        } else if cobrada {
+                            OK
+                        } else {
+                            INFO
+                        },
+                    ),
+                    cell(&r.file),
+                ],
+            );
             let resp = resp.on_hover_text(if cobrada { "Pulse para ver los recibos y registrar los devueltos" } else { "Pulse para ver los recibos · clic derecho: marcar como cobrada cuando el banco abone la remesa" });
             if resp.clicked() {
                 app.rem.open = if open { None } else { Some(r.id) };
@@ -146,7 +167,10 @@ pub fn view(app: &mut App, ui: &mut Ui) {
                 Err(e) => app.warn(e),
             }
         }
-        muted(ui, "Cuando el banco abone la remesa, haga clic derecho sobre ella para registrar los cobros. Si el banco devuelve un recibo, pulse la remesa y regístrelo: la cuota vuelve a quedar pendiente, para la siguiente remesa o para cobrarla en la clínica.");
+        muted(
+            ui,
+            "Cuando el banco abone la remesa, haga clic derecho sobre ella para registrar los cobros. Si el banco devuelve un recibo, pulse la remesa y regístrelo: la cuota vuelve a quedar pendiente, para la siguiente remesa o para cobrarla en la clínica.",
+        );
     });
 }
 

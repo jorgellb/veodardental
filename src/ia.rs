@@ -494,10 +494,7 @@ fn endpoint(a: &Agent, path: &str) -> String {
 
 /// Mensaje claro a partir de un error del servicio.
 fn status_message(code: u16, body: &str) -> String {
-    let detail = serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v.pointer("/error/message").or_else(|| v.get("error")).or_else(|| v.get("message")).map(text_of))
-        .unwrap_or_else(|| body.chars().take(160).collect());
+    let detail = serde_json::from_str::<Value>(body).ok().and_then(|v| v.pointer("/error/message").or_else(|| v.get("error")).or_else(|| v.get("message")).map(text_of)).unwrap_or_else(|| body.chars().take(160).collect());
     let what = match code {
         400 => "petición rechazada (¿el modelo admite imágenes?)",
         401 | 403 => "clave no válida o sin permiso",
@@ -739,7 +736,10 @@ mod tests {
 
     #[test]
     fn chain_respects_mode_and_order() {
-        let cfg = IaConfig { agents: vec![Agent::new(1, Provider::OpenRouter, "a:free", true), Agent::new(2, Provider::OpenAi, "b", false), Agent::new(3, Provider::Gemini, "c", true), Agent { enabled: false, ..Agent::new(4, Provider::Groq, "d", true) }], ..Default::default() };
+        let cfg = IaConfig {
+            agents: vec![Agent::new(1, Provider::OpenRouter, "a:free", true), Agent::new(2, Provider::OpenAi, "b", false), Agent::new(3, Provider::Gemini, "c", true), Agent { enabled: false, ..Agent::new(4, Provider::Groq, "d", true) }],
+            ..Default::default()
+        };
         let ids = |m| chain(&cfg, m).iter().map(|a| a.id).collect::<Vec<_>>();
         assert_eq!(ids(Mode::FreeOnly), vec![1, 3]);
         assert_eq!(ids(Mode::PaidOnly), vec![2]);
@@ -791,12 +791,10 @@ mod tests {
     #[test]
     fn falls_back_to_next_free_agent_and_never_pays() {
         let (url, h) = fake_service(3);
-        let cfg = IaConfig { agents: vec![
-            agent(1, Provider::OpenRouter, &url, "saturado", true),
-            agent(2, Provider::OpenRouter, &url, "roto", true),
-            agent(3, Provider::Custom, &url, "bueno", true),
-            agent(4, Provider::OpenAi, &url, "caro", false),
-        ], ..Default::default() };
+        let cfg = IaConfig {
+            agents: vec![agent(1, Provider::OpenRouter, &url, "saturado", true), agent(2, Provider::OpenRouter, &url, "roto", true), agent(3, Provider::Custom, &url, "bueno", true), agent(4, Provider::OpenAi, &url, "caro", false)],
+            ..Default::default()
+        };
         let out = analyze(&cfg, Mode::FreeThenPaid, &request(), &|_| {});
         let (a, an) = out.result.unwrap();
         assert_eq!(a.id, 3, "responde el tercer agente gratuito");

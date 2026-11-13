@@ -78,13 +78,7 @@ pub fn parse_response(c: Consejo, xml: &str) -> Result<(bool, String), String> {
         Consejo::Dentistas => (tag_text(xml, "habilitacion"), tag_text(xml, "mensaje")),
         _ => (tag_text(xml, "Resultado"), tag_text(xml, "DescripcionError")),
     };
-    let flag = flag.ok_or_else(|| {
-        if let Some(f) = tag_text(xml, "faultstring") {
-            format!("El servicio del Consejo devolvió un error: {f}")
-        } else {
-            "Respuesta del servicio del Consejo no reconocida.".to_string()
-        }
-    })?;
+    let flag = flag.ok_or_else(|| if let Some(f) = tag_text(xml, "faultstring") { format!("El servicio del Consejo devolvió un error: {f}") } else { "Respuesta del servicio del Consejo no reconocida.".to_string() })?;
     Ok((flag.eq_ignore_ascii_case("true"), msg.unwrap_or_default()))
 }
 
@@ -138,7 +132,10 @@ mod tests {
                 let mut body = String::new();
                 std::io::Read::read_to_string(req.as_reader(), &mut body).unwrap();
                 let enabled = body.contains(">280001<");
-                let xml = format!("<SOAP-ENV:Envelope><SOAP-ENV:Body><ns:Consulta_HabilitacionRespuesta><habilitacion>{enabled}</habilitacion>{}</ns:Consulta_HabilitacionRespuesta></SOAP-ENV:Body></SOAP-ENV:Envelope>", if enabled { "" } else { "<mensaje>No consta</mensaje>" });
+                let xml = format!(
+                    "<SOAP-ENV:Envelope><SOAP-ENV:Body><ns:Consulta_HabilitacionRespuesta><habilitacion>{enabled}</habilitacion>{}</ns:Consulta_HabilitacionRespuesta></SOAP-ENV:Body></SOAP-ENV:Envelope>",
+                    if enabled { "" } else { "<mensaje>No consta</mensaje>" }
+                );
                 req.respond(tiny_http::Response::from_string(xml)).unwrap();
             }
         });

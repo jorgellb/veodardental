@@ -126,7 +126,10 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                 egui::ScrollArea::vertical().id_salt("bml").max_height(440.0).show(ui, |ui| {
                     for (i, m) in list.iter().enumerate() {
                         let desc = m.matched.as_ref().map(|x| app.db.describe_match(x)).unwrap_or_else(|| "— pendiente —".into());
-                        if tbl.row(ui, i, app.bank.selected == Some(m.id), &[cell(fmt_date(m.date)), cell(&m.concept), cellc(money(m.amount), if m.amount < 0.0 { DANGER } else { OK }), cellc(desc, if m.matched.is_some() { TEXT } else { WARN })]).clicked() {
+                        if tbl
+                            .row(ui, i, app.bank.selected == Some(m.id), &[cell(fmt_date(m.date)), cell(&m.concept), cellc(money(m.amount), if m.amount < 0.0 { DANGER } else { OK }), cellc(desc, if m.matched.is_some() { TEXT } else { WARN })])
+                            .clicked()
+                        {
                             pick = Some(m.id);
                         }
                     }
@@ -182,13 +185,7 @@ fn detail(app: &mut App, ui: &mut Ui) {
                     set = Some(Some(Match::Other("Otro ingreso".into())));
                 }
             } else {
-                let cands: Vec<(u32, String)> = app
-                    .db
-                    .expenses
-                    .iter()
-                    .filter(|e| (e.total() + m.amount).abs() < 0.005)
-                    .map(|e| (e.id, format!("{} · {} · {}", fmt_date(e.date), e.supplier, e.concept)))
-                    .collect();
+                let cands: Vec<(u32, String)> = app.db.expenses.iter().filter(|e| (e.total() + m.amount).abs() < 0.005).map(|e| (e.id, format!("{} · {} · {}", fmt_date(e.date), e.supplier, e.concept))).collect();
                 for (eid, label) in cands {
                     any = true;
                     if ui.button(label).clicked() {
@@ -200,7 +197,19 @@ fn detail(app: &mut App, ui: &mut Ui) {
                 }
                 if primary(ui, "Crear gasto con este cargo").on_hover_text("Apunta el cargo en el libro de gastos (p. ej. comisiones o recibos)").clicked() {
                     let eid = app.db.new_id();
-                    app.db.expenses.push(crate::finance::Expense { id: eid, date: m.date, supplier: m.concept.chars().take(40).collect(), concept: m.concept.clone(), category: "Otros".into(), base: round2(-m.amount), vat_pct: 0.0, invoice_no: m.reference.clone(), method: "Domiciliación".into(), paid: true, due: None });
+                    app.db.expenses.push(crate::finance::Expense {
+                        id: eid,
+                        date: m.date,
+                        supplier: m.concept.chars().take(40).collect(),
+                        concept: m.concept.clone(),
+                        category: "Otros".into(),
+                        base: round2(-m.amount),
+                        vat_pct: 0.0,
+                        invoice_no: m.reference.clone(),
+                        method: "Domiciliación".into(),
+                        paid: true,
+                        due: None,
+                    });
                     set = Some(Some(Match::Expense(eid)));
                 }
             }

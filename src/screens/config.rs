@@ -139,32 +139,26 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 18.0;
         // menú de apartados
         ui.allocate_ui_with_layout(egui::vec2(nav_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
-            egui::Frame::new()
-                .fill(CARD)
-                .stroke(egui::Stroke::new(1.0, BORDER))
-                .corner_radius(egui::CornerRadius::same(16))
-                .inner_margin(egui::Margin::symmetric(10, 8))
-                .shadow(shadow())
-                .show(ui, |ui| {
-                    ui.set_width(nav_w - 20.0);
-                    egui::ScrollArea::vertical().id_salt("cfg_nav").auto_shrink([false, true]).max_height(h - 28.0).show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
-                        for (gi, (group, tabs)) in CfgTab::GROUPS.iter().enumerate() {
-                            if gi > 0 {
-                                ui.add_space(4.0);
-                            }
-                            // rótulo del grupo, compacto
-                            let (gr, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 17.0), egui::Sense::hover());
-                            ui.painter().text(egui::pos2(gr.min.x + 10.0, gr.center().y + 2.0), egui::Align2::LEFT_CENTER, group.to_uppercase(), sbf(10.6), SUBTLE);
-                            ui.add_space(0.0);
-                            for t in tabs.iter() {
-                                if nav_item(ui, *t, app.lists.cfg_tab == *t) {
-                                    app.lists.cfg_tab = *t;
-                                }
+            egui::Frame::new().fill(CARD).stroke(egui::Stroke::new(1.0, BORDER)).corner_radius(egui::CornerRadius::same(16)).inner_margin(egui::Margin::symmetric(10, 8)).shadow(shadow()).show(ui, |ui| {
+                ui.set_width(nav_w - 20.0);
+                egui::ScrollArea::vertical().id_salt("cfg_nav").auto_shrink([false, true]).max_height(h - 28.0).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for (gi, (group, tabs)) in CfgTab::GROUPS.iter().enumerate() {
+                        if gi > 0 {
+                            ui.add_space(4.0);
+                        }
+                        // rótulo del grupo, compacto
+                        let (gr, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 17.0), egui::Sense::hover());
+                        ui.painter().text(egui::pos2(gr.min.x + 10.0, gr.center().y + 2.0), egui::Align2::LEFT_CENTER, group.to_uppercase(), sbf(10.6), SUBTLE);
+                        ui.add_space(0.0);
+                        for t in tabs.iter() {
+                            if nav_item(ui, *t, app.lists.cfg_tab == *t) {
+                                app.lists.cfg_tab = *t;
                             }
                         }
-                    });
+                    }
                 });
+            });
         });
         // contenido del apartado
         ui.vertical(|ui| {
@@ -410,17 +404,11 @@ fn billing_tab(app: &mut App, ui: &mut Ui) {
 /// Hora en un solo campo («09:30»: se escribe o se arrastra, de 5 en 5 minutos).
 fn hm_edit(ui: &mut Ui, t: &mut NaiveTime) -> bool {
     let mut m = (t.hour() * 60 + t.minute()) as f64;
-    let r = ui.add(
-        egui::DragValue::new(&mut m)
-            .range(0.0..=1435.0)
-            .speed(2.0)
-            .custom_formatter(|v, _| format!("{:02}:{:02}", v as u32 / 60, v as u32 % 60))
-            .custom_parser(|s| {
-                let s = s.trim();
-                let (h, mi) = s.split_once(':').unwrap_or((s, "0"));
-                Some(h.trim().parse::<f64>().ok()? * 60.0 + mi.trim().parse::<f64>().ok()?)
-            }),
-    );
+    let r = ui.add(egui::DragValue::new(&mut m).range(0.0..=1435.0).speed(2.0).custom_formatter(|v, _| format!("{:02}:{:02}", v as u32 / 60, v as u32 % 60)).custom_parser(|s| {
+        let s = s.trim();
+        let (h, mi) = s.split_once(':').unwrap_or((s, "0"));
+        Some(h.trim().parse::<f64>().ok()? * 60.0 + mi.trim().parse::<f64>().ok()?)
+    }));
     if r.changed() {
         let v = (m.round() as u32 / 5) * 5;
         *t = NaiveTime::from_hms_opt(v / 60, v % 60, 0).unwrap_or(*t);
@@ -477,7 +465,6 @@ pub fn week_editor(ui: &mut Ui, id: impl egui::AsIdSalt, w: &mut crate::horario:
     *w != before
 }
 
-
 pub fn collaborators(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         title(ui, "Colaboradores", "Doctores, higienistas y personal clínico");
@@ -526,13 +513,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 return;
             };
             let today = app.today;
-            let month_prod: f64 = app
-                .db
-                .entries
-                .iter()
-                .filter(|e| e.doctor_id == id && e.state == TxState::Realizado && e.date >= today - chrono::Duration::days(30))
-                .map(|e| e.amount())
-                .sum();
+            let month_prod: f64 = app.db.entries.iter().filter(|e| e.doctor_id == id && e.state == TxState::Realizado && e.date >= today - chrono::Duration::days(30)).map(|e| e.amount()).sum();
             let appts_today = app.db.appointments.iter().filter(|a| a.doctor_id == id && a.date == today && !a.state.is_cancelled()).count();
             let clinic = app.db.clinic_week();
             let clinic_span = clinic.span().unwrap_or((app.db.config.open_time, app.db.config.close_time));
@@ -610,7 +591,10 @@ pub fn modules(app: &mut App, ui: &mut Ui) {
         ("Bancos y conciliación", "Extractos Norma 43 o Excel/CSV, conciliación automática con transferencias, liquidaciones de tarjeta, remesas y gastos"),
         ("Fusión de pacientes duplicados", "Detección por NIF, nombre o móvil y unión de todo el historial con copia de seguridad previa"),
         ("Registro de cambios", "Quién borró, emitió, importó, fusionó o restauró y cuándo"),
-        ("Copias de seguridad", "Copia automática diaria (se guarda un año, escalonada: diarias, semanales y mensuales), aviso si falla, copia manual, segunda copia en un disco USB o en la nube cifrada con la contraseña de las copias (AES-256; sin ella no se puede leer ni modificar) y restauración comprobada, también de copias cifradas en otro ordenador"),
+        (
+            "Copias de seguridad",
+            "Copia automática diaria (se guarda un año, escalonada: diarias, semanales y mensuales), aviso si falla, copia manual, segunda copia en un disco USB o en la nube cifrada con la contraseña de las copias (AES-256; sin ella no se puede leer ni modificar) y restauración comprobada, también de copias cifradas en otro ordenador",
+        ),
         ("Pizarra de sala de espera", "Pantalla para la televisión: paciente llamado a consulta con su gabinete y lista de espera, con opción de mostrar solo iniciales"),
         ("Listín telefónico", "Contactos de la clínica, colaboradores, proveedores, mutuas y pacientes en una sola búsqueda"),
         ("Telefonía", "Al sonar el teléfono aparece quién llama con su próxima cita, avisos y saldo; registro de llamadas"),
@@ -618,10 +602,16 @@ pub fn modules(app: &mut App, ui: &mut Ui) {
         ("Consultas de pacientes", "Listas por edad, tarifa, doctor, última visita, deuda, presupuestos o tratamientos; exportación y mensajes"),
         ("Importación de datos", "Pacientes y tratamientos con precios desde Excel o CSV, sin duplicar pacientes"),
         ("Importación desde SQL Server", "Conexión de solo lectura con GESDEN y Novaclinic (catálogo, tarifas y pacientes) o con cualquier otro programa eligiendo tabla o consulta"),
-        ("Receta oficial: repositorio propio", "Repositorio de recetas con los servicios para farmacias de Nodofarma, firma CAdES con el certificado del dentista, comprobación del colegiado y hoja del paciente con DataMatrix; pendiente de la certificación oficial"),
+        (
+            "Receta oficial: repositorio propio",
+            "Repositorio de recetas con los servicios para farmacias de Nodofarma, firma CAdES con el certificado del dentista, comprobación del colegiado y hoja del paciente con DataMatrix; pendiente de la certificación oficial",
+        ),
         ("Ortodoncia", "Casos con aparatología, clase, objetivos, controles con higiene y recall automático del siguiente control"),
         ("Remesas SEPA", "Cuotas domiciliadas con IBAN y mandato validados, fichero bancario pain.008 y registro de cobros"),
-        ("Usuarios, contraseñas y permisos", "Acceso con contraseña y, si se activa, con el código de 6 cifras de una app del móvil (doble factor, que se puede exigir para firmar recetas); perfiles (dirección, doctor, higienista, recepción), bloqueo por inactividad e intentos y registro de accesos"),
+        (
+            "Usuarios, contraseñas y permisos",
+            "Acceso con contraseña y, si se activa, con el código de 6 cifras de una app del móvil (doble factor, que se puede exigir para firmar recetas); perfiles (dirección, doctor, higienista, recepción), bloqueo por inactividad e intentos y registro de accesos",
+        ),
         ("Gastos", "Facturas recibidas, IVA soportado, vencimientos, resultado mensual; pedidos y laboratorio se apuntan solos"),
         ("Recetas", "Vademécum básico con avisos de alergias, anticoagulación y otras alertas; receta imprimible"),
         ("Almacén y pedidos", "Stock con mínimos, consumo automático por tratamiento, propuesta de pedido, envío y recepción, proveedores"),
@@ -634,17 +624,41 @@ pub fn modules(app: &mut App, ui: &mut Ui) {
         ("Correo electrónico", "Servidor de correo propio (Gmail, Outlook, IONOS, OVH o el de la clínica) con adjuntos y correo de prueba"),
         ("Cita online", "Página para pedir cita desde el móvil o la web con los huecos libres de la agenda; las solicitudes se confirman o rechazan en la agenda y el paciente recibe la cita por correo para su calendario; cartel con código QR"),
         ("Enlace «Mi cita»", "Enlace personal de cada cita para que el paciente confirme, anule, pida otra hora o rellene el cuestionario de salud desde casa; llega a la agenda y a la ficha, y se puede poner en los recordatorios con [ENLACE]"),
-        ("Presupuestos para firmar por internet", "El paciente revisa el presupuesto en el móvil, elige pagarlo por tratamiento o en cuotas sin intereses y lo acepta con su firma; queda aceptado, con sus tratamientos en el plan, el documento firmado en la ficha y una copia firmada por correo; también puede preguntar o decir que no le interesa"),
-        ("Publicar en internet", "Túnel de Cloudflare integrado: la página de la clínica (cita online, «Mi cita», presupuestos) sale en una dirección https propia sin abrir puertos en el router; se abre solo al arrancar y se comprueba desde internet con un botón"),
-        ("Consentimientos para firmar por internet", "Consentimientos informados, protección de datos y otros documentos se envían con un enlace: el paciente los lee con calma, pregunta sus dudas y los firma con el dedo (o elige firmarlos en la clínica); aparecen también en «Mi cita», quedan firmados en la ficha con la prueba de la firma y le llega una copia por correo"),
-        ("Envío automático por correo", "Cada día, a la hora elegida y desde un solo ordenador, se preparan los recordatorios de cita, avisos de revisión, felicitaciones y seguimientos de presupuesto y se envían por correo con el servidor de la clínica, cada uno con su enlace (gestionar la cita, pedir cita o firmar el presupuesto); a quien no acepta correo le llegan por WhatsApp o SMS como siempre, y los fallos quedan anotados para reintentarlos"),
-        ("Mis recetas por internet", "Enlace personal para que el paciente vea en el móvil sus recetas electrónicas, en qué estado están en las farmacias y la hoja con los códigos para enseñarla al farmacéutico; entra con su DNI/NIE y su fecha de nacimiento, el enlace se bloquea tras 5 intentos fallidos y cada acceso queda registrado"),
-        ("Puesta en marcha", "Lista de lo que falta para trabajar con la clínica real (datos de la clínica, profesionales, contraseñas, copias, VERI*FACTU, protección de datos y lo opcional), comprobada con la configuración y con un botón a cada sitio; con «Empezar con la clínica vacía» se quitan los pacientes y datos de ejemplo tras guardar una copia, sin tocar tratamientos, tarifas, profesionales ni usuarios"),
-        ("Huecos libres para la lista de espera", "Cuando se anula una cita (sola si es por internet, con un botón desde la agenda), el hueco se ofrece a quienes esperan con ese profesional y les encaja la hora, empezando por quien más lleva esperando; cada uno recibe su enlace y el primero que lo pide se queda la cita confirmada y sale de la lista; los demás ven que ya está ocupado"),
+        (
+            "Presupuestos para firmar por internet",
+            "El paciente revisa el presupuesto en el móvil, elige pagarlo por tratamiento o en cuotas sin intereses y lo acepta con su firma; queda aceptado, con sus tratamientos en el plan, el documento firmado en la ficha y una copia firmada por correo; también puede preguntar o decir que no le interesa",
+        ),
+        (
+            "Publicar en internet",
+            "Túnel de Cloudflare integrado: la página de la clínica (cita online, «Mi cita», presupuestos) sale en una dirección https propia sin abrir puertos en el router; se abre solo al arrancar y se comprueba desde internet con un botón",
+        ),
+        (
+            "Consentimientos para firmar por internet",
+            "Consentimientos informados, protección de datos y otros documentos se envían con un enlace: el paciente los lee con calma, pregunta sus dudas y los firma con el dedo (o elige firmarlos en la clínica); aparecen también en «Mi cita», quedan firmados en la ficha con la prueba de la firma y le llega una copia por correo",
+        ),
+        (
+            "Envío automático por correo",
+            "Cada día, a la hora elegida y desde un solo ordenador, se preparan los recordatorios de cita, avisos de revisión, felicitaciones y seguimientos de presupuesto y se envían por correo con el servidor de la clínica, cada uno con su enlace (gestionar la cita, pedir cita o firmar el presupuesto); a quien no acepta correo le llegan por WhatsApp o SMS como siempre, y los fallos quedan anotados para reintentarlos",
+        ),
+        (
+            "Mis recetas por internet",
+            "Enlace personal para que el paciente vea en el móvil sus recetas electrónicas, en qué estado están en las farmacias y la hoja con los códigos para enseñarla al farmacéutico; entra con su DNI/NIE y su fecha de nacimiento, el enlace se bloquea tras 5 intentos fallidos y cada acceso queda registrado",
+        ),
+        (
+            "Puesta en marcha",
+            "Lista de lo que falta para trabajar con la clínica real (datos de la clínica, profesionales, contraseñas, copias, VERI*FACTU, protección de datos y lo opcional), comprobada con la configuración y con un botón a cada sitio; con «Empezar con la clínica vacía» se quitan los pacientes y datos de ejemplo tras guardar una copia, sin tocar tratamientos, tarifas, profesionales ni usuarios",
+        ),
+        (
+            "Huecos libres para la lista de espera",
+            "Cuando se anula una cita (sola si es por internet, con un botón desde la agenda), el hueco se ofrece a quienes esperan con ese profesional y les encaja la hora, empezando por quien más lleva esperando; cada uno recibe su enlace y el primero que lo pide se queda la cita confirmada y sale de la lista; los demás ven que ya está ocupado",
+        ),
     ];
     let soon = [
         ("TicketBAI (País Vasco)", "Registros para las haciendas forales de Álava, Bizkaia y Gipuzkoa"),
-        ("Receta electrónica con farmacias reales", "Todo preparado en el programa: firma, repositorio, hoja por correo, circuito completo probado con una farmacia simulada y expediente para pedir la certificación (Configuración › Receta electrónica › Camino a las farmacias reales). Falta que los Consejos Generales certifiquen el sistema, la prueba conjunta con Nodofarma y publicar el repositorio en un servidor siempre encendido"),
+        (
+            "Receta electrónica con farmacias reales",
+            "Todo preparado en el programa: firma, repositorio, hoja por correo, circuito completo probado con una farmacia simulada y expediente para pedir la certificación (Configuración › Receta electrónica › Camino a las farmacias reales). Falta que los Consejos Generales certifiquen el sistema, la prueba conjunta con Nodofarma y publicar el repositorio en un servidor siempre encendido",
+        ),
         ("Datáfono y financiación externa", "Cobro con datáfono integrado y financiación de presupuestos con entidades"),
         ("Portales de aseguradoras", "Envío directo de autorizaciones y liquidaciones a las compañías"),
     ];
@@ -709,40 +723,35 @@ fn integrations(app: &mut App, ui: &mut Ui) {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 for (name, desc, screen, place) in pair {
-                    egui::Frame::new()
-                        .fill(ROW_ALT)
-                        .stroke(egui::Stroke::new(1.0, HAIRLINE))
-                        .corner_radius(egui::CornerRadius::same(14))
-                        .inner_margin(egui::Margin::symmetric(14, 12))
-                        .show(ui, |ui| {
-                            ui.set_width(col_w - 30.0);
-                            ui.set_min_height(58.0);
-                            ui.horizontal_top(|ui| {
-                                // icono de la sección donde se configura
-                                let (r, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
-                                ui.painter().rect_filled(r, egui::CornerRadius::same(10), tint(ACCENT, 0.12));
-                                crate::icons::nav_icon(ui.painter(), *screen, r.center(), ACCENT_DARK);
-                                ui.add_space(4.0);
-                                let text_w = ui.available_width() - 84.0;
-                                ui.vertical(|ui| {
-                                    ui.set_width(text_w);
-                                    ui.spacing_mut().item_spacing.y = 2.0;
-                                    ui.label(RichText::new(*name).font(crate::theme::sbf(14.5)).color(HEADING));
-                                    ui.label(RichText::new(*desc).font(crate::theme::mdf(12.8)).color(MUTED));
-                                    ui.label(RichText::new(format!("Se configura en {place}")).font(crate::theme::mdf(12.0)).color(ACCENT_DARK));
-                                });
-                                // el texto deja un hueco fijo a la derecha para el botón
-                                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 34.0), egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                    if app.allowed(*screen) {
-                                        if ui.button("Abrir ›").on_hover_text(format!("Ir a {place}")).clicked() {
-                                            go = Some((*screen, *name));
-                                        }
-                                    } else {
-                                        ui.label(RichText::new("Sin permiso").font(crate::theme::mdf(12.0)).color(SUBTLE)).on_hover_text("Su perfil de usuario no puede abrir esta sección");
+                    egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE)).corner_radius(egui::CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(14, 12)).show(ui, |ui| {
+                        ui.set_width(col_w - 30.0);
+                        ui.set_min_height(58.0);
+                        ui.horizontal_top(|ui| {
+                            // icono de la sección donde se configura
+                            let (r, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
+                            ui.painter().rect_filled(r, egui::CornerRadius::same(10), tint(ACCENT, 0.12));
+                            crate::icons::nav_icon(ui.painter(), *screen, r.center(), ACCENT_DARK);
+                            ui.add_space(4.0);
+                            let text_w = ui.available_width() - 84.0;
+                            ui.vertical(|ui| {
+                                ui.set_width(text_w);
+                                ui.spacing_mut().item_spacing.y = 2.0;
+                                ui.label(RichText::new(*name).font(crate::theme::sbf(14.5)).color(HEADING));
+                                ui.label(RichText::new(*desc).font(crate::theme::mdf(12.8)).color(MUTED));
+                                ui.label(RichText::new(format!("Se configura en {place}")).font(crate::theme::mdf(12.0)).color(ACCENT_DARK));
+                            });
+                            // el texto deja un hueco fijo a la derecha para el botón
+                            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 34.0), egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                if app.allowed(*screen) {
+                                    if ui.button("Abrir ›").on_hover_text(format!("Ir a {place}")).clicked() {
+                                        go = Some((*screen, *name));
                                     }
-                                });
+                                } else {
+                                    ui.label(RichText::new("Sin permiso").font(crate::theme::mdf(12.0)).color(SUBTLE)).on_hover_text("Su perfil de usuario no puede abrir esta sección");
+                                }
                             });
                         });
+                    });
                 }
             });
             ui.add_space(gap - ui.spacing().item_spacing.y);

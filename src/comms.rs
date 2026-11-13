@@ -114,8 +114,24 @@ pub fn default_msg_templates() -> Vec<MsgTemplate> {
         t(2, "Recordatorio de cita (SMS)", MsgKind::RecordatorioCita, Channel::Sms, 1, "", "[CLINICA]: cita el [FECHA] a las [HORA]. Para cambiarla llame al [TELCLINICA]."),
         t(3, "Aviso de revisión", MsgKind::Recall, Channel::WhatsApp, 7, "", "Hola [NOMBRE], ya le toca su [MOTIVO] en [CLINICA]. Llámenos al [TELCLINICA] o responda a este mensaje para darle cita."),
         t(4, "Felicitación de cumpleaños", MsgKind::Cumpleanos, Channel::Sms, 0, "", "¡Feliz cumpleaños, [NOMBRE]! Todo el equipo de [CLINICA] le desea un gran día."),
-        t(5, "Seguimiento de presupuesto", MsgKind::PresupuestoPendiente, Channel::Email, 7, "Su presupuesto en [CLINICA]", "Estimado/a [NOMBRE]:\n\nLe recordamos que tiene pendiente el presupuesto «[MOTIVO]» por importe de [IMPORTE]. Si tiene cualquier duda, estaremos encantados de atenderle en el [TELCLINICA].\n\nUn saludo,\n[CLINICA]"),
-        t(6, "Recordatorio de cita (correo)", MsgKind::RecordatorioCita, Channel::Email, 1, "Recordatorio: su cita en [CLINICA] el [FECHA] a las [HORA]", "Hola, [NOMBRE]:\n\nLe recordamos su cita en [CLINICA] el [FECHA] a las [HORA] con [DOCTOR].\n\nSi no puede venir, avísenos llamando al [TELCLINICA].\n\nUn saludo,\n[CLINICA]"),
+        t(
+            5,
+            "Seguimiento de presupuesto",
+            MsgKind::PresupuestoPendiente,
+            Channel::Email,
+            7,
+            "Su presupuesto en [CLINICA]",
+            "Estimado/a [NOMBRE]:\n\nLe recordamos que tiene pendiente el presupuesto «[MOTIVO]» por importe de [IMPORTE]. Si tiene cualquier duda, estaremos encantados de atenderle en el [TELCLINICA].\n\nUn saludo,\n[CLINICA]",
+        ),
+        t(
+            6,
+            "Recordatorio de cita (correo)",
+            MsgKind::RecordatorioCita,
+            Channel::Email,
+            1,
+            "Recordatorio: su cita en [CLINICA] el [FECHA] a las [HORA]",
+            "Hola, [NOMBRE]:\n\nLe recordamos su cita en [CLINICA] el [FECHA] a las [HORA] con [DOCTOR].\n\nSi no puede venir, avísenos llamando al [TELCLINICA].\n\nUn saludo,\n[CLINICA]",
+        ),
         t(7, "Aviso de revisión (correo)", MsgKind::Recall, Channel::Email, 7, "Le toca su [MOTIVO] en [CLINICA]", "Hola, [NOMBRE]:\n\nYa le toca su [MOTIVO]. Llámenos al [TELCLINICA] y le damos cita.\n\nUn saludo,\n[CLINICA]"),
     ]
 }
@@ -153,12 +169,48 @@ pub struct PatientDoc {
 pub fn default_doc_templates() -> Vec<DocTemplate> {
     let d = |id, name: &str, cat: &str, body: &str, gdpr| DocTemplate { id, name: name.into(), category: cat.into(), body: body.into(), marks_gdpr: gdpr };
     vec![
-        d(1, "Protección de datos (RGPD)", "Protección de datos", "D./Dña. [NOMBRE] [APELLIDOS], con NIF [NIF], queda informado/a de que sus datos personales y de salud serán tratados por [CLINICA] con la finalidad de prestarle asistencia sanitaria, gestionar su historia clínica y la facturación de los servicios.\n\nLa base legal es la prestación de asistencia sanitaria y el cumplimiento de obligaciones legales. Los datos se conservarán durante el tiempo exigido por la normativa sanitaria. Puede ejercer sus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad dirigiéndose a [CLINICA], [DIRCLINICA].\n\nAutorizo a recibir comunicaciones sobre mis citas y revisiones por SMS, correo electrónico o WhatsApp.\n\nEn [CIUDAD], a [FECHA].", true),
-        d(2, "Consentimiento informado: extracción dental", "Consentimiento informado", "D./Dña. [NOMBRE] [APELLIDOS] (Nº de historia [HISTORIAL]) declara que [DOCTOR] le ha explicado el tratamiento de EXTRACCIÓN de la pieza [PIEZAS], su finalidad y las alternativas posibles.\n\nHa sido informado/a de los riesgos más habituales: dolor e inflamación postoperatoria, sangrado, hematoma, infección, alveolitis, lesión de piezas vecinas, comunicación con el seno maxilar en piezas superiores y alteraciones transitorias o permanentes de la sensibilidad en piezas inferiores.\n\nHa podido preguntar sus dudas, que han sido aclaradas, y CONSIENTE la realización del tratamiento. Puede revocar este consentimiento en cualquier momento.\n\nEn [CIUDAD], a [FECHA].", false),
-        d(3, "Consentimiento informado: implantes", "Consentimiento informado", "D./Dña. [NOMBRE] [APELLIDOS] (Nº de historia [HISTORIAL]) ha sido informado/a por [DOCTOR] de la colocación de IMPLANTES dentales en la zona [PIEZAS], del procedimiento quirúrgico, del tiempo de integración y de la rehabilitación posterior.\n\nRiesgos: dolor, inflamación, hematoma, infección, falta de integración del implante, lesión nerviosa con alteración de la sensibilidad, comunicación con el seno maxilar y necesidad de injertos. El éxito depende también de la higiene, las revisiones periódicas y de no fumar.\n\nCONSIENTE la realización del tratamiento y se compromete a seguir las indicaciones y revisiones.\n\nEn [CIUDAD], a [FECHA].", false),
-        d(4, "Consentimiento informado: endodoncia", "Consentimiento informado", "D./Dña. [NOMBRE] [APELLIDOS] ha sido informado/a por [DOCTOR] del tratamiento de ENDODONCIA de la pieza [PIEZAS], que consiste en limpiar, desinfectar y sellar los conductos radiculares.\n\nRiesgos: molestias postoperatorias, fractura de instrumentos dentro del conducto, perforaciones, fractura de la pieza y fracaso del tratamiento que pueda requerir repetirlo, cirugía o extracción. Tras la endodoncia suele ser necesaria una reconstrucción o corona.\n\nCONSIENTE la realización del tratamiento.\n\nEn [CIUDAD], a [FECHA].", false),
-        d(5, "Justificante de asistencia", "Justificante", "[CLINICA] certifica que D./Dña. [NOMBRE] [APELLIDOS], con NIF [NIF], ha acudido a consulta en el día de hoy, [FECHA].\n\nY para que conste a los efectos oportunos, se expide el presente justificante.\n\n[DOCTOR]", false),
-        d(6, "Informe clínico", "Informe", "INFORME CLÍNICO\n\nPaciente: [NOMBRE] [APELLIDOS] · Nº de historia [HISTORIAL] · Fecha de nacimiento [FECHANAC]\n\nTratamientos realizados:\n[TRATAMIENTOS]\n\nTratamientos pendientes:\n[PENDIENTES]\n\nAlertas médicas: [ALERTAS]\n\n[DOCTOR] · [FECHA]", false),
+        d(
+            1,
+            "Protección de datos (RGPD)",
+            "Protección de datos",
+            "D./Dña. [NOMBRE] [APELLIDOS], con NIF [NIF], queda informado/a de que sus datos personales y de salud serán tratados por [CLINICA] con la finalidad de prestarle asistencia sanitaria, gestionar su historia clínica y la facturación de los servicios.\n\nLa base legal es la prestación de asistencia sanitaria y el cumplimiento de obligaciones legales. Los datos se conservarán durante el tiempo exigido por la normativa sanitaria. Puede ejercer sus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad dirigiéndose a [CLINICA], [DIRCLINICA].\n\nAutorizo a recibir comunicaciones sobre mis citas y revisiones por SMS, correo electrónico o WhatsApp.\n\nEn [CIUDAD], a [FECHA].",
+            true,
+        ),
+        d(
+            2,
+            "Consentimiento informado: extracción dental",
+            "Consentimiento informado",
+            "D./Dña. [NOMBRE] [APELLIDOS] (Nº de historia [HISTORIAL]) declara que [DOCTOR] le ha explicado el tratamiento de EXTRACCIÓN de la pieza [PIEZAS], su finalidad y las alternativas posibles.\n\nHa sido informado/a de los riesgos más habituales: dolor e inflamación postoperatoria, sangrado, hematoma, infección, alveolitis, lesión de piezas vecinas, comunicación con el seno maxilar en piezas superiores y alteraciones transitorias o permanentes de la sensibilidad en piezas inferiores.\n\nHa podido preguntar sus dudas, que han sido aclaradas, y CONSIENTE la realización del tratamiento. Puede revocar este consentimiento en cualquier momento.\n\nEn [CIUDAD], a [FECHA].",
+            false,
+        ),
+        d(
+            3,
+            "Consentimiento informado: implantes",
+            "Consentimiento informado",
+            "D./Dña. [NOMBRE] [APELLIDOS] (Nº de historia [HISTORIAL]) ha sido informado/a por [DOCTOR] de la colocación de IMPLANTES dentales en la zona [PIEZAS], del procedimiento quirúrgico, del tiempo de integración y de la rehabilitación posterior.\n\nRiesgos: dolor, inflamación, hematoma, infección, falta de integración del implante, lesión nerviosa con alteración de la sensibilidad, comunicación con el seno maxilar y necesidad de injertos. El éxito depende también de la higiene, las revisiones periódicas y de no fumar.\n\nCONSIENTE la realización del tratamiento y se compromete a seguir las indicaciones y revisiones.\n\nEn [CIUDAD], a [FECHA].",
+            false,
+        ),
+        d(
+            4,
+            "Consentimiento informado: endodoncia",
+            "Consentimiento informado",
+            "D./Dña. [NOMBRE] [APELLIDOS] ha sido informado/a por [DOCTOR] del tratamiento de ENDODONCIA de la pieza [PIEZAS], que consiste en limpiar, desinfectar y sellar los conductos radiculares.\n\nRiesgos: molestias postoperatorias, fractura de instrumentos dentro del conducto, perforaciones, fractura de la pieza y fracaso del tratamiento que pueda requerir repetirlo, cirugía o extracción. Tras la endodoncia suele ser necesaria una reconstrucción o corona.\n\nCONSIENTE la realización del tratamiento.\n\nEn [CIUDAD], a [FECHA].",
+            false,
+        ),
+        d(
+            5,
+            "Justificante de asistencia",
+            "Justificante",
+            "[CLINICA] certifica que D./Dña. [NOMBRE] [APELLIDOS], con NIF [NIF], ha acudido a consulta en el día de hoy, [FECHA].\n\nY para que conste a los efectos oportunos, se expide el presente justificante.\n\n[DOCTOR]",
+            false,
+        ),
+        d(
+            6,
+            "Informe clínico",
+            "Informe",
+            "INFORME CLÍNICO\n\nPaciente: [NOMBRE] [APELLIDOS] · Nº de historia [HISTORIAL] · Fecha de nacimiento [FECHANAC]\n\nTratamientos realizados:\n[TRATAMIENTOS]\n\nTratamientos pendientes:\n[PENDIENTES]\n\nAlertas médicas: [ALERTAS]\n\n[DOCTOR] · [FECHA]",
+            false,
+        ),
     ]
 }
 
@@ -172,18 +224,8 @@ impl Db {
         let p = self.patient(pid).cloned().unwrap_or_default();
         let c = &self.config;
         let city = c.address.rsplit(' ').next().unwrap_or("").to_string();
-        let done: Vec<String> = self
-            .entries
-            .iter()
-            .filter(|e| e.patient_id == pid && e.state == TxState::Realizado)
-            .map(|e| format!("· {} {} ({})", e.description, fmt_teeth(&e.teeth), fmt_date(e.date)))
-            .collect();
-        let pend: Vec<String> = self
-            .entries
-            .iter()
-            .filter(|e| e.patient_id == pid && e.state == TxState::Previsto)
-            .map(|e| format!("· {} {}", e.description, fmt_teeth(&e.teeth)))
-            .collect();
+        let done: Vec<String> = self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado).map(|e| format!("· {} {} ({})", e.description, fmt_teeth(&e.teeth), fmt_date(e.date))).collect();
+        let pend: Vec<String> = self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto).map(|e| format!("· {} {}", e.description, fmt_teeth(&e.teeth))).collect();
         let mut s = text
             .replace("[NOMBRE]", &p.first_name)
             .replace("[APELLIDOS]", &p.last_name)
@@ -271,7 +313,12 @@ impl Db {
         if ch == Channel::Email && subject.trim().is_empty() {
             subject = format!("Mensaje de {}", self.config.name);
         }
-        if let Some((label, url)) = link && self.booking.links_in_messages && ch != Channel::Sms && !url.is_empty() && !text.contains(&url) {
+        if let Some((label, url)) = link
+            && self.booking.links_in_messages
+            && ch != Channel::Sms
+            && !url.is_empty()
+            && !text.contains(&url)
+        {
             text = format!("{}\n\n{label}: {url}", text.trim_end());
         }
         self.messages.push(Message { id, patient_id: pid, kind: t.kind, channel: ch, to, subject, text, created: now(), sent_at: None, state: MsgState::Pendiente, related, user: self.config.current_user.clone(), error: String::new(), attempts: 0 });
@@ -414,7 +461,9 @@ impl Db {
         m.sent_at = Some(now());
         m.error.clear();
         let (kind, related, ch) = (m.kind, m.related, m.channel);
-        if kind == MsgKind::Recall && let Some(r) = self.recalls.iter_mut().find(|r| Some(r.id) == related) {
+        if kind == MsgKind::Recall
+            && let Some(r) = self.recalls.iter_mut().find(|r| Some(r.id) == related)
+        {
             r.state = RecallState::Contactado;
             r.channel = ch.label().into();
             r.contacted_on = Some(today());
@@ -446,7 +495,9 @@ impl Db {
         d.signed_at = Some(now());
         d.signature = strokes;
         let (pid, tid) = (d.patient_id, d.template_id);
-        if self.doc_templates.iter().any(|t| t.id == tid && t.marks_gdpr) && let Some(p) = self.patient_mut(pid) {
+        if self.doc_templates.iter().any(|t| t.id == tid && t.marks_gdpr)
+            && let Some(p) = self.patient_mut(pid)
+        {
             p.accepts_gdpr = true;
         }
         Ok(())
@@ -522,7 +573,27 @@ mod tests {
         }
         for (k, pid) in [100u32, 102].into_iter().enumerate() {
             let id = db.new_id();
-            db.appointments.push(Appointment { id, date: tomorrow, start: chrono::NaiveTime::from_hms_opt(10 + k as u32, 0, 0).unwrap(), minutes: 30, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: 1, box_id: 1, reason: "Revisión".into(), treatment_code: "0102".into(), state: ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+            db.appointments.push(Appointment {
+                id,
+                date: tomorrow,
+                start: chrono::NaiveTime::from_hms_opt(10 + k as u32, 0, 0).unwrap(),
+                minutes: 30,
+                patient_id: Some(pid),
+                free_name: String::new(),
+                phone: String::new(),
+                doctor_id: 1,
+                box_id: 1,
+                reason: "Revisión".into(),
+                treatment_code: "0102".into(),
+                state: ApptState::Planificada,
+                notes: String::new(),
+                arrived_at: None,
+                seen_at: None,
+                finished_at: None,
+                reminder_sent: false,
+                first_visit: false,
+                center_id: 1,
+            });
         }
         // 105, sin citas, acepta correo: le toca la revisión
         db.appointments.retain(|a| a.patient_id != Some(105) || a.date < d());
@@ -533,7 +604,22 @@ mod tests {
         }
         // un presupuesto pendiente de hace 10 días, de 102
         let bid = db.new_id();
-        db.budgets.push(Budget { id: bid, patient_id: 102, title: "Ortodoncia".into(), date: d() - Duration::days(10), doctor_id: 3, tariff_id: 1, state: BudgetState::Pendiente, lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno }], valid_days: 90, accepted_on: None, rejected_on: None, reject_reason: String::new(), notes: String::new(), plan: None });
+        db.budgets.push(Budget {
+            id: bid,
+            patient_id: 102,
+            title: "Ortodoncia".into(),
+            date: d() - Duration::days(10),
+            doctor_id: 3,
+            tariff_id: 1,
+            state: BudgetState::Pendiente,
+            lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno }],
+            valid_days: 90,
+            accepted_on: None,
+            rejected_on: None,
+            reject_reason: String::new(),
+            notes: String::new(),
+            plan: None,
+        });
         let rid = db.new_id();
         db.recalls.push(Recall { id: rid, patient_id: 105, date: d(), reason: "Higiene anual".into(), doctor_id: 4, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
         // la de 102 no se le pide: ya tiene cita mañana

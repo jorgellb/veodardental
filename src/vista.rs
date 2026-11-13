@@ -25,11 +25,7 @@ const CLINICAL_LISTS: [&str; 5] = ["perio", "images", "ia_reports", "prescriptio
 
 /// Campos clínicos de otros registros (se mandan vacíos). De los cuestionarios
 /// de salud quedan la fecha, quién lo rellenó y si está firmado.
-const CLINICAL_FIELDS: [(&str, &[&str]); 3] = [
-    ("patients", &["background", "notes"]),
-    ("entries", &["notes"]),
-    ("health", &["reason", "yes", "details", "cigarettes", "brushings", "last_visit", "aids", "notes"]),
-];
+const CLINICAL_FIELDS: [(&str, &[&str]); 3] = [("patients", &["background", "notes"]), ("entries", &["notes"]), ("health", &["reason", "yes", "details", "cigarettes", "brushings", "last_visit", "aids", "notes"])];
 
 /// Un dato vacío del mismo tipo (texto vacío, cero, lista o mapa vacíos).
 fn empty_like(v: &Value) -> Value {

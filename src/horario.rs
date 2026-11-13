@@ -128,9 +128,7 @@ impl Db {
 
     /// Otra cita (no anulada) que ocupa ese gabinete del centro a esa hora.
     pub fn room_taken(&self, box_id: u32, center: u32, date: NaiveDate, start: NaiveTime, end: NaiveTime, ignore: Option<u32>) -> Option<&Appointment> {
-        self.appointments.iter().find(|a| {
-            Some(a.id) != ignore && a.box_id == box_id && cid(a.center_id) == cid(center) && a.date == date && !a.state.is_cancelled() && a.start < end && start < a.end()
-        })
+        self.appointments.iter().find(|a| Some(a.id) != ignore && a.box_id == box_id && cid(a.center_id) == cid(center) && a.date == date && !a.state.is_cancelled() && a.start < end && start < a.end())
     }
 
     /// Por qué no se puede dar cita a esa hora con ese profesional según los

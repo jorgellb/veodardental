@@ -140,7 +140,21 @@ impl Db {
         }
         let id = self.new_id();
         let invites = cands.iter().map(|w| OfferInvite { token: crate::portal::new_token(), patient_id: w.patient_id, wait_id: w.id, ..Default::default() }).collect();
-        self.slot_offers.push(SlotOffer { id, doctor_id: doctor, date: Some(date), start: Some(start), minutes, center_id: cid(center), created: Some(now), state: OfferState::Abierta, invites, taken_by: None, taken_at: None, appointment_id: None, source_appt: source });
+        self.slot_offers.push(SlotOffer {
+            id,
+            doctor_id: doctor,
+            date: Some(date),
+            start: Some(start),
+            minutes,
+            center_id: cid(center),
+            created: Some(now),
+            state: OfferState::Abierta,
+            invites,
+            taken_by: None,
+            taken_at: None,
+            appointment_id: None,
+            source_appt: source,
+        });
         Ok(id)
     }
 
@@ -166,11 +180,8 @@ impl Db {
                 continue;
             };
             let when = format!("el {} {} a las {}", weekday_es(date), date.format("%d/%m"), start.format("%H:%M"));
-            let action = if web {
-                format!("Si lo quiere, resérvelo aquí (se lo queda el primero que lo pida):\n{}", link_url(&base, &inv.token))
-            } else {
-                format!("Si lo quiere, llámenos cuanto antes al {phone}: se lo daremos al primero que llame.")
-            };
+            let action =
+                if web { format!("Si lo quiere, resérvelo aquí (se lo queda el primero que lo pida):\n{}", link_url(&base, &inv.token)) } else { format!("Si lo quiere, llámenos cuanto antes al {phone}: se lo daremos al primero que llame.") };
             let text = format!("Hola, {}: se ha quedado libre un hueco {when} con {doctor} en {clinic}, y está usted en nuestra lista de espera.\n\n{action}\n\nUn saludo,\n{clinic}", p.first_name);
             let id = self.new_id();
             self.messages.push(Message {
@@ -219,12 +230,7 @@ impl Db {
         let reason = self.waitlist.iter().find(|w| w.id == inv.wait_id).map(|w| w.reason.clone()).unwrap_or_else(|| "Cita (lista de espera)".into());
         let center = cid(o.center_id);
         let boxes: Vec<u32> = self.boxes.iter().filter(|b| cid(b.center_id) == center).map(|b| b.id).collect();
-        let box_id = boxes
-            .iter()
-            .copied()
-            .find(|b| !self.appointments.iter().any(|a| a.box_id == *b && a.date == date && !a.state.is_cancelled() && a.start < end && start < a.end()))
-            .or(boxes.first().copied())
-            .unwrap_or(1);
+        let box_id = boxes.iter().copied().find(|b| !self.appointments.iter().any(|a| a.box_id == *b && a.date == date && !a.state.is_cancelled() && a.start < end && start < a.end())).or(boxes.first().copied()).unwrap_or(1);
         let phone = self.patient(inv.patient_id).map(|p| if p.mobile.trim().is_empty() { p.phone.clone() } else { p.mobile.clone() }).unwrap_or_default();
         let appt = self.new_id();
         self.appointments.push(Appointment {
@@ -309,7 +315,9 @@ impl Db {
             } else {
                 None
             };
-            if let Some(s) = new && let Some(x) = self.slot_offers.iter_mut().find(|x| x.id == o.id) {
+            if let Some(s) = new
+                && let Some(x) = self.slot_offers.iter_mut().find(|x| x.id == o.id)
+            {
                 x.state = s;
                 changed = true;
             }
@@ -451,7 +459,18 @@ mod tests {
         // tenía pendiente su higiene y ninguna otra cita
         db.appointments.retain(|a| a.patient_id != Some(102) || a.date < today());
         let rid = db.new_id();
-        db.recalls.push(crate::model::Recall { id: rid, patient_id: 102, date: d, reason: "Higiene anual".into(), doctor_id: 4, state: crate::model::RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });
+        db.recalls.push(crate::model::Recall {
+            id: rid,
+            patient_id: 102,
+            date: d,
+            reason: "Higiene anual".into(),
+            doctor_id: 4,
+            state: crate::model::RecallState::Pendiente,
+            channel: String::new(),
+            comment: String::new(),
+            contacted_on: None,
+            appt_id: None,
+        });
         let appt = db.take_offer(&first, now).unwrap();
         assert_eq!(db.recalls.iter().find(|r| r.id == rid).unwrap().appt_id, Some(appt), "su recall queda citado");
         let a = db.appointments.iter().find(|a| a.id == appt).unwrap();
@@ -474,7 +493,27 @@ mod tests {
         assert!(!db.refresh_offers(now));
         // recepción da ese hueco por teléfono
         let aid = db.new_id();
-        db.appointments.push(Appointment { id: aid, date: d, start: s, minutes: 45, patient_id: Some(110), free_name: String::new(), phone: String::new(), doctor_id: 4, box_id: 4, reason: "x".into(), treatment_code: String::new(), state: ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+        db.appointments.push(Appointment {
+            id: aid,
+            date: d,
+            start: s,
+            minutes: 45,
+            patient_id: Some(110),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 4,
+            box_id: 4,
+            reason: "x".into(),
+            treatment_code: String::new(),
+            state: ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
         assert!(db.refresh_offers(now));
         assert_eq!(db.slot_offers.iter().find(|o| o.id == id).unwrap().state, OfferState::Ocupada);
         // y una oferta cuyo hueco ya llega caduca

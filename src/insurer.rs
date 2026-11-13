@@ -160,7 +160,19 @@ impl Db {
         let rows: String = c
             .lines
             .iter()
-            .map(|l| format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class='n'>{}</td></tr>", fmt_date(l.date), esc(&l.patient), esc(&l.policy_no), esc(&l.code), esc(&l.description), esc(&l.teeth), esc(&l.auth_no), esc(&money(l.fee))))
+            .map(|l| {
+                format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class='n'>{}</td></tr>",
+                    fmt_date(l.date),
+                    esc(&l.patient),
+                    esc(&l.policy_no),
+                    esc(&l.code),
+                    esc(&l.description),
+                    esc(&l.teeth),
+                    esc(&l.auth_no),
+                    esc(&money(l.fee))
+                )
+            })
             .collect();
         let cfg = &self.config;
         format!(
@@ -195,7 +207,9 @@ impl Db {
 pub fn sample_insurer(db: &mut Db) {
     let fees: [(u32, &str, f64); 7] = [(2, "0101", 12.0), (2, "0102", 10.0), (2, "0201", 18.0), (2, "0501", 25.0), (2, "0103", 15.0), (3, "0101", 10.0), (3, "0201", 20.0)];
     for (tid, code, fee) in fees {
-        if let Some(t) = db.tariffs.iter_mut().find(|t| t.id == tid) && let Some(p) = t.prices.iter_mut().find(|p| p.code == code) {
+        if let Some(t) = db.tariffs.iter_mut().find(|t| t.id == tid)
+            && let Some(p) = t.prices.iter_mut().find(|p| p.code == code)
+        {
             p.insurer_fee = fee;
         }
     }

@@ -57,11 +57,7 @@ impl Db {
                 continue;
             }
             let end = base.start + Duration::minutes(base.minutes as i64);
-            let start = if self.is_free(base.doctor_id, date, base.start, end, None) {
-                Some(base.start)
-            } else {
-                self.find_gaps(base.doctor_id, date, base.minutes, self.config.open_time, self.config.close_time, 1).first().map(|g| g.1)
-            };
+            let start = if self.is_free(base.doctor_id, date, base.start, end, None) { Some(base.start) } else { self.find_gaps(base.doctor_id, date, base.minutes, self.config.open_time, self.config.close_time, 1).first().map(|g| g.1) };
             let Some(start) = start else {
                 res.skipped.push((date, "agenda completa".into()));
                 continue;
@@ -131,7 +127,16 @@ impl Db {
                     Some(p) => (p.mobile.clone(), format!("{} {}", p.alerts, p.allergies).trim().to_string()),
                     None => (a.phone.clone(), String::new()),
                 };
-                body.push_str(&format!("<tr><td><b>{}</b> ({} min)</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class='al'>{}</td></tr>", a.start.format("%H:%M"), a.minutes, esc(&self.appt_name(a)), esc(&phone), esc(&a.reason), esc(&self.box_name(a.box_id)), esc(&alert)));
+                body.push_str(&format!(
+                    "<tr><td><b>{}</b> ({} min)</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class='al'>{}</td></tr>",
+                    a.start.format("%H:%M"),
+                    a.minutes,
+                    esc(&self.appt_name(a)),
+                    esc(&phone),
+                    esc(&a.reason),
+                    esc(&self.box_name(a.box_id)),
+                    esc(&alert)
+                ));
             }
             body.push_str("</table>");
         }
@@ -172,13 +177,31 @@ impl Db {
             .iter()
             .map(|e| {
                 let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
-                let lab_cell = if deduct { format!("<td class='n'>{}</td>", esc(&match self.lab_cost_of(e.id) { c if c > 0.0 => money(c), _ => String::new() })) } else { String::new() };
+                let lab_cell = if deduct {
+                    format!(
+                        "<td class='n'>{}</td>",
+                        esc(&match self.lab_cost_of(e.id) {
+                            c if c > 0.0 => money(c),
+                            _ => String::new(),
+                        })
+                    )
+                } else {
+                    String::new()
+                };
                 format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>{lab_cell}<td class='n'>{}</td></tr>", fmt_date(e.date), esc(&self.patient_name(e.patient_id)), esc(&e.description), teeth.join("-"), esc(&money(e.amount())))
             })
             .collect();
         let cols = if deduct { 5 } else { 4 };
         let lab_head = if deduct { "<th class='n'>Laboratorio</th>" } else { "" };
-        let lab_rows = if deduct { format!("<tr class='tot'><td colspan='{cols}' class='n'>Laboratorio</td><td class='n'>−{}</td></tr><tr class='tot'><td colspan='{cols}' class='n'>Base de los honorarios</td><td class='n'>{}</td></tr>", esc(&money(lab)), esc(&money(round2(prod - lab)))) } else { String::new() };
+        let lab_rows = if deduct {
+            format!(
+                "<tr class='tot'><td colspan='{cols}' class='n'>Laboratorio</td><td class='n'>−{}</td></tr><tr class='tot'><td colspan='{cols}' class='n'>Base de los honorarios</td><td class='n'>{}</td></tr>",
+                esc(&money(lab)),
+                esc(&money(round2(prod - lab)))
+            )
+        } else {
+            String::new()
+        };
         let basis = if deduct { " sobre la producción menos el laboratorio" } else { "" };
         format!(
             "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Liquidación</title><style>body{{font-family:'Open Sans',Arial,sans-serif;max-width:820px;margin:32px auto;color:#1e293b}}h1{{font-size:21px}}table{{width:100%;border-collapse:collapse;margin-top:12px}}th{{text-align:left;font-size:12px;color:#475569;background:#eef3f8;padding:6px}}td{{padding:6px;border-bottom:1px solid #e2e8f0;font-size:13px}}.n{{text-align:right}}.tot td{{font-weight:700;border:none;font-size:15px}}</style></head><body><b>{clinic}</b><h1>Liquidación de honorarios · {name}</h1><p>Periodo del {from} al {to} · Nº colegiado {lic} · Comisión {pct:.0} %{basis}</p><table><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Piezas</th>{lab_head}<th class='n'>Importe</th></tr>{lines}<tr class='tot'><td colspan='{cols}' class='n'>Producción</td><td class='n'>{prod}</td></tr>{lab_rows}<tr class='tot'><td colspan='{cols}' class='n'>Honorarios a liquidar</td><td class='n'>{fee}</td></tr></table><p style='margin-top:50px'>Conforme: ______________________</p></body></html>",
@@ -305,7 +328,27 @@ mod tests {
         db.appointments.push(c.clone());
         // la pidió por internet con su correo
         let rid = db.new_id();
-        db.booking_requests.push(crate::booking::BookingRequest { id: rid, received: now(), name: "Lucía Gómez Ortega".into(), phone: a.phone.clone(), email: "lucia@example.com".into(), reason: "Revisión".into(), minutes: 30, code: String::new(), doctor_id: a.doctor_id, date: a.date, start: a.start, notes: String::new(), first_visit: true, patient_id: None, state: crate::booking::ReqState::Confirmada, appointment_id: Some(a.id), answer: String::new(), center_id: 1, replaces: None });
+        db.booking_requests.push(crate::booking::BookingRequest {
+            id: rid,
+            received: now(),
+            name: "Lucía Gómez Ortega".into(),
+            phone: a.phone.clone(),
+            email: "lucia@example.com".into(),
+            reason: "Revisión".into(),
+            minutes: 30,
+            code: String::new(),
+            doctor_id: a.doctor_id,
+            date: a.date,
+            start: a.start,
+            notes: String::new(),
+            first_visit: true,
+            patient_id: None,
+            state: crate::booking::ReqState::Confirmada,
+            appointment_id: Some(a.id),
+            answer: String::new(),
+            center_id: 1,
+            replaces: None,
+        });
         let p = db.patient_from_appt(a.id).unwrap();
         assert_eq!((p.first_name.as_str(), p.last_name.as_str(), p.mobile.as_str(), p.email.as_str()), ("Lucía", "Gómez Ortega", "+34 611 222 333", "lucia@example.com"));
         assert_eq!(db.patient_with_phone("611 222 333"), None, "aún no tiene ficha");

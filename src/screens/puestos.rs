@@ -42,7 +42,10 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         section(ui, "Trabajo en red: servidor y puestos");
         let (t, c) = mode_text(app);
         ui.label(RichText::new(t).color(c).family(sb()));
-        muted(ui, "Lo recomendado: un ordenador hace de servidor (guarda todos los datos y las copias de seguridad) y los ordenadores de recepción y gabinetes se conectan a él. Cada puesto ve al momento lo que hacen los demás. Úselo dentro de la red de la clínica (o con VPN entre centros).");
+        muted(
+            ui,
+            "Lo recomendado: un ordenador hace de servidor (guarda todos los datos y las copias de seguridad) y los ordenadores de recepción y gabinetes se conectan a él. Cada puesto ve al momento lo que hacen los demás. Úselo dentro de la red de la clínica (o con VPN entre centros).",
+        );
         ui.add_space(8.0);
         ui.columns(2, |cols| {
             // ── servidor en este ordenador ──
@@ -139,7 +142,9 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                                 let st = Station { data_dir: String::new(), number: n, server_pin: r.pinned(), ..form.clone() };
                                 let print = server::fingerprint(&st.server_pin);
                                 match save_station(&st) {
-                                    Ok(()) => app.notify(format!("Conexión correcta: este ordenador será el puesto {n}. Huella del servidor: {print} (debe ser la misma que muestra el servidor). Cierre y vuelva a abrir VeodarDental para trabajar con los datos del servidor.")),
+                                    Ok(()) => app.notify(format!(
+                                        "Conexión correcta: este ordenador será el puesto {n}. Huella del servidor: {print} (debe ser la misma que muestra el servidor). Cierre y vuelva a abrir VeodarDental para trabajar con los datos del servidor."
+                                    )),
                                     Err(e) => app.warn(format!("No se pudo guardar el ajuste: {e}")),
                                 }
                             }

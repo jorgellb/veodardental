@@ -28,7 +28,19 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         right_aligned(ui, |ui| {
             if primary(ui, "＋ Nuevo gasto").clicked() {
                 let id = app.db.new_id();
-                app.db.expenses.push(Expense { id, date: app.today, supplier: String::new(), concept: "Nuevo gasto".into(), category: "Otros".into(), base: 0.0, vat_pct: 21.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(app.today + chrono::Duration::days(30)) });
+                app.db.expenses.push(Expense {
+                    id,
+                    date: app.today,
+                    supplier: String::new(),
+                    concept: "Nuevo gasto".into(),
+                    category: "Otros".into(),
+                    base: 0.0,
+                    vat_pct: 21.0,
+                    invoice_no: String::new(),
+                    method: "Transferencia".into(),
+                    paid: false,
+                    due: Some(app.today + chrono::Duration::days(30)),
+                });
                 app.gastos.selected = Some(id);
                 app.changed();
             }
@@ -93,7 +105,29 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                 egui::ScrollArea::vertical().id_salt("expl").max_height(330.0).show(ui, |ui| {
                     for (i, e) in list.iter().enumerate() {
                         let late = !e.paid && e.due.map(|d| d < app.today).unwrap_or(false);
-                        let cells = [cell(fmt_date(e.date)), cell(&e.supplier), cell(&e.concept), cell(&e.category), cell(money(e.total())), cellc(if e.paid { "Pagado" } else if late { "Vencido" } else { "Pendiente" }, if e.paid { OK } else if late { DANGER } else { WARN })];
+                        let cells = [
+                            cell(fmt_date(e.date)),
+                            cell(&e.supplier),
+                            cell(&e.concept),
+                            cell(&e.category),
+                            cell(money(e.total())),
+                            cellc(
+                                if e.paid {
+                                    "Pagado"
+                                } else if late {
+                                    "Vencido"
+                                } else {
+                                    "Pendiente"
+                                },
+                                if e.paid {
+                                    OK
+                                } else if late {
+                                    DANGER
+                                } else {
+                                    WARN
+                                },
+                            ),
+                        ];
                         if tbl.row(ui, i, app.gastos.selected == Some(e.id), &cells).clicked() {
                             pick = Some(e.id);
                         }
@@ -211,7 +245,19 @@ fn export_csv(app: &App) -> Result<String, String> {
     let n = |v: f64| format!("{v:.2}").replace('.', ",");
     let mut s = String::from("Fecha;Proveedor;Nº factura;Concepto;Categoría;Base;IVA %;IVA;Total;Pagado\n");
     for e in app.db.expenses_between(app.gastos.from, app.gastos.to) {
-        s.push_str(&format!("{};{};{};{};{};{};{:.0};{};{};{}\n", fmt_date(e.date), e.supplier.replace(';', ","), e.invoice_no, e.concept.replace(';', ","), e.category, n(e.base), e.vat_pct, n(e.vat()), n(e.total()), if e.paid { "Sí" } else { "No" }));
+        s.push_str(&format!(
+            "{};{};{};{};{};{};{:.0};{};{};{}\n",
+            fmt_date(e.date),
+            e.supplier.replace(';', ","),
+            e.invoice_no,
+            e.concept.replace(';', ","),
+            e.category,
+            n(e.base),
+            e.vat_pct,
+            n(e.vat()),
+            n(e.total()),
+            if e.paid { "Sí" } else { "No" }
+        ));
     }
     std::fs::write(&path, s).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())

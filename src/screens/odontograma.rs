@@ -3,8 +3,8 @@
 
 use crate::app::App;
 use crate::model::*;
-use crate::theme::*;
 use crate::screens::odg_paint::*;
+use crate::theme::*;
 use chrono::NaiveDate;
 use egui::{Align2, Color32, CornerRadius, Painter, Rect, RichText, Sense, Shape, Stroke, Ui, vec2};
 
@@ -30,18 +30,7 @@ pub struct OdgState {
 
 impl Default for OdgState {
     fn default() -> Self {
-        Self {
-            tool: OdgKind::Obturacion,
-            code: "0301".into(),
-            state: TxState::Previsto,
-            child: false,
-            faces: [false, false, true, false, false],
-            selected_tooth: None,
-            bridge_start: None,
-            until: None,
-            doctor: 1,
-            dark: false,
-        }
+        Self { tool: OdgKind::Obturacion, code: "0301".into(), state: TxState::Previsto, child: false, faces: [false, false, true, false, false], selected_tooth: None, bridge_start: None, until: None, doctor: 1, dark: false }
     }
 }
 
@@ -154,13 +143,7 @@ fn options_card(app: &mut App, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Tratamiento").color(MUTED));
             let tool = app.odg.tool;
-            let options: Vec<(String, String)> = app
-                .db
-                .treatments
-                .iter()
-                .filter(|t| t.active && t.odg == tool)
-                .map(|t| (t.code.clone(), format!("{} · {}", t.code, t.description)))
-                .collect();
+            let options: Vec<(String, String)> = app.db.treatments.iter().filter(|t| t.active && t.odg == tool).map(|t| (t.code.clone(), format!("{} · {}", t.code, t.description))).collect();
             let current = options.iter().find(|o| o.0 == app.odg.code).map(|o| o.1.clone()).unwrap_or_else(|| "—".into());
             crate::theme::combo("odg_code").width(ui.available_width().min(290.0) - 12.0).selected_text(current).show_ui(ui, |ui| {
                 for (c, l) in &options {
@@ -171,9 +154,7 @@ fn options_card(app: &mut App, ui: &mut Ui) {
             for s in [TxState::Previsto, TxState::Realizado, TxState::Previo] {
                 let sel = app.odg.state == s;
                 let col = state_color(s);
-                let b = egui::Button::new(RichText::new(format!("● {}", s.label())).color(if sel { Color32::WHITE } else { col }))
-                    .fill(if sel { col } else { tint(col, 0.12) })
-                    .corner_radius(CornerRadius::same(16));
+                let b = egui::Button::new(RichText::new(format!("● {}", s.label())).color(if sel { Color32::WHITE } else { col })).fill(if sel { col } else { tint(col, 0.12) }).corner_radius(CornerRadius::same(16));
                 if ui.add(b).clicked() {
                     app.odg.state = s;
                 }
@@ -201,10 +182,13 @@ fn options_card(app: &mut App, ui: &mut Ui) {
                 }
             }
             if app.odg.tool == OdgKind::Puente {
-                muted(ui, match app.odg.bridge_start {
-                    None => "Pulse el primer pilar del puente…",
-                    Some(_) => "…y ahora el último pilar.",
-                });
+                muted(
+                    ui,
+                    match app.odg.bridge_start {
+                        None => "Pulse el primer pilar del puente…",
+                        Some(_) => "…y ahora el último pilar.",
+                    },
+                );
             }
         });
     });
@@ -213,14 +197,7 @@ fn options_card(app: &mut App, ui: &mut Ui) {
 pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
     let today = app.today;
     let until = app.odg.until;
-    let entries: Vec<MedEntry> = app
-        .db
-        .entries
-        .iter()
-        .filter(|e| e.patient_id == pid && until.map(|d| e.date <= d).unwrap_or(true))
-        .filter(|e| until.is_none() || e.state != TxState::Previsto)
-        .cloned()
-        .collect();
+    let entries: Vec<MedEntry> = app.db.entries.iter().filter(|e| e.patient_id == pid && until.map(|d| e.date <= d).unwrap_or(true)).filter(|e| until.is_none() || e.state != TxState::Previsto).cloned().collect();
     let refs: Vec<&MedEntry> = entries.iter().collect();
     let views = build_views(&refs);
     let img_teeth: Vec<u8> = app.db.images.iter().filter(|i| i.patient_id == pid).flat_map(|i| i.teeth.clone()).collect();
@@ -387,11 +364,7 @@ fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveD
             }
             Some(a) => {
                 app.odg.bridge_start = None;
-                let row: Vec<u8> = if app.odg.child {
-                    UPPER_CHILD.iter().chain(LOWER_CHILD.iter()).copied().collect()
-                } else {
-                    UPPER_ADULT.iter().chain(LOWER_ADULT.iter()).copied().collect()
-                };
+                let row: Vec<u8> = if app.odg.child { UPPER_CHILD.iter().chain(LOWER_CHILD.iter()).copied().collect() } else { UPPER_ADULT.iter().chain(LOWER_ADULT.iter()).copied().collect() };
                 let ia = row.iter().position(|x| *x == a);
                 let ib = row.iter().position(|x| *x == t);
                 match (ia, ib) {
@@ -414,15 +387,7 @@ fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveD
             (true, false) => &LOWER_CHILD,
         };
         // Se aplica a las piezas ausentes/extraídas de la arcada, o a la pieza pulsada.
-        let gone: Vec<u8> = arch
-            .iter()
-            .copied()
-            .filter(|x| {
-                app.db.entries.iter().any(|e| {
-                    e.patient_id == pid && e.teeth.contains(x) && matches!(e.odg, OdgKind::Ausente | OdgKind::Extraccion) && e.state != TxState::Previsto
-                })
-            })
-            .collect();
+        let gone: Vec<u8> = arch.iter().copied().filter(|x| app.db.entries.iter().any(|e| e.patient_id == pid && e.teeth.contains(x) && matches!(e.odg, OdgKind::Ausente | OdgKind::Extraccion) && e.state != TxState::Previsto)).collect();
         teeth = if gone.is_empty() { vec![t] } else { gone };
     } else {
         teeth = vec![t];
@@ -442,7 +407,13 @@ fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveD
             // Ajuste automático del código según el número de caras.
             if tool == OdgKind::Obturacion && ["0301", "0302", "0303"].contains(&code.as_str()) {
                 let n = faces.len();
-                let auto = if n <= 1 { "0301" } else if n == 2 { "0302" } else { "0303" };
+                let auto = if n <= 1 {
+                    "0301"
+                } else if n == 2 {
+                    "0302"
+                } else {
+                    "0303"
+                };
                 app.odg.code = auto.into();
             }
         }
@@ -491,13 +462,7 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                     });
                 }
                 // imágenes de la pieza (radiografías, TAC, fotos)
-                let imgs: Vec<(u32, String)> = app
-                    .db
-                    .images
-                    .iter()
-                    .filter(|i| i.patient_id == pid && i.teeth.contains(&t))
-                    .map(|i| (i.id, format!("{} · {}", i.kind.short(), fmt_date(i.date))))
-                    .collect();
+                let imgs: Vec<(u32, String)> = app.db.images.iter().filter(|i| i.patient_id == pid && i.teeth.contains(&t)).map(|i| (i.id, format!("{} · {}", i.kind.short(), fmt_date(i.date)))).collect();
                 if !imgs.is_empty() {
                     ui.add_space(6.0);
                     ui.label(RichText::new("Imágenes de la pieza").family(crate::theme::sb()).size(14.0));
@@ -549,7 +514,9 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
         });
         ui.add_space(6.0);
         ui.add_enabled_ui(unbudgeted > 0, |ui| {
-            if primary(ui, &format!("Crear presupuesto con previstos ({unbudgeted})")).clicked() && let Some(bid) = app.db.budget_from_planned(pid) {
+            if primary(ui, &format!("Crear presupuesto con previstos ({unbudgeted})")).clicked()
+                && let Some(bid) = app.db.budget_from_planned(pid)
+            {
                 app.changed();
                 app.dialog = crate::app::Dialog::Budget(bid);
                 app.notify("Presupuesto creado a partir de los tratamientos previstos.");

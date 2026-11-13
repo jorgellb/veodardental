@@ -187,7 +187,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         title(ui, "Hoja de cobros", "Cobros registrados por fecha y forma de pago");
         right_aligned(ui, |ui| {
-            if primary(ui, "＋ Cobrar al paciente activo").clicked() && let Some(pid) = app.patient {
+            if primary(ui, "＋ Cobrar al paciente activo").clicked()
+                && let Some(pid) = app.patient
+            {
                 app.dialog = Dialog::Payment(PayDraft::new(app, pid));
             }
             if ui.button("⬇ Exportar CSV").clicked() {
@@ -253,14 +255,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 }
 
 fn filtered(app: &App) -> Vec<Payment> {
-    let mut v: Vec<Payment> = app
-        .db
-        .payments
-        .iter()
-        .filter(|p| p.date.date() >= app.lists.pay_from && p.date.date() <= app.lists.pay_to)
-        .filter(|p| app.lists.pay_method.as_ref().map(|m| &p.method == m).unwrap_or(true))
-        .cloned()
-        .collect();
+    let mut v: Vec<Payment> = app.db.payments.iter().filter(|p| p.date.date() >= app.lists.pay_from && p.date.date() <= app.lists.pay_to).filter(|p| app.lists.pay_method.as_ref().map(|m| &p.method == m).unwrap_or(true)).cloned().collect();
     v.sort_by_key(|p| std::cmp::Reverse(p.date));
     v
 }
@@ -271,16 +266,7 @@ fn export_csv(app: &App) -> Result<String, String> {
     let path = dir.join(format!("cobros_{}_{}.csv", app.lists.pay_from.format("%Y%m%d"), app.lists.pay_to.format("%Y%m%d")));
     let mut s = String::from("Fecha;Recibo;Paciente;Concepto;Forma de pago;Usuario;Importe\n");
     for p in filtered(app) {
-        s.push_str(&format!(
-            "{};{};{};{};{};{};{}\n",
-            p.date.format("%d/%m/%Y %H:%M"),
-            p.receipt_no,
-            app.db.patient_name(p.patient_id),
-            p.concept.replace(';', ","),
-            p.method,
-            p.user,
-            format!("{:.2}", p.amount).replace('.', ",")
-        ));
+        s.push_str(&format!("{};{};{};{};{};{};{}\n", p.date.format("%d/%m/%Y %H:%M"), p.receipt_no, app.db.patient_name(p.patient_id), p.concept.replace(';', ","), p.method, p.user, format!("{:.2}", p.amount).replace('.', ",")));
     }
     std::fs::write(&path, s).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())

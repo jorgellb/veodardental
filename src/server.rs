@@ -47,8 +47,8 @@ use crate::app::ChainOp;
 use crate::model::{Db, sha256_hex};
 use crate::shared::StationSeen;
 use crate::sync::{self, Change, Snapshot, canonical};
-use crate::vista::View;
 use crate::users::{LoginStep, Perm, ct_eq};
+use crate::vista::View;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -121,11 +121,7 @@ pub fn new_key() -> String {
 /// Configuración guardada del servidor de este ordenador (sin clave si nunca
 /// se ha activado). No escribe nada.
 pub fn server_config() -> ServerConfig {
-    std::fs::read_to_string(config_path())
-        .ok()
-        .and_then(|t| serde_json::from_str::<ServerConfig>(&t).ok())
-        .filter(|c| !c.key.is_empty())
-        .unwrap_or(ServerConfig { port: DEFAULT_PORT, key: String::new(), tls_key: String::new() })
+    std::fs::read_to_string(config_path()).ok().and_then(|t| serde_json::from_str::<ServerConfig>(&t).ok()).filter(|c| !c.key.is_empty()).unwrap_or(ServerConfig { port: DEFAULT_PORT, key: String::new(), tls_key: String::new() })
 }
 
 /// Configuración del servidor; la crea (con clave nueva) la primera vez.
@@ -256,11 +252,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedServer {
             *s = public.to_vec();
         }
         let pin = self.pin.lock().map(|p| p.clone()).unwrap_or_default();
-        if pin.is_empty() || ct_eq(public, &pin) {
-            Ok(rustls::client::danger::ServerCertVerified::assertion())
-        } else {
-            Err(mismatch())
-        }
+        if pin.is_empty() || ct_eq(public, &pin) { Ok(rustls::client::danger::ServerCertVerified::assertion()) } else { Err(mismatch()) }
     }
 
     fn verify_tls12_signature(&self, message: &[u8], cert: &rustls::pki_types::CertificateDer<'_>, dss: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
@@ -279,12 +271,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedServer {
 fn client_tls(pin: Arc<Mutex<Vec<u8>>>, seen: Arc<Mutex<Vec<u8>>>) -> Result<Arc<rustls::ClientConfig>, String> {
     let p = provider();
     let verifier = PinnedServer { pin, seen, algs: p.signature_verification_algorithms };
-    let cfg = rustls::ClientConfig::builder_with_provider(p)
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .map_err(|e| e.to_string())?
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(verifier))
-        .with_no_client_auth();
+    let cfg = rustls::ClientConfig::builder_with_provider(p).with_protocol_versions(&[&rustls::version::TLS13]).map_err(|e| e.to_string())?.dangerous().with_custom_certificate_verifier(Arc::new(verifier)).with_no_client_auth();
     Ok(Arc::new(cfg))
 }
 
@@ -1199,13 +1186,16 @@ impl State {
         };
         let (perm, fields) = op.needs();
         let Some(u) = self.user(me).filter(|u| perm.is_none_or(|p| u.profile.can(p))) else {
-            return error(403, match perm {
-                Some(Perm::Facturacion) => "Este usuario no puede facturar.",
-                Some(Perm::Economia) => "Este usuario no puede llevar los cobros.",
-                Some(Perm::Gastos) => "Este usuario no puede llevar el banco.",
-                Some(Perm::Caja) => "Este usuario no puede llevar la caja (anular cobros o devolver dinero).",
-                _ => "Este usuario no tiene permiso para hacerlo.",
-            });
+            return error(
+                403,
+                match perm {
+                    Some(Perm::Facturacion) => "Este usuario no puede facturar.",
+                    Some(Perm::Economia) => "Este usuario no puede llevar los cobros.",
+                    Some(Perm::Gastos) => "Este usuario no puede llevar el banco.",
+                    Some(Perm::Caja) => "Este usuario no puede llevar la caja (anular cobros o devolver dinero).",
+                    _ => "Este usuario no tiene permiso para hacerlo.",
+                },
+            );
         };
         let center = v["centro"].as_u64().map(|c| c as u32);
         let r = self.modify(fields, |db| {
@@ -1650,12 +1640,7 @@ impl Remote {
         ring::rand::SystemRandom::new().fill(&mut challenge).map_err(|_| "El sistema no ha dado números aleatorios.".to_string())?;
         let seen = Arc::new(Mutex::new(Vec::new()));
         let tls = client_tls(Arc::new(Mutex::new(Vec::new())), seen.clone())?;
-        let probe = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(3))
-            .timeout_read(Duration::from_secs(READ_TIMEOUT))
-            .max_idle_connections(0)
-            .tls_config(tls)
-            .build();
+        let probe = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(3)).timeout_read(Duration::from_secs(READ_TIMEOUT)).max_idle_connections(0).tls_config(tls).build();
         // sin la clave de la clínica ni la sesión
         // sin comprimir y con poco límite: aún no se sabe si es el servidor bueno
         let answer = probe.get(&format!("{}/prueba?reto={}", self.base, hex(&challenge))).set("Accept-Encoding", "identity").call().map_err(err_text).and_then(|r| read_limited(r, MAX_PROOF));
@@ -2430,7 +2415,8 @@ mod tests {
         let body = json!({ "cambios": [
             Change { field: "patients".into(), key: Some(p.id.to_string()), before: None, after: Some(serde_json::to_string(&p).unwrap()) },
             Change { field: "patients".into(), key: Some(q.id.to_string()), before: Some(serde_json::to_string(&disk.patients[1]).unwrap()), after: Some(serde_json::to_string(&q).unwrap()) },
-        ] }).to_string();
+        ] })
+        .to_string();
         assert!(rb.post(&format!("/cambios?base={rev}"), &body).unwrap_err().contains("historia"));
         let after = crate::sync::on_disk(&path);
         assert!(after.patient(p.id).is_none() && after.patients[1].mobile == disk.patients[1].mobile);

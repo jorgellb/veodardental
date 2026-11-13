@@ -178,14 +178,9 @@ pub struct VfRecord {
 impl VfRecord {
     pub fn canonical(&self) -> String {
         match self.kind {
-            RecKind::Anulacion => format!(
-                "IDEmisorFacturaAnulada={}&NumSerieFacturaAnulada={}&FechaExpedicionFacturaAnulada={}&Huella={}&FechaHoraHusoGenRegistro={}",
-                self.issuer_nif,
-                self.num_serie,
-                self.fecha.format("%d-%m-%Y"),
-                self.prev_hash,
-                self.gen_ts
-            ),
+            RecKind::Anulacion => {
+                format!("IDEmisorFacturaAnulada={}&NumSerieFacturaAnulada={}&FechaExpedicionFacturaAnulada={}&Huella={}&FechaHoraHusoGenRegistro={}", self.issuer_nif, self.num_serie, self.fecha.format("%d-%m-%Y"), self.prev_hash, self.gen_ts)
+            }
             RecKind::Subsanacion => format!(
                 "IDEmisorFactura={}&NumSerieFactura={}&FechaExpedicionFactura={}&TipoFactura={}&CuotaTotal={:.2}&ImporteTotal={:.2}&Huella={}&FechaHoraHusoGenRegistro={}",
                 self.issuer_nif,
@@ -602,11 +597,7 @@ pub fn alta_xml(db: &Db, cfg: &VfConfig, inv: &Invoice, prev: Option<Item>, rec:
     }
     x += &format!("<sum1:DescripcionOperacion>{}</sum1:DescripcionOperacion>", esc(&description(inv)));
     if matches!(kind, "F1" | "R1") && !inv.client_nif.trim().is_empty() {
-        x += &format!(
-            "<sum1:Destinatarios><sum1:IDDestinatario><sum1:NombreRazon>{}</sum1:NombreRazon><sum1:NIF>{}</sum1:NIF></sum1:IDDestinatario></sum1:Destinatarios>",
-            esc(&cut(&inv.client_name, 120)),
-            nif_norm(&inv.client_nif)
-        );
+        x += &format!("<sum1:Destinatarios><sum1:IDDestinatario><sum1:NombreRazon>{}</sum1:NombreRazon><sum1:NIF>{}</sum1:NIF></sum1:IDDestinatario></sum1:Destinatarios>", esc(&cut(&inv.client_name, 120)), nif_norm(&inv.client_nif));
     }
     x += &format!("<sum1:Desglose>{}</sum1:Desglose>", breakdown(inv));
     x += &format!("<sum1:CuotaTotal>{}</sum1:CuotaTotal><sum1:ImporteTotal>{}</sum1:ImporteTotal>", amount(inv.vat()), amount(inv.total()));
@@ -685,7 +676,8 @@ pub fn find(db: &Db, k: Key) -> Option<Item<'_>> {
 /// Sobre SOAP con un lote de registros (como máximo 1000).
 pub fn envelope(db: &Db, cfg: &VfConfig, batch: &[(Key, Option<Key>)]) -> String {
     let c = &db.config;
-    let mut x = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sum=\"{NS_LR}\" xmlns:sum1=\"{NS_SF}\"><soapenv:Header/><soapenv:Body><sum:RegFactuSistemaFacturacion>");
+    let mut x =
+        format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sum=\"{NS_LR}\" xmlns:sum1=\"{NS_SF}\"><soapenv:Header/><soapenv:Body><sum:RegFactuSistemaFacturacion>");
     x += &format!("<sum:Cabecera><sum1:ObligadoEmision><sum1:NombreRazon>{}</sum1:NombreRazon><sum1:NIF>{}</sum1:NIF></sum1:ObligadoEmision></sum:Cabecera>", esc(&cut(&c.name, 120)), nif_norm(&c.nif));
     for (k, prev) in batch.iter().take(1000) {
         if let Some(it) = find(db, *k) {
@@ -1133,10 +1125,16 @@ mod tests {
             // todas correctas salvo la segunda
             let mut lines = String::new();
             for (k, c) in c2.iter().enumerate() {
-                let st = if k == 1 { "<tikR:EstadoRegistro>Incorrecto</tikR:EstadoRegistro><tikR:CodigoErrorRegistro>1100</tikR:CodigoErrorRegistro><tikR:DescripcionErrorRegistro>NIF no identificado</tikR:DescripcionErrorRegistro>" } else { "<tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro>" };
+                let st = if k == 1 {
+                    "<tikR:EstadoRegistro>Incorrecto</tikR:EstadoRegistro><tikR:CodigoErrorRegistro>1100</tikR:CodigoErrorRegistro><tikR:DescripcionErrorRegistro>NIF no identificado</tikR:DescripcionErrorRegistro>"
+                } else {
+                    "<tikR:EstadoRegistro>Correcto</tikR:EstadoRegistro>"
+                };
                 lines += &format!("<tikR:RespuestaLinea><tikR:IDFactura><tik:NumSerieFactura>{c}</tik:NumSerieFactura></tikR:IDFactura>{st}</tikR:RespuestaLinea>");
             }
-            let resp = format!("<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>CSV123</tikR:CSV><tikR:TiempoEsperaEnvio>60</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>ParcialmenteCorrecto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>");
+            let resp = format!(
+                "<env:Envelope><env:Body><tikR:RespuestaRegFactuSistemaFacturacion><tikR:CSV>CSV123</tikR:CSV><tikR:TiempoEsperaEnvio>60</tikR:TiempoEsperaEnvio><tikR:EstadoEnvio>ParcialmenteCorrecto</tikR:EstadoEnvio>{lines}</tikR:RespuestaRegFactuSistemaFacturacion></env:Body></env:Envelope>"
+            );
             rq.respond(tiny_http::Response::from_string(resp)).unwrap();
             body
         });

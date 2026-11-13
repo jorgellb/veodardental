@@ -763,7 +763,9 @@ impl RepoStore {
             if p.recetas.iter().any(|r| r.id_receta.len() != 32 || r.num_envases == 0 || r.fecha_fin < r.fecha_ini) {
                 return Err("Hay una receta con datos no válidos.".into());
             }
-            if let Some(old) = self.prescripciones.iter().find(|x| x.id_prescripcion == p.id_prescripcion) && old.documento != p.documento {
+            if let Some(old) = self.prescripciones.iter().find(|x| x.id_prescripcion == p.id_prescripcion)
+                && old.documento != p.documento
+            {
                 return Err("Ya existe otra prescripción con ese identificador.".into());
             }
         }
@@ -929,7 +931,10 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
             out.push(v);
             i += 3;
             continue;
@@ -941,9 +946,7 @@ fn percent_decode(s: &str) -> String {
 }
 
 fn query_map(url: &str) -> HashMap<String, String> {
-    url.split_once('?')
-        .map(|(_, q)| q.split('&').filter_map(|kv| kv.split_once('=').map(|(k, v)| (percent_decode(k), percent_decode(v)))).collect())
-        .unwrap_or_default()
+    url.split_once('?').map(|(_, q)| q.split('&').filter_map(|kv| kv.split_once('=').map(|(k, v)| (percent_decode(k), percent_decode(v)))).collect()).unwrap_or_default()
 }
 
 fn respond(req: tiny_http::Request, code: u16, body: &Value) {
@@ -1187,7 +1190,15 @@ mod tests {
             id_entidad: "1234".into(),
             id_centro: "1".into(),
             prescriptor: RPrescriptor { id: "280000".into(), nombre: "Laura".into(), apellidos: "Dentista".into(), especialidad: "Odontología".into(), email: "c@ejemplo.invalid".into(), telefono: "900000000".into() },
-            producto: RProducto { cod_producto: cn.into(), tipo, denominacion: "IBUPROFENO 600 MG 40 COMPRIMIDOS".into(), composicion: if tipo == 4 { "Clorhexidina 0,2% csp 200 ml".into() } else { String::new() }, dosificacion: "600 mg".into(), forma: "comprimido".into(), ..Default::default() },
+            producto: RProducto {
+                cod_producto: cn.into(),
+                tipo,
+                denominacion: "IBUPROFENO 600 MG 40 COMPRIMIDOS".into(),
+                composicion: if tipo == 4 { "Clorhexidina 0,2% csp 200 ml".into() } else { String::new() },
+                dosificacion: "600 mg".into(),
+                forma: "comprimido".into(),
+                ..Default::default()
+            },
             toma: 1.0,
             ud_toma: "comprimido".into(),
             frecuencia: 3.0,

@@ -282,7 +282,19 @@ impl Db {
     pub fn expense_from_order(&mut self, order_id: u32) {
         let Some(o) = self.orders.iter().find(|o| o.id == order_id).cloned() else { return };
         let id = self.new_id();
-        let e = Expense { id, date: today(), supplier: self.supplier_name(o.supplier_id), concept: format!("Pedido #{}", o.id), category: "Material".into(), base: o.total(), vat_pct: 21.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(today() + Duration::days(30)) };
+        let e = Expense {
+            id,
+            date: today(),
+            supplier: self.supplier_name(o.supplier_id),
+            concept: format!("Pedido #{}", o.id),
+            category: "Material".into(),
+            base: o.total(),
+            vat_pct: 21.0,
+            invoice_no: String::new(),
+            method: "Transferencia".into(),
+            paid: false,
+            due: Some(today() + Duration::days(30)),
+        };
         self.expenses.push(e);
     }
 
@@ -315,7 +327,19 @@ impl Db {
         }
         let id = self.new_id();
         // las prótesis dentales a medida de laboratorio están exentas de IVA
-        let e = Expense { id, date: today(), supplier: self.supplier_name(w.lab_id), concept: format!("{} · {} #L{}", w.description, self.patient_name(w.patient_id), w.id), category: "Laboratorio".into(), base: w.cost, vat_pct: 0.0, invoice_no: String::new(), method: "Transferencia".into(), paid: false, due: Some(today() + Duration::days(30)) };
+        let e = Expense {
+            id,
+            date: today(),
+            supplier: self.supplier_name(w.lab_id),
+            concept: format!("{} · {} #L{}", w.description, self.patient_name(w.patient_id), w.id),
+            category: "Laboratorio".into(),
+            base: w.cost,
+            vat_pct: 0.0,
+            invoice_no: String::new(),
+            method: "Transferencia".into(),
+            paid: false,
+            due: Some(today() + Duration::days(30)),
+        };
         self.expenses.push(e);
     }
 
@@ -329,7 +353,19 @@ impl Db {
 pub fn sample_finance(db: &mut Db, today: NaiveDate) {
     let e = |db: &mut Db, ago: i64, sup: &str, concept: &str, cat: &str, base: f64, vat: f64, paid: bool| {
         let id = db.new_id();
-        db.expenses.push(Expense { id, date: today - Duration::days(ago), supplier: sup.into(), concept: concept.into(), category: cat.into(), base, vat_pct: vat, invoice_no: format!("F-{:05}", 1000 + id % 1000), method: "Transferencia".into(), paid, due: if paid { None } else { Some(today + Duration::days(10)) } });
+        db.expenses.push(Expense {
+            id,
+            date: today - Duration::days(ago),
+            supplier: sup.into(),
+            concept: concept.into(),
+            category: cat.into(),
+            base,
+            vat_pct: vat,
+            invoice_no: format!("F-{:05}", 1000 + id % 1000),
+            method: "Transferencia".into(),
+            paid,
+            due: if paid { None } else { Some(today + Duration::days(10)) },
+        });
     };
     for m in 0..4 {
         let o = m * 30;
@@ -348,7 +384,10 @@ pub fn sample_finance(db: &mut Db, today: NaiveDate) {
         r.diagnosis = "Cirugía de implante 36".into();
         r.items = vec![
             RxItem { notes: "Alérgico a penicilina".into(), ..rx_item_from_drug(&Drug { name: "Clindamicina 300 mg".into(), form: "cápsulas".into(), dose: "1 cápsula".into(), frequency: "cada 8 horas".into(), days: 7, group: String::new() }) },
-            RxItem { notes: "Anticoagulado: evitar AINE".into(), ..rx_item_from_drug(&Drug { name: "Paracetamol 1 g".into(), form: "comprimidos".into(), dose: "1 comprimido".into(), frequency: "cada 8 horas".into(), days: 3, group: String::new() }) },
+            RxItem {
+                notes: "Anticoagulado: evitar AINE".into(),
+                ..rx_item_from_drug(&Drug { name: "Paracetamol 1 g".into(), form: "comprimidos".into(), dose: "1 comprimido".into(), frequency: "cada 8 horas".into(), days: 3, group: String::new() })
+            },
         ];
     }
 }
@@ -432,7 +471,19 @@ mod tests {
 
     #[test]
     fn expense_totals() {
-        let e = Expense { id: 1, date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(), supplier: String::new(), concept: String::new(), category: "Material".into(), base: 100.0, vat_pct: 21.0, invoice_no: String::new(), method: String::new(), paid: false, due: None };
+        let e = Expense {
+            id: 1,
+            date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            supplier: String::new(),
+            concept: String::new(),
+            category: "Material".into(),
+            base: 100.0,
+            vat_pct: 21.0,
+            invoice_no: String::new(),
+            method: String::new(),
+            paid: false,
+            due: None,
+        };
         assert_eq!(e.total(), 121.0);
     }
 }

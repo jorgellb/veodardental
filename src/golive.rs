@@ -410,16 +410,18 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
         let real_n = db.patients.len() - demo_n;
         let sent = sent_to_aeat(db);
         let (st, goto) = if demo_n == 0 {
-            (
-                (Listo, if db.patients.is_empty() { "Sin datos de ejemplo: la clínica está lista para sus pacientes.".to_string() } else { format!("{} pacientes, ninguno de ejemplo.", db.patients.len()) }),
-                Goto::Nada,
-            )
+            ((Listo, if db.patients.is_empty() { "Sin datos de ejemplo: la clínica está lista para sus pacientes.".to_string() } else { format!("{} pacientes, ninguno de ejemplo.", db.patients.len()) }), Goto::Nada)
         } else if sent > 0 {
             ((Pendiente, format!("Quedan {demo_n} pacientes de ejemplo, pero ya hay facturas aceptadas por la AEAT y la clínica no se puede vaciar.")), Goto::Nada)
         } else {
             let also = if real_n > 0 { format!(" Atención: también hay {real_n} pacientes que no son de ejemplo, y se quitarían igual.") } else { String::new() };
             (
-                (Pendiente, format!("El programa trae {demo_n} pacientes de ejemplo con citas, historial, presupuestos y facturas. Antes de trabajar de verdad, vacíe la clínica: se conservan la configuración, los tratamientos y sus precios, los profesionales y los usuarios.{also}")),
+                (
+                    Pendiente,
+                    format!(
+                        "El programa trae {demo_n} pacientes de ejemplo con citas, historial, presupuestos y facturas. Antes de trabajar de verdad, vacíe la clínica: se conservan la configuración, los tratamientos y sus precios, los profesionales y los usuarios.{also}"
+                    ),
+                ),
                 Goto::Vaciar,
             )
         };
@@ -477,7 +479,9 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
         } else {
             match f.last_backup.filter(|b| f.now - *b < Duration::days(2)) {
                 None => (Pendiente, "No hay ninguna copia de los últimos días en este ordenador: haga una ahora.".to_string()),
-                Some(b) if extra.is_empty() => (Pendiente, format!("Se hace una copia cada día en este ordenador (la última, el {}), pero si se estropea el disco se pierden las dos: elija una segunda carpeta en un disco externo o en la nube.", when(b))),
+                Some(b) if extra.is_empty() => {
+                    (Pendiente, format!("Se hace una copia cada día en este ordenador (la última, el {}), pero si se estropea el disco se pierden las dos: elija una segunda carpeta en un disco externo o en la nube.", when(b)))
+                }
                 Some(_) if !f.extra_found => (Pendiente, format!("No se encuentra la carpeta de la segunda copia ({extra}): ¿está conectado el disco?")),
                 Some(_) if !f.backup_key => (Pendiente, "La segunda copia sale del ordenador sin cifrar, con los datos de salud de todos los pacientes: póngale una contraseña para que se guarde cifrada.".to_string()),
                 Some(b) => (Listo, format!("Última copia el {}; segunda copia cifrada en {extra}.", when(b))),
@@ -565,11 +569,7 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
         "WhatsApp",
         false,
         Goto::Cfg(CfgTab::Whatsapp),
-        if f.whatsapp || !db.wa_sender.trim().is_empty() {
-            (Listo, "Recordatorios por WhatsApp activados.".into())
-        } else {
-            (Opcional, "Recordatorios y confirmación de citas por WhatsApp (hace falta una cuenta de WhatsApp Business).".into())
-        },
+        if f.whatsapp || !db.wa_sender.trim().is_empty() { (Listo, "Recordatorios por WhatsApp activados.".into()) } else { (Opcional, "Recordatorios y confirmación de citas por WhatsApp (hace falta una cuenta de WhatsApp Business).".into()) },
     );
 
     // inteligencia artificial
@@ -612,11 +612,7 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
         "Varios ordenadores",
         false,
         Goto::Cfg(CfgTab::Red),
-        if f.network {
-            (Listo, "Este ordenador trabaja en red con los demás puestos de la clínica.".into())
-        } else {
-            (Opcional, "Si la clínica usa el programa en más de un ordenador, conéctelos con el servidor de la clínica.".into())
-        },
+        if f.network { (Listo, "Este ordenador trabaja en red con los demás puestos de la clínica.".into()) } else { (Opcional, "Si la clínica usa el programa en más de un ordenador, conéctelos con el servidor de la clínica.".into()) },
     );
     v
 }

@@ -76,7 +76,9 @@ pub fn record_html(db: &Db, pid: u32, today: NaiveDate) -> String {
         b.push_str(&format!("<p class='alert'>{}{}</p>", if p.alerts.is_empty() { String::new() } else { format!("⚠ {}", esc(&p.alerts)) }, if p.allergies.is_empty() { String::new() } else { format!("<br>Alergias: {}", esc(&p.allergies)) }));
     }
     match db.latest_health(pid) {
-        Some(h) => b.push_str(&format!("<p>Cuestionario de salud del {}{}.{}</p>", fmt_date(h.date), if h.signed { ", firmado" } else { ", sin firmar" }, if h.notes.trim().is_empty() { String::new() } else { format!(" Observaciones: {}", esc(&h.notes)) })),
+        Some(h) => {
+            b.push_str(&format!("<p>Cuestionario de salud del {}{}.{}</p>", fmt_date(h.date), if h.signed { ", firmado" } else { ", sin firmar" }, if h.notes.trim().is_empty() { String::new() } else { format!(" Observaciones: {}", esc(&h.notes)) }))
+        }
         None => b.push_str("<p class='muted'>Sin cuestionario de salud.</p>"),
     }
     if !p.background.trim().is_empty() {
@@ -95,7 +97,16 @@ pub fn record_html(db: &Db, pid: u32, today: NaiveDate) -> String {
         b.push_str("<table><tr><th>Fecha</th><th>Tratamiento</th><th>Piezas</th><th>Doctor</th><th>Estado</th><th class='n'>Importe</th></tr>");
         for e in es {
             let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
-            b.push_str(&format!("<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td class='n'>{}</td></tr>", fmt_date(e.date), esc(&e.description), if e.notes.is_empty() { String::new() } else { format!("<br><small>{}</small>", esc(&e.notes)) }, teeth.join("-"), esc(&db.doctor_alias(e.doctor_id)), e.state.label(), esc(&money(e.amount()))));
+            b.push_str(&format!(
+                "<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td class='n'>{}</td></tr>",
+                fmt_date(e.date),
+                esc(&e.description),
+                if e.notes.is_empty() { String::new() } else { format!("<br><small>{}</small>", esc(&e.notes)) },
+                teeth.join("-"),
+                esc(&db.doctor_alias(e.doctor_id)),
+                e.state.label(),
+                esc(&money(e.amount()))
+            ));
         }
         b.push_str("</table>");
     }
@@ -114,7 +125,13 @@ pub fn record_html(db: &Db, pid: u32, today: NaiveDate) -> String {
     b.push_str("<h2>Cuenta</h2>");
     b.push_str(&format!("<p>Realizado: <b>{}</b> · Pagado: <b>{}</b> · {}</p>", esc(&money(db.patient_debit(pid))), esc(&money(db.patient_paid(pid))), {
         let bal = db.patient_balance(pid);
-        if bal > 0.005 { format!("Pendiente: <b>{}</b>", esc(&money(bal))) } else if bal < -0.005 { format!("Saldo a favor: <b>{}</b>", esc(&money(-bal))) } else { "Al corriente".to_string() }
+        if bal > 0.005 {
+            format!("Pendiente: <b>{}</b>", esc(&money(bal)))
+        } else if bal < -0.005 {
+            format!("Saldo a favor: <b>{}</b>", esc(&money(-bal)))
+        } else {
+            "Al corriente".to_string()
+        }
     }));
     if !ps.is_empty() {
         b.push_str("<table><tr><th>Fecha</th><th>Recibo</th><th>Concepto</th><th>Forma de pago</th><th class='n'>Importe</th></tr>");
@@ -168,12 +185,8 @@ pub fn record_html(db: &Db, pid: u32, today: NaiveDate) -> String {
 /// Todos los datos del paciente en formato estructurado (JSON), para
 /// entregárselos cuando ejerce su derecho de acceso o portabilidad.
 pub fn patient_data_json(db: &Db, pid: u32, today: NaiveDate) -> String {
-    let docs: Vec<serde_json::Value> = db
-        .documents
-        .iter()
-        .filter(|d| d.patient_id == pid)
-        .map(|d| serde_json::json!({ "fecha": d.date, "titulo": d.title, "texto": d.body, "firmado": d.signed, "firmante": d.signer, "firmado_el": d.signed_at }))
-        .collect();
+    let docs: Vec<serde_json::Value> =
+        db.documents.iter().filter(|d| d.patient_id == pid).map(|d| serde_json::json!({ "fecha": d.date, "titulo": d.title, "texto": d.body, "firmado": d.signed, "firmante": d.signer, "firmado_el": d.signed_at })).collect();
     let v = serde_json::json!({
         "exportado_el": today,
         "clinica": { "nombre": db.config.name, "nif": db.config.nif, "direccion": db.config.address },

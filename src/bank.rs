@@ -193,7 +193,9 @@ impl Db {
             if m.amount > 0.0 {
                 // remesa SEPA
                 // (por su total o, si el banco descuenta los recibos devueltos, por lo cobrado)
-                if let Some(r) = self.remittances.iter().find(|r| ((r.total() - m.amount).abs() < 0.005 || (r.collected() - m.amount).abs() < 0.005) && near(r.collection, 5) && !self.bank_moves.iter().any(|b| b.matched == Some(Match::Remittance(r.id)))) {
+                if let Some(r) =
+                    self.remittances.iter().find(|r| ((r.total() - m.amount).abs() < 0.005 || (r.collected() - m.amount).abs() < 0.005) && near(r.collection, 5) && !self.bank_moves.iter().any(|b| b.matched == Some(Match::Remittance(r.id))))
+                {
                     found = Some(Match::Remittance(r.id));
                 }
                 // cobro individual
@@ -221,7 +223,9 @@ impl Db {
                 found = Some(Match::Expense(e.id));
             }
             if let Some(f) = found {
-                if let Match::Expense(eid) = &f && let Some(e) = self.expenses.iter_mut().find(|e| e.id == *eid) {
+                if let Match::Expense(eid) = &f
+                    && let Some(e) = self.expenses.iter_mut().find(|e| e.id == *eid)
+                {
                     e.paid = true;
                 }
                 if let Match::Remittance(rid) = &f {
@@ -395,7 +399,27 @@ fn sample_centers(db: &mut Db, today: NaiveDate) {
     for (h, m, pid, reason, code) in [(18u32, 0u32, 104u32, "Revisión", "0102"), (18, 45, 115, "Valoración implante", "0101")] {
         let id = db.new_id();
         let start = chrono::NaiveTime::from_hms_opt(h, m, 0).unwrap();
-        db.appointments.push(Appointment { id, date: today, start, minutes: 40, patient_id: Some(pid), free_name: String::new(), phone: String::new(), doctor_id: 2, box_id: 5, reason: reason.into(), treatment_code: code.into(), state: ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: true, first_visit: false, center_id: 2 });
+        db.appointments.push(Appointment {
+            id,
+            date: today,
+            start,
+            minutes: 40,
+            patient_id: Some(pid),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 2,
+            box_id: 5,
+            reason: reason.into(),
+            treatment_code: code.into(),
+            state: ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: true,
+            first_visit: false,
+            center_id: 2,
+        });
     }
 }
 
@@ -495,13 +519,37 @@ mod tests {
         db.add_task(d(), "Recepción", "", Some(remove), "Llamar", None);
         db.send_msg("Recepción", "", "Ha llamado", Some(remove));
         let rid = db.new_id();
-        db.booking_requests.push(crate::booking::BookingRequest { id: rid, received: now(), name: "Carlos".into(), phone: "613 207 111".into(), email: String::new(), reason: "Revisión".into(), minutes: 30, code: String::new(), doctor_id: 1, date: d(), start: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(), notes: String::new(), first_visit: false, patient_id: Some(remove), state: crate::booking::ReqState::Confirmada, appointment_id: None, answer: String::new(), center_id: 1, replaces: None });
+        db.booking_requests.push(crate::booking::BookingRequest {
+            id: rid,
+            received: now(),
+            name: "Carlos".into(),
+            phone: "613 207 111".into(),
+            email: String::new(),
+            reason: "Revisión".into(),
+            minutes: 30,
+            code: String::new(),
+            doctor_id: 1,
+            date: d(),
+            start: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+            notes: String::new(),
+            first_visit: false,
+            patient_id: Some(remove),
+            state: crate::booking::ReqState::Confirmada,
+            appointment_id: None,
+            answer: String::new(),
+            center_id: 1,
+            replaces: None,
+        });
         let tariff = db.patient(remove).unwrap().tariff_id;
         db.create_claim(tariff, d() - chrono::Duration::days(800), d(), d());
         if let Some(c) = db.calls.first_mut() {
             c.patients = vec![remove];
         }
-        let before: Vec<String> = { let mut v = vec![]; references(&serde_json::to_value(&db).unwrap(), remove as u64, "", &mut v); v };
+        let before: Vec<String> = {
+            let mut v = vec![];
+            references(&serde_json::to_value(&db).unwrap(), remove as u64, "", &mut v);
+            v
+        };
         assert!(before.len() > 10, "la prueba tiene datos del paciente: {before:?}");
         db.merge_patients(keep, remove).unwrap();
         let mut left = vec![];
@@ -534,7 +582,10 @@ mod tests {
         // liquidación de tarjeta del día: suma de cobros con tarjeta de hoy
         let card_sum: f64 = db.payments.iter().filter(|p| p.method == "Tarjeta" && p.date.date() == d()).map(|p| p.amount).sum();
         let exp = db.expenses.iter().find(|e| !e.paid).cloned().unwrap();
-        db.add_bank_moves(1, &[RawMove { date: d() + Duration::days(1), amount: card_sum, concept: "LIQUIDACION TPV".into(), reference: String::new() }, RawMove { date: exp.date, amount: -exp.total(), concept: "PAGO PROVEEDOR".into(), reference: String::new() }]);
+        db.add_bank_moves(
+            1,
+            &[RawMove { date: d() + Duration::days(1), amount: card_sum, concept: "LIQUIDACION TPV".into(), reference: String::new() }, RawMove { date: exp.date, amount: -exp.total(), concept: "PAGO PROVEEDOR".into(), reference: String::new() }],
+        );
         let n = db.auto_reconcile();
         assert!(n >= 2, "debe conciliar la liquidación del TPV y el gasto (fueron {n})");
         assert!(db.bank_moves.iter().any(|m| m.concept.starts_with("TRANSFERENCIA") && matches!(m.matched, Some(Match::Payments(_)))), "la transferencia de ejemplo queda conciliada");
@@ -557,7 +608,13 @@ mod tests {
         db.remittance_returned(rid, 0, "").unwrap();
         // el banco abona la remesa entera y días después carga la devolución
         let total = db.remittances.iter().find(|r| r.id == rid).unwrap().total();
-        db.add_bank_moves(1, &[RawMove { date: d() + Duration::days(5), amount: total, concept: "ABONO REMESA".into(), reference: String::new() }, RawMove { date: d() + Duration::days(9), amount: -it.amount, concept: "DEVOLUCION RECIBO".into(), reference: String::new() }]);
+        db.add_bank_moves(
+            1,
+            &[
+                RawMove { date: d() + Duration::days(5), amount: total, concept: "ABONO REMESA".into(), reference: String::new() },
+                RawMove { date: d() + Duration::days(9), amount: -it.amount, concept: "DEVOLUCION RECIBO".into(), reference: String::new() },
+            ],
+        );
         db.auto_reconcile();
         assert!(db.bank_moves.iter().any(|m| m.concept == "ABONO REMESA" && m.matched == Some(Match::Remittance(rid))));
         let back = db.payments.iter().find(|p| p.amount == -it.amount && p.concept.starts_with("Devolución")).unwrap().id;

@@ -261,7 +261,7 @@ impl Db {
         let list: Vec<Consumption> = self.consumptions.iter().filter(|c| c.code == e.code).cloned().collect();
         for c in list {
             let qty = c.qty * e.units.max(1) as f64;
-                let reason = format!("{} {}", e.description, e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-"));
+            let reason = format!("{} {}", e.description, e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-"));
             // lo que lleva lote sale del que antes caduca (y queda apuntado en el paciente)
             let traced = self.product(c.product_id).is_some_and(|p| p.traced);
             let parts = if traced { self.pick_lots(c.product_id, qty) } else { vec![(String::new(), None, qty)] };
@@ -364,12 +364,8 @@ impl Db {
         if q.is_empty() {
             return vec![];
         }
-        let mut v: Vec<&StockMove> = self
-            .stock_moves
-            .iter()
-            .filter(|m| m.patient_id.is_some() && m.kind == MoveKind::Consumo && m.qty < 0.0 && fold(&m.lot).contains(&q))
-            .filter(|m| m.entry_id.is_none_or(|e| self.entries.iter().any(|x| x.id == e)))
-            .collect();
+        let mut v: Vec<&StockMove> =
+            self.stock_moves.iter().filter(|m| m.patient_id.is_some() && m.kind == MoveKind::Consumo && m.qty < 0.0 && fold(&m.lot).contains(&q)).filter(|m| m.entry_id.is_none_or(|e| self.entries.iter().any(|x| x.id == e))).collect();
         v.sort_by_key(|m| std::cmp::Reverse((m.when, m.id)));
         v
     }
@@ -394,13 +390,7 @@ impl Db {
     /// Lotes con existencias que caducan hasta `limit` (también los ya
     /// caducados), el que antes caduca primero.
     pub fn expiring_lots(&self, limit: NaiveDate) -> Vec<(u32, Lot)> {
-        let mut v: Vec<(u32, Lot)> = self
-            .products
-            .iter()
-            .filter(|p| p.active)
-            .flat_map(|p| self.lots(p.id).into_iter().map(move |l| (p.id, l)))
-            .filter(|(_, l)| l.qty > 1e-9 && l.expiry.is_some_and(|e| e <= limit))
-            .collect();
+        let mut v: Vec<(u32, Lot)> = self.products.iter().filter(|p| p.active).flat_map(|p| self.lots(p.id).into_iter().map(move |l| (p.id, l))).filter(|(_, l)| l.qty > 1e-9 && l.expiry.is_some_and(|e| e <= limit)).collect();
         v.sort_by_key(|(_, l)| l.expiry);
         v
     }
@@ -503,13 +493,7 @@ impl Db {
 
     /// Cantidad ya pedida y aún no recibida de un producto.
     pub fn on_order(&self, product_id: u32) -> f64 {
-        self.orders
-            .iter()
-            .filter(|o| matches!(o.state, OrderState::Borrador | OrderState::Enviado))
-            .flat_map(|o| o.lines.iter())
-            .filter(|l| l.product_id == product_id)
-            .map(|l| l.qty)
-            .sum()
+        self.orders.iter().filter(|o| matches!(o.state, OrderState::Borrador | OrderState::Enviado)).flat_map(|o| o.lines.iter()).filter(|l| l.product_id == product_id).map(|l| l.qty).sum()
     }
 
     /// Crea pedidos en borrador (uno por proveedor) con lo que está bajo
@@ -556,7 +540,9 @@ impl Db {
             if let Some(m) = id.and_then(|id| self.stock_moves.iter_mut().find(|m| m.id == id)) {
                 m.expiry = parse_expiry(&l.expiry);
             }
-            if let Some(p) = self.products.iter_mut().find(|p| p.id == l.product_id) && l.cost > 0.0 {
+            if let Some(p) = self.products.iter_mut().find(|p| p.id == l.product_id)
+                && l.cost > 0.0
+            {
                 p.cost = l.cost;
             }
         }
@@ -583,11 +569,7 @@ impl Db {
     /// Tratamientos protésicos previstos del paciente que aún no tienen trabajo
     /// de laboratorio (los ya hechos, como los que vienen de otro programa, no).
     pub fn prosthetic_without_lab(&self, pid: u32) -> Vec<&MedEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.patient_id == pid && e.state == TxState::Previsto && is_prosthetic(e.odg))
-            .filter(|e| !self.lab_works.iter().any(|w| w.entry_id == Some(e.id)))
-            .collect()
+        self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto && is_prosthetic(e.odg)).filter(|e| !self.lab_works.iter().any(|w| w.entry_id == Some(e.id))).collect()
     }
 
     pub fn new_lab_work(&mut self, pid: u32, entry_id: Option<u32>, lab_id: u32, days: i64) -> u32 {
@@ -640,14 +622,28 @@ impl Db {
 }
 
 pub fn sample_stock(db: &mut Db, today: NaiveDate) {
-    let s = |id: u32, name: &str, nif: &str, phone: &str, email: &str, contact: &str, lab: bool| Supplier { id, name: name.into(), nif: nif.into(), phone: phone.into(), email: email.into(), contact: contact.into(), is_lab: lab, notes: String::new() };
+    let s =
+        |id: u32, name: &str, nif: &str, phone: &str, email: &str, contact: &str, lab: bool| Supplier { id, name: name.into(), nif: nif.into(), phone: phone.into(), email: email.into(), contact: contact.into(), is_lab: lab, notes: String::new() };
     *db.suppliers = vec![
         s(1, "Depósito Dental Ejemplo", "B11111111", "900 100 100", "pedidos@deposito-ejemplo.es", "Marta", false),
         s(2, "Implantes Ejemplo S.L.", "B22222222", "900 200 200", "comercial@implantes-ejemplo.es", "Jorge", false),
         s(3, "Laboratorio Dental Arte", "B33333333", "91 300 30 30", "trabajos@lab-arte.es", "Luis", true),
         s(4, "Laboratorio Orto Plus", "B44444444", "91 400 40 40", "orto@lab-ortoplus.es", "Ana", true),
     ];
-    let p = |id: u32, code: &str, name: &str, family: &str, unit: &str, stock: f64, min: f64, cost: f64, sup: u32, loc: &str| Product { id, code: code.into(), name: name.into(), family: family.into(), unit: unit.into(), stock, min_stock: min, cost, supplier_id: sup, location: loc.into(), active: true, traced: family == "Implantología" };
+    let p = |id: u32, code: &str, name: &str, family: &str, unit: &str, stock: f64, min: f64, cost: f64, sup: u32, loc: &str| Product {
+        id,
+        code: code.into(),
+        name: name.into(),
+        family: family.into(),
+        unit: unit.into(),
+        stock,
+        min_stock: min,
+        cost,
+        supplier_id: sup,
+        location: loc.into(),
+        active: true,
+        traced: family == "Implantología",
+    };
     *db.products = vec![
         p(1, "GUA-M", "Guantes nitrilo talla M", "Desechables", "caja 100", 6.0, 4.0, 6.5, 1, "Almacén A1"),
         p(2, "MAS-Q", "Mascarillas quirúrgicas", "Desechables", "caja 50", 3.0, 4.0, 4.2, 1, "Almacén A1"),
@@ -666,16 +662,35 @@ pub fn sample_stock(db: &mut Db, today: NaiveDate) {
     ];
     let c = |code: &str, pid: u32, qty: f64| Consumption { code: code.into(), product_id: pid, qty };
     db.consumptions = vec![
-        c("0301", 4, 0.15), c("0301", 6, 1.0), c("0301", 3, 1.0),
-        c("0302", 4, 0.2), c("0302", 6, 1.0), c("0302", 3, 1.0),
-        c("0303", 4, 0.25), c("0303", 6, 1.0), c("0303", 3, 1.0),
-        c("0401", 7, 0.25), c("0401", 8, 0.1), c("0401", 3, 1.0),
-        c("0402", 7, 0.3), c("0402", 8, 0.15), c("0402", 3, 2.0),
-        c("0403", 7, 0.5), c("0403", 8, 0.2), c("0403", 3, 2.0),
-        c("0501", 3, 1.0), c("0502", 3, 2.0), c("0502", 11, 1.0),
-        c("0701", 9, 1.0), c("0701", 11, 1.0), c("0701", 3, 2.0), c("0702", 10, 1.0),
-        c("0201", 12, 1.0), c("0602", 12, 1.0),
-        c("0804", 13, 0.5), c("0805", 13, 0.5),
+        c("0301", 4, 0.15),
+        c("0301", 6, 1.0),
+        c("0301", 3, 1.0),
+        c("0302", 4, 0.2),
+        c("0302", 6, 1.0),
+        c("0302", 3, 1.0),
+        c("0303", 4, 0.25),
+        c("0303", 6, 1.0),
+        c("0303", 3, 1.0),
+        c("0401", 7, 0.25),
+        c("0401", 8, 0.1),
+        c("0401", 3, 1.0),
+        c("0402", 7, 0.3),
+        c("0402", 8, 0.15),
+        c("0402", 3, 2.0),
+        c("0403", 7, 0.5),
+        c("0403", 8, 0.2),
+        c("0403", 3, 2.0),
+        c("0501", 3, 1.0),
+        c("0502", 3, 2.0),
+        c("0502", 11, 1.0),
+        c("0701", 9, 1.0),
+        c("0701", 11, 1.0),
+        c("0701", 3, 2.0),
+        c("0702", 10, 1.0),
+        c("0201", 12, 1.0),
+        c("0602", 12, 1.0),
+        c("0804", 13, 0.5),
+        c("0805", 13, 0.5),
     ];
     // histórico de movimientos (no cambia el stock inicial; en implantes y
     // pilares cuadra con él). Con su lote: el implante y el pilar del 46 que
@@ -696,12 +711,40 @@ pub fn sample_stock(db: &mut Db, today: NaiveDate) {
     for (pid, qty, kind, reason, ago, lot, exp, entry_id) in hist {
         let id = db.new_id();
         let patient_id = entry_id.map(|_| 101);
-        db.stock_moves.push(StockMove { id, product_id: pid, when: (today - Duration::days(ago)).and_hms_opt(10, 0, 0).unwrap(), qty, kind, reason: reason.into(), patient_id, lot: lot.into(), user: "Recepción".into(), entry_id, expiry: exp.map(|d| today + Duration::days(d)) });
+        db.stock_moves.push(StockMove {
+            id,
+            product_id: pid,
+            when: (today - Duration::days(ago)).and_hms_opt(10, 0, 0).unwrap(),
+            qty,
+            kind,
+            reason: reason.into(),
+            patient_id,
+            lot: lot.into(),
+            user: "Recepción".into(),
+            entry_id,
+            expiry: exp.map(|d| today + Duration::days(d)),
+        });
     }
     let id = db.new_id();
-    db.orders.push(PurchaseOrder { id, supplier_id: 2, date: today - Duration::days(3), state: OrderState::Enviado, lines: vec![OrderLine { product_id: 9, qty: 4.0, cost: 145.0, lot: String::new(), expiry: String::new() }], notes: "Urgente para cirugía".into(), received_on: None });
+    db.orders.push(PurchaseOrder {
+        id,
+        supplier_id: 2,
+        date: today - Duration::days(3),
+        state: OrderState::Enviado,
+        lines: vec![OrderLine { product_id: 9, qty: 4.0, cost: 145.0, lot: String::new(), expiry: String::new() }],
+        notes: "Urgente para cirugía".into(),
+        received_on: None,
+    });
     let id = db.new_id();
-    db.orders.push(PurchaseOrder { id, supplier_id: 1, date: today - Duration::days(40), state: OrderState::Recibido, lines: vec![OrderLine { product_id: 3, qty: 100.0, cost: 0.65, lot: String::new(), expiry: String::new() }, OrderLine { product_id: 1, qty: 10.0, cost: 6.5, lot: String::new(), expiry: String::new() }], notes: String::new(), received_on: Some(today - Duration::days(37)) });
+    db.orders.push(PurchaseOrder {
+        id,
+        supplier_id: 1,
+        date: today - Duration::days(40),
+        state: OrderState::Recibido,
+        lines: vec![OrderLine { product_id: 3, qty: 100.0, cost: 0.65, lot: String::new(), expiry: String::new() }, OrderLine { product_id: 1, qty: 10.0, cost: 6.5, lot: String::new(), expiry: String::new() }],
+        notes: String::new(),
+        received_on: Some(today - Duration::days(37)),
+    });
 
     // trabajos de laboratorio
     let lw = |db: &mut Db, pid: u32, code: &str, lab: u32, sent: i64, due: i64, st: LabState, cost: f64, shade: &str, mat: &str| {

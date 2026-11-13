@@ -103,7 +103,10 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Importar desde Microsoft SQL Server (GESDEN, Novaclinic u otros programas)");
-        muted(ui, "Conecte con el servidor donde el programa anterior guarda sus datos. Solo se leen datos; en el programa anterior no se cambia nada. GESDEN y Novaclinic se reconocen solos; para otros programas elija la tabla y asigne las columnas.");
+        muted(
+            ui,
+            "Conecte con el servidor donde el programa anterior guarda sus datos. Solo se leen datos; en el programa anterior no se cambia nada. GESDEN y Novaclinic se reconocen solos; para otros programas elija la tabla y asigne las columnas.",
+        );
         ui.add_space(4.0);
         let busy = app.imp.sql_busy.is_some();
         let s = &mut app.imp.sql;
@@ -140,7 +143,13 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
         }
         if !app.imp.sql_status.is_empty() {
             let ok = app.imp.sql_detected.is_some() && !app.imp.sql_status.starts_with("No ") && !app.imp.sql_status.contains("rror");
-            ui.label(RichText::new(&app.imp.sql_status).color(if ok { INFO } else if busy { MUTED } else { DANGER }));
+            ui.label(RichText::new(&app.imp.sql_status).color(if ok {
+                INFO
+            } else if busy {
+                MUTED
+            } else {
+                DANGER
+            }));
         }
         let Some(d) = app.imp.sql_detected.clone() else { return };
         ui.add_space(6.0);
@@ -284,7 +293,9 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             let before = app.imp.kind;
             ui.selectable_value(&mut app.imp.kind, ImportKind::Pacientes, "Pacientes");
             ui.selectable_value(&mut app.imp.kind, ImportKind::Tratamientos, "Tratamientos y precios");
-            if before != app.imp.kind && let Some(s) = &app.imp.sheet {
+            if before != app.imp.kind
+                && let Some(s) = &app.imp.sheet
+            {
                 app.imp.map = guess_mapping(app.imp.kind, &s.headers);
             }
             if app.imp.kind == ImportKind::Tratamientos {
@@ -320,9 +331,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         let Some(sheet) = app.imp.sheet.clone() else { return };
         ui.add_space(6.0);
         // correspondencia de columnas
-        let opts: Vec<(Option<usize>, String)> = std::iter::once((None, "— no importar —".to_string()))
-            .chain(sheet.headers.iter().enumerate().filter(|(_, h)| !h.is_empty()).map(|(i, h)| (Some(i), h.clone())))
-            .collect();
+        let opts: Vec<(Option<usize>, String)> = std::iter::once((None, "— no importar —".to_string())).chain(sheet.headers.iter().enumerate().filter(|(_, h)| !h.is_empty()).map(|(i, h)| (Some(i), h.clone()))).collect();
         egui::Grid::new("imp_map").num_columns(4).spacing([14.0, 6.0]).show(ui, |ui| {
             for (i, (name, _)) in targets(app.imp.kind).iter().enumerate() {
                 if app.imp.map.len() <= i {

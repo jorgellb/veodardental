@@ -70,7 +70,9 @@ fn ensure_nomen(app: &mut App) {
         app.rx.nomen_tried = true;
         app.rx.nomen = crate::nomenclator::load();
     }
-    if let Some(rx) = &app.rx.nomen_job && let Ok(res) = rx.try_recv() {
+    if let Some(rx) = &app.rx.nomen_job
+        && let Ok(res) = rx.try_recv()
+    {
         app.rx.nomen_job = None;
         match res {
             Ok(n) => {
@@ -106,7 +108,10 @@ fn nomenclator_panel(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Lista oficial de medicamentos (Nomenclátor de prescripción de la AEMPS)");
-        muted(ui, "Con ella, al recetar se busca el medicamento por nombre o principio activo y se rellenan solos el código nacional, el principio activo, la forma, la dosis, la vía, el envase y si es estupefaciente o psicótropo. La AEMPS la actualiza cada día; conviene descargarla de vez en cuando.");
+        muted(
+            ui,
+            "Con ella, al recetar se busca el medicamento por nombre o principio activo y se rellenan solos el código nacional, el principio activo, la forma, la dosis, la vía, el envase y si es estupefaciente o psicótropo. La AEMPS la actualiza cada día; conviene descargarla de vez en cuando.",
+        );
         ui.add_space(4.0);
         let busy = app.rx.nomen_job.is_some();
         ui.horizontal_wrapped(|ui| {
@@ -290,7 +295,9 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
                         ui.selectable_value(&mut app.rx.drug, d.name.clone(), &d.name);
                     }
                 });
-                if primary(ui, "Añadir").clicked() && let Some(d) = drugs.iter().find(|d| d.name == app.rx.drug) {
+                if primary(ui, "Añadir").clicked()
+                    && let Some(d) = drugs.iter().find(|d| d.name == app.rx.drug)
+                {
                     rm.items.push(rx_item_from_drug(d));
                 }
             });
@@ -457,7 +464,17 @@ fn issue(app: &mut App, id: u32) -> Result<(String, std::path::PathBuf), String>
     let client = crate::srep::RepoClient::new(&app.db.erx.repo_addr, &app.db.erx.repo_key);
     let n = client.emitir(&list)?;
     let status = list.iter().flat_map(|p| p.recetas.iter().map(|x| (x.id_receta.clone(), x.estado_en(app.today)))).collect();
-    let issue = crate::finance::SrepIssue { id_acceso: acc, issued: list, issued_at: Some(crate::model::now()), signer: signer.info.cn.clone(), test: !app.db.erx.certified(), confidential: pin.is_some(), status, checked_at: Some(crate::model::now()), events: vec![] };
+    let issue = crate::finance::SrepIssue {
+        id_acceso: acc,
+        issued: list,
+        issued_at: Some(crate::model::now()),
+        signer: signer.info.cn.clone(),
+        test: !app.db.erx.certified(),
+        confidential: pin.is_some(),
+        status,
+        checked_at: Some(crate::model::now()),
+        events: vec![],
+    };
     if let Some(x) = app.db.prescriptions.iter_mut().find(|x| x.id == id) {
         x.srep = Some(issue.clone());
         x.erx_date = Some(app.today);
@@ -476,7 +493,17 @@ fn hip_for(app: &App, s: &crate::finance::SrepIssue) -> String {
     let e = &app.db.erx;
     let (rep, ent) = (e.id_repositorio_or_test(), e.id_entidad_or_test());
     let sistema = if e.id_sistema.trim().is_empty() { "PRUEBAS".to_string() } else { e.id_sistema.trim().to_string() };
-    let h = crate::srep_doc::HipHeader { clinic: &app.db.config.name, clinic_address: &app.db.config.address, clinic_phone: &app.db.config.phone, id_repositorio: &rep, id_entidad: &ent, id_sistema: &sistema, test_mode: s.test, confidential: s.confidential, signer: &s.signer };
+    let h = crate::srep_doc::HipHeader {
+        clinic: &app.db.config.name,
+        clinic_address: &app.db.config.address,
+        clinic_phone: &app.db.config.phone,
+        id_repositorio: &rep,
+        id_entidad: &ent,
+        id_sistema: &sistema,
+        test_mode: s.test,
+        confidential: s.confidential,
+        signer: &s.signer,
+    };
     crate::srep_doc::hip_html(&h, &s.issued)
 }
 
@@ -643,7 +670,13 @@ fn refresh(app: &mut App, id: u32) {
                         0 => format!(" · {}", a.causa.map(crate::srep::causa_bloqueo_texto).unwrap_or("")),
                         _ => String::new(),
                     };
-                    format!("{} · farmacia {} · {} de {what}{extra}{}", a.recibida.format("%d/%m %H:%M"), a.id_farmacia, crate::srep::accion_texto(a.accion), if a.resultado == "RACOK" { String::new() } else { format!(" (rechazada: {})", a.resultado) })
+                    format!(
+                        "{} · farmacia {} · {} de {what}{extra}{}",
+                        a.recibida.format("%d/%m %H:%M"),
+                        a.id_farmacia,
+                        crate::srep::accion_texto(a.accion),
+                        if a.resultado == "RACOK" { String::new() } else { format!(" (rechazada: {})", a.resultado) }
+                    )
                 })
                 .collect();
             let blocked = seg.estados.values().any(|e| *e == 2) && !s.status.values().any(|e| *e == 2);
@@ -715,7 +748,11 @@ fn official_card(app: &mut App, ui: &mut Ui, id: u32) {
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             let can_open = !app.db.erx.url.trim().is_empty();
-            if ui.add_enabled(can_open && missing.is_empty(), egui::Button::new(RichText::new("1 · Copiar datos y abrir la plataforma").color(Color32::WHITE)).fill(ACCENT)).on_hover_text("Copia paciente, prescriptor y medicamentos para pegarlos en la plataforma").clicked() {
+            if ui
+                .add_enabled(can_open && missing.is_empty(), egui::Button::new(RichText::new("1 · Copiar datos y abrir la plataforma").color(Color32::WHITE)).fill(ACCENT))
+                .on_hover_text("Copia paciente, prescriptor y medicamentos para pegarlos en la plataforma")
+                .clicked()
+            {
                 ui.ctx().copy_text(crate::erx::transfer_text(&app.db, &r));
                 ui.ctx().open_url(egui::OpenUrl::new_tab(app.db.erx.url.trim().to_string()));
                 app.notify("Datos copiados: péguelos en la plataforma, firme la receta y anote aquí el código de verificación.");
@@ -750,7 +787,10 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Receta electrónica oficial");
-        muted(ui, "En la sanidad privada la receta oficial se emite a través de una plataforma de prescripción homologada por los Consejos de dentistas, médicos y farmacéuticos (no del sistema de la comunidad autónoma, que es solo para la sanidad pública). La plataforma valida al colegiado, firma la receta y la hace dispensable en cualquier farmacia.");
+        muted(
+            ui,
+            "En la sanidad privada la receta oficial se emite a través de una plataforma de prescripción homologada por los Consejos de dentistas, médicos y farmacéuticos (no del sistema de la comunidad autónoma, que es solo para la sanidad pública). La plataforma valida al colegiado, firma la receta y la hace dispensable en cualquier farmacia.",
+        );
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             field(ui, "Plataforma homologada que usa la clínica", &mut app.db.erx.platform, 300.0);
@@ -795,7 +835,10 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
 /// Dentistas que recetan: (nombre, tiene nº de colegiado, tiene certificado elegido
 /// en este ordenador). Se mira cada pocos segundos (el certificado está en un fichero).
 fn prescribers(app: &mut App, time: f64) -> Vec<(String, bool, bool)> {
-    if let Some((t, v)) = &app.rx.prescribers && time >= *t && time - *t < 5.0 {
+    if let Some((t, v)) = &app.rx.prescribers
+        && time >= *t
+        && time - *t < 5.0
+    {
         return v.clone();
     }
     let v: Vec<(String, bool, bool)> = app.db.collaborators.iter().filter(|c| c.active && c.license.trim() != "-").map(|c| (c.alias.clone(), !c.license.trim().is_empty(), !crate::erx::cert_path(c.id).trim().is_empty())).collect();
@@ -855,13 +898,24 @@ fn real_pharmacies(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Camino a las farmacias reales");
-        muted(ui, "Para que cualquier farmacia de España dispense estas recetas, los Consejos Generales tienen que certificar el sistema: un auditor revisa 30 controles y se hace una prueba conjunta con Nodofarma. Estos son los pasos, y lo que falta en cada uno.");
+        muted(
+            ui,
+            "Para que cualquier farmacia de España dispense estas recetas, los Consejos Generales tienen que certificar el sistema: un auditor revisa 30 controles y se hace una prueba conjunta con Nodofarma. Estos son los pasos, y lo que falta en cada uno.",
+        );
         ui.add_space(4.0);
         // 1. el circuito
         let (done, text) = match &app.rx.circuit {
             Some((when, steps)) => {
                 let ok = steps.iter().filter(|s| s.ok).count();
-                (ok == steps.len(), format!("{ok} de {} pruebas correctas el {} a las {}: emitir, consultar, PIN de confidencialidad, plazos, dispensar en parte y del todo, anular, bloquear, seguimiento, errores, plan del tratamiento y hoja del paciente.", steps.len(), fmt_date(when.date()), when.format("%H:%M")))
+                (
+                    ok == steps.len(),
+                    format!(
+                        "{ok} de {} pruebas correctas el {} a las {}: emitir, consultar, PIN de confidencialidad, plazos, dispensar en parte y del todo, anular, bloquear, seguimiento, errores, plan del tratamiento y hoja del paciente.",
+                        steps.len(),
+                        fmt_date(when.date()),
+                        when.format("%H:%M")
+                    ),
+                )
             }
             None => (false, "Pruebe el circuito completo con una farmacia simulada, en memoria y sin tocar el repositorio de verdad: son los casos de uso que repasa el auditor.".to_string()),
         };
@@ -989,7 +1043,10 @@ fn direct_panel(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Receta oficial por conexión directa (sistema de prescripción propio)");
-        muted(ui, "El programa guarda las recetas firmadas en un repositorio propio y las farmacias de toda España las consultan, dispensan o bloquean a través de Nodofarma, siguiendo el diseño técnico de los Consejos Generales (servicios del repositorio v2.04.1). Para funcionar con farmacias reales hace falta la certificación del sistema y del repositorio por el CGCOM y el Consejo de Dentistas (auditoría de los controles FT, FD, SC, IN y PD), que asigna los identificadores y entrega el certificado de Nodofarma.");
+        muted(
+            ui,
+            "El programa guarda las recetas firmadas en un repositorio propio y las farmacias de toda España las consultan, dispensan o bloquean a través de Nodofarma, siguiendo el diseño técnico de los Consejos Generales (servicios del repositorio v2.04.1). Para funcionar con farmacias reales hace falta la certificación del sistema y del repositorio por el CGCOM y el Consejo de Dentistas (auditoría de los controles FT, FD, SC, IN y PD), que asigna los identificadores y entrega el certificado de Nodofarma.",
+        );
         ui.add_space(6.0);
         let e = &mut app.db.erx;
         if e.repo_addr.trim().is_empty() {
@@ -1024,7 +1081,15 @@ fn direct_panel(app: &mut App, ui: &mut Ui) {
             if ui.add_enabled(local, egui::Button::new("▶ Iniciar el repositorio en este ordenador")).on_disabled_hover_text("Solo en el ordenador cuya dirección es la del repositorio").clicked() {
                 let e = &app.db.erx;
                 let port = e.repo_addr.rsplit(':').next().and_then(|p| p.trim().parse().ok()).unwrap_or(crate::srep::DEFAULT_PORT);
-                let cfg = crate::srep::RepoConfig { port, key: e.repo_key.trim().to_string(), id_repositorio: e.id_repositorio.trim().to_string(), allowed_ips: vec!["127.0.0.1".into(), "::1".into()], require_cert_header: true, base_path: "/repositorio/api/v1".into(), lan: false };
+                let cfg = crate::srep::RepoConfig {
+                    port,
+                    key: e.repo_key.trim().to_string(),
+                    id_repositorio: e.id_repositorio.trim().to_string(),
+                    allowed_ips: vec!["127.0.0.1".into(), "::1".into()],
+                    require_cert_header: true,
+                    base_path: "/repositorio/api/v1".into(),
+                    lan: false,
+                };
                 match crate::srep::save_config(&cfg).and_then(|_| crate::srep::spawn_local()) {
                     Ok(()) => app.rx.status = "Repositorio arrancando; pulse «Comprobar» en unos segundos.".into(),
                     Err(err) => app.rx.status = format!("No se pudo iniciar: {err}"),
@@ -1058,7 +1123,7 @@ fn direct_panel(app: &mut App, ui: &mut Ui) {
                 }
             }
         });
-        let host =if app.db.erx.public_host.trim().is_empty() { "su-servidor".to_string() } else { app.db.erx.public_host.trim().to_string() };
+        let host = if app.db.erx.public_host.trim().is_empty() { "su-servidor".to_string() } else { app.db.erx.public_host.trim().to_string() };
         muted(ui, format!("Dirección que se comunica al CGCOM (URLRepositorio): https://{host}/repositorio/api/v1/ · Las recetas se firman con el certificado personal de cada dentista (CAdES) y la hoja del paciente lleva un DataMatrix por receta."));
     });
 }

@@ -287,12 +287,7 @@ pub fn publish(db: &Db, today: NaiveDate) -> Published {
         .map(|r| PubReason { name: r.name.clone(), minutes: r.minutes.clamp(5, 240), doctors: docs.iter().copied().filter(|d| r.doctors.is_empty() || r.doctors.contains(d)).collect() })
         .filter(|r| !r.doctors.is_empty())
         .collect();
-    let mut busy: Vec<Busy> = db
-        .appointments
-        .iter()
-        .filter(|a| a.date >= today && a.date <= last && !a.state.is_cancelled() && docs.contains(&a.doctor_id))
-        .map(|a| (a.doctor_id, a.date, mins(a.start), mins(a.start) + a.minutes as i64))
-        .collect();
+    let mut busy: Vec<Busy> = db.appointments.iter().filter(|a| a.date >= today && a.date <= last && !a.state.is_cancelled() && docs.contains(&a.doctor_id)).map(|a| (a.doctor_id, a.date, mins(a.start), mins(a.start) + a.minutes as i64)).collect();
     busy.extend(db.blocks.iter().filter_map(|b| b.date.filter(|d| *d >= today && *d <= last).map(|d| (b.doctor_id, d, mins(b.start), mins(b.end)))));
     // las solicitudes por confirmar guardan su hueco
     busy.extend(db.booking_requests.iter().filter(|r| r.state == ReqState::Pendiente && r.date >= today).map(|r| (r.doctor_id, r.date, mins(r.start), mins(r.start) + r.minutes as i64)));
@@ -385,13 +380,14 @@ impl Db {
         r.state = ReqState::Pendiente;
         let mail = r.email.trim().to_lowercase();
         let known = r.patient_id;
-        r.patient_id = known.or_else(|| self
-            .patients
-            .iter()
-            .filter(|p| p.active)
-            .find(|p| same_phone(&p.mobile, &r.phone) || same_phone(&p.phone, &r.phone))
-            .or_else(|| if mail.is_empty() { None } else { self.patients.iter().find(|p| p.active && p.email.trim().to_lowercase() == mail) })
-            .map(|p| p.id));
+        r.patient_id = known.or_else(|| {
+            self.patients
+                .iter()
+                .filter(|p| p.active)
+                .find(|p| same_phone(&p.mobile, &r.phone) || same_phone(&p.phone, &r.phone))
+                .or_else(|| if mail.is_empty() { None } else { self.patients.iter().find(|p| p.active && p.email.trim().to_lowercase() == mail) })
+                .map(|p| p.id)
+        });
         let id = r.id;
         self.booking_requests.push(r);
         id
@@ -432,12 +428,7 @@ impl Db {
         let center = cid(r.center_id);
         // primer gabinete del centro sin otra cita a esa hora
         let boxes: Vec<u32> = self.boxes.iter().filter(|b| cid(b.center_id) == center).map(|b| b.id).collect();
-        let box_id = boxes
-            .iter()
-            .copied()
-            .find(|b| !self.appointments.iter().any(|a| a.box_id == *b && a.date == r.date && !a.state.is_cancelled() && a.start < r.end() && r.start < a.end()))
-            .or(boxes.first().copied())
-            .unwrap_or(1);
+        let box_id = boxes.iter().copied().find(|b| !self.appointments.iter().any(|a| a.box_id == *b && a.date == r.date && !a.state.is_cancelled() && a.start < r.end() && r.start < a.end())).or(boxes.first().copied()).unwrap_or(1);
         let appt = self.new_id();
         let notes = if r.notes.trim().is_empty() { "Pedida por internet.".to_string() } else { format!("Pedida por internet: {}", r.notes.trim()) };
         self.appointments.push(Appointment {
@@ -584,12 +575,26 @@ pub enum ApptAction {
 /// Lo que llega de la página al programa.
 pub enum WebEvent {
     Booking(Incoming),
-    Appt { appt: u32, action: ApptAction },
-    Budget { budget: u32, action: crate::budget_link::BudgetAction },
-    Doc { doc: u32, action: crate::doc_link::DocAction },
-    Offer { token: String, action: crate::slot_offer::OfferAction },
+    Appt {
+        appt: u32,
+        action: ApptAction,
+    },
+    Budget {
+        budget: u32,
+        action: crate::budget_link::BudgetAction,
+    },
+    Doc {
+        doc: u32,
+        action: crate::doc_link::DocAction,
+    },
+    Offer {
+        token: String,
+        action: crate::slot_offer::OfferAction,
+    },
     /// El paciente ha entrado en «Mis recetas».
-    Rx { patient: u32 },
+    Rx {
+        patient: u32,
+    },
 }
 
 #[derive(Default)]
@@ -665,7 +670,9 @@ fn client_ip(req: &tiny_http::Request) -> String {
     if local {
         // detrás del túnel: la dirección real viene en la cabecera
         for h in ["CF-Connecting-IP", "X-Forwarded-For", "X-Real-IP"] {
-            if let Some(v) = req.headers().iter().find(|x| x.field.equiv(h)) && let Some(first) = v.value.as_str().split(',').next() {
+            if let Some(v) = req.headers().iter().find(|x| x.field.equiv(h))
+                && let Some(first) = v.value.as_str().split(',').next()
+            {
                 return first.trim().to_string();
             }
         }
@@ -902,7 +909,11 @@ fn portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEvent>
                 }
                 "cambiar" => {
                     if !can_modify(p, &link, now) || link.change_pending {
-                        let msg = if link.change_pending { "Ya ha pedido un cambio para esta cita: le avisaremos en cuanto lo revisemos.".to_string() } else { format!("Quedan menos de {} horas para la cita: para cambiarla, llame al {}.", p.cancel_hours, p.phone) };
+                        let msg = if link.change_pending {
+                            "Ya ha pedido un cambio para esta cita: le avisaremos en cuanto lo revisemos.".to_string()
+                        } else {
+                            format!("Quedan menos de {} horas para la cita: para cambiarla, llame al {}.", p.cancel_hours, p.phone)
+                        };
                         drop(g);
                         return fail(req, 409, &msg);
                     }
@@ -1388,7 +1399,10 @@ fn budget_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<We
                     }
                     g.received += 1;
                     drop(g);
-                    (BudgetAction::Accept { signer: name.to_string(), nif: a.nif.trim().to_string(), strokes, installments: a.cuotas, hash: a.huella, ip: ip.to_string() }, format!("¡Gracias, {}! Presupuesto aceptado y firmado. Le enviaremos una copia firmada y le llamaremos para dar las citas.", b.first_name))
+                    (
+                        BudgetAction::Accept { signer: name.to_string(), nif: a.nif.trim().to_string(), strokes, installments: a.cuotas, hash: a.huella, ip: ip.to_string() },
+                        format!("¡Gracias, {}! Presupuesto aceptado y firmado. Le enviaremos una copia firmada y le llamaremos para dar las citas.", b.first_name),
+                    )
                 }
                 "rechazar" => {
                     if !pending {
@@ -1637,7 +1651,27 @@ mod tests {
         // una cita ocupa su hueco
         let first = s[0].0;
         let id = db.new_id();
-        db.appointments.push(Appointment { id, date: day, start: first, minutes: 45, patient_id: Some(100), free_name: String::new(), phone: String::new(), doctor_id: 4, box_id: 4, reason: "x".into(), treatment_code: String::new(), state: ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+        db.appointments.push(Appointment {
+            id,
+            date: day,
+            start: first,
+            minutes: 45,
+            patient_id: Some(100),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 4,
+            box_id: 4,
+            reason: "x".into(),
+            treatment_code: String::new(),
+            state: ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
         let p = publish(&db, today);
         assert!(!slots(&p, &[], now, ri, 0, day).iter().any(|(t, _)| *t == first));
         // ni fines de semana, ni festivos, ni más allá del plazo
@@ -1686,7 +1720,27 @@ mod tests {
         let day = monday_after(today) + Duration::days(14);
         db.holidays.retain(|h| h.date != day);
         let (_, start) = db.find_gaps(1, day, 30, db.config.open_time, db.config.close_time, 1)[0];
-        let req = BookingRequest { id: 0, received: now(), name: "Laura".into(), phone, email: "laura@example.com".into(), reason: "Revisión".into(), minutes: 30, code: "0102".into(), doctor_id: 1, date: day, start, notes: "Prefiero por la mañana".into(), first_visit: false, patient_id: None, state: ReqState::Pendiente, appointment_id: None, answer: String::new(), center_id: 1, replaces: None };
+        let req = BookingRequest {
+            id: 0,
+            received: now(),
+            name: "Laura".into(),
+            phone,
+            email: "laura@example.com".into(),
+            reason: "Revisión".into(),
+            minutes: 30,
+            code: "0102".into(),
+            doctor_id: 1,
+            date: day,
+            start,
+            notes: "Prefiero por la mañana".into(),
+            first_visit: false,
+            patient_id: None,
+            state: ReqState::Pendiente,
+            appointment_id: None,
+            answer: String::new(),
+            center_id: 1,
+            replaces: None,
+        };
         // tenía pendiente su revisión: al confirmar la cita deja de recibir el «pida su cita»
         db.appointments.retain(|a| a.patient_id != Some(pid) || a.date < today);
         db.recalls.retain(|r| r.patient_id != pid);
@@ -1729,7 +1783,9 @@ mod tests {
             println!("presupuesto: http://127.0.0.1:18791/presupuesto/{t}");
         }
         // y un consentimiento para firmar
-        if let Some(tid) = db.doc_templates.iter().find(|t| t.name.contains("implantes")).map(|t| t.id) && let Some(doc) = db.new_document(101, tid, &[36]) {
+        if let Some(tid) = db.doc_templates.iter().find(|t| t.name.contains("implantes")).map(|t| t.id)
+            && let Some(doc) = db.new_document(101, tid, &[36])
+        {
             let t = db.doc_token(doc);
             println!("documento: http://127.0.0.1:18791/documento/{t}");
         }
@@ -1844,7 +1900,27 @@ mod tests {
             day += Duration::days(1);
         }
         let id = db.new_id();
-        db.appointments.push(Appointment { id, date: day, start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(), minutes: 30, patient_id: Some(101), free_name: String::new(), phone: String::new(), doctor_id: 2, box_id: 2, reason: "Revisión implante".into(), treatment_code: "0102".into(), state: ApptState::Planificada, notes: "Paciente muy nervioso".into(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+        db.appointments.push(Appointment {
+            id,
+            date: day,
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            minutes: 30,
+            patient_id: Some(101),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 2,
+            box_id: 2,
+            reason: "Revisión implante".into(),
+            treatment_code: "0102".into(),
+            state: ApptState::Planificada,
+            notes: "Paciente muy nervioso".into(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
         let token = db.appt_token(id);
         let srv = listen(0, false, publish(&db, today), || {}).unwrap();
         let base = format!("http://127.0.0.1:{}", srv.port);
@@ -2037,7 +2113,27 @@ mod tests {
             day += Duration::days(1);
         }
         let appt = db.new_id();
-        db.appointments.push(Appointment { id: appt, date: day, start: NaiveTime::from_hms_opt(10, 0, 0).unwrap(), minutes: 60, patient_id: Some(101), free_name: String::new(), phone: String::new(), doctor_id: 2, box_id: 2, reason: "Implante 36".into(), treatment_code: "0701".into(), state: ApptState::Planificada, notes: String::new(), arrived_at: None, seen_at: None, finished_at: None, reminder_sent: false, first_visit: false, center_id: 1 });
+        db.appointments.push(Appointment {
+            id: appt,
+            date: day,
+            start: NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+            minutes: 60,
+            patient_id: Some(101),
+            free_name: String::new(),
+            phone: String::new(),
+            doctor_id: 2,
+            box_id: 2,
+            reason: "Implante 36".into(),
+            treatment_code: "0701".into(),
+            state: ApptState::Planificada,
+            notes: String::new(),
+            arrived_at: None,
+            seen_at: None,
+            finished_at: None,
+            reminder_sent: false,
+            first_visit: false,
+            center_id: 1,
+        });
         let appt_token = Some(db.appt_token(appt));
         let srv = listen(0, false, publish(&db, today), || {}).unwrap();
         let base = format!("http://127.0.0.1:{}", srv.port);

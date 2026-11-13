@@ -258,8 +258,17 @@ fn messages(app: &mut App, ui: &mut Ui) {
                     if let Some(ob) = &app.comms.outbox {
                         ui.add(egui::Spinner::new().size(16.0));
                         ui.label(RichText::new(format!("Enviando correos: {} de {}…", ob.done, ob.total)).color(MUTED));
-                    } else if !emails.is_empty() && app.db.mail.ready()
-                        && ui.add(egui::Button::new(RichText::new(format!("✉ Enviar por correo ({})", emails.len())).color(Color32::WHITE).font(sbf(14.0))).fill(channel_color(Channel::Email)).corner_radius(CornerRadius::same(10)).min_size(egui::vec2(0.0, 36.0))).on_hover_text("Envía ahora todos los correos pendientes desde el programa").clicked()
+                    } else if !emails.is_empty()
+                        && app.db.mail.ready()
+                        && ui
+                            .add(
+                                egui::Button::new(RichText::new(format!("✉ Enviar por correo ({})", emails.len())).color(Color32::WHITE).font(sbf(14.0)))
+                                    .fill(channel_color(Channel::Email))
+                                    .corner_radius(CornerRadius::same(10))
+                                    .min_size(egui::vec2(0.0, 36.0)),
+                            )
+                            .on_hover_text("Envía ahora todos los correos pendientes desde el programa")
+                            .clicked()
                     {
                         start_outbox(app, emails, false);
                     }
@@ -351,23 +360,19 @@ fn detail(app: &mut App, ui: &mut Ui) {
         muted(ui, format!("Para: {}", m.to));
         ui.add_space(6.0);
         // burbuja de chat
-        egui::Frame::new()
-            .fill(if m.channel == Channel::WhatsApp { Color32::from_rgb(220, 248, 198) } else { Color32::from_rgb(238, 242, 248) })
-            .corner_radius(CornerRadius::same(12))
-            .inner_margin(egui::Margin::same(12))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                if let Some(mm) = app.db.messages.iter_mut().find(|x| x.id == id) {
-                    if mm.channel == Channel::Email {
-                        ui.add(egui::TextEdit::singleline(&mut mm.subject).desired_width(f32::INFINITY));
-                    }
-                    let enabled = mm.state == MsgState::Pendiente;
-                    let r = ui.add_enabled(enabled, egui::TextEdit::multiline(&mut mm.text).desired_rows(5).desired_width(f32::INFINITY).frame(egui::Frame::NONE));
-                    if r.changed() {
-                        app.dirty = true;
-                    }
+        egui::Frame::new().fill(if m.channel == Channel::WhatsApp { Color32::from_rgb(220, 248, 198) } else { Color32::from_rgb(238, 242, 248) }).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(12)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if let Some(mm) = app.db.messages.iter_mut().find(|x| x.id == id) {
+                if mm.channel == Channel::Email {
+                    ui.add(egui::TextEdit::singleline(&mut mm.subject).desired_width(f32::INFINITY));
                 }
-            });
+                let enabled = mm.state == MsgState::Pendiente;
+                let r = ui.add_enabled(enabled, egui::TextEdit::multiline(&mut mm.text).desired_rows(5).desired_width(f32::INFINITY).frame(egui::Frame::NONE));
+                if r.changed() {
+                    app.dirty = true;
+                }
+            }
+        });
         let len = m.text.chars().count();
         if m.channel == Channel::Sms {
             muted(ui, format!("{len} caracteres · {} SMS", len.div_ceil(160).max(1)));
@@ -479,12 +484,16 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                             });
                         });
                         ui.vertical(|ui| {
-                            ui.label(RichText::new(match t.kind {
-                                MsgKind::RecordatorioCita => "Días antes de la cita",
-                                MsgKind::Recall => "Días de antelación",
-                                MsgKind::PresupuestoPendiente => "Días sin respuesta",
-                                _ => "Días",
-                            }).size(13.5).color(MUTED));
+                            ui.label(
+                                RichText::new(match t.kind {
+                                    MsgKind::RecordatorioCita => "Días antes de la cita",
+                                    MsgKind::Recall => "Días de antelación",
+                                    MsgKind::PresupuestoPendiente => "Días sin respuesta",
+                                    _ => "Días",
+                                })
+                                .size(13.5)
+                                .color(MUTED),
+                            );
                             ui.add(egui::DragValue::new(&mut t.days).range(0..=60));
                         });
                     });
@@ -511,7 +520,10 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                 if let Some(pid) = pid {
                     ui.add_space(8.0);
                     section(ui, &format!("Vista previa con {}", app.db.patient_name(pid)));
-                    let site = { let b = app.db.booking.public_url.trim().trim_end_matches('/'); if b.is_empty() { "https://citas.suclinica.es".to_string() } else { b.to_string() } };
+                    let site = {
+                        let b = app.db.booking.public_url.trim().trim_end_matches('/');
+                        if b.is_empty() { "https://citas.suclinica.es".to_string() } else { b.to_string() }
+                    };
                     let extra = [
                         ("[HORA]", "10:30".to_string()),
                         ("[MOTIVO]", "revisión".to_string()),
@@ -615,7 +627,22 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
                 } else {
                     let id = app.db.new_id();
                     let text = app.db.fill(&std::mem::take(&mut app.comms.free_text), pid, &[]);
-                    let m = Message { id, patient_id: pid, kind: MsgKind::Libre, channel: ch, to, subject: app.db.config.name.clone(), text, created: now(), sent_at: None, state: MsgState::Pendiente, related: None, user: app.db.config.current_user.clone(), error: String::new(), attempts: 0 };
+                    let m = Message {
+                        id,
+                        patient_id: pid,
+                        kind: MsgKind::Libre,
+                        channel: ch,
+                        to,
+                        subject: app.db.config.name.clone(),
+                        text,
+                        created: now(),
+                        sent_at: None,
+                        state: MsgState::Pendiente,
+                        related: None,
+                        user: app.db.config.current_user.clone(),
+                        error: String::new(),
+                        attempts: 0,
+                    };
                     app.db.messages.push(m.clone());
                     let ctx = ui.ctx().clone();
                     send(app, &ctx, &m);
