@@ -1367,3 +1367,74 @@ mod big_bank_tests {
         assert_eq!(db.auto_reconcile(), 0);
     }
 }
+
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use crate::test_rng::Rng;
+
+    /// Extractos Norma 43 al azar (registros con campos cualquiera y ficheros
+    /// reales estropeados): nunca se cae, y lo que lee tiene fechas e importes
+    /// con sentido.
+    #[test]
+    fn norma43_survives_random_files() {
+        let mut rng = Rng(0x5eed_0043);
+        let rec = |rng: &mut Rng| -> String {
+            let kind = ["11", "22", "23", "33", "88", "24", "xx"][rng.below(7)];
+            let len = rng.below(90);
+            let alphabet: Vec<char> = "0123456789 ABCDEFGHIJKLMNñ-+.,".chars().collect();
+            let body: String = (0..len).map(|_| alphabet[rng.below(alphabet.len())]).collect();
+            format!("{kind}{body}")
+        };
+        let real =
+            "11210004180200051332261101261130200000000100000978CLINICA DENTAL\n22    000126110326110302000200000000030000000000000000R1\n2301TRANSFERENCIA ANA\n33210004180200051332000000000000000000010000000000300002000000000000000978    \n88\n";
+        for i in 0..3_000 {
+            let text = if i % 2 == 0 {
+                let n = rng.below(12);
+                (0..n).map(|_| rec(&mut rng)).collect::<Vec<_>>().join("\n")
+            } else {
+                String::from_utf8_lossy(&rng.mutate(real.as_bytes())).into_owned()
+            };
+            let iban = ["", "ES9121000418450200051332", "ES00", "XX12"][rng.below(4)];
+            if let Ok(moves) = parse_norma43_for(&text, iban) {
+                for m in moves {
+                    assert!(m.amount.is_finite() && m.amount.abs() < 1e13, "{}", m.amount);
+                    assert!((2000..2100).contains(&m.date.year()));
+                }
+            }
+        }
+    }
+
+    /// Hojas de extracto e importes al azar: nunca se cae, y lo que lee son
+    /// importes finitos, distintos de cero y con fecha razonable.
+    #[test]
+    fn statement_tables_and_amounts_survive_random_input() {
+        let mut rng = Rng(0x5eed_0c5f);
+        let headers = ["Fecha", "F. Valor", "Concepto", "Descripción", "Importe", "Importe cargo", "Importe abono", "Cargo", "Abono", "Saldo", "Otra"];
+        let cell = |rng: &mut Rng| -> String {
+            match rng.below(6) {
+                0 => format!("{:02}/{:02}/{}", rng.below(35), rng.below(14), [26, 2026, 1899, 99999][rng.below(4)]),
+                1 => format!("{}{},{:02}", ["", "-", "−", "("][rng.below(4)], rng.below(100_000), rng.below(100)),
+                2 => format!("{}.{}", rng.below(1000), rng.below(1000)),
+                3 => String::new(),
+                4 => (0..rng.below(20)).map(|_| char::from_u32(32 + rng.below(9000) as u32).unwrap_or('?')).collect(),
+                _ => rng.below(80000).to_string(),
+            }
+        };
+        for _ in 0..2_000 {
+            let n = 1 + rng.below(5);
+            let hs: Vec<String> = (0..n).map(|_| headers[rng.below(headers.len())].to_string()).collect();
+            let rows: Vec<Vec<String>> = (0..rng.below(8)).map(|_| (0..n).map(|_| cell(&mut rng)).collect()).collect();
+            if let Ok(moves) = parse_bank_table(&crate::extra::Sheet { headers: hs, rows }) {
+                for m in moves {
+                    assert!(m.amount.is_finite() && m.amount.abs() >= 0.005);
+                    assert!((1990..=2100).contains(&m.date.year()));
+                }
+            }
+            let s = cell(&mut rng);
+            if let Some(v) = crate::extra::parse_money(&s) {
+                assert!(v.is_finite(), "{s}");
+            }
+        }
+    }
+}

@@ -48,6 +48,8 @@ mod srep_doc;
 mod stock;
 mod sync;
 mod tasks;
+#[cfg(test)]
+mod test_rng;
 mod theme;
 mod tools;
 mod totp;

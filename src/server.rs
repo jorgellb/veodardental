@@ -2967,6 +2967,153 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// La respuesta del servidor se pierde y el puesto vuelve a mandar lo
+    /// mismo: no se duplica nada (ni cobros ni recibos).
+    #[test]
+    fn a_push_resent_after_a_lost_answer_changes_nothing() {
+        let (addr, path, h) = start("CLAVE38");
+        let ra = signed_in(&addr, "CLAVE38", "Recepción", 2, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        a.station = ra.station;
+        let id = a.add_payment(101, 25.0, "Tarjeta", "Pago");
+        // lo que el puesto tenía antes de mandarlo (la respuesta no le llega)
+        let (mut again, mut stale) = (a.clone(), sa.clone());
+        ra.push(&mut a, &mut sa).unwrap();
+        let after_first = crate::sync::on_disk(&path);
+        ra.push(&mut again, &mut stale).unwrap();
+        let after_second = crate::sync::on_disk(&path);
+        assert_eq!(after_second.payments.iter().filter(|p| p.id == id).count(), 1);
+        assert_eq!(after_second.payments.len(), after_first.payments.len(), "nada nuevo");
+        assert_eq!(serde_json::to_value(&*after_second.payments).unwrap(), serde_json::to_value(&*after_first.payments).unwrap());
+        ra.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// El servidor se reinicia (o se va la luz): arranca con todo lo
+    /// guardado y los puestos siguen donde estaban.
+    #[test]
+    fn the_server_restarts_with_everything_and_stations_carry_on() {
+        let (addr, path, h) = start("CLAVE39");
+        let ra = signed_in(&addr, "CLAVE39", "Recepción", 2, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        a.station = ra.station;
+        let id = a.add_payment(101, 25.0, "Tarjeta", "Antes del reinicio");
+        ra.push(&mut a, &mut sa).unwrap();
+        ra.stop().unwrap();
+        h.join().unwrap();
+        // arranca otra vez con lo que hay en disco (fichero y diario)
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr2 = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let initial = crate::sync::on_disk(&path);
+        let rev = initial.rev;
+        let p2 = path.clone();
+        let h2 = std::thread::spawn(move || serve(listener, p2, "CLAVE39".into(), new_identity().unwrap(), initial));
+        let rb = signed_in(&addr2, "CLAVE39", "Recepción", 2, "0000");
+        let (mut b, mut sb) = rb.load().unwrap();
+        b.station = rb.station;
+        assert!(b.payments.iter().any(|p| p.id == id), "lo de antes sigue");
+        assert!(b.rev >= rev, "la revisión no vuelve atrás");
+        let id2 = b.add_payment(102, 10.0, "Efectivo", "Después");
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!(disk.payments.iter().any(|p| p.id == id) && disk.payments.iter().any(|p| p.id == id2));
+        rb.stop().unwrap();
+        h2.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Si no se puede escribir en el disco (lleno, sin permiso), el cambio no
+    /// queda a medias: el servidor sigue con lo de antes, el puesto recibe el
+    /// error y, cuando se puede escribir, se guarda entero.
+    #[test]
+    fn a_failed_write_leaves_nothing_half_saved() {
+        let dir = std::env::temp_dir().join(format!("ds_server_write_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let mut st = State::new(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), path.clone(), "CLAVE40", vec![]);
+        st.rewrite().unwrap();
+        let before = st.snap.clone();
+        let rev = st.rev();
+        let mut db = st.snap.to_db().unwrap();
+        let id = db.add_payment(101, 25.0, "Tarjeta", "Pago");
+        let changes = crate::sync::diff(&before, &Snapshot::from_db(&db));
+        // el diario no se puede escribir
+        st.journal = Some(std::fs::File::open(crate::sync::journal_path(&path)).unwrap());
+        assert!(st.save(changes.clone(), 1, 1).is_err());
+        assert_eq!(st.rev(), rev, "la revisión no avanza");
+        assert!(st.snap == before, "el servidor sigue con lo de antes");
+        assert!(!crate::sync::on_disk(&path).payments.iter().any(|p| p.id == id), "en disco, nada a medias");
+        // ya se puede escribir: el mismo cambio se guarda entero
+        st.journal = None;
+        st.save(changes, 1, 1).unwrap();
+        assert!(crate::sync::on_disk(&path).payments.iter().any(|p| p.id == id));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// El lector de peticiones con bytes al azar y con peticiones reales
+    /// estropeadas: nunca se cae ni lee de más.
+    #[test]
+    fn the_request_reader_survives_random_bytes() {
+        let mut rng = crate::test_rng::Rng(0x5eed_0001);
+        let peer = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let real: [&[u8]; 3] =
+            [b"POST /cambios?base=3 HTTP/1.1\r\nX-Clave: K\r\nX-Sesion: abc\r\nContent-Length: 2\r\n\r\n{}", b"GET /datos HTTP/1.1\r\nX-Clave: K\r\n\r\n", b"POST /cadena HTTP/1.1\r\nContent-Length: 30\r\n\r\n{\"accion\":\"conciliar\"}"];
+        for i in 0..20_000 {
+            let n = rng.below(400);
+            let input = if i % 3 == 0 { rng.bytes(n) } else { rng.mutate(real[i % 3]) };
+            let mut r = std::io::BufReader::new(&input[..]);
+            if let Ok(Some(mut req)) = read_head(&mut r, peer)
+                && read_body(&mut r, &mut req, 4096).is_ok()
+            {
+                assert!(req.body.len() <= 4096);
+            }
+        }
+    }
+
+    /// El servidor con peticiones al azar y con peticiones reales estropeadas
+    /// (con sesión y sin ella): nunca se cae, contesta con un código, y sus
+    /// datos se siguen pudiendo leer.
+    #[test]
+    fn the_server_survives_random_requests_and_its_data_stays_readable() {
+        let dir = std::env::temp_dir().join(format!("ds_server_fuzz_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = State::new(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), dir.join("clinica.json"), "CLAVE42", vec![1; 32]);
+        st.rewrite().unwrap();
+        let token = st.new_session(1, 1);
+        let mut db = st.snap.to_db().unwrap();
+        db.add_payment(101, 25.0, "Tarjeta", "Pago");
+        let changes = crate::sync::diff(&st.snap, &Snapshot::from_db(&db));
+        let bodies: Vec<Vec<u8>> = vec![
+            json!({ "cambios": changes }).to_string().into_bytes(),
+            ChainOp::Reconcile.json().to_string().into_bytes(),
+            ChainOp::ImportBank { account: 1, moves: vec![crate::bank::RawMove { date: NaiveDate::from_ymd_opt(2026, 11, 6).unwrap(), amount: 5.0, concept: "X".into(), reference: String::new() }] }.json().to_string().into_bytes(),
+            json!({ "usuario": 1, "contrasena": "0000" }).to_string().into_bytes(),
+            b"{}".to_vec(),
+        ];
+        let paths = ["/acceso", "/registro", "/entrar", "/codigo", "/estado", "/datos", "/cambios", "/cadena", "/movil", "/pin", "/nada", "/../../etc/passwd"];
+        let mut rng = crate::test_rng::Rng(0x5eed_0002);
+        let peer = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 7));
+        for i in 0..4_000 {
+            let (n, k) = (rng.below(300), rng.below(bodies.len()));
+            let body = if i % 4 == 0 { rng.bytes(n) } else { rng.mutate(&bodies[k]) };
+            let mut headers = vec![("X-Clave".to_string(), if rng.below(10) == 0 { "MAL".to_string() } else { "CLAVE42".to_string() })];
+            if rng.below(4) > 0 {
+                headers.push(("X-Sesion".to_string(), token.clone()));
+            }
+            let query = ["", "base=3", "base=-1", "base=99999999999999999999", "reto=zz"][rng.below(5)].to_string();
+            let req = Request { method: ["GET", "POST", "PUT"][rng.below(3)].into(), path: paths[rng.below(paths.len())].into(), query, headers, body, peer };
+            let (resp, _) = st.handle(&req, "CLAVE42");
+            assert!((200..600).contains(&resp.code), "{}", resp.code);
+            // (tantas peticiones seguidas acaban en «demasiados intentos»: se olvidan)
+            st.key_fails.clear();
+            st.logins.clear();
+        }
+        assert!(st.snap.to_db().is_ok(), "los datos se siguen leyendo");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn an_installment_paid_by_two_stations_at_once_is_charged_once() {
         use crate::app::ChainOp;

@@ -295,19 +295,57 @@ pub fn save_synced(db: &mut Db, base: &mut Value, path: &Path) -> Result<Synced,
 /// datos ya al día (con lo de los demás puestos) antes de guardarlos: para lo
 /// que tiene que hacer un puesto solo, como numerar una factura.
 pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl FnOnce(&mut Db) -> R) -> Result<(Synced, R), String> {
+    let had = db.station;
+    let out = save_synced_as(db, base, path, &station_label(), f)?;
+    // el número que ha recibido este ordenador queda para la próxima vez
+    if db.station != had {
+        let _ = save_station(&Station { number: db.station, ..station().clone() });
+    }
+    Ok(out)
+}
+
+/// Minutos durante los que un número de puesto se considera en uso por el
+/// último ordenador que guardó con él.
+const STATION_BUSY_MIN: i64 = 30;
+
+/// Número de puesto del ordenador `who` en la carpeta compartida (de 1 a 15):
+/// - el que tiene, si ningún otro ordenador lo está usando;
+/// - si no tiene, el que usó antes ese ordenador o el primero libre.
+pub fn pick_station(seen: &[StationSeen], current: u32, who: &str, now: NaiveDateTime) -> Result<u32, String> {
+    if current > 0 {
+        if let Some(o) = seen.iter().find(|s| s.id == current && s.name != who && now - s.last_seen < chrono::Duration::minutes(STATION_BUSY_MIN)) {
+            return Err(format!(
+                "Este ordenador tiene el número de puesto {current}, que está usando también «{}» (hace {} min). Cada ordenador necesita uno distinto: cámbielo en Configuración › Puestos. No se ha guardado.",
+                o.name,
+                (now - o.last_seen).num_minutes()
+            ));
+        }
+        return Ok(current);
+    }
+    if let Some(mine) = seen.iter().find(|s| s.name == who) {
+        return Ok(mine.id);
+    }
+    let used: std::collections::HashSet<u32> = seen.iter().map(|s| s.id).collect();
+    (1..=15).find(|n| !used.contains(n)).ok_or_else(|| "Ya hay 15 puestos en la carpeta compartida: no caben más. Pase a trabajar con el servidor de la clínica.".to_string())
+}
+
+/// [`save_synced_with`] desde el ordenador `who`.
+pub fn save_synced_as<R>(db: &mut Db, base: &mut Value, path: &Path, who: &str, f: impl FnOnce(&mut Db) -> R) -> Result<(Synced, R), String> {
+    let who = who.to_string();
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let who = station_label();
     let _lock = acquire(dir, &who)?;
-    if db.station > 0 {
-        let now = crate::model::now();
-        db.stations.retain(|s| s.id != db.station);
-        db.stations.push(StationSeen { id: db.station, name: who.clone(), last_seen: now });
-    }
     let disk: Option<Value> = match std::fs::read_to_string(path) {
         Ok(t) => Some(serde_json::from_str(&t).map_err(|e| format!("El fichero de datos compartido está dañado: {e}"))?),
         Err(_) => None,
     };
+    // cada ordenador, su número de puesto: de él salen los identificadores y
+    // los recibos (sin él, o con el de otro, dos puestos sacarían los mismos)
+    let now = crate::model::now();
+    let seen: Vec<StationSeen> = disk.as_ref().and_then(|d| serde_json::from_value(d["stations"].clone()).ok()).unwrap_or_default();
+    db.station = pick_station(&seen, db.station, &who, now)?;
+    db.stations.retain(|s| s.id != db.station);
+    db.stations.push(StationSeen { id: db.station, name: who.clone(), last_seen: now });
     // lo firmado del fichero se queda como está (ver `firmado`)
     let signed = disk.as_ref().map(crate::firmado::SignedOnDisk::read);
     let outcome = match disk {
@@ -694,6 +732,110 @@ mod tests {
         let second = save_synced_with(&mut b, &mut base_b, &path, |db| db.match_bank_move(id("TRANSFERENCIA LUIS"), Match::Payments(vec![pid]))).unwrap().1;
         assert!(second.unwrap_err().contains("con otro movimiento"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Dos ordenadores de la carpeta compartida sin número de puesto (o con
+    /// el mismo) sacaban los mismos identificadores y los mismos recibos: dos
+    /// pacientes nuevos a la vez quedaban en uno. Ahora cada ordenador recibe
+    /// su número al guardar, y uno repetido se rechaza.
+    #[test]
+    fn each_computer_gets_its_own_station_number_in_the_shared_folder() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_station_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        prepare_folder(&Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap()), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        let (mut b, mut base_b) = load();
+        (a.station, b.station) = (0, 0);
+        // cada uno guarda una vez (al arrancar) y recibe su número
+        save_synced_as(&mut a, &mut base_a, &path, "Recepción", |_| ()).unwrap();
+        save_synced_as(&mut b, &mut base_b, &path, "Gabinete", |_| ()).unwrap();
+        assert!(a.station > 0 && b.station > 0 && a.station != b.station, "{} y {}", a.station, b.station);
+        // y dan de alta un paciente cada uno a la vez
+        let mut pa = a.patients[0].clone();
+        (pa.id, pa.first_name, pa.history_no) = (a.new_id(), "Uno".into(), 9001);
+        a.patients.push(pa.clone());
+        let mut pb = b.patients[0].clone();
+        (pb.id, pb.first_name, pb.history_no) = (b.new_id(), "Otro".into(), 9002);
+        b.patients.push(pb.clone());
+        let ra = a.add_payment(pa.id, 10.0, "Efectivo", "");
+        let rb = b.add_payment(pb.id, 10.0, "Efectivo", "");
+        save_synced_as(&mut a, &mut base_a, &path, "Recepción", |_| ()).unwrap();
+        save_synced_as(&mut b, &mut base_b, &path, "Gabinete", |_| ()).unwrap();
+        let (disk, _) = load();
+        assert_ne!(pa.id, pb.id);
+        assert!(disk.patient(pa.id).is_some_and(|p| p.first_name == "Uno") && disk.patient(pb.id).is_some_and(|p| p.first_name == "Otro"), "los dos pacientes");
+        let rec = |id: u32| disk.payments.iter().find(|p| p.id == id).unwrap().receipt_no.clone();
+        assert_ne!(rec(ra), rec(rb), "recibos distintos");
+        // un ordenador con el número de otro que está trabajando: no se guarda
+        let (mut c, mut base_c) = load();
+        c.station = a.station;
+        let e = save_synced_as(&mut c, &mut base_c, &path, "Despacho", |_| ()).err().expect("no se guarda");
+        assert!(e.contains("Recepción"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Dos puestos hacen cambios al azar sobre los mismos datos y se
+    /// combinan (cientos de veces, con semilla fija): el resultado se puede
+    /// leer, no se pierde nada de lo que creó cualquiera de los dos, lo que
+    /// cambió solo uno queda como lo dejó, y combinar es repetible.
+    #[test]
+    fn merging_random_edits_keeps_what_each_station_did() {
+        let mut rng = crate::test_rng::Rng(0x5eed_3e26);
+        let base_db = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap());
+        let base = serde_json::to_value(&base_db).unwrap();
+        let pids: Vec<u32> = base_db.patients.iter().map(|p| p.id).collect();
+        for _ in 0..150 {
+            let (mut a, mut b) = (base_db.clone(), base_db.clone());
+            (a.station, b.station) = (1, 2);
+            let mut created = vec![];
+            // (paciente, móvil) que solo cambia un puesto
+            let mut only: Vec<(u32, String)> = vec![];
+            // A cambia solo los suyos; B, solo los demás (lo que cambian los dos es un conflicto, otra cosa)
+            let touched_by_a: Vec<u32> = (0..1 + rng.below(4)).map(|_| pids[rng.below(pids.len())]).collect();
+            for (k, db) in [&mut a, &mut b].into_iter().enumerate() {
+                for _ in 0..rng.below(6) {
+                    match rng.below(3) {
+                        0 => {
+                            let pid = pids[rng.below(pids.len())];
+                            created.push(db.add_payment(pid, 1.0 + rng.below(500) as f64, "Tarjeta", "Prueba"));
+                        }
+                        1 => {
+                            let pid = if k == 0 { touched_by_a[rng.below(touched_by_a.len())] } else { pids[rng.below(pids.len())] };
+                            if k == 1 && touched_by_a.contains(&pid) {
+                                continue;
+                            }
+                            let mobile = format!("6{:08}", rng.below(99_999_999));
+                            db.patient_mut(pid).unwrap().mobile = mobile.clone();
+                            only.retain(|(p, _)| *p != pid);
+                            only.push((pid, mobile));
+                        }
+                        _ => {
+                            let id = db.new_id();
+                            created.push(id);
+                            let t = crate::tasks::Task { id, ..db.tasks[0].clone() };
+                            db.tasks.push(t);
+                        }
+                    }
+                }
+            }
+            let (ja, jb) = (serde_json::to_value(&a).unwrap(), serde_json::to_value(&b).unwrap());
+            let mut conflicts = 0;
+            let m = merge(Some(&base), &ja, &jb, &mut conflicts);
+            assert_eq!(m, merge(Some(&base), &ja, &jb, &mut 0), "repetible");
+            let out: Db = serde_json::from_value(m).expect("se puede leer");
+            for id in &created {
+                assert!(out.payments.iter().any(|p| p.id == *id) || out.tasks.iter().any(|t| t.id == *id), "se perdió {id}");
+            }
+            for (pid, mobile) in &only {
+                assert_eq!(&out.patient(*pid).unwrap().mobile, mobile);
+            }
+        }
     }
 
     #[test]

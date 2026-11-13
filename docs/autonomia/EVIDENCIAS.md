@@ -389,3 +389,28 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 375 pasan, 0 fallan, 10 ignoradas |
+
+## E-019 T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar
+- **Inventario y resultados:** `docs/autonomia/concurrencia.md`.
+- **Defecto demostrado y corregido (D1):** en la carpeta compartida, dos ordenadores sin número de puesto (0) o con el mismo sacaban los mismos identificadores y recibos. La prueba `shared::tests::each_computer_gets_its_own_station_number_in_the_shared_folder` fallaba antes del arreglo con «0 y 0». Ahora `shared::pick_station` da un número libre al guardar y rechaza uno en uso.
+- **Pruebas nuevas:**
+  - **Comprueban lo que ya funcionaba**, y quedan como regresión:
+    - `server::tests::a_push_resent_after_a_lost_answer_changes_nothing`
+    - `server::tests::the_server_restarts_with_everything_and_stations_carry_on`
+    - `server::tests::a_failed_write_leaves_nothing_half_saved`
+  - **Entradas al azar con semilla fija** (`test_rng::Rng`):
+    - `server::tests::the_request_reader_survives_random_bytes`
+    - `server::tests::the_server_survives_random_requests_and_its_data_stays_readable`
+    - `bank::fuzz::norma43_survives_random_files`
+    - `bank::fuzz::statement_tables_and_amounts_survive_random_input`
+    - `shared::tests::merging_random_edits_keeps_what_each_station_did`
+- **Notas de las pruebas al azar:**
+  - Un fallo de la prueba de combinación (un mismo paciente cambiado por los dos puestos) era de la propia prueba: es un conflicto, no un cambio de uno solo. Se corrigió la prueba, no el código.
+  - El servidor con peticiones al azar llegó a aceptar cambios en `/cambios`, leer `/datos` y rechazar con 400 (histograma comprobado durante la prueba).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 384 pasan, 0 fallan, 10 ignoradas |

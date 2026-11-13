@@ -1652,8 +1652,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Cada flujo con prueba de dos puestos a la vez",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-019"
+   ]
   },
   {
    "id": "T-F1-12b",
@@ -1665,8 +1667,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de cada caso en los flujos afectados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-019"
+   ]
   },
   {
    "id": "T-F1-12c",
@@ -1678,8 +1682,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de rechazo sin pánico ni consumo descontrolado",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-019"
+   ]
   },
   {
    "id": "T-F1-12d",
@@ -1691,8 +1697,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Generador con semilla fija sobre combinación de cambios, protocolo, CSV y Norma 43",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-019"
+   ]
   },
   {
    "id": "T-F1-13",
@@ -1706,8 +1714,10 @@
     "T-F1-A5-REV"
    ],
    "criterio": "Prueba con oráculo independiente para cada total de informes",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-011"
+   ]
   },
   {
    "id": "T-F2-01",
