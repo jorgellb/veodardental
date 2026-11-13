@@ -19,7 +19,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A2: recetas y vademécum | E-007 | `00838cc` |
 | Revisión de seguridad de las áreas 1 y 2 | E-008 | `7c55ab2` |
 | T-F1-A3: odontograma, periodontograma e historial | E-009 | `dee610b` |
-| T-F1-A4: bancos y conciliación | E-010 | (este lote) |
+| T-F1-A4: bancos y conciliación | E-010 | `d6f2e0a` |
 
 ## Siguiente acción
 1. T-F1-A5: informes.
