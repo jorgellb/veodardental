@@ -455,7 +455,78 @@ impl Db {
     pub fn delete_entry(&mut self, id: u32) -> Result<(), String> {
         self.can_delete_entry(id)?;
         let e = self.entries.iter().find(|e| e.id == id).cloned().ok_or("El tratamiento ya no existe.")?;
-        // cada cosa vuelve a su lote
+        self.return_entry_material(&e, "tratamiento borrado");
+        for w in self.lab_works.iter_mut().filter(|w| w.entry_id == Some(id)) {
+            w.entry_id = None;
+        }
+        let what = format!("{} · {}", self.patient_name(e.patient_id), e.description);
+        self.audit("Borrar tratamiento", &what);
+        self.entries.retain(|x| x.id != id);
+        Ok(())
+    }
+
+    /// Un tratamiento marcado como hecho por error vuelve a previsto: el
+    /// material que gastó vuelve a su lote y sigue en su presupuesto (que se
+    /// reabre si se había cerrado con él). Facturado o liquidado a la mutua, no.
+    pub fn unrealize_entry(&mut self, id: u32) -> Result<(), String> {
+        self.can_delete_entry(id)?;
+        let e = self.entries.iter().find(|e| e.id == id).cloned().ok_or("El tratamiento ya no existe.")?;
+        if e.state != TxState::Realizado {
+            return Err("Solo vuelve a previsto un tratamiento hecho.".into());
+        }
+        self.return_entry_material(&e, "vuelve a previsto");
+        if let Some(x) = self.entries.iter_mut().find(|x| x.id == id) {
+            x.state = TxState::Previsto;
+        }
+        if let Some(bid) = e.budget_id
+            && let Some(b) = self.budgets.iter_mut().find(|b| b.id == bid)
+            && b.state == crate::model::BudgetState::Cerrado
+        {
+            b.state = crate::model::BudgetState::Aceptado;
+        }
+        let what = format!("{} · {} ({})", self.patient_name(e.patient_id), e.description, fmt_date(e.date));
+        self.audit("Tratamiento vuelto a previsto", &what);
+        Ok(())
+    }
+
+    /// Carpeta compartida: consumos de material que este puesto acaba de
+    /// apuntar para un tratamiento que otro puesto ya gastó a la vez (en el
+    /// fichero, `disk`): se quitan y su cantidad vuelve a las existencias.
+    pub fn drop_double_consumption(&mut self, disk: &serde_json::Value) {
+        let on_disk: std::collections::HashSet<u64> = disk["stock_moves"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_u64()).collect();
+        let ours: Vec<StockMove> = self.stock_moves.iter().filter(|m| m.entry_id.is_some() && !on_disk.contains(&(m.id as u64))).cloned().collect();
+        if !ours.iter().any(|m| m.qty < 0.0) {
+            return;
+        }
+        let mut net: std::collections::HashMap<(u32, u32), f64> = std::collections::HashMap::new();
+        for m in disk["stock_moves"].as_array().into_iter().flatten() {
+            if let (Some(e), Some(p), Some(q)) = (m["entry_id"].as_u64(), m["product_id"].as_u64(), m["qty"].as_f64()) {
+                *net.entry((e as u32, p as u32)).or_default() += q;
+            }
+        }
+        for m in ours.iter().filter(|m| m.qty > 0.0) {
+            *net.entry((m.entry_id.unwrap_or(0), m.product_id)).or_default() += m.qty;
+        }
+        let dropped: Vec<u32> = ours.iter().filter(|m| m.qty < 0.0 && net.get(&(m.entry_id.unwrap_or(0), m.product_id)).is_some_and(|n| *n < -1e-9)).map(|m| m.id).collect();
+        if dropped.is_empty() {
+            return;
+        }
+        self.stock_moves.retain(|x| !dropped.contains(&x.id));
+        // las existencias solo cambian con los movimientos: las del fichero más
+        // los movimientos nuevos de este puesto que quedan
+        let products: std::collections::HashSet<u32> = ours.iter().filter(|m| dropped.contains(&m.id)).map(|m| m.product_id).collect();
+        for pid in products {
+            let Some(on_file) = disk["products"].as_array().into_iter().flatten().find(|p| p["id"].as_u64() == Some(pid as u64)).and_then(|p| p["stock"].as_f64()) else { continue };
+            let mine: f64 = self.stock_moves.iter().filter(|m| m.product_id == pid && !on_disk.contains(&(m.id as u64))).map(|m| m.qty).sum();
+            if let Some(p) = self.products.iter_mut().find(|p| p.id == pid) {
+                p.stock = ((on_file + mine) * 1000.0).round() / 1000.0;
+            }
+        }
+    }
+
+    /// Lo que gastó un tratamiento vuelve a cada lote.
+    fn return_entry_material(&mut self, e: &MedEntry, why: &str) {
+        let id = e.id;
         let mut spent: Vec<(u32, String, Option<NaiveDate>, f64)> = vec![];
         for m in self.stock_moves.iter().filter(|m| m.entry_id == Some(id)) {
             match spent.iter_mut().find(|x| x.0 == m.product_id && x.1 == m.lot) {
@@ -465,7 +536,7 @@ impl Db {
         }
         for (product, lot, expiry, qty) in spent {
             if qty.abs() > 1e-9 {
-                let reason = format!("Devuelto: {} (tratamiento borrado)", e.description);
+                let reason = format!("Devuelto: {} ({why})", e.description);
                 if let Some(mid) = self.stock_move(product, -qty, MoveKind::Ajuste, &reason, Some(e.patient_id), &lot)
                     && let Some(m) = self.stock_moves.iter_mut().find(|m| m.id == mid)
                 {
@@ -474,13 +545,6 @@ impl Db {
                 }
             }
         }
-        for w in self.lab_works.iter_mut().filter(|w| w.entry_id == Some(id)) {
-            w.entry_id = None;
-        }
-        let what = format!("{} · {}", self.patient_name(e.patient_id), e.description);
-        self.audit("Borrar tratamiento", &what);
-        self.entries.retain(|x| x.id != id);
-        Ok(())
     }
 
     pub fn low_stock(&self) -> Vec<&Product> {
@@ -851,6 +915,65 @@ mod tests {
         db.create_claim(2, from, d(), d()).unwrap();
         let err = db.delete_entry(line.entry_id).unwrap_err();
         assert!(err.contains("LIQ-"), "{err}");
+    }
+
+    /// Marcar en el odontograma como hecho lo que ya estaba previsto (de un
+    /// presupuesto) completa el previsto: no crea otro ni lo cobra dos veces.
+    #[test]
+    fn marking_a_planned_treatment_done_on_the_chart_completes_it() {
+        let mut db = Db::sample(d());
+        let planned = db.add_entry(110, "0302", vec![16], vec![], TxState::Previsto, 1, d());
+        db.entries.iter_mut().find(|e| e.id == planned).unwrap().budget_id = Some(4242);
+        let n = db.entries.len();
+        let stock = db.product(4).unwrap().stock;
+        let (id, reused) = db.chart_entry(110, "0302", vec![16], vec!["O".into(), "M".into()], TxState::Realizado, 1, d());
+        assert!(reused);
+        assert_eq!(id, planned);
+        assert_eq!(db.entries.len(), n, "no se crea otro tratamiento");
+        let e = db.entries.iter().find(|e| e.id == planned).unwrap();
+        assert_eq!((e.state, e.budget_id, e.faces.clone()), (TxState::Realizado, Some(4242), vec!["O".to_string(), "M".to_string()]));
+        assert!((db.product(4).unwrap().stock - (stock - 0.2)).abs() < 1e-6, "el material se gasta una vez");
+        // sin previsto en esa pieza: uno nuevo
+        let (id2, reused2) = db.chart_entry(110, "0302", vec![17], vec!["O".into()], TxState::Realizado, 1, d());
+        assert!(!reused2 && id2 != planned);
+        assert_eq!(db.entries.len(), n + 1);
+    }
+
+    /// El código de obturación según las caras solo cambia a otro que en el
+    /// catálogo de la clínica también sea una obturación.
+    #[test]
+    fn the_filling_code_follows_the_faces_only_within_fillings() {
+        let mut db = Db::sample(d());
+        assert_eq!(db.filling_code("0301", 2), "0302");
+        assert_eq!(db.filling_code("0302", 1), "0301");
+        assert_eq!(db.filling_code("0301", 4), "0303");
+        // catálogo importado donde el 0302 es otra cosa
+        db.treatments.iter_mut().find(|t| t.code == "0302").unwrap().odg = OdgKind::Endodoncia;
+        assert_eq!(db.filling_code("0301", 2), "0301", "no cambia a un tratamiento que no es una obturación");
+        assert_eq!(db.filling_code("9999", 2), "9999");
+    }
+
+    /// Un tratamiento marcado como hecho por error vuelve a previsto: el
+    /// material vuelve a su lote y sigue en su presupuesto; facturado, no.
+    #[test]
+    fn a_treatment_marked_done_by_mistake_goes_back_to_planned() {
+        let mut db = Db::sample(d());
+        let stock = db.product(4).unwrap().stock;
+        let e = db.add_entry(110, "0302", vec![16], vec![], TxState::Previsto, 1, d());
+        db.entries.iter_mut().find(|x| x.id == e).unwrap().budget_id = Some(4242);
+        db.realize_entry(e, d(), 1);
+        assert!((db.product(4).unwrap().stock - (stock - 0.2)).abs() < 1e-6);
+        db.unrealize_entry(e).unwrap();
+        let x = db.entries.iter().find(|x| x.id == e).unwrap();
+        assert_eq!((x.state, x.budget_id), (TxState::Previsto, Some(4242)));
+        assert!((db.product(4).unwrap().stock - stock).abs() < 1e-6, "el material vuelve");
+        assert!(db.audit_log.iter().any(|a| a.action == "Tratamiento vuelto a previsto"));
+        assert!(db.unrealize_entry(e).is_err(), "ya estaba previsto");
+        // facturado no se deshace
+        db.realize_entry(e, d(), 1);
+        let pid = db.entries.iter().find(|x| x.id == e).unwrap().patient_id;
+        db.issue_invoice(pid, &[e], d()).unwrap();
+        assert!(db.unrealize_entry(e).unwrap_err().contains("factura"));
     }
 
     #[test]

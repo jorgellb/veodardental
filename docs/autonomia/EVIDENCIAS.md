@@ -112,3 +112,24 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 324 pasan, 0 fallan, 10 ignoradas |
+
+## E-009 Área 3: odontograma, periodontograma e historial
+- Revisión en `docs/autonomia/revision/area3.md`: 4 defectos demostrados (O3 a O6).
+- **Pruebas nuevas**, todas en rojo antes del arreglo:
+  - `stock::tests::marking_a_planned_treatment_done_on_the_chart_completes_it`
+  - `stock::tests::the_filling_code_follows_the_faces_only_within_fillings`
+  - `stock::tests::a_treatment_marked_done_by_mistake_goes_back_to_planned`
+  - `server::tests::the_same_treatment_done_on_two_stations_spends_its_material_once`
+    - Antes: el composite pasaba de 5 a 4,6 (doble consumo).
+    - Ahora: pasa a 4,8. Deshacer y volver a hacer gasta otra vez.
+  - `shared::tests::the_same_treatment_done_on_two_stations_spends_once_in_the_shared_folder`
+  - `ui_tests::the_chart_completes_planned_treatments_and_can_undo_them`
+- **Invariante:** `stock::tests::deleting_a_done_treatment_returns_its_material` sigue pasando con la devolución de material compartida entre borrar y deshacer.
+- **Captura sintética:** `docs/autonomia/capturas/f1_area3_odontograma_1280x800.png`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 330 pasan, 0 fallan, 10 ignoradas |

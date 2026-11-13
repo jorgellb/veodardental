@@ -401,6 +401,7 @@ fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
     }
     let mut realize = None;
     let mut delete = None;
+    let mut undo = None;
     for (i, e) in es.iter().enumerate() {
         let teeth: Vec<String> = e.teeth.iter().map(|t| t.to_string()).collect();
         let faces = if e.faces.is_empty() { String::new() } else { format!(" ({})", e.faces.join("")) };
@@ -421,6 +422,10 @@ fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
                     realize = Some(e.id);
                     ui.close();
                 }
+                if e.state == TxState::Realizado && e.invoice_id.is_none() && ui.button("↶ Volver a previsto (se marcó por error)").clicked() {
+                    undo = Some(e.id);
+                    ui.close();
+                }
                 if ui.button("✖ Borrar").clicked() {
                     delete = Some(e.id);
                     ui.close();
@@ -438,6 +443,15 @@ fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
     }
     if let Some(id) = delete {
         crate::screens::ask_delete_entry(app, id);
+    }
+    if let Some(id) = undo {
+        match app.db.unrealize_entry(id) {
+            Ok(()) => {
+                app.changed();
+                app.notify("Tratamiento vuelto a previsto: el material vuelve al almacén.");
+            }
+            Err(e) => app.warn(e),
+        }
     }
 }
 

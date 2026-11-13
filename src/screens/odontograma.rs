@@ -345,7 +345,7 @@ fn visit_nav(app: &mut App, ui: &mut Ui, dates: &[NaiveDate], sk: &Skin) {
     }
 }
 
-fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveDate) {
+pub(crate) fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveDate) {
     let tool = app.odg.tool;
     let code = app.odg.code.clone();
     if app.db.treatment(&code).map(|x| x.odg != tool).unwrap_or(true) {
@@ -404,29 +404,23 @@ fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, today: NaiveD
             if faces.is_empty() {
                 faces.push("O".into());
             }
-            // Ajuste automático del código según el número de caras.
-            if tool == OdgKind::Obturacion && ["0301", "0302", "0303"].contains(&code.as_str()) {
-                let n = faces.len();
-                let auto = if n <= 1 {
-                    "0301"
-                } else if n == 2 {
-                    "0302"
-                } else {
-                    "0303"
-                };
-                app.odg.code = auto.into();
+            // código de obturación según el número de caras (solo entre obturaciones del catálogo)
+            if tool == OdgKind::Obturacion {
+                app.odg.code = app.db.filling_code(&code, faces.len());
             }
         }
     }
     let code = app.odg.code.clone();
     // previsto o realizado, con la fecha de hoy (la de cuando se apunta)
     let date = today;
-    let id = app.db.add_entry(pid, &code, teeth.clone(), faces, state, doc, date);
+    // si ya estaba previsto en esa pieza (presupuesto), se completa ese
+    let (id, reused) = app.db.chart_entry(pid, &code, teeth.clone(), faces, state, doc, date);
     app.changed();
     let e = app.db.entries.iter().find(|e| e.id == id).cloned();
     if let Some(e) = e {
         let teeth_s: Vec<String> = teeth.iter().map(|x| x.to_string()).collect();
-        app.notify(format!("{} {} en pieza {} · {}", state.label(), e.description, teeth_s.join("-"), money(e.amount())));
+        let what = if reused { "Hecho el previsto:" } else { state.label() };
+        app.notify(format!("{what} {} en pieza {} · {}", e.description, teeth_s.join("-"), money(e.amount())));
     }
 }
 
@@ -442,6 +436,7 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                 }
                 let mut realize = None;
                 let mut delete = None;
+                let mut undo = None;
                 for e in list {
                     ui.horizontal(|ui| {
                         let (r, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
@@ -457,6 +452,9 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                             }
                             if e.state == TxState::Previsto && ui.small_button("✔").on_hover_text("Marcar como realizado hoy").clicked() {
                                 realize = Some(e.id);
+                            }
+                            if e.state == TxState::Realizado && e.invoice_id.is_none() && ui.small_button("↶").on_hover_text("Volver a previsto (se marcó por error)").clicked() {
+                                undo = Some(e.id);
                             }
                         });
                     });
@@ -481,6 +479,15 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                 }
                 if let Some(id) = delete {
                     crate::screens::ask_delete_entry(app, id);
+                }
+                if let Some(id) = undo {
+                    match app.db.unrealize_entry(id) {
+                        Ok(()) => {
+                            app.changed();
+                            app.notify("Tratamiento vuelto a previsto: el material vuelve al almacén.");
+                        }
+                        Err(e) => app.warn(e),
+                    }
                 }
             }
             None => {

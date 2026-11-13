@@ -2361,3 +2361,48 @@ fn a_prescription_needs_a_prescriber_and_reviewed_warnings() {
     assert!(h.state().db.rx_unreviewed(id).is_empty());
     h.get_by_label_contains("Avisos revisados por Dra. Ruiz");
 }
+
+/// Odontograma: marcar como hecho lo que estaba previsto en esa pieza completa
+/// el previsto (no crea otro), y «↶» lo devuelve a previsto con su material.
+#[test]
+fn the_chart_completes_planned_treatments_and_can_undo_them() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dra")).map(|u| u.id);
+        a.open_patient(110, crate::app::PatTab::Odontograma);
+        a
+    });
+    for _ in 0..3 {
+        h.step();
+    }
+    let planned = {
+        let a = h.state_mut();
+        let today = a.today;
+        let id = a.db.add_entry(110, "0302", vec![16], vec![], crate::model::TxState::Previsto, 1, today);
+        a.db.entries.iter_mut().find(|e| e.id == id).unwrap().budget_id = Some(4242);
+        a.odg.tool = crate::model::OdgKind::Obturacion;
+        a.odg.code = "0302".into();
+        a.odg.state = crate::model::TxState::Realizado;
+        a.odg.faces = [true, false, true, false, false];
+        id
+    };
+    let n = h.state().db.entries.len();
+    {
+        let a = h.state_mut();
+        let today = a.today;
+        crate::screens::odontograma::apply_tool(a, 110, 16, None, today);
+        a.odg.selected_tooth = Some(16);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.entries.len(), n, "no crea otro tratamiento");
+    assert_eq!(h.state().db.entries.iter().find(|e| e.id == planned).unwrap().state, crate::model::TxState::Realizado);
+    h.get_by_label("↶").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let e = h.state().db.entries.iter().find(|e| e.id == planned).unwrap().clone();
+    assert_eq!((e.state, e.budget_id), (crate::model::TxState::Previsto, Some(4242)));
+}

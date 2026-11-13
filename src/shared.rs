@@ -330,6 +330,8 @@ pub fn save_synced_with<R>(db: &mut Db, base: &mut Value, path: &Path, f: impl F
             // cobros de este puesto en una caja que otro acaba de cerrar: a la abierta
             let pays: std::collections::HashSet<u32> = d["payments"].as_array().into_iter().flatten().filter_map(|p| p["id"].as_u64()).map(|i| i as u32).collect();
             db.move_late_payments(|id| !pays.contains(&id));
+            // el mismo tratamiento hecho a la vez en dos puestos: el material, una vez
+            db.drop_double_consumption(&d);
             Synced::Merged(conflicts)
         }
         _ => {
@@ -620,6 +622,38 @@ mod tests {
         let (disk, _) = load();
         assert_eq!(disk.documents.iter().find(|d| d.id == doc2).unwrap().patient_id, 104);
         assert_eq!(disk.doc_integrity(doc2), crate::firmado::Integrity::Intact);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Carpeta compartida: el mismo tratamiento hecho a la vez en dos puestos
+    /// gasta su material una vez.
+    #[test]
+    fn the_same_treatment_done_on_two_stations_spends_once_in_the_shared_folder() {
+        let dir = std::env::temp_dir().join(format!("ds_shared_dup_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let day = NaiveDate::from_ymd_opt(2026, 11, 6).unwrap();
+        prepare_folder(&Db::sample(day), &dir).unwrap();
+        let load = || -> (Db, Value) {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            (serde_json::from_value(v.clone()).unwrap(), v)
+        };
+        let (mut a, mut base_a) = load();
+        a.station = 1;
+        let e = a.add_entry(110, "0302", vec![16], vec![], crate::model::TxState::Previsto, 1, day);
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        let (mut b, mut base_b) = load();
+        b.station = 2;
+        let stock = a.product(4).unwrap().stock;
+        a.realize_entry(e, day, 1);
+        b.realize_entry(e, day, 1);
+        save_synced(&mut a, &mut base_a, &path).unwrap();
+        save_synced(&mut b, &mut base_b, &path).unwrap();
+        let (disk, _) = load();
+        assert!((disk.product(4).unwrap().stock - (stock - 0.2)).abs() < 1e-6, "{} → {}", stock, disk.product(4).unwrap().stock);
+        let net: f64 = disk.stock_moves.iter().filter(|m| m.entry_id == Some(e) && m.product_id == 4).map(|m| m.qty).sum();
+        assert!((net + 0.2).abs() < 1e-6, "un solo consumo del composite: {net}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -904,6 +904,8 @@ impl State {
             }
         }
         self.drop_auto_duplicates(&mut changes);
+        // el mismo tratamiento hecho a la vez en dos puestos: el material se gasta una vez
+        self.drop_double_consumption(&mut changes);
         let existed_in = |field: &str| -> std::collections::HashSet<String> { changes.iter().filter(|c| c.field == field).filter_map(|c| c.key.clone()).filter(|k| self.snap.get(field, Some(k)).is_some()).collect() };
         let (existed, paid_before, moved_before) = (existed_in("patients"), existed_in("payments"), existed_in("stock_moves"));
         // existencias de los productos antes de guardar (`None`: producto nuevo de este puesto)
@@ -1060,6 +1062,41 @@ impl State {
     /// estaban antes de guardar) en lo que tenían más lo de los movimientos
     /// nuevos (`moves`). Los productos nuevos se quedan como llegan. Devuelve
     /// los que ha cambiado, con cómo estaban.
+    /// Consumos nuevos de material de un tratamiento que el servidor ya tiene
+    /// gastado (otro puesto lo marcó como hecho a la vez): se descartan. Cuentan
+    /// las devoluciones que vienen en la misma tanda (deshacer y volver a hacer).
+    fn drop_double_consumption(&self, changes: &mut Vec<Change>) {
+        let mv = |json: &str| -> Option<(u64, u64, f64)> {
+            let v: Value = serde_json::from_str(json).ok()?;
+            Some((v["entry_id"].as_u64()?, v["product_id"].as_u64()?, v["qty"].as_f64()?))
+        };
+        let new_moves: Vec<(usize, (u64, u64, f64))> =
+            changes.iter().enumerate().filter(|(_, c)| c.field == "stock_moves" && c.key.as_deref().is_some_and(|k| self.snap.get("stock_moves", Some(k)).is_none())).filter_map(|(i, c)| Some((i, mv(c.after.as_deref()?)?))).collect();
+        if !new_moves.iter().any(|(_, m)| m.2 < 0.0) {
+            return;
+        }
+        let wanted: std::collections::HashSet<u64> = new_moves.iter().map(|(_, m)| m.0).collect();
+        let mut net: HashMap<(u64, u64), f64> = HashMap::new();
+        if let Some(recs) = self.snap.records.get("stock_moves") {
+            for (_, json) in recs.iter().filter(|(_, j)| j.contains("entry_id")) {
+                if let Some((e, p, q)) = mv(json).filter(|m| wanted.contains(&m.0)) {
+                    *net.entry((e, p)).or_default() += q;
+                }
+            }
+        }
+        for (_, (e, p, q)) in new_moves.iter().filter(|(_, m)| m.2 > 0.0) {
+            *net.entry((*e, *p)).or_default() += q;
+        }
+        let drop: std::collections::HashSet<usize> = new_moves.iter().filter(|(_, (e, p, q))| *q < 0.0 && net.get(&(*e, *p)).is_some_and(|n| *n < -1e-9)).map(|(i, _)| *i).collect();
+        if !drop.is_empty() {
+            let mut i = 0;
+            changes.retain(|_| {
+                i += 1;
+                !drop.contains(&(i - 1))
+            });
+        }
+    }
+
     fn fix_stock(&mut self, before: &HashMap<String, Option<f64>>, moves: &[String]) -> Result<Vec<(String, String)>, String> {
         let stock_of = |json: &str| serde_json::from_str::<Value>(json).ok().and_then(|v| v["stock"].as_f64()).unwrap_or(0.0);
         let mut target: HashMap<String, f64> = before.iter().filter_map(|(k, s)| s.map(|s| (k.clone(), s))).collect();
@@ -2624,6 +2661,41 @@ mod tests {
         assert_eq!(r.reviewed_by, "Dra. Ruiz", "con el nombre de quien entró");
         assert!(!r.reviewed_warnings.is_empty());
         doc.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    /// Dos gabinetes marcan a la vez como hecho el mismo tratamiento previsto:
+    /// el material se descuenta una vez, no dos.
+    #[test]
+    fn the_same_treatment_done_on_two_stations_spends_its_material_once() {
+        let (addr, path, h) = start("CLAVE22");
+        let ra = signed_in(&addr, "CLAVE22", "Gabinete 1", 3, "0000");
+        let rb = signed_in(&addr, "CLAVE22", "Gabinete 2", 1, "0000");
+        let (mut a, mut sa) = ra.load().unwrap();
+        a.station = ra.station;
+        let today = crate::model::today();
+        let e = a.add_entry(110, "0302", vec![16], vec![], crate::model::TxState::Previsto, 1, today);
+        ra.push(&mut a, &mut sa).unwrap();
+        let stock = crate::sync::on_disk(&path).product(4).unwrap().stock;
+        let (mut b, mut sb) = rb.load().unwrap();
+        b.station = rb.station;
+        a.realize_entry(e, today, 1);
+        b.realize_entry(e, today, 1);
+        ra.push(&mut a, &mut sa).unwrap();
+        rb.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!((disk.product(4).unwrap().stock - (stock - 0.2)).abs() < 1e-6, "una vez: {} → {}", stock, disk.product(4).unwrap().stock);
+        let net: f64 = disk.stock_moves.iter().filter(|m| m.entry_id == Some(e) && m.product_id == 4).map(|m| m.qty).sum();
+        assert!((net + 0.2).abs() < 1e-6, "un solo consumo del composite: {net}");
+        // deshacerlo y volver a hacerlo sí gasta otra vez (lo devuelto vuelve)
+        let (mut c, mut sc) = ra.load().unwrap();
+        c.station = ra.station;
+        c.unrealize_entry(e).unwrap();
+        c.realize_entry(e, today, 1);
+        ra.push(&mut c, &mut sc).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!((disk.product(4).unwrap().stock - (stock - 0.2)).abs() < 1e-6);
+        ra.stop().unwrap();
         h.join().unwrap();
     }
 

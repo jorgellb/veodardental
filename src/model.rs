@@ -1665,6 +1665,52 @@ impl Db {
         id
     }
 
+    /// Apunta un tratamiento desde el odontograma. Si se marca como hecho algo
+    /// que ya estaba previsto en esa pieza (de un presupuesto, por ejemplo),
+    /// completa el previsto en vez de crear otro. Devuelve el tratamiento y si
+    /// era uno previsto.
+    #[allow(clippy::too_many_arguments)]
+    pub fn chart_entry(&mut self, pid: u32, code: &str, teeth: Vec<u8>, faces: Vec<String>, state: TxState, doctor_id: u32, date: NaiveDate) -> (u32, bool) {
+        if state == TxState::Realizado {
+            let mut want = teeth.clone();
+            want.sort_unstable();
+            let planned = self
+                .entries
+                .iter()
+                .filter(|e| e.patient_id == pid && e.state == TxState::Previsto && e.code == code)
+                .filter(|e| {
+                    let mut t = e.teeth.clone();
+                    t.sort_unstable();
+                    t == want
+                })
+                // primero lo presupuestado y lo más antiguo
+                .min_by_key(|e| (e.budget_id.is_none(), e.date, e.id))
+                .map(|e| e.id);
+            if let Some(id) = planned {
+                if !faces.is_empty()
+                    && let Some(e) = self.entries.iter_mut().find(|e| e.id == id)
+                {
+                    e.faces = faces;
+                }
+                self.realize_entry(id, date, doctor_id);
+                return (id, true);
+            }
+        }
+        (self.add_entry(pid, code, teeth, faces, state, doctor_id, date), false)
+    }
+
+    /// Código de obturación según el número de caras (0301 una, 0302 dos, 0303
+    /// tres o más), solo si en el catálogo de la clínica los tres son
+    /// obturaciones: con otro catálogo (importado) se deja el elegido.
+    pub fn filling_code(&self, code: &str, faces: usize) -> String {
+        const CODES: [&str; 3] = ["0301", "0302", "0303"];
+        let filling = |c: &str| self.treatment(c).is_some_and(|t| t.odg == OdgKind::Obturacion);
+        if !CODES.contains(&code) || !CODES.iter().all(|c| filling(c)) {
+            return code.to_string();
+        }
+        CODES[faces.clamp(1, 3) - 1].to_string()
+    }
+
     /// Marca una entrada como realizada y genera el recall si procede.
     pub fn realize_entry(&mut self, id: u32, date: NaiveDate, doctor_id: u32) {
         let pid = self.entries.iter().find(|e| e.id == id).map(|e| e.patient_id);
