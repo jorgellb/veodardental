@@ -75,3 +75,8 @@ Para que dos puestos no envíen el mismo correo, el puesto los reserva antes con
   - La baja por finalidad se marca en la ficha.
   - Solo felicitaciones y seguimientos de presupuesto llevan el texto de baja: los recordatorios de cita y de revisión son de la atención del paciente.
 - **Revisión pendiente:** la revisión jurídica de qué mensajes son comunicaciones comerciales (LSSI) queda para el responsable de protección de datos, con el resto de la fase 4.
+
+## D-16 Revisión de los análisis con IA
+Quien da por bueno un análisis con IA es un profesional colegiado, con el mismo criterio que para recetar (`collaborator_problem`). El servidor solo acepta su revisión, con su nombre.
+
+El límite de análisis de pago al mes es de 20 por defecto: un uso normal de una clínica pequeña, con un gasto acotado. Se cambia en la configuración y es cosa de la clínica.

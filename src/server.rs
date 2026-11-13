@@ -896,6 +896,24 @@ impl State {
                 c.after = serde_json::to_string(&fixed).ok();
             }
         }
+        // análisis con IA: los da por buenos (o los descarta) solo un profesional
+        // colegiado, con su nombre; y una revisión hecha no se cambia
+        for c in changes.iter_mut().filter(|c| c.field == "ia_reports") {
+            let Some(after) = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::ia::IaReport>(a).ok()) else { continue };
+            let cur = c.key.as_deref().and_then(|k| self.snap.get("ia_reports", Some(k))).and_then(|j| serde_json::from_str::<crate::ia::IaReport>(j).ok());
+            let was = cur.as_ref().and_then(|r| r.review.clone());
+            if after.review == was {
+                continue;
+            }
+            let mut fixed = after.clone();
+            fixed.review = match (&was, &after.review, &reviewer) {
+                (None, Some(v), Some(name)) => Some(crate::ia::IaReview { by: name.clone(), ..v.clone() }),
+                _ => was,
+            };
+            if fixed != after {
+                c.after = serde_json::to_string(&fixed).ok();
+            }
+        }
         // números de historia con sentido (con ellos se nombran carpetas)
         for c in changes.iter().filter(|c| c.field == "patients") {
             let n = c.after.as_deref().and_then(|a| serde_json::from_str::<Value>(a).ok()).and_then(|v| v["history_no"].as_u64());
@@ -2684,6 +2702,36 @@ mod tests {
         assert!(!r.reviewed_warnings.is_empty());
         doc.stop().unwrap();
         h.join().unwrap();
+    }
+
+    /// Un análisis con IA lo da por bueno solo un profesional colegiado, con
+    /// el nombre de quien entró, y después no se cambia la revisión.
+    #[test]
+    fn only_a_licensed_professional_reviews_an_ai_analysis() {
+        let (addr, path, h) = start("CLAVE36");
+        let hyg = signed_in(&addr, "CLAVE36", "Higiene", 5, "0000");
+        let (mut a, mut sa) = hyg.load().unwrap();
+        a.station = hyg.station;
+        let id = a.ia_reports[0].id;
+        assert!(a.ia_reports[0].review.is_none());
+        // la higienista se lo salta en su puesto: el servidor no lo acepta
+        a.ia_reports[0].review = Some(crate::ia::IaReview { at: crate::model::now(), by: "Dra. Ruiz".into(), valid: true });
+        hyg.push(&mut a, &mut sa).unwrap();
+        assert!(crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).unwrap().review.is_none(), "la higienista no lo revisa");
+        let doc = signed_in(&addr, "CLAVE36", "Gabinete", 3, "0000");
+        let (mut b, mut sb) = doc.load().unwrap();
+        b.station = doc.station;
+        b.ia_reports.iter_mut().find(|r| r.id == id).unwrap().review = Some(crate::ia::IaReview { at: crate::model::now(), by: "Otro nombre".into(), valid: true });
+        doc.push(&mut b, &mut sb).unwrap();
+        let v = crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).unwrap().review.clone().unwrap();
+        assert_eq!((v.by.as_str(), v.valid), ("Dra. Ruiz", true), "con el nombre de quien entró");
+        // una revisión hecha no se cambia
+        b.ia_reports.iter_mut().find(|r| r.id == id).unwrap().review = Some(crate::ia::IaReview { at: crate::model::now(), by: "Dra. Ruiz".into(), valid: false });
+        doc.push(&mut b, &mut sb).unwrap();
+        assert!(crate::sync::on_disk(&path).ia_reports.iter().find(|r| r.id == id).unwrap().review.as_ref().unwrap().valid);
+        doc.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     /// Dos gabinetes marcan a la vez como hecho el mismo tratamiento previsto:

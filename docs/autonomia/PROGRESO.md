@@ -23,14 +23,15 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `7fd53f0` |
 | T-F1-A6: comunicaciones | E-012 | `cdddd05` |
 | T-F1-A7: ortodoncia | E-013 | `d0c52f4` |
+| T-F1-A8: IA de radiografías | E-014 | (este lote) |
 
 ## Siguiente acción
-1. T-F1-A8: IA de radiografías.
-   - Qué datos salen de la aplicación; minimización y metadatos.
-   - Autorización, tiempos máximos, errores y respuestas incompletas.
-   - Límites de coste y trazabilidad del modelo.
-   - Revisión del profesional antes de incorporar el resultado al historial.
-2. Después, áreas 9 y 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
+1. T-F1-A9: cita online y portales.
+   - Tokens y caducidad; acceso por paciente y responsable.
+   - Enumeración, intentos repetidos y abuso.
+   - Cancelaciones y reservas concurrentes; horario validado en el servidor.
+   - Uso desde el móvil.
+2. Después, área 10, T-F1-11 (todas las pantallas a 1280×720 y 1280×800) y T-F1-12 (concurrencia y fuzzing).
 3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
 
 ## Notas para seguir

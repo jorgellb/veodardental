@@ -291,3 +291,26 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 365 pasan, 0 fallan, 10 ignoradas |
+
+## E-014 Área 8: IA de radiografías
+- Revisión en `docs/autonomia/revision/area8.md`: 5 defectos demostrados (A1 a A5).
+- **Por lectura del código anterior (`f080edd`):**
+  - A1 y A2: `unchecked` (marcadas por defecto) y sin revisión.
+  - A3: sin límite de pago.
+  - A4: el texto del aviso.
+  - A5: sin versión de las instrucciones.
+- **Pruebas nuevas:**
+  - `ia::tests::paid_agents_are_not_called_past_the_monthly_limit`
+  - `ia::tests::an_analysis_is_a_draft_until_a_professional_reviews_it`
+  - `server::tests::only_a_licensed_professional_reviews_an_ai_analysis`
+- **Prueba ajustada al flujo nuevo:** `ui_tests::ai_analysis_falls_back_and_adds_to_plan`. Comprueba además que sin revisar no se añade nada.
+- **Capturas sintéticas:**
+  - `f1_area8_ia_1280x{800,720}.png`: análisis guardado;
+  - `f1_area8_ia_revision_1280x800.png`: propuestas sin marcar y «Añadir al plan» desactivado en el borrador.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 368 pasan, 0 fallan, 10 ignoradas |

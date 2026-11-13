@@ -38,8 +38,9 @@ pub struct IaUi {
     pub only_free: bool,
     pub tests: HashMap<u32, Result<String, String>>,
     pub test_jobs: Vec<(u32, Receiver<Result<String, String>>)>,
-    /// Propuestas que el dentista ha desmarcado (informe, índice).
-    pub unchecked: HashSet<(u32, usize)>,
+    /// Propuestas que el dentista ha marcado para pasarlas al plan (informe,
+    /// índice): ninguna viene marcada, las elige él.
+    pub checked: HashSet<(u32, usize)>,
     pub new_provider: Provider,
 }
 
@@ -53,10 +54,24 @@ pub fn poll(app: &mut App) {
                 let id = app.db.new_id();
                 let user = app.db.config.current_user.clone();
                 let n = analysis.findings.len();
-                app.db.ia_reports.push(IaReport { id, patient_id, image_id, when: chrono::Local::now().naive_local(), agent: agent.name.clone(), model: agent.model.clone(), free: agent.free, analysis, attempts: out.attempts, user, planned: vec![] });
+                app.db.ia_reports.push(IaReport {
+                    id,
+                    patient_id,
+                    image_id,
+                    when: chrono::Local::now().naive_local(),
+                    agent: agent.name.clone(),
+                    model: agent.model.clone(),
+                    free: agent.free,
+                    analysis,
+                    attempts: out.attempts,
+                    user,
+                    planned: vec![],
+                    review: None,
+                    prompt_version: ia::PROMPT_VERSION.into(),
+                });
                 app.ia.error = None;
                 app.changed();
-                app.notify(format!("Análisis listo: {n} hallazgos ({}).", agent.name));
+                app.notify(format!("Análisis listo: {n} hallazgos ({}). Es un borrador hasta que lo revise un profesional.", agent.name));
             }
             Err(e) => app.ia.error = Some((image_id, e, out.attempts)),
         }
@@ -115,13 +130,14 @@ fn start_analysis(app: &mut App, ctx: &egui::Context, img: &PatientImage, mode: 
     let age = if app.db.ia.send_age { app.db.patient(img.patient_id).and_then(|p| p.age(app.today)).map(|a| a.max(0) as u32) } else { None };
     let req = ia::Request { jpeg, kind: img.kind.label().to_string(), teeth: img.teeth.clone(), age };
     let cfg = app.db.ia.clone();
+    let paid_left = cfg.max_paid_month.saturating_sub(app.db.ia_paid_this_month(app.today));
     let progress = Arc::new(Mutex::new("Preparando la imagen…".to_string()));
     let (tx, rx) = std::sync::mpsc::channel();
     let p2 = progress.clone();
     let ctx = ctx.clone();
     std::thread::spawn(move || {
         let c2 = ctx.clone();
-        let out = ia::analyze(&cfg, mode, &req, &move |m| {
+        let out = ia::analyze(&cfg, mode, &req, paid_left, &move |m| {
             if let Ok(mut g) = p2.lock() {
                 *g = m;
             }
@@ -331,6 +347,10 @@ fn agents_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 ui.label("Esperar cada respuesta hasta");
                 ui.add(egui::DragValue::new(&mut cfg.timeout_secs).range(20..=300).suffix(" s"));
             });
+            ui.horizontal(|ui| {
+                ui.label("Análisis de pago como máximo al mes");
+                ui.add(egui::DragValue::new(&mut cfg.max_paid_month).range(0..=10_000)).on_hover_text("Pasado el máximo, los agentes de pago no se consultan hasta el mes siguiente (0: ninguno). Los gratuitos no cuentan.");
+            });
             ui.checkbox(&mut cfg.send_age, "Enviar la edad del paciente (ayuda a distinguir la dentición temporal)");
             ui.label(RichText::new("Indicaciones para todos los análisis (opcional)").font(mdf(12.8)).color(MUTED));
             ui.add(egui::TextEdit::multiline(&mut cfg.extra).desired_rows(2).desired_width(f32::INFINITY).hint_text("Por ejemplo: fíjate especialmente en caries interproximales y en el nivel óseo."));
@@ -493,24 +513,6 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
 // ───────────────────────────── visor de imágenes ─────────────────────────────
 
 /// Tratamiento del catálogo para una propuesta (código y descripción).
-fn treatment_for(db: &Db, p: &ia::Proposal) -> Option<(String, String)> {
-    let found = match ia::proposal_kind(&p.kind) {
-        Some(OdgKind::Obturacion) => {
-            // la obturación que corresponde al número de caras, si el catálogo las distingue
-            let list: Vec<&Treatment> = db.treatments.iter().filter(|t| t.active && t.odg == OdgKind::Obturacion).collect();
-            let n = p.faces.len().max(1);
-            let want = if n == 1 { "1 cara".to_string() } else { format!("{n} caras") };
-            list.iter().find(|t| fold(&t.description).contains(&want)).or(list.first()).copied()
-        }
-        Some(k) => db.treatments.iter().find(|t| t.active && t.odg == k),
-        None => {
-            let words = ia::proposal_words(&p.kind);
-            db.treatments.iter().find(|t| t.active && words.iter().any(|w| fold(&t.description).contains(&fold(w))))
-        }
-    };
-    found.map(|t| (t.code.clone(), t.description.clone()))
-}
-
 /// Panel «Análisis con IA» bajo el visor de una imagen.
 pub fn image_panel(app: &mut App, ui: &mut Ui, img: &PatientImage) {
     poll(app);
@@ -561,7 +563,7 @@ fn analyze_controls(app: &mut App, ui: &mut Ui, img: &PatientImage, ctx: &egui::
         if mode != app.db.ia.mode || app.ia.mode.is_some() {
             app.ia.mode = Some(mode);
         }
-        muted(ui, "Se envía sólo la imagen, sin nombre ni datos del paciente.");
+        muted(ui, "Se envía sólo la imagen, sin nombre ni datos del paciente en el fichero. Si la radiografía lleva el nombre impreso, recórtela antes.");
         if busy_here {
             if let Some(j) = &app.ia.job {
                 let msg = j.progress.lock().map(|g| g.clone()).unwrap_or_default();
@@ -679,20 +681,50 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
             ui.add_space(3.0);
         }
     }
+    // revisión del profesional: hasta entonces es un borrador
+    let mut review: Option<bool> = None;
+    let valid = r.review.as_ref().is_some_and(|v| v.valid);
+    ui.add_space(6.0);
+    match &r.review {
+        None => {
+            egui::Frame::new().fill(tint(WARN, 0.08)).stroke(Stroke::new(1.0, tint(WARN, 0.3))).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new("Borrador: lo tiene que revisar un profesional antes de usarlo en el plan o en las notas.").font(sbf(13.0)).color(WARN));
+                match app.db.ia_reviewer_problem() {
+                    Some(why) => muted(ui, why),
+                    None => {
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button("✔ Revisado: lo doy por bueno").clicked() {
+                                review = Some(true);
+                            }
+                            if ui.button("✖ Descartar (no es correcto)").clicked() {
+                                review = Some(false);
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        Some(v) => {
+            let what = if v.valid { "Revisado" } else { "Descartado" };
+            ui.label(RichText::new(format!("{what} por {} el {}", v.by, v.at.format("%d/%m/%Y %H:%M"))).font(mdf(12.5)).color(if v.valid { OK } else { MUTED }));
+        }
+    }
     let mut plan = false;
-    if !an.proposals.is_empty() {
+    if !an.proposals.is_empty() && r.review.as_ref().is_none_or(|v| v.valid) {
         ui.add_space(6.0);
-        ui.label(RichText::new("PROPUESTA DE TRATAMIENTO").font(sbf(11.5)).color(SUBTLE));
+        ui.label(RichText::new("PROPUESTA DE TRATAMIENTO (márquelas para pasarlas al plan)").font(sbf(11.5)).color(SUBTLE));
         for (i, p) in an.proposals.iter().enumerate() {
             let done = r.planned.contains(&i);
-            let tx = treatment_for(&app.db, p);
+            let tx = app.db.ia_treatment(p);
+            let outside = ia::outside_image(&img.teeth, p);
             ui.horizontal_wrapped(|ui| {
-                let mut on = !app.ia.unchecked.contains(&(r.id, i)) && !done && tx.is_some();
-                if ui.add_enabled(!done && tx.is_some(), egui::Checkbox::without_text(&mut on)).changed() {
+                let mut on = app.ia.checked.contains(&(r.id, i)) && !done;
+                if ui.add_enabled(valid && !done && tx.is_some(), egui::Checkbox::without_text(&mut on)).changed() {
                     if on {
-                        app.ia.unchecked.remove(&(r.id, i));
+                        app.ia.checked.insert((r.id, i));
                     } else {
-                        app.ia.unchecked.insert((r.id, i));
+                        app.ia.checked.remove(&(r.id, i));
                     }
                 }
                 let teeth: Vec<String> = p.teeth.iter().map(|t| t.to_string()).collect();
@@ -708,6 +740,9 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
                     Some((code, desc)) => muted(ui, format!("→ {code} {desc}")),
                     None => muted(ui, "→ sin tratamiento equivalente en el catálogo"),
                 }
+                if outside {
+                    pill(ui, "piezas que no salen en la imagen", DANGER);
+                }
                 if done {
                     pill(ui, "En el plan", OK);
                 }
@@ -720,11 +755,11 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
             }
         }
         ui.add_space(4.0);
-        let any = an.proposals.iter().enumerate().any(|(i, p)| !r.planned.contains(&i) && !app.ia.unchecked.contains(&(r.id, i)) && treatment_for(&app.db, p).is_some());
+        let any = valid && an.proposals.iter().enumerate().any(|(i, _)| !r.planned.contains(&i) && app.ia.checked.contains(&(r.id, i)));
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(any, egui::Button::new(RichText::new("Añadir al plan de tratamiento").color(Color32::WHITE)).fill(ACCENT))
-                .on_hover_text("Se añaden como «previsto» al historial y al odontograma; luego puede hacer el presupuesto")
+                .on_hover_text("Se añaden las marcadas como «previsto» al historial y al odontograma, diciendo que las propuso la IA y quién las revisó")
                 .clicked()
             {
                 plan = true;
@@ -735,40 +770,38 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
     let mut delete = false;
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        if ui.button("Copiar el resumen a las notas de la imagen").clicked() {
+        if ui.add_enabled(valid, egui::Button::new("Copiar el resumen a las notas de la imagen")).clicked() {
             copy = true;
         }
         right_aligned(ui, |ui| {
-            if ui.small_button("Borrar este análisis").clicked() {
+            // lo que ya se usó en el plan queda como constancia de dónde salió
+            if r.planned.is_empty() && ui.small_button("Borrar este análisis").clicked() {
                 delete = true;
             }
         });
     });
     ui.label(RichText::new("Resultado generado por inteligencia artificial: puede equivocarse. El diagnóstico y el plan los decide el dentista.").font(mdf(11.8)).color(SUBTLE));
+    if let Some(v) = review {
+        match app.db.review_ia_report(r.id, v) {
+            Ok(()) => app.changed(),
+            Err(e) => app.warn(e),
+        }
+    }
     if plan {
-        let doctor = app.db.patient(r.patient_id).map(|p| p.doctor_id).unwrap_or(1);
-        let mut added = vec![];
-        for (i, p) in an.proposals.iter().enumerate() {
-            if r.planned.contains(&i) || app.ia.unchecked.contains(&(r.id, i)) {
-                continue;
+        let chosen: Vec<usize> = (0..an.proposals.len()).filter(|i| app.ia.checked.contains(&(r.id, *i))).collect();
+        match app.db.plan_from_ia(r.id, &chosen, app.today) {
+            Ok(n) => {
+                app.ia.checked.retain(|(rid, _)| *rid != r.id);
+                app.changed();
+                app.notify(format!("{n} tratamientos añadidos al plan como «previsto»."));
             }
-            if let Some((code, desc)) = treatment_for(&app.db, p) {
-                let faces = if ia::proposal_kind(&p.kind) == Some(OdgKind::Obturacion) { p.faces.clone() } else { vec![] };
-                app.db.add_entry(r.patient_id, &code, p.teeth.clone(), faces, TxState::Previsto, doctor, app.today);
-                added.push((i, desc));
-            }
+            Err(e) => app.warn(e),
         }
-        if let Some(rep) = app.db.ia_reports.iter_mut().find(|x| x.id == r.id) {
-            rep.planned.extend(added.iter().map(|a| a.0));
-        }
-        let names: Vec<String> = added.iter().map(|a| a.1.clone()).collect();
-        app.db.audit("Plan desde análisis con IA", &format!("{} · {}", app.db.patient_name(r.patient_id), names.join(", ")));
-        app.changed();
-        app.notify(format!("{} tratamientos añadidos al plan como «previsto».", added.len()));
     }
     if copy {
+        let by = r.review.as_ref().map(|v| v.by.clone()).unwrap_or_default();
         if let Some(m) = app.db.images.iter_mut().find(|i| i.id == img.id) {
-            let note = format!("IA ({}): {}", r.when.format("%d/%m/%Y"), an.summary);
+            let note = format!("IA ({}, revisado por {by}): {}", r.when.format("%d/%m/%Y"), an.summary);
             m.notes = if m.notes.trim().is_empty() { note } else { format!("{} · {note}", m.notes.trim()) };
         }
         app.changed();

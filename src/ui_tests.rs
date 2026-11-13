@@ -836,6 +836,34 @@ fn ai_analysis_falls_back_and_adds_to_plan() {
     for _ in 0..3 {
         h.step();
     }
+    // es un borrador: sin revisar, no pasa nada al plan
+    h.get_by_label("Añadir al plan de tratamiento").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(planned(h.state()), before, "sin revisar, nada");
+    // lo revisa una profesional colegiada, marca la propuesta y la pasa al plan
+    {
+        let a = h.state_mut();
+        let u = a.db.users.iter().find(|u| u.doctor_id.and_then(|d| a.db.doctor(d)).is_some_and(|c| crate::finance::collaborator_problem(c).is_none())).cloned().unwrap();
+        a.user_id = Some(u.id);
+        a.db.config.current_user = u.name.clone();
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("✔ Revisado: lo doy por bueno").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().db.ia_reports[0].review.as_ref().is_some_and(|v| v.valid));
+    {
+        let a = h.state_mut();
+        let rid = a.db.ia_reports[0].id;
+        // (la casilla de la propuesta: las propuestas no vienen marcadas)
+        a.ia.checked.insert((rid, 0));
+    }
+    h.step();
     h.get_by_label("Añadir al plan de tratamiento").click();
     for _ in 0..3 {
         h.step();

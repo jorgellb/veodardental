@@ -185,6 +185,14 @@ fn default_timeout() -> u32 {
     90
 }
 
+fn default_max_paid() -> u32 {
+    20
+}
+
+/// Versión de las instrucciones que se mandan al modelo (se guarda con cada
+/// análisis: si cambian, se sabe con cuáles se hizo cada uno).
+pub const PROMPT_VERSION: &str = "radiografia-1";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct IaConfig {
     pub enabled: bool,
@@ -200,6 +208,9 @@ pub struct IaConfig {
     /// Indicaciones adicionales para todos los análisis.
     #[serde(default)]
     pub extra: String,
+    /// Análisis de pago como máximo al mes (0: ninguno). Los gratuitos no cuentan.
+    #[serde(default = "default_max_paid")]
+    pub max_paid_month: u32,
 }
 
 impl Default for IaConfig {
@@ -219,6 +230,7 @@ impl Default for IaConfig {
             timeout_secs: default_timeout(),
             send_age: true,
             extra: String::new(),
+            max_paid_month: default_max_paid(),
         }
     }
 }
@@ -305,6 +317,22 @@ pub struct IaReport {
     /// Propuestas ya pasadas al plan de tratamiento.
     #[serde(default)]
     pub planned: Vec<usize>,
+    /// Revisión del profesional. Hasta entonces es un borrador: no pasa al
+    /// plan de tratamiento ni a las notas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<IaReview>,
+    /// Versión de las instrucciones con que se pidió ([`PROMPT_VERSION`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub prompt_version: String,
+}
+
+/// Lo que decidió el profesional sobre un análisis.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IaReview {
+    pub at: chrono::NaiveDateTime,
+    pub by: String,
+    /// Lo da por bueno (si no, lo descarta: queda guardado, pero no se usa).
+    pub valid: bool,
 }
 
 /// Lo que se envía: la imagen (JPEG) y datos no identificativos.
@@ -313,6 +341,99 @@ pub struct Request {
     pub kind: String,
     pub teeth: Vec<u8>,
     pub age: Option<u32>,
+}
+
+// ───────────────────────────── revisión y uso ─────────────────────────────
+
+/// ¿La propuesta habla de piezas que no son las de la imagen? (si la imagen
+/// dice qué piezas muestra).
+pub fn outside_image(image_teeth: &[u8], p: &Proposal) -> bool {
+    !image_teeth.is_empty() && p.teeth.iter().any(|t| !image_teeth.contains(t))
+}
+
+impl crate::model::Db {
+    /// Análisis de pago hechos en el mes de `day`.
+    pub fn ia_paid_this_month(&self, day: chrono::NaiveDate) -> u32 {
+        use chrono::Datelike;
+        self.ia_reports.iter().filter(|r| !r.free && r.when.date().year() == day.year() && r.when.date().month() == day.month()).count() as u32
+    }
+
+    /// Por qué el usuario que ha entrado no puede revisar un análisis (ha de
+    /// ser un profesional colegiado, como para recetar). `None`: puede.
+    pub fn ia_reviewer_problem(&self) -> Option<String> {
+        let name = &self.config.current_user;
+        let Some(u) = self.users.iter().find(|u| &u.name == name && u.active) else { return Some("Entre con su usuario para revisarlo.".into()) };
+        let Some(d) = u.doctor_id.and_then(|d| self.doctor(d)) else { return Some("Lo revisa un profesional: su usuario no está unido a un colaborador.".into()) };
+        crate::finance::collaborator_problem(d).map(|p| p.replace("no puede recetar", "no puede revisarlo").replace("solo recetan", "lo revisan"))
+    }
+
+    /// El profesional da por bueno (o descarta) un análisis.
+    pub fn review_ia_report(&mut self, id: u32, valid: bool) -> Result<(), String> {
+        if let Some(p) = self.ia_reviewer_problem() {
+            return Err(p);
+        }
+        let by = self.config.current_user.clone();
+        let r = self.ia_reports.iter_mut().find(|r| r.id == id).ok_or("El análisis ya no existe.")?;
+        if r.review.is_some() {
+            return Err("Este análisis ya está revisado.".into());
+        }
+        r.review = Some(IaReview { at: crate::model::now(), by: by.clone(), valid });
+        let pid = r.patient_id;
+        let what = if valid { "Análisis con IA revisado" } else { "Análisis con IA descartado" };
+        let who = self.patient_name(pid);
+        self.audit(what, &format!("{who} · por {by}"));
+        Ok(())
+    }
+
+    /// Pasa al plan de tratamiento (como «previsto») las propuestas elegidas
+    /// de un análisis revisado. Cada tratamiento dice de dónde viene. Devuelve
+    /// cuántos ha añadido.
+    pub fn plan_from_ia(&mut self, id: u32, chosen: &[usize], today: chrono::NaiveDate) -> Result<usize, String> {
+        let r = self.ia_reports.iter().find(|r| r.id == id).cloned().ok_or("El análisis ya no existe.")?;
+        let rev = r.review.clone().filter(|v| v.valid).ok_or("Revise antes el análisis: hasta entonces es un borrador.")?;
+        let doctor = self.patient(r.patient_id).map(|p| p.doctor_id).unwrap_or(1);
+        let mut added = vec![];
+        for (i, p) in r.analysis.proposals.iter().enumerate() {
+            if !chosen.contains(&i) || r.planned.contains(&i) {
+                continue;
+            }
+            if let Some((code, desc)) = self.ia_treatment(p) {
+                let faces = if proposal_kind(&p.kind) == Some(crate::model::OdgKind::Obturacion) { p.faces.clone() } else { vec![] };
+                let e = self.add_entry(r.patient_id, &code, p.teeth.clone(), faces, crate::model::TxState::Previsto, doctor, today);
+                if let Some(x) = self.entries.iter_mut().find(|x| x.id == e) {
+                    x.notes = format!("Propuesto por IA ({}, {}) y revisado por {}.", r.agent, short_model(&r.model), rev.by);
+                }
+                added.push((i, desc));
+            }
+        }
+        if let Some(rep) = self.ia_reports.iter_mut().find(|x| x.id == id) {
+            rep.planned.extend(added.iter().map(|a| a.0));
+        }
+        let names: Vec<String> = added.iter().map(|a| a.1.clone()).collect();
+        let who = self.patient_name(r.patient_id);
+        self.audit("Plan desde análisis con IA", &format!("{who} · {}", names.join(", ")));
+        Ok(added.len())
+    }
+
+    /// Tratamiento del catálogo para una propuesta: (código, descripción).
+    pub fn ia_treatment(&self, p: &Proposal) -> Option<(String, String)> {
+        use crate::model::{OdgKind, Treatment, fold};
+        let found = match proposal_kind(&p.kind) {
+            Some(OdgKind::Obturacion) => {
+                // la obturación que corresponde al número de caras, si el catálogo las distingue
+                let list: Vec<&Treatment> = self.treatments.iter().filter(|t| t.active && t.odg == OdgKind::Obturacion).collect();
+                let n = p.faces.len().max(1);
+                let want = if n == 1 { "1 cara".to_string() } else { format!("{n} caras") };
+                list.iter().find(|t| fold(&t.description).contains(&want)).or(list.first()).copied()
+            }
+            Some(k) => self.treatments.iter().find(|t| t.active && t.odg == k),
+            None => {
+                let words = proposal_words(&p.kind);
+                self.treatments.iter().find(|t| t.active && words.iter().any(|w| fold(&t.description).contains(&fold(w))))
+            }
+        };
+        found.map(|t| (t.code.clone(), t.description.clone()))
+    }
 }
 
 // ───────────────────────────── preparación ─────────────────────────────
@@ -588,10 +709,20 @@ pub fn test_agent(a: &Agent, timeout: u32) -> Result<String, String> {
     Ok(format!("responde «{r}» en {:.1} s", t0.elapsed().as_secs_f32()))
 }
 
-/// Analiza una imagen recorriendo los agentes en orden hasta que uno responda bien.
-pub fn analyze(cfg: &IaConfig, mode: Mode, req: &Request, progress: &dyn Fn(String)) -> Outcome {
-    let list = chain(cfg, mode);
+/// Analiza una imagen recorriendo los agentes en orden hasta que uno responda
+/// bien. `paid_left`: análisis de pago que quedan este mes (con 0, los de pago
+/// no se consultan).
+pub fn analyze(cfg: &IaConfig, mode: Mode, req: &Request, paid_left: u32, progress: &dyn Fn(String)) -> Outcome {
+    let all = chain(cfg, mode);
     let mut attempts = vec![];
+    let skipped = all.iter().filter(|a| !a.free && paid_left == 0).count();
+    let list: Vec<Agent> = all.into_iter().filter(|a| a.free || paid_left > 0).collect();
+    if skipped > 0 {
+        attempts.push(Attempt { agent: "Agentes de pago".into(), model: String::new(), free: false, ok: false, message: format!("no se consultan: se ha llegado al máximo de {} análisis de pago este mes", cfg.max_paid_month), millis: 0 });
+    }
+    if list.is_empty() && skipped > 0 {
+        return Outcome { result: Err(format!("Se ha llegado al máximo de {} análisis de pago este mes (Configuración › Inteligencia artificial).", cfg.max_paid_month)), attempts };
+    }
     if list.is_empty() {
         return Outcome { result: Err(format!("No hay agentes activos para «{}». Añádalos en Configuración › Inteligencia artificial.", mode.label())), attempts };
     }
@@ -795,7 +926,7 @@ mod tests {
             agents: vec![agent(1, Provider::OpenRouter, &url, "saturado", true), agent(2, Provider::OpenRouter, &url, "roto", true), agent(3, Provider::Custom, &url, "bueno", true), agent(4, Provider::OpenAi, &url, "caro", false)],
             ..Default::default()
         };
-        let out = analyze(&cfg, Mode::FreeThenPaid, &request(), &|_| {});
+        let out = analyze(&cfg, Mode::FreeThenPaid, &request(), 10, &|_| {});
         let (a, an) = out.result.unwrap();
         assert_eq!(a.id, 3, "responde el tercer agente gratuito");
         assert_eq!(an.proposals[0].teeth, vec![46]);
@@ -810,11 +941,11 @@ mod tests {
         let (url, h) = fake_service(3);
         let cfg = IaConfig { agents: vec![agent(1, Provider::OpenRouter, &url, "saturado", true), agent(2, Provider::Anthropic, &url, "claude", false)], ..Default::default() };
         // sólo gratuitos: falla y no se toca el de pago
-        let out = analyze(&cfg, Mode::FreeOnly, &request(), &|_| {});
+        let out = analyze(&cfg, Mode::FreeOnly, &request(), 10, &|_| {});
         assert!(out.result.is_err());
         assert_eq!(out.attempts.len(), 1);
         // gratuitos y luego de pago: responde el de pago (formato de Anthropic)
-        let out = analyze(&cfg, Mode::FreeThenPaid, &request(), &|_| {});
+        let out = analyze(&cfg, Mode::FreeThenPaid, &request(), 10, &|_| {});
         let (a, an) = out.result.unwrap();
         assert_eq!(a.id, 2);
         assert_eq!(an.findings[0].tooth, Some(46));
@@ -837,10 +968,57 @@ mod tests {
         assert!(!free_vision.is_empty());
     }
 
+    /// Sin análisis de pago que queden este mes, los agentes de pago no se
+    /// consultan (los gratuitos sí), y queda dicho en los intentos.
+    #[test]
+    fn paid_agents_are_not_called_past_the_monthly_limit() {
+        let (url, h) = fake_service(1);
+        let mut cfg = IaConfig { enabled: true, accepted: true, agents: vec![agent(1, Provider::Custom, &url, "de-pago", false)], max_paid_month: 3, ..Default::default() };
+        let out = analyze(&cfg, Mode::FreeThenPaid, &request(), 0, &|_| {});
+        assert!(out.result.unwrap_err().contains("máximo de 3"));
+        assert!(out.attempts.iter().any(|a| a.message.contains("no se consultan")));
+        // con margen, sí
+        let out = analyze(&cfg, Mode::FreeThenPaid, &request(), 1, &|_| {});
+        assert!(out.result.is_ok());
+        assert_eq!(h.join().unwrap().len(), 1, "una sola llamada, la permitida");
+        cfg.max_paid_month = 0;
+        assert!(analyze(&cfg, Mode::PaidOnly, &request(), 0, &|_| {}).result.is_err());
+    }
+
+    /// Un análisis es un borrador hasta que lo revisa un profesional
+    /// colegiado: antes no pasa al plan. Las propuestas pasan solo si se
+    /// eligen, y cada tratamiento dice de dónde viene.
+    #[test]
+    fn an_analysis_is_a_draft_until_a_professional_reviews_it() {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 6).unwrap();
+        let mut db = crate::model::Db::sample(day);
+        let r = db.ia_reports[0].clone();
+        assert!(r.analysis.proposals.len() >= 2 && r.review.is_none());
+        assert!(db.plan_from_ia(r.id, &[0], day).unwrap_err().contains("borrador"));
+        // recepción no lo revisa
+        db.config.current_user = db.users.iter().find(|u| u.doctor_id.is_none()).unwrap().name.clone();
+        assert!(db.review_ia_report(r.id, true).is_err());
+        let dentist = db.users.iter().find(|u| u.doctor_id.and_then(|d| db.doctor(d)).is_some_and(|c| crate::finance::collaborator_problem(c).is_none())).unwrap().name.clone();
+        db.config.current_user = dentist.clone();
+        db.review_ia_report(r.id, true).unwrap();
+        assert!(db.review_ia_report(r.id, false).is_err(), "una vez revisado, no se cambia");
+        let n = db.entries.len();
+        let idx = r.analysis.proposals.iter().position(|p| db.ia_treatment(p).is_some()).expect("una propuesta con tratamiento");
+        assert_eq!(db.plan_from_ia(r.id, &[idx], day).unwrap(), 1, "solo la elegida");
+        assert_eq!(db.entries.len(), n + 1);
+        let e = db.entries.last().unwrap();
+        assert!(e.notes.contains("Propuesto por IA") && e.notes.contains(&dentist), "{}", e.notes);
+        assert_eq!(db.plan_from_ia(r.id, &[idx], day).unwrap(), 0, "no se añade dos veces");
+        assert!(db.audit_log.iter().any(|a| a.action == "Análisis con IA revisado"));
+        // propuestas de piezas que no salen en la imagen, señaladas
+        let p = Proposal { kind: "caries".into(), teeth: vec![48], faces: vec![], reason: String::new() };
+        assert!(outside_image(&[11, 12], &p) && !outside_image(&[], &p) && !outside_image(&[47, 48], &p));
+    }
+
     #[test]
     fn agent_without_key_is_skipped_without_calling() {
         let cfg = IaConfig { agents: vec![Agent { base_url: "http://127.0.0.1:9/v1".into(), ..Agent::new(1, Provider::OpenRouter, "x:free", true) }], ..Default::default() };
-        let out = analyze(&cfg, Mode::FreeOnly, &request(), &|_| {});
+        let out = analyze(&cfg, Mode::FreeOnly, &request(), 10, &|_| {});
         assert!(out.result.is_err());
         assert_eq!(out.attempts[0].message, "falta la clave");
     }

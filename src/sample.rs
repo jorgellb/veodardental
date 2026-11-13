@@ -531,6 +531,8 @@ impl Db {
                 ],
                 user: "Dr. Navarro".into(),
                 planned: vec![],
+                review: None,
+                prompt_version: crate::ia::PROMPT_VERSION.into(),
             });
         }
 
