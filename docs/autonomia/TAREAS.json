@@ -2323,8 +2323,10 @@
     "T-F4-00"
    ],
    "criterio": "Ficheros validados contra la especificación disponible",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-037"
+   ]
   },
   {
    "id": "T-F4-07X",

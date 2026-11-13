@@ -94,12 +94,17 @@ pub struct ListsState {
     pub scroll_to: Option<f32>,
     /// Apartado abierto en Configuración.
     pub cfg_tab: crate::screens::config::CfgTab,
+    /// Libros registro (Configuración › Facturación): año y último resultado.
+    pub books_year: i32,
+    pub books_result: Option<Result<(std::path::PathBuf, Vec<String>), String>>,
 }
 
 impl Default for ListsState {
     fn default() -> Self {
         let t = crate::model::today();
         Self {
+            books_year: chrono::Datelike::year(&t),
+            books_result: None,
             patient_list_open: false,
             patient_filter: String::new(),
             patient_only_debt: false,

@@ -200,6 +200,8 @@ impl Db {
                 vat_exemption: Default::default(),
                 mig_profiles: vec![],
                 support_email: String::new(),
+                iae_epigrafe: String::new(),
+                actividad_tipo: String::new(),
             },
             treatments,
             tariffs: tariffs.into(),

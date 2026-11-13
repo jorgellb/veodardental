@@ -103,6 +103,11 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Responsable: gestoría.
 - Paso para desbloquear: enviar a la gestoría un fichero de prueba generado con datos ficticios.
 - Prueba posterior: la gestoría confirma la importación sin errores.
+- Estado tras T-F4-07: ya se generan los libros registro en el formato común de la AEAT (`src/libros.rs`). Quedan para la gestoría tres cosas:
+  1. comprobar que acepta el fichero en su programa o en el Pre303;
+  2. revisar la correspondencia de categorías de gasto con los conceptos G y el tratamiento en el IRPF del IVA soportado no deducible;
+  3. aportar, si los necesita, la especificación oficial o una muestra autorizada de los formatos propios de A3 (SUENLACE.DAT), ContaSol o Sage, que no tienen documentación pública oficial.
+
 
 ## B-12 Facturación foral: homologación y activación
 - Falta: alta en el entorno de pruebas de la hacienda foral, certificado y, en su caso, homologación del software.

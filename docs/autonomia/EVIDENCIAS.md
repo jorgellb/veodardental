@@ -958,3 +958,38 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
      - **Ahora:** lo pone el servidor con el usuario de la sesión. Una corrección sin motivo se rechaza.
   - **Prueba:** ampliada `server::tests::the_time_record_only_grows_on_the_server` (puesto de la sesión, segunda entrada rechazada y autor de la corrección).
 - **Batería:** fmt 0, clippy 0; `cargo test --workspace --all-targets --locked` con código 0, 439 pasan, 0 fallan y 10 ignoradas.
+
+## E-037 T-F4-07: libros registro en el formato común de la AEAT
+- **Fuentes oficiales** (en `docs/normativa.md`):
+  - el PDF «Formatos de los Libros Registro de IVA e IRPF» (V.18.02.2026): nombre del fichero, hojas, XLSX de 4 MB como mucho y un libro por año;
+  - los diseños `LSI.xlsx` (01-01-2026), con columnas, tipos, longitudes y validaciones numeradas;
+  - la plantilla `PLANTILLA_LIBROS_UNIFICADOS.xlsx` (09-09-2026), con la cabecera exacta en las filas 1 a 3, los datos desde la 4 y las listas de claves.
+  - El PDF se convirtió con `pdftotext` y los XLSX se leyeron como datos.
+- **Qué hay:** `src/libros.rs`.
+  - **Nombre:** ejercicio + NIF + «T» (persona física, libros unificados de IVA e IRPF) o «C» (sociedad, libros del IVA) + nombre.
+  - **Hojas:** EXPEDIDAS_INGRESOS y RECIBIDAS_GASTOS (o EXPEDIDAS y RECIBIDAS), con la cabecera copiada tal cual de la plantilla, incluidas sus erratas («Refrencia Externa»).
+  - **Facturas emitidas** (sin las anuladas):
+    - actividad A y tipo 05 (o 03 en una sociedad), con el epígrafe del IAE configurado;
+    - el tipo de factura de VERI*FACTU (F1, F2, R1, R5);
+    - I01, clave 01, exenta E1, total = base;
+    - el NIF y el nombre solo si no es simplificada.
+  - **Gastos:**
+    - concepto G por categoría (propuesta: Material G01, Laboratorio G03, Alquiler G12, Nóminas G04, Suministros GY4, Seguros G20, Marketing G22, Mantenimiento G13, Impuestos G26, Otros G37);
+    - número de recepción correlativo y NIF del proveedor de Almacén;
+    - total = base + cuota, y cuota deducible 0 (actividad exenta).
+  - **Antes de entregarlo** se comprueban las validaciones 2, 4, 5, 11, 32, 33 y 37 del diseño y el límite de 4 MB, y se dice lo que falta: NIF de proveedores, número de factura y epígrafe.
+  - **Dónde:** Configuración › Facturación y cobros › Libros registro.
+- **Pruebas:**
+  - `libros::tests::columns_and_codes`
+  - `libros::tests::the_books_follow_the_official_layout_and_validations`: se relee con calamine; nombres de hoja, las tres filas de cabecera idénticas a la plantilla, datos desde la fila 4, claves y totales, y fallos de las validaciones 4, 11, 32 y 37 detectados.
+  - `libros::tests::a_company_gets_the_vat_books_without_income_tax_columns`
+- **Pendiente (B-11):**
+  - que la gestoría lo acepte y revise los conceptos de gasto y el IVA no deducible en el IRPF;
+  - los formatos propios de A3, ContaSol y Sage, sin especificación oficial pública.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 442 pasan, 0 fallan, 10 ignoradas |

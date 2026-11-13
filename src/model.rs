@@ -656,6 +656,11 @@ pub struct ClinicConfig {
     /// emitidas guardan el suyo). Por defecto, el de siempre (20.Uno.3º).
     #[serde(default)]
     pub vat_exemption: VatExemption,
+    /// Epígrafe del IAE y tipo de actividad para los libros registro (`libros`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub iae_epigrafe: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub actividad_tipo: String,
     /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub support_email: String,

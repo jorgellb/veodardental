@@ -89,7 +89,14 @@ queda marcado como pendiente.
   - XLSX con una hoja por libro (EXPEDIDAS, RECIBIDAS…), de 4 MB como mucho;
   - un libro por ejercicio;
   - campos de número y serie, fechas, NIF, base, tipo, cuota, cuota deducible y total.
-- **Efecto en el código (T-F4-07):** la exportación contable sigue este formato oficial, que es el que se puede documentar.
+- **Diseños y plantilla (consultados el 14/11/2026):**
+  - «Diseños de registro normalizados para los Libros Registro del IVA y del IRPF presentados en formato XLXS (actualizado 01-01-2026)», en https://sede.agenciatributaria.gob.es/static_files/AEAT/LSI.xlsx: columnas A a AJ (expedidas e ingresos) y A a AP (recibidas y gastos), con tipos y longitudes y 40 validaciones numeradas;
+  - «Plantilla libros soporte electrónico (actualizada a 09-09-2026)», en https://sede.agenciatributaria.gob.es/static_files/Sede/Tema/IVA/Fact_registro/Libros/PLANTILLA_LIBROS_UNIFICADOS.xlsx: hojas finales EXPEDIDAS_INGRESOS y RECIBIDAS_GASTOS con cabecera en las filas 1 a 3 y datos desde la 4, y las listas oficiales de claves (actividad A05 y otras, F1, F2, R1 a R5, I01, G01 a G48, E1 a E6).
+- **Efecto en el código (T-F4-07):** `src/libros.rs` sigue este formato oficial, que es el que se puede documentar. Detalles:
+  - libros unificados («T») para una persona física; del IVA («C») para una sociedad, sin las columnas del IRPF;
+  - facturas exentas E1 con concepto I01;
+  - gastos con su concepto G (propuesta por categoría) y la cuota soportada no deducible;
+  - se comprueban las validaciones 2, 4, 5, 11, 32, 33 y 37 antes de entregarlo.
 - **A3, ContaSol y Sage:** no se ha encontrado una especificación oficial pública de sus ficheros de importación (SUENLACE.DAT de A3 y otros), solo descripciones de terceros. No se implementan sin especificación: queda en B-11.
 
 ## TicketBAI (territorios forales del País Vasco)

@@ -31,6 +31,7 @@ mod informes;
 mod insurer;
 mod jornada;
 mod lab_order;
+mod libros;
 mod local;
 mod mail;
 mod medidas;

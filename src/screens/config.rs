@@ -224,7 +224,11 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
             ui.add_space(10.0);
             crate::screens::jornada::admin_panel(app, ui);
         }
-        CfgTab::Facturacion => billing_tab(app, ui),
+        CfgTab::Facturacion => {
+            billing_tab(app, ui);
+            ui.add_space(10.0);
+            books_card(app, ui);
+        }
         CfgTab::Correo => crate::screens::correo::panel(app, ui),
         CfgTab::CitaOnline => crate::screens::cita_online::panel(app, ui),
         CfgTab::Telefonia => crate::screens::llamadas::panel(app, ui),
@@ -806,4 +810,62 @@ fn integrations(app: &mut App, ui: &mut Ui) {
             _ => app.screen = s,
         }
     }
+}
+
+/// Libros registro de IVA e IRPF en el formato de la AEAT (ver `crate::libros`).
+fn books_card(app: &mut App, ui: &mut Ui) {
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Libros registro para la gestoría (formato de la AEAT)");
+        muted(ui, "Facturas emitidas y gastos del año en el formato electrónico común de la AEAT (XLSX), el que se importa en el Pre303 y en Renta WEB. Revise el resultado con su gestoría: los conceptos de gasto son una propuesta.");
+        let before = (app.db.config.iae_epigrafe.clone(), app.db.config.actividad_tipo.clone());
+        ui.horizontal_wrapped(|ui| {
+            field(ui, "Epígrafe del IAE de la clínica", &mut app.db.config.iae_epigrafe, 140.0);
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Tipo de actividad").size(13.0).color(MUTED));
+                let cur = crate::libros::Activity::of(&app.db).kind;
+                crate::theme::combo("libros_tipo")
+                    .width(320.0)
+                    .selected_text(match cur.as_str() {
+                        "03" => "03 · Actividades empresariales",
+                        "04" => "04 · Profesionales artísticas o deportivas",
+                        _ => "05 · Resto de actividades profesionales",
+                    })
+                    .show_ui(ui, |ui| {
+                        for (k, n) in [("05", "05 · Resto de actividades profesionales"), ("03", "03 · Actividades empresariales"), ("04", "04 · Profesionales artísticas o deportivas")] {
+                            ui.selectable_value(&mut app.db.config.actividad_tipo, k.to_string(), n);
+                        }
+                    });
+            });
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Año").size(13.0).color(MUTED));
+                ui.add(egui::DragValue::new(&mut app.lists.books_year).range(2000..=2100));
+            });
+        });
+        if before != (app.db.config.iae_epigrafe.clone(), app.db.config.actividad_tipo.clone()) {
+            app.changed();
+        }
+        if primary(ui, "Generar los libros registro").clicked() {
+            let dir = crate::paths::documents().join(crate::brand::DIR);
+            app.lists.books_result = Some(crate::libros::export(&app.db, app.lists.books_year, &dir));
+        }
+        match &app.lists.books_result {
+            Some(Ok((path, problems))) => {
+                ui.label(RichText::new(format!("Guardado en {}", path.display())).color(OK));
+                if problems.is_empty() {
+                    muted(ui, "Pasa todas las validaciones del diseño oficial que se comprueban aquí.");
+                }
+                for p in problems.iter().take(30) {
+                    ui.label(RichText::new(p).color(WARN));
+                }
+                if problems.len() > 30 {
+                    muted(ui, format!("… y {} más.", problems.len() - 30));
+                }
+            }
+            Some(Err(e)) => {
+                ui.label(RichText::new(e).color(DANGER));
+            }
+            None => {}
+        }
+    });
 }
