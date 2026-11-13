@@ -43,7 +43,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | `4380f92` |
 | T-F4-00: normativa consultada (fuente, fecha, versión y efecto) | E-031 | `03a9036` |
 | T-F4-02: registro de accesos a cada historia (encadenado, fuera de los datos, en red por el servidor) | E-032 | `e1d4ce0` |
-| T-F4-03: derechos RGPD (solicitudes, exportación íntegra, limitación, bloqueo; supresión desactivada); revisión de seguridad del registro de accesos | E-033 | (pendiente) |
+| T-F4-03: derechos RGPD (solicitudes, exportación íntegra, limitación, bloqueo; supresión desactivada); revisión de seguridad del registro de accesos | E-033 | `1141e02` |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
