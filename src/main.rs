@@ -45,6 +45,7 @@ mod screens;
 mod server;
 mod shared;
 mod slot_offer;
+mod sms;
 mod srep;
 mod srep_cert;
 mod srep_doc;

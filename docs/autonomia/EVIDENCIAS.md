@@ -732,3 +732,37 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 418 pasan, 0 fallan, 10 ignoradas |
+
+## E-028 T-F3-07: WhatsApp, correo y SMS contra dobles de prueba
+- **WhatsApp y correo:** ya estaban, con sus dobles de prueba (área 6, E-012).
+  - **Correo:**
+    - `mail::tests::a_cut_after_the_data_is_uncertain_and_a_rejection_is_not`
+    - `comms::tests::emails_are_claimed_once_and_uncertain_ones_wait_for_a_decision`, que también comprueba que dos puestos no envían el mismo
+    - `comms::tests::automatic_emails_are_not_sent_at_night`
+  - **WhatsApp:**
+    - `whatsapp::tests::full_round_trip_with_fake_meta` (Meta simulada)
+    - `gateway_round_trip_with_fake_waha_and_evolution`
+    - `network_errors_tell_not_sent_from_uncertain`
+    - `an_uncertain_send_is_not_retried_and_replies_still_count`
+    - `replying_baja_stops_whatsapp`
+- **SMS: no había pasarela** (se copiaba el texto y se marcaba como enviado). Ahora hay una (`src/sms.rs`).
+  - **Formato:** genérico por HTTP: JSON por POST con `Authorization: Bearer` e `Idempotency-Key`, sin suponer el formato de ningún proveedor.
+  - **Número:** en formato internacional.
+  - **Solo cifrada:** https, salvo en este mismo ordenador.
+  - **Resultado,** clasificado como el de un correo:
+    - no enviado (se puede reintentar): sin conexión, 4xx o 503;
+    - incierto: corte tras enviarlo, 500, 502 o 504. Espera al «¿Llegó?» antes de repetirse (`Db::sms_outcome`).
+  - **Dónde se guarda:** la dirección y la clave en este ordenador (`sms.json`, 0600), no en los datos de la clínica.
+  - **En la pantalla:** se envía en segundo plano desde Comunicaciones y se configura en Configuración › WhatsApp. Sin pasarela, sigue la copia manual.
+  - **Pruebas con una pasarela simulada explícita:**
+    - `sms::tests::each_outcome_is_classified_and_a_retry_never_sends_twice`: envío, rechazo 400, corte tras recibir (incierto), reintento con la misma clave sin segundo SMS, 502 incierto, 503 no enviado, sin conexión, sin https y número fijo;
+    - `sms::tests::the_outcome_is_recorded_on_the_message`;
+    - `sms::tests::numbers_go_out_in_international_format`.
+- **Sin probar con servicios reales:** la cuenta de WhatsApp Business y sus plantillas aprobadas (B-07, T-F3-07X) y el contrato con un proveedor de SMS. No se ha contratado nada.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 421 pasan, 0 fallan, 10 ignoradas |

@@ -224,7 +224,11 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
         CfgTab::Correo => crate::screens::correo::panel(app, ui),
         CfgTab::CitaOnline => crate::screens::cita_online::panel(app, ui),
         CfgTab::Telefonia => crate::screens::llamadas::panel(app, ui),
-        CfgTab::Whatsapp => crate::screens::whatsapp::panel(app, ui),
+        CfgTab::Whatsapp => {
+            crate::screens::whatsapp::panel(app, ui);
+            ui.add_space(10.0);
+            crate::screens::comunicaciones::sms_settings(app, ui);
+        }
         CfgTab::Receta => crate::screens::recetas::config_panel(app, ui),
         CfgTab::Ia => crate::screens::ia::config_panel(app, ui),
         CfgTab::Importar => crate::screens::importar::panel(app, ui),

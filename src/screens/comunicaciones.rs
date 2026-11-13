@@ -191,6 +191,23 @@ pub fn send(app: &mut App, ctx: &egui::Context, m: &Message) {
             ctx.open_url(egui::OpenUrl::new_tab(url));
             app.notify("WhatsApp abierto con el mensaje escrito. Pulse enviar en WhatsApp.");
         }
+        Channel::Sms if app.sms.enabled() => {
+            // con la pasarela configurada, sale desde el programa (en segundo plano)
+            if app.sms_job.is_some() {
+                app.warn("Ya se está enviando otro SMS: espere un momento.");
+                return;
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (cfg, id, to, text, ctx2) = (app.sms.clone(), m.id, m.to.clone(), m.text.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                let r = crate::sms::send(&cfg, &to, &text, &format!("veodardental-{id}"));
+                let _ = tx.send((id, r));
+                ctx2.request_repaint();
+            });
+            app.sms_job = Some(rx);
+            app.notify("Enviando el SMS…");
+            return;
+        }
         Channel::Email if app.db.mail.ready() => {
             // con el correo configurado, sale directamente desde el programa
             start_outbox(app, vec![m.id], false);
@@ -210,7 +227,51 @@ pub fn send(app: &mut App, ctx: &egui::Context, m: &Message) {
     app.changed();
 }
 
+/// Recoge el resultado del SMS enviado por la pasarela.
+fn poll_sms(app: &mut App) {
+    let Some((id, r)) = app.sms_job.as_ref().and_then(|rx| rx.try_recv().ok()) else { return };
+    app.sms_job = None;
+    app.db.sms_outcome(id, &r);
+    app.changed();
+    match r {
+        Ok(()) => app.notify("SMS enviado."),
+        Err(e) => app.warn(e.text().to_string()),
+    }
+}
+
+/// Pasarela de SMS (en este ordenador; la clave no va en los datos de la clínica).
+pub fn sms_settings(app: &mut App, ui: &mut Ui) {
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Pasarela de SMS");
+        muted(
+            ui,
+            "Sin pasarela, los SMS se copian y se envían desde un móvil. Con la del proveedor que contrate la clínica (https), salen desde el programa: cada mensaje lleva su referencia como clave de idempotencia y, si no se sabe si salió, se pregunta antes de repetirlo.",
+        );
+        ui.horizontal_wrapped(|ui| {
+            field(ui, "Dirección de la pasarela (https://…)", &mut app.sms.url, 340.0);
+            field(ui, "Remitente", &mut app.sms.sender, 140.0);
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Clave de la pasarela").color(MUTED));
+                ui.add_sized([280.0, 34.0], egui::TextEdit::singleline(&mut app.sms.token).password(true));
+            });
+            ui.vertical(|ui| {
+                ui.add_space(19.0);
+                if primary(ui, "Guardar").clicked() {
+                    match crate::sms::save_settings(&app.sms) {
+                        Ok(()) => app.notify("Pasarela de SMS guardada en este ordenador."),
+                        Err(e) => app.warn(e),
+                    }
+                }
+            });
+        });
+    });
+}
+
 pub fn screen(app: &mut App, ui: &mut Ui) {
+    poll_sms(app);
     ui.horizontal(|ui| {
         title(ui, "Comunicaciones", "Recordatorios de cita, avisos de revisión, cumpleaños y seguimiento de presupuestos por WhatsApp, SMS y email");
     });

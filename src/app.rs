@@ -196,6 +196,9 @@ pub struct App {
     pub docs_mode: u8,
     pub imp: screens::importar::ImportState,
     pub support: screens::soporte::SupportState,
+    /// Pasarela de SMS de este ordenador y el envío en curso.
+    pub sms: crate::sms::SmsSettings,
+    pub sms_job: Option<std::sync::mpsc::Receiver<(u32, Result<(), crate::mail::SendError>)>>,
     pub ortho: screens::ortodoncia::OrthoUi,
     pub rem: screens::remesas::RemState2,
     pub cobros_tab: u8,
@@ -329,6 +332,8 @@ impl App {
             docs_mode: 0,
             imp: screens::importar::ImportState::default(),
             support: Default::default(),
+            sms: if live { crate::sms::load_settings() } else { Default::default() },
+            sms_job: None,
             ortho: screens::ortodoncia::OrthoUi::default(),
             rem: screens::remesas::RemState2::default(),
             cobros_tab: 0,

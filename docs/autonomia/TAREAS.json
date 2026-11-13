@@ -2070,8 +2070,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas con servidores simulados explícitos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-028"
+   ]
   },
   {
    "id": "T-F3-06X",

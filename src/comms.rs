@@ -482,6 +482,22 @@ impl Db {
         }
     }
 
+    /// Resultado de enviar un SMS por la pasarela (como el de un correo):
+    /// enviado, fallido (se puede reintentar) o incierto (no se reintenta solo).
+    pub fn sms_outcome(&mut self, id: u32, result: &Result<(), crate::mail::SendError>) {
+        match result {
+            Ok(()) => self.mark_sent(id),
+            Err(crate::mail::SendError::NotSent(e)) => self.email_failed(id, e),
+            Err(crate::mail::SendError::Uncertain(e)) => {
+                if let Some(m) = self.messages.iter_mut().find(|m| m.id == id) {
+                    m.attempts += 1;
+                    m.uncertain = true;
+                    m.error = e.clone();
+                }
+            }
+        }
+    }
+
     /// Decide un correo del que no se sabía si llegó: consta como enviado, o
     /// vuelve a pendiente para enviarlo otra vez.
     pub fn resolve_uncertain(&mut self, id: u32, arrived: bool) {
