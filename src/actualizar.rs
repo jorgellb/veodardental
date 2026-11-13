@@ -16,7 +16,7 @@
 //!
 //! **Orden en la clínica:** primero el servidor y después los puestos.
 //! - Un puesto de otra versión no escribe en el servidor (`server::data_mismatch`).
-//! - Lo que tenga sin enviar queda en su bandeja (`server::outbox_path`) y se
+//! - Lo que tenga sin enviar queda en la bandeja de su usuario (`server::outbox_path`) y se
 //!   envía al actualizarlo.
 
 use serde::{Deserialize, Serialize};

@@ -603,3 +603,38 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` (dos veces) | 0 | 411 pasan, 0 fallan, 10 ignoradas |
+
+## E-024 T-F3-03: firma y empaquetado, y revisión de seguridad de la bandeja
+- **Revisión de seguridad automática del commit `7704bd1`: dos hallazgos, corregidos.**
+  - **Hallazgos:**
+    - **Suplantación:** lo pendiente de un usuario se enviaba con la sesión del siguiente que entrara, con sus permisos.
+    - **Pérdida de datos:** un envío correcto de otro usuario borraba esa bandeja ajena.
+  - **Ahora:**
+    - una bandeja por usuario y servidor (`server::outbox_path(usuario, huella)`), que solo se envía cuando entra ese mismo usuario en ese mismo servidor;
+    - al reenviar se omiten, con aviso, los cambios de usuarios, puestos, conexiones y configuración (`server::replayable`);
+    - cada envío correcto borra solo la bandeja propia.
+  - **Prueba:** la de la bandeja comprueba las rutas por usuario y servidor y lo que no se reenvía.
+  - **Límite aceptado:** quien puede escribir en la carpeta del usuario del sistema podría editar su bandeja. También podría cambiar el programa o los datos de ese ordenador, así que queda fuera de lo que esto protege. Los cambios de administración no se reenvían nunca desde ella.
+- **T-F3-03.**
+  - **Flujo de instaladores:** `.github/workflows/instaladores.yml`.
+    - Firma de Windows (signtool, con sello de tiempo y verificación) y de macOS (codesign con *hardened runtime*, notarización y grapado). Cada una solo se hace si están sus secretos.
+    - Firma del paquete de actualización (B-27), con el ejemplo nuevo `examples/firmar_version.rs`.
+    - `FIRMA.txt` en cada artefacto dice qué se ha firmado: nada se declara firmado sin firma.
+    - Comprobación del `.deb` por dentro en Linux.
+    - Las acciones van fijadas a su commit, porque esos pasos manejan secretos (aviso de semgrep). Los commits salen de `git ls-remote` de cada repositorio.
+  - **Empaquetado comprobado en Linux, en este ordenador:**
+    - `cargo packager --release --formats deb`: código 0, `dist/veodardental_0.1.0_amd64.deb` (20 MB; `dist/` no va al repositorio).
+    - Por dentro: `usr/bin/veodardental` ejecutable, `veodardental.desktop` e iconos de 32, 128, 256 y 512.
+    - El binario empaquetado, con raíz aislada: `--comprobar` → «VeodarDental 0.1.0 · datos 1 · 18 pacientes», código 0.
+  - **Firma de versiones comprobada:**
+    1. Clave Ed25519 desechable de OpenSSL, en la carpeta temporal y fuera del repositorio.
+    2. `firmar_version` escribe el manifiesto.
+    3. `openssl pkeyutl -verify` sobre él: «Signature Verified Successfully», código 0.
+  - **Sin firmar todavía:** los binarios no están firmados ni notarizados. Faltan los certificados (B-25) y la clave de versiones (B-27).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 411 pasan, 0 fallan, 10 ignoradas |

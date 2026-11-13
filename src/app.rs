@@ -676,13 +676,14 @@ impl App {
             let d = r.pull(self.db.rev)?;
             r.receive(&mut self.db, &mut self.synced, d)?;
         }
-        // lo que quedó sin enviar en una sesión anterior (sin conexión o antes de actualizar)
-        let outbox = crate::server::outbox_path();
-        let pending = crate::server::load_outbox(&outbox);
-        if !pending.is_empty() {
+        // lo que este mismo usuario dejó sin enviar a este servidor (sin conexión o antes de actualizar)
+        let outbox = crate::server::outbox_path(id, &r.pinned());
+        let (pending, skipped) = crate::server::replayable(crate::server::load_outbox(&outbox));
+        if !pending.is_empty() || skipped > 0 {
             let n = r.push_changes(&mut self.db, &mut self.synced, &pending)?;
             let _ = std::fs::remove_file(&outbox);
-            self.notify(format!("Enviados al servidor {n} cambios que habían quedado en este puesto."));
+            let extra = if skipped > 0 { format!(" {skipped} cambios de usuarios, puestos o configuración no se reenvían: hágalos de nuevo.") } else { String::new() };
+            self.notify(format!("Enviados al servidor {n} cambios que habían quedado en este puesto.{extra}"));
         }
         self.dirty = false;
         self.awaiting_data = false;
@@ -701,9 +702,10 @@ impl App {
         if self.awaiting_data {
             return;
         }
+        let (Some(user), Some(pin)) = (self.user_id, self.remote.as_ref().map(|r| r.pinned())) else { return };
         let changes = crate::server::unsent(&self.db, &self.synced);
         if !changes.is_empty()
-            && let Err(e) = crate::server::save_outbox(&crate::server::outbox_path(), &changes)
+            && let Err(e) = crate::server::save_outbox(&crate::server::outbox_path(user, &pin), &changes)
         {
             self.save_error = Some(format!("No se pudo guardar en este ordenador lo pendiente de enviar: {e}"));
         }
@@ -788,8 +790,11 @@ impl App {
                 self.keep_unsent();
                 return Err(e);
             }
-            // enviado: lo de la bandeja (de esta sesión) ya está en el servidor
-            let _ = std::fs::remove_file(crate::server::outbox_path());
+            // enviado: lo de la bandeja de este usuario (de esta sesión) ya está en el
+            // servidor; la de otros usuarios se queda para cuando entren ellos
+            if let Some(user) = self.user_id {
+                let _ = std::fs::remove_file(crate::server::outbox_path(user, &r.pinned()));
+            }
             return Ok(0);
         }
         // un solo ordenador: solo lo que ha cambiado, en el diario

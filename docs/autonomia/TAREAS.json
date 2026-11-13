@@ -1992,8 +1992,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Flujo de CI preparado; empaquetado comprobado en Linux; sin declarar binarios firmados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-024"
+   ]
   },
   {
    "id": "T-F3-03X",

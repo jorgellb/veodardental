@@ -2,6 +2,20 @@
 # Se lanza a mano (Actions › Instaladores › Run workflow) o al subir una
 # etiqueta de versión (git tag v0.2.0 && git push --tags); con etiqueta los
 # instaladores se publican también como «Release» del repositorio.
+#
+# Firma (T-F3-03). Cada firma solo se hace si están sus secretos; si no,
+# los instaladores salen SIN FIRMAR y así lo dice FIRMA.txt en cada
+# artefacto. Nunca se rebajan controles del sistema para quitar avisos.
+# - Windows (signtool): WINDOWS_CERT_PFX (el .pfx en base64) y WINDOWS_CERT_PASSWORD.
+# - macOS (codesign y notarización): APPLE_CERTIFICATE (el .p12 en base64),
+#   APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID,
+#   APPLE_PASSWORD (contraseña de aplicación) y APPLE_TEAM_ID.
+# - Paquete de actualización (--actualizar, ver src/actualizar.rs):
+#   VEODARDENTAL_CLAVE_FIRMA (clave Ed25519 PKCS#8 en hexadecimal; su parte
+#   pública va en actualizar::RELEASE_KEYS).
+#
+# Las acciones van fijadas a un commit (no a una etiqueta, que se puede
+# mover): estos pasos manejan los secretos de firma.
 name: Instaladores
 
 on:
@@ -16,13 +30,15 @@ jobs:
   pruebas:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Bibliotecas de Linux
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev openssl
       - name: Pruebas automáticas
-        run: cargo test
+        run: cargo test --locked
 
   instaladores:
     needs: pruebas
@@ -43,10 +59,17 @@ jobs:
             nombre: linux
             formatos: deb,appimage
     runs-on: ${{ matrix.os }}
+    env:
+      FIRMA_WINDOWS: ${{ secrets.WINDOWS_CERT_PFX != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+      FIRMA_APPLE: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      NOTARIZAR_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+      FIRMA_VERSION: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Bibliotecas de Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libfuse2
@@ -54,7 +77,98 @@ jobs:
         run: cargo install cargo-packager --locked
       - name: Compilar y empaquetar
         run: cargo packager --release --formats ${{ matrix.formatos }}
-      - uses: actions/upload-artifact@v4
+
+      # ── comprobación del empaquetado (en Linux, el .deb por dentro) ──
+      - name: Comprobar el paquete .deb
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb=$(ls dist/*.deb | head -1)
+          mkdir -p comprobar && cd comprobar
+          ar x "../$deb"
+          tar -xf data.tar.*
+          test -x usr/bin/veodardental
+          test -f usr/share/applications/*.desktop
+          ls usr/share/icons/hicolor/*/apps/ >/dev/null
+          VEODARDENTAL_RAIZ="$PWD/raiz" ./usr/bin/veodardental --comprobar
+
+      # ── firma en Windows (solo con certificado) ──
+      - name: Firmar los instaladores de Windows
+        if: runner.os == 'Windows' && env.FIRMA_WINDOWS == 'true'
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "firma.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          foreach ($f in Get-ChildItem dist\*.exe, dist\*.msi) {
+            & $signtool.FullName sign /f $pfx /p $env:PFX_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 $f.FullName
+            & $signtool.FullName verify /pa $f.FullName
+          }
+          Remove-Item $pfx
+
+      # ── firma y notarización en macOS (solo con certificado y cuenta) ──
+      - name: Firmar (y notarizar) en macOS
+        if: runner.os == 'macOS' && env.FIRMA_APPLE == 'true'
+        shell: bash
+        env:
+          P12: ${{ secrets.APPLE_CERTIFICATE }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/firma.keychain-db"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/firma.p12"
+          security create-keychain -p "" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "" "$kc"
+          security import "$RUNNER_TEMP/firma.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          app=$(ls -d dist/*.app | head -1)
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$app"
+          codesign --verify --deep --strict "$app"
+          rm -f dist/*.dmg
+          hdiutil create -volname VeodarDental -srcfolder "$app" -ov -format UDZO dist/VeodarDental.dmg
+          codesign --force --timestamp --sign "$IDENTITY" dist/VeodarDental.dmg
+          if [ "$NOTARIZAR_APPLE" = "true" ]; then
+            xcrun notarytool submit dist/VeodarDental.dmg --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple dist/VeodarDental.dmg
+          fi
+          rm -f "$RUNNER_TEMP/firma.p12"
+
+      # ── manifiesto firmado para --actualizar (solo con la clave de versiones) ──
+      - name: Firmar el paquete de actualización
+        if: env.FIRMA_VERSION == 'true' && runner.os == 'Linux'
+        shell: bash
+        env:
+          VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/actualizacion
+          cp target/release/veodardental dist/actualizacion/
+          cargo run --release --locked --example firmar_version -- dist/actualizacion "${GITHUB_REF_NAME#v}"
+
+      # ── qué se ha firmado (para no declarar firmado lo que no lo está) ──
+      - name: Estado de la firma
+        shell: bash
+        run: |
+          {
+            echo "Sistema: ${{ matrix.nombre }}"
+            echo "Windows firmado: $([ "$FIRMA_WINDOWS" = "true" ] && [ "${{ runner.os }}" = "Windows" ] && echo sí || echo no)"
+            echo "macOS firmado: $([ "$FIRMA_APPLE" = "true" ] && [ "${{ runner.os }}" = "macOS" ] && echo sí || echo no)"
+            echo "macOS notarizado: $([ "$FIRMA_APPLE" = "true" ] && [ "$NOTARIZAR_APPLE" = "true" ] && [ "${{ runner.os }}" = "macOS" ] && echo sí || echo no)"
+            echo "Paquete de actualización firmado: $([ "$FIRMA_VERSION" = "true" ] && [ "${{ runner.os }}" = "Linux" ] && echo sí || echo no)"
+          } > dist/FIRMA.txt
+          cat dist/FIRMA.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: VeodarDental-${{ matrix.nombre }}
           path: |
@@ -63,10 +177,12 @@ jobs:
             dist/*.dmg
             dist/*.deb
             dist/*.AppImage
+            dist/FIRMA.txt
+            dist/actualizacion/
           if-no-files-found: error
       - name: Publicar en la versión
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             dist/*.exe

@@ -78,12 +78,28 @@ const DATA_HEADER: &str = "X-Datos";
 pub const UPDATE_STATION: &str = "Este puesto tiene una versión de VeodarDental anterior a la del servidor: actualícelo. Lo hecho aquí y no enviado se guarda en este ordenador y se envía al actualizar.";
 pub const UPDATE_SERVER: &str = "El servidor de la clínica tiene una versión de VeodarDental anterior a la de este puesto: actualice primero el servidor. Lo hecho aquí y no enviado se guarda en este ordenador.";
 
-/// Bandeja de este ordenador con lo que el puesto no ha podido enviar al
+/// Bandeja de este ordenador con lo que un usuario no ha podido enviar al
 /// servidor (sin conexión, o porque hay que actualizar uno de los dos): así
-/// no se pierde al cerrar el programa ni al actualizarlo. Solo para el
-/// usuario: lleva datos de pacientes.
-pub fn outbox_path() -> PathBuf {
-    crate::paths::config().join(crate::brand::DIR).join("pendientes.json")
+/// no se pierde al cerrar el programa ni al actualizarlo.
+/// - **Una por usuario y servidor:** solo se envía cuando entra ese mismo
+///   usuario en ese mismo servidor, con sus permisos, nunca con los de otro.
+/// - **Solo para el usuario del sistema:** lleva datos de pacientes.
+pub fn outbox_path(user: u32, server_pin: &str) -> PathBuf {
+    let pin: String = server_pin.chars().filter(|c| c.is_ascii_hexdigit()).take(16).collect();
+    crate::paths::config().join(crate::brand::DIR).join("pendientes").join(format!("usuario{user}_{pin}.json"))
+}
+
+/// Lo que no se reenvía desde una bandeja (hay que hacerlo de nuevo, con la
+/// sesión abierta): cambios de administración (usuarios y permisos, puestos,
+/// conexiones y configuración), por si alguien la hubiera tocado.
+pub const NOT_REPLAYED: [&str; 4] = ["users", "stations", "connectors", "config"];
+
+/// Separa lo que se reenvía de la bandeja de lo que no (cuántos).
+pub fn replayable(changes: Vec<Change>) -> (Vec<Change>, usize) {
+    let n = changes.len();
+    let ok: Vec<Change> = changes.into_iter().filter(|c| !NOT_REPLAYED.contains(&c.field.as_str())).collect();
+    let skipped = n - ok.len();
+    (ok, skipped)
 }
 
 /// Lo que hay en la bandeja.
@@ -2509,6 +2525,12 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(std::fs::metadata(&outbox).unwrap().permissions().mode() & 0o777, 0o600);
         }
+        // cada usuario (y servidor), su bandeja; lo de administración no se reenvía
+        assert_ne!(outbox_path(1, "aa"), outbox_path(2, "aa"));
+        assert_ne!(outbox_path(1, "aa"), outbox_path(1, "bb"));
+        let admin = Change { field: "users".into(), key: Some("1".into()), before: None, after: Some("{}".into()) };
+        let (ok, skipped) = replayable(kept.iter().cloned().chain([admin]).collect());
+        assert_eq!((ok.len(), skipped), (2, 1));
         // otra sesión (el programa se cerró y se volvió a abrir): se envía
         let b = signed_in(&addr, "CLAVE_BANDEJA", "Dirección", 1, "0000");
         let (mut db2, mut s2) = b.load().unwrap();
