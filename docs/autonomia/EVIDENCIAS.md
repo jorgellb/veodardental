@@ -25,3 +25,27 @@ servicios, ficheros reales o mediciones largas.
 - `cargo fmt --all -- --check` da código 0.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` da código 0.
 - `cargo test --workspace --all-targets --locked`: 304 pasan, 0 fallan, 10 ignoradas.
+
+## E-004 Seguimiento, verificador y encargo (commits `50431a3` y `6f8d19c`)
+- `VEODARDENTAL_GOAL.md` guardado sin cambios (SHA-256 `dceb8c7c…a38d`).
+- `cargo run --example verificar_objetivo -- --progreso`: 134 líneas del encargo y 134 requisitos, todos con tareas. «RESULTADO: inventario íntegro (modo progreso)».
+- `BLOQUEOS.md` registra los requisitos externos de la fase 0: GESDEN (B-03), receta certificada (B-09), AEAT (B-06), firma de instaladores (B-25) y WhatsApp (B-07), además de los demás.
+
+## E-005 Exención de IVA configurable (T-F0-02 a T-F0-04)
+- **Usos localizados:**
+  - leyenda de la factura imprimible (`src/screens/centros.rs`), pantalla de la factura y exportación en texto (`src/screens/facturas.rs`), comentario de VERI*FACTU;
+  - textos genéricos sin artículo en el presupuesto web.
+- **Fuente oficial:** BOE consolidado, consultado el 13/11/2026 (docs/normativa.md).
+- **Prueba nueva:** `verifactu::tests::the_exemption_article_stays_with_each_invoice`.
+  - Antes de implementarse no compilaba: la función no existía.
+  - Comprueba que la factura antigua imprime exactamente la leyenda de antes y que el valor por defecto no cambia nada.
+  - Con el 20.Uno.5º, solo las nuevas cambian; la rectificativa cita la de su original; la cadena sigue íntegra; un fichero de configuración antiguo carga el 20.Uno.3º.
+- **Prueba de pantalla nueva:** `ui_tests::the_vat_exemption_for_new_invoices_is_chosen_in_the_settings`, con una ventana de 1280×800. Elegir el 5.º cambia la configuración, deja registro y no toca las facturas emitidas.
+- **Captura sintética:** `docs/autonomia/capturas/f0_exencion_iva_1280x800.png`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 306 pasan, 0 fallan, 10 ignoradas |

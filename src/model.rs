@@ -623,6 +623,10 @@ pub struct ClinicConfig {
     pub backup_extra: String,
     #[serde(default)]
     pub board_initials: bool,
+    /// Artículo de exención de IVA que llevarán las facturas nuevas (las
+    /// emitidas guardan el suyo). Por defecto, el de siempre (20.Uno.3º).
+    #[serde(default)]
+    pub vat_exemption: VatExemption,
 }
 
 // Listas que empiezan con contenido (para los datos guardados por versiones que no las tenían).
@@ -1046,6 +1050,55 @@ impl InvoiceLine {
     }
 }
 
+/// Artículo de la Ley 37/1992 por el que los servicios facturados están
+/// exentos de IVA. Se guarda en cada factura al emitirla: cambiar el de la
+/// clínica solo afecta a las nuevas (la decisión es de la gestoría).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VatExemption {
+    /// Art. 20.Uno.3º: asistencia a personas físicas por profesionales médicos
+    /// o sanitarios. Es la que citaban todas las facturas hasta ahora.
+    #[default]
+    Art20Uno3,
+    /// Art. 20.Uno.5º: servicios de estomatólogos, odontólogos, mecánicos
+    /// dentistas y protésicos dentales, y sus prótesis dentales.
+    Art20Uno5,
+}
+
+impl VatExemption {
+    pub const ALL: [VatExemption; 2] = [VatExemption::Art20Uno3, VatExemption::Art20Uno5];
+    /// La que imprimían las facturas emitidas antes de poder elegirla.
+    pub const LEGACY: VatExemption = VatExemption::Art20Uno3;
+
+    pub fn article(self) -> &'static str {
+        match self {
+            VatExemption::Art20Uno3 => "20.Uno.3º",
+            VatExemption::Art20Uno5 => "20.Uno.5º",
+        }
+    }
+
+    /// Qué exime, en palabras de la ley (BOE-A-1992-28740, consultado el 13/11/2026).
+    pub fn scope(self) -> &'static str {
+        match self {
+            VatExemption::Art20Uno3 => "asistencia a personas físicas por profesionales médicos o sanitarios",
+            VatExemption::Art20Uno5 => "servicios de estomatólogos, odontólogos, mecánicos dentistas y protésicos dentales y sus prótesis dentales",
+        }
+    }
+
+    /// Resumen corto para la leyenda.
+    fn short(self) -> &'static str {
+        match self {
+            VatExemption::Art20Uno3 => "asistencia sanitaria",
+            VatExemption::Art20Uno5 => "servicios de odontología y prótesis dentales",
+        }
+    }
+
+    /// Leyenda de la factura. Con el 20.Uno.3º es, palabra por palabra, la
+    /// que imprimían las facturas antes de poder elegirla.
+    pub fn legend(self) -> String {
+        format!("Operación exenta de IVA según el art. {} de la Ley 37/1992 ({}).", self.article(), self.short())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Invoice {
     pub id: u32,
@@ -1082,9 +1135,18 @@ pub struct Invoice {
     /// Estado de la remisión a la AEAT.
     #[serde(default)]
     pub aeat: crate::verifactu::AeatStatus,
+    /// Artículo de exención con que se emitió (ninguno: anterior a poder
+    /// elegirlo, imprimía el 20.Uno.3º). No entra en la huella.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exemption: Option<VatExemption>,
 }
 
 impl Invoice {
+    /// Leyenda de exención con que se emitió la factura.
+    pub fn exemption_legend(&self) -> String {
+        self.exemption.unwrap_or(VatExemption::LEGACY).legend()
+    }
+
     pub fn code(&self) -> String {
         format!("{}-{:05}", self.series, self.number)
     }
@@ -1960,6 +2022,7 @@ impl Db {
             gen_ts: stamp.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
             issuer_nif: self.config.nif.clone(),
             aeat: Default::default(),
+            exemption: Some(self.config.vat_exemption),
         };
         let id = self.seal(inv);
         for e in self.entries.iter_mut() {

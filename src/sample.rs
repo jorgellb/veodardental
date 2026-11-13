@@ -196,6 +196,7 @@ impl Db {
                 clinic_iban: String::new(),
                 backup_extra: String::new(),
                 board_initials: true,
+                vat_exemption: Default::default(),
             },
             treatments,
             tariffs: tariffs.into(),

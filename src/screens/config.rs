@@ -372,6 +372,12 @@ fn billing_tab(app: &mut App, ui: &mut Ui) {
                 ui.add(egui::DragValue::new(&mut c.budget_valid_days).range(1..=730).suffix(" días"));
             });
             ui.label(RichText::new("Las facturas se numeran solas, sin huecos.").font(mdf(12.8)).color(MUTED));
+            ui.add_space(8.0);
+            section(ui, "Exención de IVA en las facturas nuevas");
+            for v in crate::model::VatExemption::ALL {
+                ui.radio_value(&mut c.vat_exemption, v, format!("Art. {}: {}", v.article(), v.scope()));
+            }
+            ui.label(RichText::new("La elección es de la gestoría. Cada factura guarda la suya al emitirse: las ya emitidas no cambian.").font(mdf(12.8)).color(MUTED));
         });
         card(&mut cols[1], |ui| {
             ui.set_width(ui.available_width());
@@ -385,6 +391,11 @@ fn billing_tab(app: &mut App, ui: &mut Ui) {
         });
     });
     if serde_json::to_string(&app.db.config).unwrap_or_default() != before {
+        let was: crate::model::ClinicConfig = serde_json::from_str(&before).unwrap_or_else(|_| app.db.config.clone());
+        if was.vat_exemption != app.db.config.vat_exemption {
+            let msg = format!("Facturas nuevas: art. {} (antes {})", app.db.config.vat_exemption.article(), was.vat_exemption.article());
+            app.db.audit("Cambiar la exención de IVA", &msg);
+        }
         app.changed();
     }
     ui.add_space(10.0);

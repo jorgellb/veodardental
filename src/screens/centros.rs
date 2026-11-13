@@ -174,7 +174,7 @@ pub fn print_invoice(app: &App, ctx: &egui::Context, id: u32) -> Result<std::pat
         .collect();
     let rect = f.rectifies.and_then(|r| app.db.invoice(r)).map(|o| format!("<div class='box'><b>Factura rectificativa</b> de la factura {} · Motivo: {}</div>", esc(&o.code()), esc(&f.reason))).unwrap_or_default();
     let html = format!(
-        "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Factura {code}</title><style>{css}</style></head><body>{head}<h1>{kind} {code}</h1>{vf}<div class='muted'>Fecha de expedición {date}</div><div class='box'><b>{client}</b><br>NIF {nif}<br>{addr}{patient}</div>{rect}<table><tr><th>Concepto</th><th>Piezas</th><th class='n'>Uds.</th><th class='n'>Precio</th><th class='n'>IVA</th><th class='n'>Base</th></tr>{rows}<tr><td colspan='5' class='n'>Base imponible</td><td class='n'>{base}</td></tr><tr><td colspan='5' class='n'>IVA</td><td class='n'>{vat}</td></tr><tr class='total'><td colspan='5' class='n'>TOTAL</td><td class='n'>{total}</td></tr></table><div class='box'>Operación exenta de IVA según el art. 20.Uno.3º de la Ley 37/1992 (asistencia sanitaria).<br><span class='muted'>Registro VERI*FACTU · huella {hash}</span></div></body></html>",
+        "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Factura {code}</title><style>{css}</style></head><body>{head}<h1>{kind} {code}</h1>{vf}<div class='muted'>Fecha de expedición {date}</div><div class='box'><b>{client}</b><br>NIF {nif}<br>{addr}{patient}</div>{rect}<table><tr><th>Concepto</th><th>Piezas</th><th class='n'>Uds.</th><th class='n'>Precio</th><th class='n'>IVA</th><th class='n'>Base</th></tr>{rows}<tr><td colspan='5' class='n'>Base imponible</td><td class='n'>{base}</td></tr><tr><td colspan='5' class='n'>IVA</td><td class='n'>{vat}</td></tr><tr class='total'><td colspan='5' class='n'>TOTAL</td><td class='n'>{total}</td></tr></table><div class='box'>{exempt}<br><span class='muted'>Registro VERI*FACTU · huella {hash}</span></div></body></html>",
         code = esc(&f.code()),
         css = CSS,
         head = header(app, app.db.config.current_center),
@@ -190,6 +190,7 @@ pub fn print_invoice(app: &App, ctx: &egui::Context, id: u32) -> Result<std::pat
         vat = esc(&money(f.vat())),
         total = esc(&money(f.total())),
         hash = esc(&f.hash),
+        exempt = esc(&f.exemption_legend()),
         // código QR y leyenda VERI*FACTU al principio de la factura
         vf = crate::screens::verifactu::print_block(&app.db, &f),
     );

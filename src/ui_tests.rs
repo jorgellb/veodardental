@@ -2207,3 +2207,29 @@ fn import_patients_from_a_csv_in_the_settings_screen() {
     let now = a.db.patients.iter().find(|p| p.id == ana.id).unwrap();
     assert_eq!((now.full_name(), &now.mobile, &now.notes), (ana.full_name(), &ana.mobile, &ana.notes));
 }
+
+/// Configuración › Facturación: la exención de IVA de las facturas nuevas se
+/// elige con su artículo, queda en el registro de cambios y no toca las ya
+/// emitidas.
+#[test]
+fn the_vat_exemption_for_new_invoices_is_chosen_in_the_settings() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        crate::screens::config::open(&mut a, crate::screens::config::CfgTab::Facturacion);
+        a
+    });
+    for _ in 0..3 {
+        h.step();
+    }
+    let before: Vec<Option<crate::model::VatExemption>> = h.state().db.invoices.iter().map(|i| i.exemption).collect();
+    h.get_by_label_contains("Art. 20.Uno.5º").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let a = h.state();
+    assert_eq!(a.db.config.vat_exemption, crate::model::VatExemption::Art20Uno5);
+    assert!(a.db.audit_log.iter().any(|x| x.action == "Cambiar la exención de IVA" && x.detail.contains("20.Uno.5º")));
+    assert_eq!(a.db.invoices.iter().map(|i| i.exemption).collect::<Vec<_>>(), before, "las emitidas no cambian");
+}

@@ -512,7 +512,7 @@ fn description(inv: &Invoice) -> String {
     cut(&d, 500)
 }
 
-/// Desglose: líneas exentas (art. 20.Uno.3º, asistencia sanitaria) y, si las hubiera, sujetas por tipo de IVA.
+/// Desglose: líneas exentas (E1, exentas por el art. 20; el número concreto va en la leyenda de cada factura) y, si las hubiera, sujetas por tipo de IVA.
 fn breakdown(inv: &Invoice) -> String {
     let mut groups: Vec<(f64, f64, f64)> = vec![]; // (tipo, base, cuota)
     for l in &inv.lines {
@@ -950,6 +950,48 @@ mod tests {
         let mut db = Db::sample(crate::model::today());
         db.verifactu = VfConfig { enabled: true, installation: "INST-1".into(), ..Default::default() };
         db
+    }
+
+    /// La referencia de exención se guarda en cada factura al emitirla: cambiar
+    /// la de la clínica solo afecta a las nuevas y las ya emitidas conservan la
+    /// que imprimieron (las anteriores a esta opción, 20.Uno.3º).
+    #[test]
+    fn the_exemption_article_stays_with_each_invoice() {
+        use crate::model::VatExemption;
+        let mut db = db_with_invoices();
+        assert_eq!(db.config.vat_exemption, VatExemption::Art20Uno3, "por defecto no cambia nada");
+        let pid = db.patients.iter().find(|p| !p.nif.is_empty()).map(|p| p.id).unwrap();
+        let today = crate::model::today();
+        let code = db.treatments.iter().find(|t| t.active).map(|t| t.code.clone()).unwrap();
+        let issue = |db: &mut Db| {
+            let e = db.add_entry(pid, &code, vec![], vec![], crate::model::TxState::Realizado, 1, today);
+            db.issue_invoice(pid, &[e], today).unwrap()
+        };
+        // factura emitida antes de existir la opción: sin referencia guardada
+        let old = issue(&mut db);
+        let json = serde_json::to_string(db.invoice(old).unwrap()).unwrap();
+        let mut legacy: crate::model::Invoice = serde_json::from_str(&json.replace(r#","exemption":"Art20Uno3""#, "")).unwrap();
+        legacy.exemption = None;
+        assert_eq!(legacy.exemption_legend(), "Operación exenta de IVA según el art. 20.Uno.3º de la Ley 37/1992 (asistencia sanitaria).", "el texto que imprimía");
+        assert_eq!(db.invoice(old).unwrap().exemption_legend(), legacy.exemption_legend(), "con la opción por defecto no cambia nada");
+        // la clínica cambia la referencia: solo las nuevas la llevan
+        db.config.vat_exemption = VatExemption::Art20Uno5;
+        let new = issue(&mut db);
+        assert!(db.invoice(new).unwrap().exemption_legend().contains("art. 20.Uno.5º de la Ley 37/1992"));
+        assert!(db.invoice(old).unwrap().exemption_legend().contains("20.Uno.3º"), "la factura emitida no cambia");
+        // la rectificativa cita la misma que la factura que rectifica
+        let r = db.rectify_invoice(old, "Error").unwrap();
+        assert!(db.invoice(r).unwrap().exemption_legend().contains("20.Uno.3º"));
+        // la huella no depende de la referencia y la cadena sigue íntegra
+        assert!(db.verify_chain().is_ok());
+        // datos guardados por versiones anteriores: sin la opción, 20.Uno.3º
+        let cfg: crate::model::ClinicConfig = serde_json::from_value({
+            let mut v = serde_json::to_value(&db.config).unwrap();
+            v.as_object_mut().unwrap().remove("vat_exemption");
+            v
+        })
+        .unwrap();
+        assert_eq!(cfg.vat_exemption, VatExemption::Art20Uno3);
     }
 
     #[test]

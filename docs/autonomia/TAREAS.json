@@ -882,8 +882,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "docs/autonomia con ESTADO_INICIAL, TAREAS.json, PROGRESO, BLOQUEOS, DECISIONES y EVIDENCIAS; cada requisito con tareas",
-   "estado": "EN_CURSO",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-004"
+   ]
   },
   {
    "id": "T-INI-05",
@@ -895,8 +897,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Falla si falta un requisito, una evidencia o queda una tarea de ingeniería pendiente; comprueba bloqueos completos y su preparación",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-004"
+   ]
   },
   {
    "id": "T-INI-06",
@@ -1127,8 +1131,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Encargo guardado sin cambios con su SHA-256; ESTADO_INICIAL distingue cifras históricas y medidas",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-004"
+   ]
   },
   {
    "id": "T-F0-02",
@@ -1140,8 +1146,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Lista de usos en código, plantillas y facturas guardadas",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-005"
+   ]
   },
   {
    "id": "T-F0-03",
@@ -1153,8 +1161,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Fuente, fecha y texto aplicable registrados en docs/normativa.md",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-005"
+   ]
   },
   {
    "id": "T-F0-04",
@@ -1169,8 +1179,10 @@
     "T-F0-03"
    ],
    "criterio": "Por defecto no cambia nada; las facturas emitidas conservan su texto; prueba con datos ficticios",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-005"
+   ]
   },
   {
    "id": "T-F0-05",
@@ -1214,8 +1226,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "BLOQUEOS.md con cada dependencia completa",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-004"
+   ]
   },
   {
    "id": "T-F1-A1-REV",

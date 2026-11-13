@@ -237,7 +237,7 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(RichText::new(format!("Base imponible {}  ·  IVA {}", money(f.base()), money(f.vat()))).font(crate::theme::mdf(13.5)).color(MUTED));
-                    ui.label(RichText::new("Servicios de asistencia sanitaria exentos de IVA (art. 20.Uno.3º Ley 37/1992).").font(crate::theme::mdf(12.3)).color(SUBTLE));
+                    ui.label(RichText::new(f.exemption_legend()).font(crate::theme::mdf(12.3)).color(SUBTLE));
                 });
                 right_aligned(ui, |ui| {
                     let c = if f.total() < 0.0 { DANGER } else { ACCENT_DARK };
@@ -349,7 +349,7 @@ fn export_txt(app: &App, f: &Invoice) -> Result<String, String> {
         let teeth: Vec<String> = l.teeth.iter().map(|t| t.to_string()).collect();
         s.push_str(&format!("{:<6} {:<40} {:<10} {:>3} x {:>12}  {:>14}\n", l.code, l.description, teeth.join("-"), l.units, money(l.price), money(l.base())));
     }
-    s.push_str(&format!("\nBase imponible: {}\nIVA: {} (exento art. 20.Uno.3º LIVA)\nTOTAL: {}\n", money(f.base()), money(f.vat()), money(f.total())));
+    s.push_str(&format!("\nBase imponible: {}\nIVA: {} (exento art. {} LIVA)\nTOTAL: {}\n", money(f.base()), money(f.vat()), f.exemption.unwrap_or(crate::model::VatExemption::LEGACY).article(), money(f.total())));
     if let Some(r) = f.rectifies {
         s.push_str(&format!("Rectifica a: {}  Motivo: {}\n", app.db.invoice(r).map(|i| i.code()).unwrap_or_default(), f.reason));
     }
