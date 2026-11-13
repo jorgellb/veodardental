@@ -882,3 +882,33 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 433 pasan, 0 fallan, 10 ignoradas |
+
+## E-034 T-F4-05: retirada de la carpeta compartida, y revisión de seguridad de los derechos RGPD
+- **Revisión de seguridad automática del commit `1141e02`: dos hallazgos, corregidos.**
+  1. **Desbloqueo solo en el puesto.**
+     - **Hallazgo:** que solo Dirección desbloquee se comprobaba únicamente en el puesto.
+     - **Ahora:** el servidor conserva el bloqueo si lo pone o lo quita otro perfil, sin impedir el resto del cambio.
+     - **Prueba:** `server::tests::only_management_blocks_or_unblocks_a_patient_on_the_server`.
+  2. **Exportación de cualquier fichero.**
+     - **Hallazgo:** la exportación podía meter en el ZIP cualquier fichero del ordenador mediante la ruta de una «imagen», como una clave privada.
+     - **Ahora:** solo entran ficheros normales (no enlaces) de imagen o documento, de 200 MB como mucho, fuera de la configuración y de las copias del programa. Los demás se listan como no disponibles.
+     - **Prueba:** ampliada `rgpd::tests::the_export_is_complete_traceable_and_private`, con una clave y un enlace simbólico que no salen.
+- **T-F4-05: carpeta compartida.**
+  - **Puestos nuevos:** ya no se puede configurar en uno nuevo. Trabajo en red explica por qué (reparte el fichero entero, con contraseñas y claves) y propone el servidor (`shared::NO_NEW_SHARED`).
+  - **Puestos que ya la usan:** siguen funcionando, con aviso, y «Pasar los datos al servidor» (`shared::move_to_server`). Este paso, con la carpeta bloqueada:
+    1. copia los datos a este ordenador; lo que hubiera aquí se aparta con otro nombre;
+    2. comprueba que son iguales;
+    3. deja la carpeta intacta: se conserva hasta que se autorice retirarla;
+    4. deja la marca `MIGRADO_AL_SERVIDOR.txt`, y desde entonces ningún puesto guarda en la carpeta: se le pide que se conecte al servidor.
+  - **Puesto nuevo en red:** se conecta al servidor y no recibe contraseñas ni códigos del móvil. Lo comprueban pruebas ya existentes: `server::tests::only_direction_changes_users_and_secrets_stay_on_the_server` y las del acceso.
+  - **Pruebas:**
+    - `shared::tests::a_shared_folder_moves_to_the_server_and_stays_untouched`: datos iguales, lo de aquí apartado, carpeta intacta, puesto rechazado tras el paso y no se repite;
+    - `ui_tests::a_new_station_cannot_set_up_a_shared_folder`.
+  - **Pendiente:** las claves de los servicios (correo, IA) siguen llegando a los puestos en red, porque los puestos envían. Moverlas al servidor es otro cambio, que queda anotado aquí.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 436 pasan, 0 fallan, 10 ignoradas |

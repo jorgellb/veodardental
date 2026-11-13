@@ -168,39 +168,42 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             muted(ui, format!("Puestos registrados: {}", list.iter().map(|s| format!("{} · {} (visto {})", s.id, s.name, s.last_seen.format("%d/%m %H:%M"))).collect::<Vec<_>>().join("   ")));
         }
         ui.add_space(6.0);
-        egui::CollapsingHeader::new("Alternativa sin servidor: carpeta compartida").id_salt("alt_shared").show(ui, |ui| {
-            muted(ui, "Si no puede tener un ordenador servidor, todos los puestos pueden usar el mismo fichero en una carpeta de red. Es menos robusto que el servidor.");
-            let f = &mut app.tools.puesto;
-            ui.horizontal_wrapped(|ui| {
-                field(ui, "Carpeta compartida", &mut f.st.data_dir, 380.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new("Nº de puesto").size(13.0).color(MUTED));
-                    ui.add(egui::DragValue::new(&mut f.st.number).range(1..=15));
-                });
-            });
-            let form = f.st.clone();
-            if ui.button("Usar esta carpeta en este puesto").clicked() {
-                let dir = std::path::PathBuf::from(form.data_dir.trim());
-                if form.data_dir.trim().is_empty() {
-                    app.warn("Indique la carpeta compartida.");
-                } else {
-                    match prepare_folder(&app.db, &dir) {
-                        Ok(copied) => {
-                            let st = Station { server: String::new(), key: String::new(), server_pin: String::new(), ..form.clone() };
-                            match save_station(&st) {
-                                Ok(()) => {
-                                    app.db.audit("Puesto configurado en carpeta compartida", &st.data_dir);
-                                    app.changed();
-                                    app.notify(if copied { "Datos copiados a la carpeta compartida. Cierre y vuelva a abrir el programa." } else { "La carpeta ya tenía datos de la clínica. Cierre y vuelva a abrir el programa." });
+        // carpeta compartida (T-F4-05): ya no para puestos nuevos; los que la usan pasan al servidor
+        if shared() {
+            ui.add_space(6.0);
+            let dir = std::path::PathBuf::from(station().data_dir.trim());
+            match crate::shared::migrated(&dir) {
+                Some(m) => {
+                    ui.label(RichText::new(format!("{} {m}", crate::shared::MOVED)).color(DANGER));
+                }
+                None => {
+                    ui.label(
+                        RichText::new(
+                            "Este puesto usa una carpeta compartida: es un modo desaconsejado (reparte el fichero entero, con las contraseñas y las claves, a cualquiera que pueda abrir la carpeta) y se retira. Pase los datos a un servidor.",
+                        )
+                        .color(WARN),
+                    );
+                    if ui.button("Pasar los datos al servidor (este ordenador hará de servidor)").clicked() {
+                        match crate::shared::move_to_server(&dir, &crate::model::Db::local_path(), &machine_name()) {
+                            Ok(n) => {
+                                let st = Station { data_dir: String::new(), ..station().clone() };
+                                match save_station(&st) {
+                                    Ok(()) => {
+                                        app.db.audit("Carpeta compartida pasada al servidor", &format!("{n} pacientes desde {}", dir.display()));
+                                        app.notify(format!("{n} pacientes pasados a este ordenador. Cierre y vuelva a abrir el programa, pulse «Hacer de este ordenador el servidor» y conecte los demás puestos."));
+                                    }
+                                    Err(e) => app.warn(format!("Datos pasados, pero no se pudo cambiar el ajuste de este puesto: {e}")),
                                 }
-                                Err(e) => app.warn(format!("No se pudo guardar el ajuste: {e}")),
                             }
+                            Err(e) => app.warn(e),
                         }
-                        Err(e) => app.warn(e),
                     }
                 }
             }
-        });
+        } else {
+            ui.add_space(6.0);
+            muted(ui, crate::shared::NO_NEW_SHARED);
+        }
     });
 }
 

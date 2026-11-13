@@ -929,6 +929,27 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
+        // el bloqueo de los datos de un paciente solo lo pone o lo quita Dirección
+        // (RGPD; ver `rgpd::Db::set_block`): de otro perfil, se queda como está
+        if !admin {
+            for c in changes.iter_mut().filter(|c| c.field == "patients" && c.after.is_some()) {
+                let current = c.key.as_deref().and_then(|k| self.snap.get("patients", Some(k))).and_then(|j| serde_json::from_str::<Value>(j).ok());
+                let keep = current.as_ref().map(|v| v["blocked"].clone()).unwrap_or(Value::Null);
+                if let Some(a) = c.after.as_deref()
+                    && let Ok(mut v) = serde_json::from_str::<Value>(a)
+                    && v["blocked"] != keep
+                {
+                    if keep.is_null() {
+                        if let Some(o) = v.as_object_mut() {
+                            o.remove("blocked");
+                        }
+                    } else {
+                        v["blocked"] = keep;
+                    }
+                    c.after = Some(sync::canonical("patients", &v.to_string())?);
+                }
+            }
+        }
         // lo firmado (documentos, cuestionarios) y las recetas emitidas no se
         // cambian ni se borran ni pasan a otro paciente: solo se anota la
         // revocación o el estado en las farmacias (fusionar pacientes es una
@@ -2672,6 +2693,37 @@ mod tests {
         assert!(!rec.get("/datos").unwrap().contains("accesos_historias") && !rec.get("/datos").unwrap().contains("\"Consulta\""));
         assert_eq!(crate::accesos::verify(&crate::accesos::log_file(&path)).unwrap(), list.len() + l102.len(), "las del 101 y la del 102");
         rec.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T-F4-03. El bloqueo de los datos de un paciente solo lo pone o lo quita
+    /// Dirección, también en red (el servidor lo hace cumplir).
+    #[test]
+    fn only_management_blocks_or_unblocks_a_patient_on_the_server() {
+        let (addr, path, h) = start("CLAVE_BLOQ");
+        let dir = signed_in(&addr, "CLAVE_BLOQ", "Dirección", 1, "0000");
+        let rec = signed_in(&addr, "CLAVE_BLOQ", "Recepción", 2, "0000");
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.set_block(101, Some("Se conserva por obligación legal"), true).unwrap();
+        dir.push(&mut d, &mut sd).unwrap();
+        assert!(crate::sync::on_disk(&path).patient(101).unwrap().blocked.is_some());
+        // Recepción intenta quitarlo (y bloquear a otro): no cambia nada de eso
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.patients.iter_mut().find(|p| p.id == 101).unwrap().blocked = None;
+        r.patients.iter_mut().find(|p| p.id == 101).unwrap().mobile = "600999888".into();
+        r.patients.iter_mut().find(|p| p.id == 102).unwrap().blocked = Some(crate::rgpd::Mark { since: crate::model::now(), reason: "x".into(), by: "Recepción".into() });
+        rec.push(&mut r, &mut sr).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!(disk.patient(101).unwrap().blocked.is_some(), "sigue bloqueado");
+        assert_eq!(disk.patient(101).unwrap().mobile, "600999888", "lo demás sí cambia");
+        assert!(disk.patient(102).unwrap().blocked.is_none());
+        // Dirección sí lo quita
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.set_block(101, None, true).unwrap();
+        dir.push(&mut d, &mut sd).unwrap();
+        assert!(crate::sync::on_disk(&path).patient(101).unwrap().blocked.is_none());
+        dir.stop().unwrap();
         h.join().unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

@@ -191,6 +191,19 @@ impl Db {
     }
 }
 
+/// ¿Se puede meter este fichero en la exportación? Solo un fichero normal
+/// (no un enlace) de imagen o documento, de 200 MB como mucho, y fuera de la
+/// configuración y de las copias del programa: la ruta de una imagen la
+/// escribe un usuario, y no debe servir para sacar otros ficheros del ordenador.
+fn exportable(p: &Path) -> bool {
+    const KINDS: [&str; 12] = ["jpg", "jpeg", "png", "bmp", "tif", "tiff", "dcm", "stl", "ply", "obj", "pdf", "gif"];
+    let Ok(meta) = std::fs::symlink_metadata(p) else { return false };
+    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let canon = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let inside = |d: std::path::PathBuf| std::fs::canonicalize(&d).is_ok_and(|d| canon.starts_with(d));
+    meta.file_type().is_file() && meta.len() <= 200 << 20 && KINDS.contains(&ext.as_str()) && !inside(crate::paths::config()) && !inside(crate::tools::backup_dir())
+}
+
 /// Acceso y portabilidad: ZIP con sus datos (JSON), sus ficheros (imágenes y
 /// documentos que estén en este ordenador) y un manifiesto con la huella
 /// (SHA-256) de cada uno, quién lo exportó y cuándo. Solo para el usuario.
@@ -206,7 +219,7 @@ pub fn export_zip(db: &Db, pid: u32, dest: &Path, who: &str) -> Result<usize, St
     for (i, img) in db.images.iter().filter(|i| i.patient_id == pid && !i.demo).enumerate() {
         let p = Path::new(&img.path);
         match std::fs::read(p) {
-            Ok(b) if p.is_file() => files.push((format!("ficheros/{:03}_{}", i + 1, crate::record::safe_name(&p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())), b)),
+            Ok(b) if exportable(p) => files.push((format!("ficheros/{:03}_{}", i + 1, crate::record::safe_name(&p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())), b)),
             _ => missing.push(img.path.clone()),
         }
     }
@@ -327,6 +340,38 @@ mod tests {
             notes: String::new(),
             demo: false,
         });
+        // una «imagen» que apunta a otro fichero del ordenador no sale en el ZIP
+        let key = dir.join("clave_privada.pem");
+        std::fs::write(&key, b"SECRETO").unwrap();
+        let id2 = db.new_id();
+        db.images.push(crate::model::PatientImage {
+            id: id2,
+            patient_id: pid,
+            kind: crate::model::ImageKind::Documento,
+            date: crate::model::today(),
+            teeth: vec![],
+            path: key.to_string_lossy().into(),
+            source: String::new(),
+            notes: String::new(),
+            demo: false,
+        });
+        #[cfg(unix)]
+        {
+            let link = dir.join("enlace.png");
+            std::os::unix::fs::symlink(&key, &link).unwrap();
+            let id3 = db.new_id();
+            db.images.push(crate::model::PatientImage {
+                id: id3,
+                patient_id: pid,
+                kind: crate::model::ImageKind::Documento,
+                date: crate::model::today(),
+                teeth: vec![],
+                path: link.to_string_lossy().into(),
+                source: String::new(),
+                notes: String::new(),
+                demo: false,
+            });
+        }
         let out = dir.join("export.zip");
         let n = export_zip(&db, pid, &out, "Dirección").unwrap();
         assert!(n >= 3);
@@ -344,6 +389,14 @@ mod tests {
         assert_eq!(bytes, b"imagen ficticia");
         let sha: String = ring::digest::digest(&ring::digest::SHA256, &bytes).as_ref().iter().map(|x| format!("{x:02x}")).collect();
         assert!(manifest.contains(&sha) && manifest.contains("por Dirección"));
+        assert_eq!(manifest.lines().filter(|l| l.starts_with("ficheros/")).count(), 1, "ni la clave ni el enlace: {manifest}");
+        assert!(manifest.contains("Ficheros que no están en este ordenador"));
+        let all: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().unwrap().to_string()).collect();
+        for n in &all {
+            let mut s = Vec::new();
+            z.by_name(n).unwrap().read_to_end(&mut s).unwrap();
+            assert!(!String::from_utf8_lossy(&s).contains("SECRETO"), "{n}");
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

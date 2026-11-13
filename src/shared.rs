@@ -335,6 +335,10 @@ pub fn save_synced_as<R>(db: &mut Db, base: &mut Value, path: &Path, who: &str, 
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let _lock = acquire(dir, &who)?;
+    // los datos de esta carpeta ya están en el servidor: aquí no se escribe más
+    if let Some(m) = migrated(dir) {
+        return Err(format!("{MOVED} {m}"));
+    }
     let disk: Option<Value> = match std::fs::read_to_string(path) {
         Ok(t) => Some(serde_json::from_str(&t).map_err(|e| format!("El fichero de datos compartido está dañado: {e}"))?),
         Err(_) => None,
@@ -408,6 +412,50 @@ pub fn reload_if_changed(db: &Db, path: &Path) -> Option<(Db, Value)> {
 
 /// Pone en marcha la carpeta compartida: si no hay datos en ella, copia los
 /// de este puesto. Devuelve si se copiaron.
+/// Marca que deja en la carpeta compartida el paso de sus datos al servidor.
+pub const MIGRATED_MARK: &str = "MIGRADO_AL_SERVIDOR.txt";
+pub const MOVED: &str = "Los datos de esta carpeta compartida ya están en el servidor de la clínica: conecte este puesto al servidor (Configuración › Trabajo en red). No se ha guardado nada en la carpeta.";
+/// La carpeta compartida ya no se configura en puestos nuevos (T-F4-05).
+pub const NO_NEW_SHARED: &str =
+    "La carpeta compartida ya no se puede configurar en puestos nuevos: reparte el fichero entero de la clínica, con las contraseñas y las claves de los servicios, a cualquiera que pueda abrir la carpeta. Use un ordenador como servidor.";
+
+/// Qué dice la marca de paso al servidor, si la hay.
+pub fn migrated(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join(MIGRATED_MARK)).ok().map(|t| t.lines().next().unwrap_or("").to_string())
+}
+
+/// Pasa los datos de la carpeta compartida a este ordenador, que hará de
+/// servidor. Con la carpeta bloqueada, para que nadie escriba a la vez:
+/// - lee los datos, que no se tocan ni se borran en la carpeta (se conservan
+///   hasta que se autorice retirarlos);
+/// - los escribe aquí (lo que hubiera aquí queda aparte, con otro nombre);
+/// - comprueba que son los mismos;
+/// - deja la marca, para que ningún puesto vuelva a escribir en la carpeta.
+///
+/// Devuelve cuántos pacientes pasaron.
+pub fn move_to_server(dir: &Path, local: &Path, who: &str) -> Result<usize, String> {
+    if let Some(m) = migrated(dir) {
+        return Err(format!("Esta carpeta ya pasó al servidor: {m}"));
+    }
+    let _lock = acquire(dir, who)?;
+    let text = std::fs::read_to_string(dir.join("clinica.json")).map_err(|e| format!("No se pueden leer los datos de la carpeta: {e}"))?;
+    let db: Db = serde_json::from_str(&text).map_err(|e| format!("Los datos de la carpeta están dañados: {e}"))?;
+    if local.exists() {
+        let aside = local.with_file_name(format!("clinica_antes_de_pasar_al_servidor_{}.json", crate::model::now().format("%Y%m%d_%H%M%S")));
+        std::fs::rename(local, &aside).map_err(|e| format!("No se pudieron apartar los datos que había en este ordenador: {e}"))?;
+    }
+    Db::write_full(&db, local)?;
+    let back: Db = serde_json::from_str(&std::fs::read_to_string(local).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    if serde_json::to_value(&back).map_err(|e| e.to_string())? != serde_json::to_value(&db).map_err(|e| e.to_string())? {
+        return Err("Los datos copiados no coinciden con los de la carpeta: no se ha marcado el paso al servidor.".into());
+    }
+    let mark =
+        format!("Pasados al servidor el {} desde «{who}» ({} pacientes).\nEsta carpeta se conserva tal cual hasta que se autorice retirarla; los puestos ya no escriben en ella.\n", crate::model::now().format("%d/%m/%Y %H:%M"), db.patients.len());
+    std::fs::write(dir.join(MIGRATED_MARK), mark).map_err(|e| format!("No se pudo dejar la marca en la carpeta: {e}"))?;
+    Ok(db.patients.len())
+}
+
+#[cfg(test)]
 pub fn prepare_folder(db: &Db, dir: &Path) -> Result<bool, String> {
     if !dir.is_dir() {
         return Err("La carpeta no existe o no es accesible desde este ordenador.".into());
@@ -429,6 +477,42 @@ mod tests {
     use super::*;
     use chrono::NaiveDate;
     use serde_json::json;
+
+    /// T-F4-05. La carpeta compartida pasa al servidor: los datos llegan
+    /// iguales, la carpeta se conserva y queda marcada, y ningún puesto vuelve
+    /// a escribir en ella.
+    #[test]
+    fn a_shared_folder_moves_to_the_server_and_stays_untouched() {
+        let base = std::env::temp_dir().join(format!("ds_mover_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (dir, local) = (base.join("red"), base.join("servidor").join("clinica.json"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let start = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap());
+        prepare_folder(&start, &dir).unwrap();
+        // otro puesto trabaja antes del paso
+        let mut b = Db::load_from(&dir.join("clinica.json"), false).0;
+        let mut base_b = serde_json::to_value(&b).unwrap();
+        b.patients[0].notes = "antes del paso".into();
+        save_synced_as(&mut b, &mut base_b, &dir.join("clinica.json"), "Recepción", |_| ()).unwrap();
+        let shared_before = std::fs::read_to_string(dir.join("clinica.json")).unwrap();
+        // lo que hubiera en el ordenador servidor se aparta, no se pierde
+        std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+        std::fs::write(&local, "{}").unwrap();
+        let n = move_to_server(&dir, &local, "Despacho").unwrap();
+        assert_eq!(n, start.patients.len());
+        let moved = Db::load_from(&local, false).0;
+        assert_eq!(moved.patients[0].notes, "antes del paso");
+        assert_eq!(serde_json::to_value(&moved.patients).unwrap(), serde_json::to_value(&Db::load_from(&dir.join("clinica.json"), false).0.patients).unwrap());
+        assert!(std::fs::read_dir(local.parent().unwrap()).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with("clinica_antes_de_pasar_al_servidor_")));
+        assert_eq!(std::fs::read_to_string(dir.join("clinica.json")).unwrap(), shared_before, "la carpeta, intacta");
+        assert!(migrated(&dir).unwrap().starts_with("Pasados al servidor"));
+        // un puesto que siga en la carpeta ya no escribe en ella
+        b.patients[0].notes = "después del paso".into();
+        assert!(save_synced_as(&mut b, &mut base_b, &dir.join("clinica.json"), "Recepción", |_| ()).err().unwrap().starts_with(MOVED));
+        assert_eq!(std::fs::read_to_string(dir.join("clinica.json")).unwrap(), shared_before);
+        assert!(move_to_server(&dir, &local, "Despacho").unwrap_err().contains("ya pasó"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn merge_keeps_both_sides_changes() {

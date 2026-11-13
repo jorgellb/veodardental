@@ -1385,8 +1385,15 @@ impl Db {
         if crate::shared::shared() {
             return PathBuf::from(crate::shared::station().data_dir.trim()).join("clinica.json");
         }
-        let base = crate::paths::data();
-        base.join(crate::brand::DIR).join("clinica.json")
+        Self::local_path()
+    }
+
+    /// Los datos en este ordenador (sin carpeta compartida).
+    pub fn local_path() -> PathBuf {
+        if cfg!(test) {
+            return std::env::temp_dir().join(format!("veodardental-pruebas-{}", std::process::id())).join("clinica.json");
+        }
+        crate::paths::data().join(crate::brand::DIR).join("clinica.json")
     }
 
     /// Completa los datos guardados con lo que traen las versiones nuevas del programa

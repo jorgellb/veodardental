@@ -2775,3 +2775,23 @@ fn giving_an_appointment_is_measured_for_the_pilot() {
         assert!(!json.contains(&p.full_name()));
     }
 }
+
+/// T-F4-05. La carpeta compartida ya no se puede configurar en un puesto nuevo:
+/// solo se explica por qué y se propone el servidor.
+#[test]
+fn a_new_station_cannot_set_up_a_shared_folder() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 3000.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Config;
+        a.lists.cfg_tab = crate::screens::config::CfgTab::Red;
+        a
+    });
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("Hacer de este ordenador el servidor");
+    h.get_by_label(crate::shared::NO_NEW_SHARED);
+    assert!(h.query_by_label("Usar esta carpeta en este puesto").is_none());
+}

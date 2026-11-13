@@ -2273,8 +2273,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de transición y de que un puesto nuevo no recibe secretos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-034"
+   ]
   },
   {
    "id": "T-F4-06",
