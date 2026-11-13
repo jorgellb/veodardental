@@ -198,6 +198,7 @@ impl Db {
                 backup_extra: String::new(),
                 board_initials: true,
                 vat_exemption: Default::default(),
+                mig_profiles: vec![],
             },
             treatments,
             tariffs: tariffs.into(),
@@ -266,6 +267,7 @@ impl Db {
             slot_offers: vec![].into(),
             golive: vec![],
             rx_links: vec![].into(),
+            imports: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,
         };

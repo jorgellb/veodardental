@@ -13,6 +13,8 @@ pub enum SqlJob {
     Detected(Result<crate::mssql::Detected, String>),
     Catalog(Result<crate::gesden::GCatalogo, String>),
     Sheet(ImportKind, String, Result<Sheet, String>),
+    /// Hoja de una clase de dato de la migración (índice en `Entity::ALL`).
+    Mig(usize, String, Result<Sheet, String>),
 }
 
 pub struct ImportState {
@@ -33,6 +35,8 @@ pub struct ImportState {
     pub gesden: Option<crate::gesden::GCatalogo>,
     pub gesden_opt: crate::gesden::ImportOptions,
     pub gesden_result: String,
+    /// Asistente de migración completa.
+    pub mig: super::migrar::MigState,
 }
 
 impl Default for ImportState {
@@ -53,6 +57,7 @@ impl Default for ImportState {
             gesden: None,
             gesden_opt: Default::default(),
             gesden_result: String::new(),
+            mig: Default::default(),
         }
     }
 }
@@ -92,8 +97,24 @@ fn poll_job(app: &mut App) {
             app.imp.sql_status = app.imp.result.clone();
             app.imp.sheet = Some(s);
         }
-        SqlJob::Detected(Err(e)) | SqlJob::Catalog(Err(e)) | SqlJob::Sheet(_, _, Err(e)) => app.imp.sql_status = e,
+        SqlJob::Mig(i, what, Ok(s)) => {
+            app.imp.mig.set_sheet(i, &what, s);
+            app.imp.sql_status = app.imp.mig.status.clone();
+        }
+        SqlJob::Detected(Err(e)) | SqlJob::Catalog(Err(e)) | SqlJob::Sheet(_, _, Err(e)) | SqlJob::Mig(_, _, Err(e)) => app.imp.sql_status = e,
     }
+}
+
+/// Lee para la migración la consulta propia (si hay) o la tabla elegida.
+pub fn run_mig_job(app: &mut App, ctx: &egui::Context, i: usize, query: String, table: String) {
+    run_job(app, ctx, move |src| if query.is_empty() { SqlJob::Mig(i, format!("la tabla {table}"), crate::mssql::read_table(&src, &table, 500_000)) } else { SqlJob::Mig(i, "la consulta".into(), crate::mssql::read_query(&src, &query, 500_000)) });
+}
+
+/// Lee para la migración los pacientes de GESDEN o Novaclinic (con su
+/// identificador interno y su mutua).
+pub fn run_mig_gesden(app: &mut App, ctx: &egui::Context) {
+    let cat = app.imp.gesden.clone();
+    run_job(app, ctx, move |src| SqlJob::Mig(0, "los pacientes de GESDEN".into(), crate::mssql::gesden_patients_for_migration(&src, cat.as_ref())));
 }
 
 /// Tarjeta «Importar desde Microsoft SQL Server».
@@ -283,6 +304,8 @@ pub fn gesden_panel(app: &mut App, ui: &mut Ui) {
 
 pub fn panel(app: &mut App, ui: &mut Ui) {
     sql_panel(app, ui);
+    ui.add_space(10.0);
+    super::migrar::panel(app, ui);
     ui.add_space(10.0);
     card(ui, |ui| {
         ui.set_width(ui.available_width());

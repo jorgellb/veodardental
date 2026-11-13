@@ -29,6 +29,7 @@ mod insurer;
 mod lab_order;
 mod local;
 mod mail;
+mod migracion;
 mod model;
 mod mssql;
 mod nomenclator;
@@ -304,6 +305,16 @@ fn main() -> eframe::Result<()> {
                 a.imp.map = extra::guess_mapping(a.imp.kind, &s.headers);
                 a.imp.path = f;
                 a.imp.sheet = Some(s);
+            }
+            // migración: hojas de una carpeta («--ajustes importar --migracion carpeta [--simulacro]»)
+            if let Some(dir) = arg("--migracion") {
+                let _ = a.imp.mig.load_folder(&dir);
+                if std::env::args().any(|x| x == "--simulacro") {
+                    let rep = migracion::dry_run(&a.db, &a.imp.mig.src(), &a.imp.mig.options(a.today));
+                    a.imp.mig.status = format!("Simulacro: {}", rep.summary());
+                    a.imp.mig.report = Some((true, rep));
+                    a.imp.mig.fresh = true;
+                }
             }
             if let Some(n) = call_arg {
                 screens::llamadas::incoming(&mut a, &n);

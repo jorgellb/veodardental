@@ -31,18 +31,14 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | `bcfa695` |
 | T-F1-13: informes con oráculo independiente (hecho en el área 5) | E-011 | `7fd53f0` |
 | T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | `3d777b0` |
+| T-F2-01 a T-F2-09: motor de migración, asistente, conciliación, GESDEN/Novaclinic, perfiles y documentación | E-021 | (pendiente) |
 
 ## Siguiente acción
-La fase 1 está terminada (ingeniería). Toca la fase 2: migraciones.
-1. T-F2-01 a T-F2-09.
-   - Inventariar lo que ya hay: src/gesden.rs, src/mssql.rs, src/golive.rs, la pantalla Importar y las funciones `import_*` de src/extra.rs.
-   - Sobre eso, el motor con identificadores de origen e importación idempotente, el asistente (previsualización, simulacro, errores por fila, duplicados, copia previa, reanudación) y el informe de conciliación.
-   - Adaptadores GESDEN y Novaclinic: solo lo documentable, sin inventar esquemas.
-   - Perfiles de Excel/CSV.
-2. Después:
-   - transversales pendientes: T-R7-1, T-R7-5, T-R7-6, T-R7-7, T-INI-06, T-INI-07, T-INI-08;
-   - fases 3 a 6.
-3. T-R7-1 sigue pendiente. El tipo `Cents` ya existe (src/cents.rs) y lo usan los informes; faltan las pruebas de propiedades de facturas, presupuestos, cuotas, caja y remesas.
+Las fases 1 y 2 están terminadas en la parte de ingeniería. El mapeo real de GESDEN, Novaclinic, Clinic Cloud y Dentalink sigue en B-03, B-04 y B-05. Toca la fase 3: instalación y operación.
+1. T-F3-01 a T-F3-09 (ver `TAREAS.json`).
+   - Inventariar lo que ya hay: instaladores, `tools/`, copias de seguridad (`src/tools.rs`), puesta en marcha (`src/golive.rs`) y servidor.
+   - Firma de código y máquinas Windows/macOS reales: B-24 y B-25.
+2. Después, la fase 4 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08).
 
 ## Notas para seguir
 - La anchura a 1280 px la vigila `ui_tests::every_screen_fits_1280_wide`. Una pantalla nueva o cambiada debe pasarla. Para los campos, `field`; para las tablas, `Table`; en filas de campos, `horizontal_wrapped`.

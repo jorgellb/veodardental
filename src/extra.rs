@@ -174,7 +174,7 @@ pub fn guess_mapping(kind: ImportKind, headers: &[String]) -> Vec<Option<usize>>
 /// Fecha de un fichero: «03/04/1980», «3-4-80», «03.04.1980», «1980-04-03»
 /// (con hora o sin ella) o el número de serie de Excel. Con el año en dos
 /// cifras se toma el siglo que no la deja en el futuro.
-fn parse_date(s: &str) -> Option<NaiveDate> {
+pub(crate) fn parse_date(s: &str) -> Option<NaiveDate> {
     let s = s.trim();
     let date = s.split([' ', 'T']).next().unwrap_or("");
     let parts: Vec<&str> = date.split(['/', '-', '.']).collect();
@@ -569,7 +569,7 @@ fn zip_code(s: &str) -> String {
     if t.len() == 4 && t.chars().all(|c| c.is_ascii_digit()) { format!("0{t}") } else { t.to_string() }
 }
 
-fn title_case(s: &str) -> String {
+pub(crate) fn title_case(s: &str) -> String {
     if s.chars().any(|c| c.is_lowercase()) {
         return s.trim().to_string();
     }

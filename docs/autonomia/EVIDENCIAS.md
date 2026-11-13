@@ -452,3 +452,72 @@ servicios, ficheros reales o mediciones largas.
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 386 pasan, 0 fallan, 10 ignoradas |
+
+## E-021 Fase 2: motor de migración, asistente e informe de conciliación (T-F2-01 a T-F2-09)
+Todo con **datos sintéticos** (inventados y señalados así en cada prueba), sin datos reales. La documentación de usuario está en `docs/migracion.md`, y las decisiones en D-18, D-19 y D-20.
+
+- **T-F2-01. Motor e identificadores de origen.**
+  - **Qué hay:** `src/migracion.rs`. Cada registro importado guarda programa, tabla o fichero, clase de dato e identificador (`Db::imports`, sincronizado por registro como los demás).
+  - **Repetir no duplica, y una importación cortada se termina repitiéndola,** aunque las filas vengan en otro orden: `repeating_or_finishing_a_migration_never_duplicates`.
+  - **La fusión posterior de dos pacientes conserva el origen:** `merging_patients_keeps_their_origin`.
+- **T-F2-02. Entidades,** probadas en `a_full_migration_with_its_reconciliation` y `an_end_to_end_synthetic_migration_squares`:
+  - pacientes con su responsable, alertas y alergias;
+  - tratamientos hechos y pendientes;
+  - presupuestos de varias líneas;
+  - citas, con años de dos cifras, anuladas y no acude;
+  - cobros, con el recibo del origen y sin caja;
+  - saldos;
+  - documentos e imágenes, con su ruta.
+- **Lo de antes, como historia:** los tratamientos hechos no gastan material, no crean recalls y no salen para facturar ni para liquidar a la mutua (D-18). Para eso hay un campo nuevo, `MedEntry::settled_elsewhere`, que respetan `uninvoiced`, la emisión de facturas y `claimable`.
+- **Ajuste de saldo (D-20):**
+  - **Qué es:** el apunte `MIGSALDO`, que no es producción ni comisión (`MedEntry::is_act` en informes, inicio, liquidación de colaboradores, procedencia y comodines).
+  - **Prueba:** `the_balance_adjustment_matches_the_old_debt_once`.
+  - **Pacientes unidos:** no se les ajusta (`a_linked_patient_is_never_adjusted`).
+- **T-F2-03. Asistente.**
+  - **Qué hay:** `src/screens/migrar.rs`, en Configuración › Importar datos:
+    - hojas desde fichero, carpeta (`a_folder_loads_each_sheet_by_its_name`) o SQL Server;
+    - columnas con un ejemplo por campo, vista previa y perfiles;
+    - simulacro aislado (`dry_run`, sobre una copia) con errores por fila;
+    - duplicados decididos uno a uno;
+    - importación solo tras un simulacro de lo de ahora, con copia de seguridad previa y registro de actividad.
+  - **Prueba en pantalla:** `ui_tests::migration_wizard_simulates_decides_and_imports`. Comprueba:
+    - el simulacro no cambia nada y nada se sale a 1280 de ancho;
+    - un duplicado que solo comparte el NIF no ofrece «unirlo»;
+    - al decidirlo hay que repetir el simulacro;
+    - la importación hace lo decidido.
+  - **Origen en solo lectura:** la prueba de extremo a extremo comprueba que los ficheros CSV conservan bytes y fecha.
+  - **Capturas:** `capturas/f2_migracion_hojas_1280x800.png` y `capturas/f2_migracion_informe_1280x800.png`.
+- **Duplicados (D-19).**
+  - **Dos personas nunca se unen por el NIF ni por el número de historia:** `duplicates_are_decided_and_a_shared_nif_never_joins_two_people` y la fila de P2 en `a_full_migration_with_its_reconciliation`.
+  - **Ninguna fila se pierde:** filas = nuevos + ya estaban + sin importar (con su porqué), para cada clase de dato, en `a_full_migration_with_its_reconciliation`.
+- **T-F2-04. Informe de conciliación.**
+  - **Qué compara:** por paciente y en total, en céntimos exactos:
+    - pacientes;
+    - deuda (y la de los pacientes sin importar, aparte);
+    - citas futuras;
+    - presupuestos abiertos;
+    - tratamientos pendientes.
+  - **Sin doble cómputo:** la deuda de aquí sale de tratamientos menos cobros importados, y el ajuste es solo la diferencia.
+  - **En texto:** `the_report_reads_as_text`.
+- **T-F2-05 y T-F2-06. GESDEN y Novaclinic.**
+  - **Lo que se conserva:** el catálogo y las tarifas se importan como antes.
+  - **Pacientes:** entran en el motor con `mssql::gesden_patients_for_migration`, que es la consulta conocida más `IdPac`, el identificador que no se repite. Sus columnas se asignan solas (`gesden_patient_columns_are_assigned_by_themselves`).
+  - **Lo demás:** se lee con «Desde SQL» y se asigna y valida en el asistente.
+  - **Sin comprobar con datos reales:** el mapeo real del resto. Sigue en B-03 y B-04 (T-F2-10 y T-F2-11); no se ha inventado ninguna tabla.
+- **T-F2-07. Perfiles de columnas** que se guardan y se eligen (`ClinicConfig::mig_profiles`, `a_saved_profile_assigns_the_columns_again`).
+  - **Pendiente:** los perfiles de Clinic Cloud y Dentalink con sus columnas reales esperan a sus exportaciones (B-05, T-F2-12).
+- **T-F2-08. Formatos, versiones y campos soportados:** `docs/migracion.md`.
+- **T-F2-09. Simulacro reproducible de extremo a extremo:** `an_end_to_end_synthetic_migration_squares`. Recorre todo el camino:
+  1. Seis CSV sintéticos en una carpeta temporal, leídos con el lector de siempre.
+  2. El simulacro, que no cambia los datos ni los ficheros.
+  3. La importación, igual al simulacro, con el informe cuadrado en todo.
+  4. Una repetición que no añade nada.
+- **Seguridad:** la ruta de red de un documento (`\\servidor\recurso`) no se comprueba al importar, porque en Windows mirarla ya conecta con ese servidor y le da las credenciales del usuario. La prueba es la fila D3 de `a_full_migration_with_its_reconciliation`.
+- **Prueba existente ajustada:** `import_patients_from_a_csv_in_the_settings_screen` va en una ventana más alta, porque encima está ahora la tarjeta de la migración. No cambia nada de lo que comprueba.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 401 pasan, 0 fallan, 10 ignoradas |

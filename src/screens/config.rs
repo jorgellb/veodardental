@@ -527,7 +527,7 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
                 return;
             };
             let today = app.today;
-            let month_prod: f64 = app.db.entries.iter().filter(|e| e.doctor_id == id && e.state == TxState::Realizado && e.date >= today - chrono::Duration::days(30)).map(|e| e.amount()).sum();
+            let month_prod: f64 = app.db.entries.iter().filter(|e| e.doctor_id == id && e.is_act() && e.date >= today - chrono::Duration::days(30)).map(|e| e.amount()).sum();
             let appts_today = app.db.appointments.iter().filter(|a| a.doctor_id == id && a.date == today && !a.state.is_cancelled()).count();
             let clinic = app.db.clinic_week();
             let clinic_span = clinic.span().unwrap_or((app.db.config.open_time, app.db.config.close_time));

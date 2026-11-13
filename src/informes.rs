@@ -151,7 +151,7 @@ impl Db {
     /// Tratamientos realizados en el periodo con el filtro (para el libro
     /// diario y la producción).
     pub fn report_acts(&self, f: &Filter) -> Vec<&MedEntry> {
-        let mut v: Vec<&MedEntry> = self.entries.iter().filter(|e| e.state == TxState::Realizado && f.day(e.date) && f.center(e.center_id) && f.doctor.is_none_or(|d| d == e.doctor_id)).collect();
+        let mut v: Vec<&MedEntry> = self.entries.iter().filter(|e| e.is_act() && f.day(e.date) && f.center(e.center_id) && f.doctor.is_none_or(|d| d == e.doctor_id)).collect();
         v.sort_by_key(|e| (e.date, e.id));
         v
     }

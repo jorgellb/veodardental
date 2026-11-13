@@ -264,7 +264,18 @@ pub fn catalog_from_rows(tarifas: &[Vec<String>], tratamientos: &[Vec<String>], 
 /// Pacientes de GESDEN para el asistente de importación (la tarifa general
 /// se llama «Privado» en VeodarDental).
 pub fn gesden_patients(src: &SqlSource, cat: Option<&GCatalogo>) -> Result<Sheet, String> {
-    let mut s = read_query(src, GESDEN_PACIENTES, 1_000_000)?;
+    gesden_patients_with(src, cat, GESDEN_PACIENTES)
+}
+
+/// Los pacientes de GESDEN para la migración completa: los mismos campos y,
+/// delante, su identificador interno (`IdPac`), que es el que no se repite
+/// (el nº de historia sí puede repetirse).
+pub fn gesden_patients_for_migration(src: &SqlSource, cat: Option<&GCatalogo>) -> Result<Sheet, String> {
+    gesden_patients_with(src, cat, &GESDEN_PACIENTES.replacen("SELECT ", "SELECT P.IdPac AS [Id paciente], ", 1))
+}
+
+fn gesden_patients_with(src: &SqlSource, cat: Option<&GCatalogo>, sql: &str) -> Result<Sheet, String> {
+    let mut s = read_query(src, sql, 1_000_000)?;
     let base = cat.and_then(crate::gesden::base_tariff).map(|t| t.nombre.trim().to_string());
     let col = s.headers.iter().position(|h| h == "Mutua / tarifa");
     if let Some(ci) = col {

@@ -230,7 +230,7 @@ impl Db {
                 continue;
             }
             let k = if p.referral.trim().is_empty() { "Sin indicar".to_string() } else { p.referral.trim().to_string() };
-            let prod: f64 = self.entries.iter().filter(|e| e.patient_id == p.id && e.state == TxState::Realizado).map(|e| e.amount()).sum();
+            let prod: f64 = self.entries.iter().filter(|e| e.patient_id == p.id && e.is_act()).map(|e| e.amount()).sum();
             let e = m.entry(k).or_default();
             e.0 += 1;
             e.1 += prod;

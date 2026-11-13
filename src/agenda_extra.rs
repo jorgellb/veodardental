@@ -170,7 +170,7 @@ impl Db {
     pub fn settlement(&self, doctor_id: u32, from: NaiveDate, to: NaiveDate) -> (Vec<&MedEntry>, f64, f64, f64) {
         let d = self.doctor(doctor_id);
         let pct = d.map(|d| d.commission_pct).unwrap_or(0.0);
-        let mut v: Vec<&MedEntry> = self.entries.iter().filter(|e| e.doctor_id == doctor_id && e.state == TxState::Realizado && e.date >= from && e.date <= to).collect();
+        let mut v: Vec<&MedEntry> = self.entries.iter().filter(|e| e.doctor_id == doctor_id && e.is_act() && e.date >= from && e.date <= to).collect();
         v.sort_by_key(|e| (e.date, e.id));
         let prod: f64 = round2(v.iter().map(|e| self.commission_amount(e)).sum());
         let lab = if d.is_some_and(|d| d.deduct_lab) { round2(v.iter().map(|e| self.lab_cost_of(e.id)).sum()) } else { 0.0 };

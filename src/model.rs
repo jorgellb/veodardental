@@ -299,11 +299,22 @@ pub struct MedEntry {
     /// hecho. 0 = de antes de guardarse (cuenta como el centro principal).
     #[serde(default)]
     pub center_id: u32,
+    /// Hecho y cerrado en el programa anterior (viene de la migración): se
+    /// facturó y se liquidó a la mutua allí, así que aquí no se factura ni se
+    /// liquida otra vez. Sigue contando en el historial y en el saldo.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub settled_elsewhere: bool,
 }
 
 impl MedEntry {
     pub fn amount(&self) -> f64 {
         round2(self.price * self.units as f64 * (1.0 - self.discount_pct / 100.0))
+    }
+
+    /// Acto hecho de verdad: realizado y no un ajuste de saldo de la migración
+    /// (que cuenta en lo que debe el paciente, pero no en la producción).
+    pub fn is_act(&self) -> bool {
+        self.state == TxState::Realizado && self.code != crate::migracion::ADJUST_CODE
     }
 }
 
@@ -639,6 +650,9 @@ pub struct ClinicConfig {
     /// emitidas guardan el suyo). Por defecto, el de siempre (20.Uno.3º).
     #[serde(default)]
     pub vat_exemption: VatExemption,
+    /// Perfiles de columnas de la migración (ver `migracion::Profile`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mig_profiles: Vec<crate::migracion::Profile>,
 }
 
 // Listas que empiezan con contenido (para los datos guardados por versiones que no las tenían).
@@ -798,6 +812,9 @@ pub struct Db {
     /// Enlaces «Mis recetas» de los pacientes.
     #[serde(default)]
     pub rx_links: Tracked<Vec<crate::rx_link::RxLink>>,
+    /// Lo importado de otro programa, con su identificador allí (`migracion`).
+    #[serde(default)]
+    pub imports: Tracked<Vec<crate::migracion::ImportRef>>,
     /// Versión de los datos (para completar lo que añaden las versiones nuevas del programa).
     #[serde(default)]
     pub data_version: u32,
@@ -1671,6 +1688,7 @@ impl Db {
             invoice_id: None,
             tariff_id: tariff,
             center_id: self.config.current_center,
+            settled_elsewhere: false,
         });
         if state == TxState::Realizado {
             self.after_realized(id);
@@ -1902,6 +1920,7 @@ impl Db {
                 invoice_id: None,
                 tariff_id: b.tariff_id,
                 center_id: self.config.current_center,
+                settled_elsewhere: false,
             });
         }
         // Recall de seguimiento cancelado al aceptar.
@@ -2008,7 +2027,7 @@ impl Db {
     // ── facturación ──
 
     pub fn uninvoiced(&self, pid: u32) -> Vec<&MedEntry> {
-        self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none() && e.amount() > 0.0).collect()
+        self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none() && !e.settled_elsewhere && e.amount() > 0.0).collect()
     }
 
     pub fn invoice(&self, id: u32) -> Option<&Invoice> {
@@ -2036,7 +2055,7 @@ impl Db {
     /// La numeración es correlativa por serie y año, sin huecos.
     pub fn issue_invoice(&mut self, pid: u32, entry_ids: &[u32], date: NaiveDate) -> Result<u32, String> {
         let p = self.patient(pid).cloned().ok_or("Paciente no encontrado")?;
-        let entries: Vec<MedEntry> = self.entries.iter().filter(|e| entry_ids.contains(&e.id) && e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none()).cloned().collect();
+        let entries: Vec<MedEntry> = self.entries.iter().filter(|e| entry_ids.contains(&e.id) && e.patient_id == pid && e.state == TxState::Realizado && e.invoice_id.is_none() && !e.settled_elsewhere).cloned().collect();
         if entries.is_empty() {
             return Err("No hay tratamientos realizados pendientes de facturar.".into());
         }
@@ -2089,7 +2108,7 @@ impl Db {
         };
         let id = self.seal(inv);
         for e in self.entries.iter_mut() {
-            if entry_ids.contains(&e.id) && e.invoice_id.is_none() && e.patient_id == pid && e.state == TxState::Realizado {
+            if entry_ids.contains(&e.id) && e.invoice_id.is_none() && !e.settled_elsewhere && e.patient_id == pid && e.state == TxState::Realizado {
                 e.invoice_id = Some(id);
             }
         }

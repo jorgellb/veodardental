@@ -90,7 +90,7 @@ impl Db {
         let mut v: Vec<ClaimLine> = self
             .entries
             .iter()
-            .filter(|e| e.state == TxState::Realizado && e.date >= from && e.date <= to && !self.claimed(e.id))
+            .filter(|e| e.state == TxState::Realizado && !e.settled_elsewhere && e.date >= from && e.date <= to && !self.claimed(e.id))
             .filter_map(|e| {
                 let p = self.patient(e.patient_id)?;
                 // la compañía del paciente cuando se hizo el acto

@@ -294,7 +294,7 @@ impl Db {
         let p = self.patient(pid).cloned().unwrap_or_default();
         let c = &self.config;
         let city = c.address.rsplit(' ').next().unwrap_or("").to_string();
-        let done: Vec<String> = self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Realizado).map(|e| format!("· {} {} ({})", e.description, fmt_teeth(&e.teeth), fmt_date(e.date))).collect();
+        let done: Vec<String> = self.entries.iter().filter(|e| e.patient_id == pid && e.is_act()).map(|e| format!("· {} {} ({})", e.description, fmt_teeth(&e.teeth), fmt_date(e.date))).collect();
         let pend: Vec<String> = self.entries.iter().filter(|e| e.patient_id == pid && e.state == TxState::Previsto).map(|e| format!("· {} {}", e.description, fmt_teeth(&e.teeth))).collect();
         let mut s = text
             .replace("[NOMBRE]", &p.first_name)

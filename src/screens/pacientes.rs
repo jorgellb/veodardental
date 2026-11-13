@@ -422,7 +422,7 @@ fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
                     realize = Some(e.id);
                     ui.close();
                 }
-                if e.state == TxState::Realizado && e.invoice_id.is_none() && ui.button("↶ Volver a previsto (se marcó por error)").clicked() {
+                if e.state == TxState::Realizado && e.invoice_id.is_none() && !e.settled_elsewhere && ui.button("↶ Volver a previsto (se marcó por error)").clicked() {
                     undo = Some(e.id);
                     ui.close();
                 }

@@ -2211,7 +2211,8 @@ fn import_patients_from_a_csv_in_the_settings_screen() {
     std::fs::create_dir_all(&dir).unwrap();
     let csv = dir.join("pacientes.csv");
     std::fs::write(&csv, "Nº historial;Apellidos;Nombre;Teléfono;Notas\n1001;Martínez Ruiz;Pedro;612 345 678;\"Alérgico a la penicilina\nTomar antibiótico antes\"\n9001;Puig;Núria;;\n").unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+    // (alto: encima está la tarjeta de la migración completa)
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
         let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
         a.screenshot = None;
         a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
@@ -2613,4 +2614,71 @@ fn every_screen_fits_1280_wide() {
         }
     }
     assert!(problems.is_empty(), "{} elementos fuera:\n{}", problems.len(), problems.join("\n"));
+}
+
+/// El asistente de migración con datos sintéticos: el simulacro no cambia
+/// nada y da su informe (sin salirse a 1280 de ancho); un duplicado se
+/// decide en su fila, y la importación hace lo del simulacro.
+#[test]
+fn migration_wizard_simulates_decides_and_imports() {
+    use crate::migracion::{DupPolicy, Entity};
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 3400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Config;
+        a.lists.cfg_tab = crate::screens::config::CfgTab::Importar;
+        let src = crate::migracion::tests::source(&a.db);
+        a.imp.mig.source = src.name.clone();
+        for t in src.tables {
+            let i = Entity::ALL.iter().position(|e| *e == t.entity).unwrap();
+            a.imp.mig.tables[i] = Some(t);
+        }
+    }
+    for _ in 0..4 {
+        h.step();
+    }
+    let before = h.state().db.patients.len();
+    assert!(h.query_by_label("Informe del simulacro").is_none());
+    h.get_by_label("🔍 Simulacro (no cambia nada)").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("Informe del simulacro");
+    h.get_by_label_contains("Pacientes que no cuadran");
+    assert_eq!(h.state().db.patients.len(), before, "el simulacro no cambia nada");
+    let off = offscreen(&h, 1280.0);
+    assert!(off.is_empty(), "se sale: {off:?}");
+    // P4 (solo comparte el NIF) es otra persona: se crea
+    let combos: Vec<_> = h.query_all_by_value("No importarlo").collect();
+    assert_eq!(combos.len(), 3, "el de todos y uno por posible duplicado");
+    combos[2].click();
+    for _ in 0..2 {
+        h.step();
+    }
+    assert!(h.query_by_label("Es el mismo: unirlo").is_none(), "solo con el NIF no se puede unir");
+    h.get_by_label("Es otra persona: crearlo").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().imp.mig.decisions.get("P4"), Some(&DupPolicy::New));
+    h.get_by_label("los datos han cambiado: repita el simulacro");
+    assert!(!h.state().imp.mig.fresh, "sin repetir el simulacro no se importa");
+    h.get_by_label("🔍 Simulacro (no cambia nada)").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("⬇ Importar lo del simulacro").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("Informe de la migración");
+    let a = h.state();
+    assert_eq!(a.db.patients.len(), before + 3, "P1, P2 y P4");
+    assert!(a.db.patients.iter().any(|p| p.first_name == "Otra"));
+    assert!(a.db.audit_log.iter().any(|x| x.action == "Migración"));
 }

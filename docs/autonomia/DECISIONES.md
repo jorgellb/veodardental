@@ -85,3 +85,20 @@ El límite de análisis de pago al mes es de 20 por defecto: un uso normal de un
 Abren 30 días desde la última vez que la clínica los envía (copiar, enviar por correo o abrir el enlace cuenta como envío), o desde que se firman o se deciden. Un presupuesto pendiente abre además mientras está en plazo.
 
 Reenviar un enlace sin firmar ni decidir lo renueva con el mismo código, así que el paciente no recibe varios enlaces distintos. Es un equilibrio entre dar tiempo al paciente y no dejar datos personales abiertos indefinidamente; el plazo se puede cambiar en `portal::LINK_DAYS`.
+
+## D-18 Lo importado de otro programa no se factura ni se liquida otra vez
+Los tratamientos hechos que llegan en una migración se facturaron (o no) y se liquidaron a la mutua en el programa anterior. VeodarDental no puede saber cuáles. Por eso quedan cerrados allí (`MedEntry::settled_elsewhere`):
+- cuentan en el historial y en el saldo;
+- no salen para facturar ni para liquidar.
+
+Así no puede haber una factura ni una liquidación doble. Si un paciente pide la factura de un acto antiguo, se hace en el programa anterior, que se conserva en lectura. Los tratamientos pendientes, en cambio, se harán aquí y se facturan como cualquier otro.
+
+## D-19 Dos personas no se unen por el NIF ni por el número de historia
+Un paciente del origen se une a uno que ya estaba solo si la clínica lo decide (para todos o fila a fila) y además tienen el mismo nombre, con el mismo NIF o la misma fecha de nacimiento. Con solo el NIF igual, como un hijo con el de su madre o un error al teclear, se puede omitir o crear aparte, nunca unir. Un número de historia ocupado se cambia por otro libre, con aviso. Lo que no se decide no se importa y sale en el informe (por defecto, «No importarlo»).
+
+## D-20 El ajuste de saldo es un apunte, no un cobro
+Si la clínica pide que la deuda sea la del programa anterior, se apunta una vez por paciente un ajuste con la diferencia (código `MIGSALDO`, en positivo o en negativo). No es un cobro, porque no entra dinero, y no es un acto, porque no cuenta como producción ni comisión ni se factura (`MedEntry::is_act`).
+
+No se ajusta a los pacientes unidos a uno que ya estaba: su saldo de aquí incluye lo que ya tenía. Se avisa de la diferencia.
+
+Con hoja de saldos, quien no aparece en ella debe 0 en el programa anterior. Si la exportación solo trae a los deudores, el informe lo muestra antes de importar: los que tienen saldo a favor salen como pacientes que no cuadran.

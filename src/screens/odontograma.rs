@@ -453,7 +453,7 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                             if e.state == TxState::Previsto && ui.small_button("✔").on_hover_text("Marcar como realizado hoy").clicked() {
                                 realize = Some(e.id);
                             }
-                            if e.state == TxState::Realizado && e.invoice_id.is_none() && ui.small_button("↶").on_hover_text("Volver a previsto (se marcó por error)").clicked() {
+                            if e.state == TxState::Realizado && e.invoice_id.is_none() && !e.settled_elsewhere && ui.small_button("↶").on_hover_text("Volver a previsto (se marcó por error)").clicked() {
                                 undo = Some(e.id);
                             }
                         });

@@ -785,6 +785,12 @@ impl Db {
             c.patients.retain(|p| *p != remove && *p != keep);
             c.patients.push(keep);
         }
+        // el paciente de otro programa que era el quitado ahora es el que se
+        // conserva, como uno que ya estaba (su saldo ya no es solo el de allí)
+        for i in self.imports.iter_mut().filter(|i| i.entity == crate::migracion::Entity::Pacientes && i.local == remove) {
+            i.local = keep;
+            i.linked = true;
+        }
         self.patients.retain(|p| p.id != remove);
         self.audit("Fusión de pacientes", &format!("{} (Nº {}) unido a {}", r.full_name(), r.history_no, kname));
         Ok(())

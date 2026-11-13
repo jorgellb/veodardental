@@ -178,7 +178,7 @@ db_fields! {
         (orders, id), (lab_works, id), (users, id), (expenses, id), (prescriptions, id), (ortho, id),
         (remittances, id), (contacts, id), (bank_accounts, id), (bank_moves, id), (centers, id),
         (health, id), (claims, id), (tasks, id), (stations, id), (chat, id), (calls, id), (whatsapp, id),
-        (vf_records, id), (ia_reports, id), (booking_requests, id), (slot_offers, id),
+        (vf_records, id), (ia_reports, id), (booking_requests, id), (slot_offers, id), (imports, id),
         (appt_links, token), (budget_links, token), (doc_links, token), (rx_links, token),
     ],
     plain: [

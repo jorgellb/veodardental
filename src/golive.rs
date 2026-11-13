@@ -233,6 +233,7 @@ impl Db {
             slot_offers,
             golive: _,
             rx_links,
+            imports,
             data_version: _,
             station: _,
         } = self;
@@ -277,6 +278,7 @@ impl Db {
         doc_links.clear();
         slot_offers.clear();
         rx_links.clear();
+        imports.clear();
         // lo de ejemplo que no es de ningún paciente
         suppliers.retain(|s| !is_demo(&d.suppliers, s.id, &s.name));
         products.retain(|p| !is_demo(&d.products, p.id, &p.name));

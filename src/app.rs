@@ -1104,6 +1104,7 @@ impl ChainOp {
             "claims",
             "slot_offers",
             "calls",
+            "imports",
             "config",
             "audit_log",
         ];

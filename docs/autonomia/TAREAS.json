@@ -1736,8 +1736,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Cada registro importado guarda sistema, tabla e id de origen; repetir no duplica",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-02",
@@ -1751,8 +1753,10 @@
     "T-F2-01"
    ],
    "criterio": "Importación probada de cada entidad con fixtures sintéticos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-03",
@@ -1766,8 +1770,10 @@
     "T-F2-01"
    ],
    "criterio": "Flujo en pantalla probado; origen en solo lectura",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-04",
@@ -1781,8 +1787,10 @@
     "T-F2-02"
    ],
    "criterio": "Pacientes, deuda, citas futuras, presupuestos abiertos y tratamientos pendientes cuadran sin doble cómputo",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-05",
@@ -1797,8 +1805,10 @@
     "T-F2-02"
    ],
    "criterio": "Catálogo y pacientes existentes conservados; resto del mapeo configurable y validable",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-06",
@@ -1813,8 +1823,10 @@
     "T-F2-02"
    ],
    "criterio": "Igual que GESDEN",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-07",
@@ -1828,8 +1840,10 @@
     "T-F2-03"
    ],
    "criterio": "Perfiles de mapeo seleccionables y probados con fixtures sintéticos identificados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-08",
@@ -1846,8 +1860,10 @@
     "T-F2-07"
    ],
    "criterio": "docs/migracion.md",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-09",
@@ -1862,8 +1878,10 @@
     "T-F2-04"
    ],
    "criterio": "Prueba automática: origen sintético, simulacro, importación e informe cuadrado",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-021"
+   ]
   },
   {
    "id": "T-F2-10",

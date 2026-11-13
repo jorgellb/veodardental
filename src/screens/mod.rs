@@ -23,6 +23,7 @@ pub mod laboratorio;
 pub mod llamadas;
 pub mod login;
 pub mod marcha;
+pub mod migrar;
 pub mod mutuas;
 pub mod odg_paint;
 pub mod odontograma;

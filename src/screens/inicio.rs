@@ -265,7 +265,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         let total = today.year() * 12 + today.month0() as i32 - i;
                         let (y, m) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
                         let cob: f64 = app.db.payments.iter().filter(|p| p.date.year() == y && p.date.month() == m).map(|p| p.amount).sum();
-                        let prod: f64 = app.db.entries.iter().filter(|e| e.state == TxState::Realizado && e.date.year() == y && e.date.month() == m).map(|e| e.amount()).sum();
+                        let prod: f64 = app.db.entries.iter().filter(|e| e.is_act() && e.date.year() == y && e.date.month() == m).map(|e| e.amount()).sum();
                         (month_es(m)[..3].to_string(), cob, prod)
                     })
                     .collect();
