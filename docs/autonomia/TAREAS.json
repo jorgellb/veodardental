@@ -2117,8 +2117,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Documentos en docs/ comprobados contra el programa",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-030"
+   ]
   },
   {
    "id": "T-F3-09",

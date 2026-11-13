@@ -216,7 +216,7 @@ impl Db {
         let Some(c) = self.claims.iter().find(|c| c.id == id) else { return String::new() };
         let mut s = String::from("Liquidacion;Fecha;Paciente;Poliza;Codigo;Acto;Piezas;Autorizacion;Importe\n");
         for l in &c.lines {
-            let clean = |x: &str| x.replace([';', '\n'], " ");
+            let clean = |x: &str| crate::model::sheet_cell(x, ';');
             let fee = format!("{:.2}", l.fee).replace('.', ",");
             s.push_str(&format!("{};{};{};{};{};{};{};{};{fee}\n", c.number, l.date.format("%d/%m/%Y"), clean(&l.patient), clean(&l.policy_no), l.code, clean(&l.description), l.teeth, clean(&l.auth_no)));
         }

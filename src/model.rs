@@ -1343,6 +1343,15 @@ pub fn now() -> NaiveDateTime {
     Local::now().naive_local()
 }
 
+/// Texto para una celda de un CSV o de un texto que se pega en una hoja de
+/// cálculo: sin separadores ni saltos de línea, y sin que pueda tomarse por
+/// una fórmula (lo que empieza por =, +, -, @ o un tabulador lleva delante un
+/// apóstrofo). Los datos vienen de personas o de otros programas.
+pub fn sheet_cell(s: &str, sep: char) -> String {
+    let clean: String = s.chars().map(|c| if c == sep || c == '\n' || c == '\r' || c == '\t' { ' ' } else { c }).collect();
+    if s.trim_start_matches(' ').starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{clean}") } else { clean }
+}
+
 /// Quita acentos y pasa a minúsculas para búsquedas tolerantes.
 pub fn fold(s: &str) -> String {
     s.chars()

@@ -121,7 +121,7 @@ pub fn summary(list: &[Measure], from: NaiveDateTime, to: NaiveDateTime) -> Vec<
 pub fn csv(list: &[Measure]) -> String {
     let mut s = String::from("fecha;hora;tipo;segundos;pasos;puesto;resultado;nota\n");
     for m in list {
-        let note = m.note.replace([';', '\n', '\r'], " ");
+        let note = crate::model::sheet_cell(&m.note, ';');
         s += &format!("{};{};{};{:.1};{};{};{};{}\n", m.at.format("%d/%m/%Y"), m.at.format("%H:%M:%S"), m.kind.label(), m.ms as f64 / 1000.0, m.steps, m.station, if m.ok { "bien" } else { "con fallos" }, note);
     }
     s
@@ -179,6 +179,13 @@ mod tests {
             assert!(!out.contains(secret.as_str()), "{secret}");
         }
         assert!(p.nif.is_empty() || !out.contains(&p.nif));
+        // una nota que empieza como una fórmula no se ejecuta al abrir el CSV
+        db.measure(Kind::Incidencia, 0, 0, true, "=1+1");
+        db.measure(Kind::Incidencia, 0, 0, true, "+SUMA(A1)");
+        let out = csv(&db.measures);
+        assert!(out.contains(";'=1+1\n") && out.contains(";'+SUMA(A1)\n"), "{out}");
+        assert_eq!(crate::model::sheet_cell("-2+3;x\ny", ';'), "'-2+3 x y");
+        assert_eq!(crate::model::sheet_cell("normal", ';'), "normal");
         let json = serde_json::to_string(&db.measures).unwrap();
         assert!(!json.contains("patient") && !json.contains("amount"), "{json}");
     }

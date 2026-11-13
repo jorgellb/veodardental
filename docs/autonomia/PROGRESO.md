@@ -40,13 +40,14 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F3-06: VERI*FACTU contra una AEAT simulada (rechazo, caída, reintento idéntico y conciliación) | E-027 | `8a5bb6a` |
 | T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | `3f51833` |
 | T-F3-09: instrumentos del piloto (tiempos y pasos, incidencias, disponibilidad y restauraciones) | E-029 | `445396c` |
+| T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | (pendiente) |
 
 ## Siguiente acción
-Las fases 1 y 2 están terminadas en la parte de ingeniería. El mapeo real de GESDEN, Novaclinic, Clinic Cloud y Dentalink sigue en B-03, B-04 y B-05. Toca la fase 3: instalación y operación.
-1. T-F3-08: lista de instalación, restauración y vuelta atrás, y guía breve, comprobadas contra el programa (docs/). T-F3-01 a T-F3-07 y T-F3-09 hechas (E-022 a E-029).
-   - Inventariar lo que ya hay: instaladores, `tools/`, copias de seguridad (`src/tools.rs`), puesta en marcha (`src/golive.rs`) y servidor.
-   - Firma de código y máquinas Windows/macOS reales: B-24 y B-25.
-2. Después, la fase 4 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08).
+Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
+1. T-F4-00 a T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`).
+   - Consultar documentación oficial vigente; registrar fuente, fecha, versión y efecto, y separar lo confirmado de lo pendiente.
+   - Inventariar lo que ya hay: receta electrónica (srep*), registro de accesos (`access_log`), herramientas RGPD, cifrado (`cifrado.rs`), carpeta compartida (`shared.rs`) y registro de jornada.
+2. Después, las fases 5 y 6 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08) y el cierre (T-CIERRE-01/02).
 
 ## Notas para seguir
 - La anchura a 1280 px la vigila `ui_tests::every_screen_fits_1280_wide`. Una pantalla nueva o cambiada debe pasarla. Para los campos, `field`; para las tablas, `Table`; en filas de campos, `horizontal_wrapped`.

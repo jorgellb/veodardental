@@ -543,13 +543,15 @@ impl Report {
         if !diff.is_empty() {
             s += &format!("\nPacientes que no cuadran ({})\n", diff.len());
             for p in diff {
-                s += &format!("{} {} (nº {}): {}\n", p.key, p.name, p.local, Report::differences(p));
+                let c = |x: &str| sheet_cell(x, '\t');
+                s += &format!("{} {} (nº {}): {}\n", c(&p.key), c(&p.name), p.local, c(&Report::differences(p)));
             }
         }
         if !self.duplicates.is_empty() {
             s += &format!("\nPosibles duplicados ({})\n", self.duplicates.len());
             for d in &self.duplicates {
-                s += &format!("Fila {}: {} {} parece el nº de historia {} ({}) → {}\n", d.row, d.key, d.name, d.history_no, d.why, d.decision.label());
+                let c = |x: &str| sheet_cell(x, '\t');
+                s += &format!("Fila {}: {} {} parece el nº de historia {} ({}) → {}\n", d.row, c(&d.key), c(&d.name), d.history_no, d.why, d.decision.label());
             }
         }
         if !self.problems.is_empty() {
@@ -561,7 +563,7 @@ impl Report {
                     ProblemKind::Warning => "Aviso",
                 };
                 let row = if p.row == 0 { "toda la hoja".to_string() } else { format!("fila {}", p.row) };
-                s += &format!("{} · {row} · {kind}: {}\n", p.entity.label(), p.reason);
+                s += &format!("{} · {row} · {kind}: {}\n", p.entity.label(), sheet_cell(&p.reason, '\t'));
             }
         }
         s
@@ -1726,6 +1728,13 @@ pub(crate) mod tests {
         assert!(t.contains("P2 Mario Pérez Ruiz") && t.contains("deuda 30,00"));
         assert!(t.contains("Fila 5: P4 Otra Persona parece el nº de historia"));
         assert!(t.contains("Tratamientos hechos y pendientes · fila 7 · Sin importar: T6: el paciente P9 no está en la hoja de pacientes"));
+        // lo que viene de los ficheros no puede tomarse por una fórmula al pegarlo
+        let mut db2 = Db::sample(day());
+        let mut src = source(&db2);
+        src.tables[0].sheet.rows[1][1] = "=HIPERVINCULO(\"http://x\")".into();
+        let t2 = db2.migrate(&src, &opt()).text("PRUEBA", false);
+        assert!(t2.contains("'=Hipervinculo") || t2.contains("'=HIPERVINCULO"), "{t2}");
+        assert!(!t2.lines().any(|l| l.split('\t').any(|c| c.trim_start().starts_with('='))));
     }
 
     /// Las rutas de otro ordenador se reconocen con cualquier forma, y solo

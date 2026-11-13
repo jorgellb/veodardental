@@ -790,3 +790,21 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 424 pasan, 0 fallan, 10 ignoradas |
+
+## E-030 T-F3-08: guías comprobadas contra el programa, y fórmulas en los CSV
+- **T-F3-08.** Tres guías, comprobadas por una prueba que falla si un botón cambia de nombre:
+  - `docs/instalacion.md`: lista de instalación del servidor y los puestos, con disco cifrado, huella, permisos, copias con clave aparte y ensayo, puesta en marcha, migración, VERI*FACTU y comprobación final. Avisa de que los instaladores aún no van firmados, sin desactivar protecciones.
+  - `docs/restauracion.md`: restaurar una copia (con contraseña o clave de recuperación), ensayo mensual, pérdida de la contraseña, y actualizar y volver atrás (orden, paquete firmado, apagón a mitad, `--volver-atras` y cuándo hay que restaurar).
+  - `docs/guia_breve.md`: recepción (cita, llegadas, cobro, caja, mensajes, sin conexión), profesionales y qué hacer si algo va mal.
+  - **Prueba:** `docs_tests::tests::the_guides_only_name_what_the_program_has`. Cada texto entre «» de las guías (más de 40 citas) está en el código, y cada opción `--…` en `main.rs`.
+- **Revisión de seguridad automática del commit `445396c`: un hallazgo, corregido.**
+  - **Hallazgo:** inyección de fórmulas en el CSV de medidas. El mismo problema tenían dos exportaciones anteriores a este trabajo (la liquidación a mutuas y los gastos) y el informe de migración que se pega en una hoja de cálculo.
+  - **Ahora:** todas pasan sus textos por `model::sheet_cell`: sin separadores ni saltos de línea, y con un apóstrofo delante de lo que empieza por `=`, `+`, `-`, `@` o un tabulador.
+  - **Pruebas:** `medidas::tests::measures_carry_no_patient_data` y `migracion::tests::the_report_reads_as_text`, con un nombre de paciente «=HIPERVINCULO(…)» en el origen.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 425 pasan, 0 fallan, 10 ignoradas |
