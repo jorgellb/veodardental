@@ -28,7 +28,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F1-A9: cita online y portales | E-016 | `80670ec` |
 | T-F1-A10: telefonía y laboratorio digital | E-017 | `4c09bf7` |
 | T-F1-11: todas las pantallas a 1280×720 y 1280×800 | E-018 | `84a667a` |
-| T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | (este lote) |
+| T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | `bcfa695` |
 | T-F1-13: informes con oráculo independiente (hecho en el área 5) | E-011 | `7fd53f0` |
 
 ## Siguiente acción
