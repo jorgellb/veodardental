@@ -521,3 +521,38 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 401 pasan, 0 fallan, 10 ignoradas |
+
+## E-022 Revisión de seguridad de la fase 2, ficheros privados y ensayo de instalación (T-F3-01)
+- **Revisión de seguridad automática del commit `e4e3298`: dos hallazgos, corregidos.**
+  - **Hallazgo:** la guarda de rutas de red de los documentos importados no reconocía las barras mezcladas (`\/servidor`) ni los prefijos de dispositivo (`\\?\UNC\`, `\\.\`, `\??\`). Además, aunque no se mirara al importar, la galería abriría después esa ruta. En los dos casos, Windows daría las credenciales del usuario a ese servidor.
+  - **Ahora:**
+    - una ruta de red solo se importa dentro de la carpeta de documentos que la clínica indica, sin `..`;
+    - las demás quedan fuera con su explicación (D-21, `docs/migracion.md`).
+  - **Pruebas:**
+    - `migracion::tests::network_paths_are_recognised_and_only_trusted_inside_the_documents_folder`;
+    - la fila D3 de `a_full_migration_with_its_reconciliation`.
+- **Defecto de permisos demostrado y corregido.**
+  - **Qué pasaba:** los ficheros siguientes se creaban con los permisos por defecto del sistema (0644 en Linux): cualquier otra cuenta del mismo ordenador podía leer los datos de salud. Solo `servidor.json` se protegía.
+    - el fichero de datos de la clínica (`clinica.json`) y su diario, tanto en un ordenador como en el servidor;
+    - las sesiones del servidor;
+    - las copias de seguridad sin cifrar.
+  - **Ahora:**
+    - todos se crean solo para el usuario (0600), con `paths::create_private`, `append_private` y `write_private`;
+    - los de versiones anteriores se corrigen al volver a escribirlos.
+  - **Fuera, a propósito:** la carpeta compartida, porque la comparten varios puestos; su retirada es de la fase 4.
+  - **Prueba:** forma parte del ensayo. Sin el arreglo, falla con `0o644`.
+- **T-F3-01. Ensayo de instalación en Linux con raíces aisladas:** `server::tests::installation_rehearsal_on_linux`.
+  1. El servidor crea su clave y su identidad una vez (0600). Repetirlo no las cambia.
+  2. Arranca con ellas.
+  3. Un puesto se da de alta y apunta la huella que enseña el servidor; con una clave mala no entra.
+  4. Recepción no puede conciliar el banco y Dirección sí.
+  5. Datos, diario, sesiones y copias quedan en 0600.
+  6. El cifrado del disco se comprueba de verdad. En este ordenador sale `Unknown` (las pruebas van en tmpfs); el análisis de BitLocker, FileVault y LUKS tiene sus propias pruebas en `disco::tests`.
+  - **Pendiente fuera de aquí:** Windows y macOS reales siguen en B-24 (T-F3-01X).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 403 pasan, 0 fallan, 10 ignoradas |

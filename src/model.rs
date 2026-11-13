@@ -1391,7 +1391,7 @@ impl Db {
         }
         let tmp = path.with_extension("json.tmp");
         {
-            let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+            let mut f = crate::paths::create_private(&tmp).map_err(|e| e.to_string())?;
             f.write_all(serde_json::to_string(db).map_err(|e| e.to_string())?.as_bytes()).map_err(|e| e.to_string())?;
             // en el disco antes de ocupar el lugar del bueno
             f.sync_all().map_err(|e| e.to_string())?;

@@ -1946,8 +1946,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Ensayo automático: servidor, alta de puesto con huella, permisos y comprobación de cifrado",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-022"
+   ]
   },
   {
    "id": "T-F3-01X",

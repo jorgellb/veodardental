@@ -102,3 +102,8 @@ Si la clínica pide que la deuda sea la del programa anterior, se apunta una vez
 No se ajusta a los pacientes unidos a uno que ya estaba: su saldo de aquí incluye lo que ya tenía. Se avisa de la diferencia.
 
 Con hoja de saldos, quien no aparece en ella debe 0 en el programa anterior. Si la exportación solo trae a los deudores, el informe lo muestra antes de importar: los que tienen saldo a favor salen como pacientes que no cuadran.
+
+## D-21 Rutas de red de los documentos importados
+Un documento del programa anterior con ruta de otro ordenador (`\\servidor\…` y sus variantes) solo se importa si está dentro de la carpeta de documentos que la clínica indica como suya. Abrir esa ruta, o solo mirarla, hace que Windows conecte con ese servidor y le dé las credenciales del usuario. Una exportación manipulada podría así llevar las credenciales de la clínica a un servidor ajeno.
+
+Las rutas locales se importan siempre, porque no salen del ordenador.

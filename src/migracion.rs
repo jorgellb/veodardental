@@ -597,6 +597,24 @@ fn norm_name(s: &str) -> String {
     fold(s).split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Ruta de otro ordenador o de dispositivo de Windows: `\\servidor\…`,
+/// `//servidor/…` o con las barras mezcladas, `\\?\UNC\…`, `\\.\…` o `\??\…`.
+fn is_remote(path: &str) -> bool {
+    let p = path.trim_start();
+    let sep = |c: Option<char>| matches!(c, Some('\\') | Some('/'));
+    let mut c = p.chars();
+    (sep(c.next()) && sep(c.next())) || p.replace('/', "\\").starts_with("\\??\\")
+}
+
+/// ¿Está `path` dentro de la carpeta `root`? Sin «..», sin distinguir
+/// mayúsculas y con las barras de los dos tipos.
+fn under(path: &str, root: &str) -> bool {
+    let norm = |s: &str| s.trim().replace('/', "\\").to_lowercase();
+    let (p, r) = (norm(path), norm(root));
+    let r = r.trim_end_matches('\\');
+    !r.is_empty() && p.starts_with(&format!("{r}\\")) && !p.split('\\').any(|c| c == "..")
+}
+
 /// ¿Dice «pendiente» o «hecho»?
 fn is_pending(estado: &str) -> Option<bool> {
     let e = fold(estado);
@@ -1160,10 +1178,21 @@ impl Db {
                     }
                     let p = std::path::Path::new(&raw);
                     // la ruta se conserva: el fichero se queda donde está (el origen solo se lee)
-                    let path = if p.is_relative() && !opt.doc_root.trim().is_empty() && !raw.contains(':') { std::path::Path::new(opt.doc_root.trim()).join(p).to_string_lossy().to_string() } else { raw.clone() };
-                    // una ruta de red (\\servidor\recurso) no se comprueba: en Windows, mirarla
-                    // ya conecta con ese servidor y le da las credenciales del usuario
-                    let remote = path.starts_with("\\\\") || path.starts_with("//");
+                    let relative = !raw.starts_with(['/', '\\']) && !raw.contains(':');
+                    let path = if relative && !opt.doc_root.trim().is_empty() { std::path::Path::new(opt.doc_root.trim()).join(p).to_string_lossy().to_string() } else { raw.clone() };
+                    // una ruta de red solo si está en la carpeta que la clínica dice que es
+                    // suya: abrirla (o solo mirarla) conecta con ese servidor y le da las
+                    // credenciales del usuario de Windows
+                    let remote = is_remote(&path);
+                    if remote && !under(&path, &opt.doc_root) {
+                        run.problem(
+                            e,
+                            i,
+                            ProblemKind::Excluded,
+                            format!("{key}: «{path}» está en otro ordenador, fuera de la carpeta de documentos indicada; no se importa (abrirlo daría a ese ordenador las credenciales de quien lo abra). Si es de la clínica, indique esa carpeta"),
+                        );
+                        continue;
+                    }
                     if !remote && !std::path::Path::new(&path).exists() {
                         run.missing_files.push(path.clone());
                     }
@@ -1405,6 +1434,7 @@ pub(crate) mod tests {
         assert!(has(&rep, Entity::Cobros, 0, ProblemKind::Warning, "«Cheque»"));
         assert!(has(&rep, Entity::Saldos, 3, ProblemKind::Excluded, "saldo de 12,00"));
         assert!(has(&rep, Entity::Documentos, 0, ProblemKind::Warning, "2 ficheros no están"), "la ruta de red no se mira");
+        assert!(has(&rep, Entity::Documentos, 4, ProblemKind::Excluded, "está en otro ordenador"), "ni se importa sin decir que es de la clínica");
         assert_eq!(rep.duplicates.iter().map(|d| (d.key.as_str(), d.same_person)).collect::<Vec<_>>(), vec![("P3", true), ("P4", false)]);
         // ninguna fila se pierde: importada, ya estaba o explicada
         for e in Entity::ALL.into_iter().filter(|e| *e != Entity::Saldos) {
@@ -1696,6 +1726,37 @@ pub(crate) mod tests {
         assert!(t.contains("P2 Mario Pérez Ruiz") && t.contains("deuda 30,00"));
         assert!(t.contains("Fila 5: P4 Otra Persona parece el nº de historia"));
         assert!(t.contains("Tratamientos hechos y pendientes · fila 7 · Sin importar: T6: el paciente P9 no está en la hoja de pacientes"));
+    }
+
+    /// Las rutas de otro ordenador se reconocen con cualquier forma, y solo
+    /// valen dentro de la carpeta de documentos indicada.
+    #[test]
+    fn network_paths_are_recognised_and_only_trusted_inside_the_documents_folder() {
+        for p in [r"\\srv\rx\a.jpg", "//srv/rx/a.jpg", r"\/srv\rx", r"/\srv\rx", r"\\?\UNC\srv\rx\a", r"\\.\pipe\x", r"\??\UNC\srv\rx", " \\\\srv\\x"] {
+            assert!(is_remote(p), "{p}");
+        }
+        for p in [r"C:\Clinica\a.jpg", "/home/clinica/a.jpg", "rx/a.jpg", r"\Clinica\a.jpg"] {
+            assert!(!is_remote(p), "{p}");
+        }
+        assert!(under(r"\\SRV\Rx\P1\a.jpg", r"\\srv\rx"));
+        assert!(under("//srv/rx/P1/a.jpg", r"\\srv\rx\"));
+        assert!(!under(r"\\srv\rx\..\..\otro\a.jpg", r"\\srv\rx"), "sin salir con «..»");
+        assert!(!under(r"\\srv\rxotra\a.jpg", r"\\srv\rx"), "otra carpeta que empieza igual");
+        assert!(!under(r"\\?\UNC\srv\rx\a.jpg", r"\\srv\rx"));
+        assert!(!under(r"\\srv\rx\a.jpg", ""));
+        // con la carpeta de la clínica indicada, sus rutas (y las relativas) entran
+        let mut db = Db::sample(day());
+        let mut src = source(&db);
+        src.tables.retain(|t| matches!(t.entity, Entity::Pacientes | Entity::Documentos));
+        src.tables[1].sheet.rows = vec![
+            vec!["E1".into(), "P1".into(), r"\\SERVIDOR-CLINICA\Rx\P1\a.jpg".into(), "".into(), "".into()],
+            vec!["E2".into(), "P1".into(), r"P1\b.jpg".into(), "".into(), "".into()],
+            vec!["E3".into(), "P1".into(), r"\\otro\Rx\c.jpg".into(), "".into(), "".into()],
+            vec!["E4".into(), "P1".into(), r"..\..\d.jpg".into(), "".into(), "".into()],
+        ];
+        let rep = db.migrate(&src, &Options { doc_root: r"\\servidor-clinica\rx".into(), ..opt() });
+        assert_eq!(rep.counts(Entity::Documentos), (4, 2, 0, 2), "{:?}", rep.problems);
+        assert!(db.images.iter().any(|i| i.path.ends_with("b.jpg") && i.path.to_lowercase().starts_with(r"\\servidor-clinica\rx")));
     }
 
     #[test]

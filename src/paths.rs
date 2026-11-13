@@ -9,6 +9,48 @@
 
 use std::path::PathBuf;
 
+/// Crea (o vacía) un fichero que solo puede leer el usuario de este
+/// ordenador. Los datos de la clínica, su diario, las sesiones y las copias
+/// llevan datos de salud: otra cuenta del mismo ordenador no debe leerlos.
+/// En Windows, la carpeta del usuario ya es solo suya.
+pub fn create_private(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    open_private(path, false)
+}
+
+/// Como [`create_private`], pero para añadir al final (el diario).
+pub fn append_private(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    open_private(path, true)
+}
+
+fn open_private(path: &std::path::Path, append: bool) -> std::io::Result<std::fs::File> {
+    let mut o = std::fs::OpenOptions::new();
+    o.create(true);
+    if append {
+        o.append(true);
+    } else {
+        o.write(true).truncate(true);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        o.mode(0o600);
+        let f = o.open(path)?;
+        // uno que ya existía (de una versión anterior) conserva sus permisos: se ajustan
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        Ok(f)
+    }
+    #[cfg(not(unix))]
+    o.open(path)
+}
+
+/// Escribe un fichero entero solo para el usuario de este ordenador.
+pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = create_private(path)?;
+    f.write_all(bytes)?;
+    f.sync_all()
+}
+
 /// Variable de entorno con una carpeta raíz aislada.
 pub const ROOT_VAR: &str = "VEODARDENTAL_RAIZ";
 

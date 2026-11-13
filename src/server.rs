@@ -146,13 +146,7 @@ pub fn ensure_server_config() -> Result<ServerConfig, String> {
 /// Escribe un fichero que solo puede leer el usuario de este ordenador
 /// (lleva la clave de la clínica y la del servidor).
 fn write_private(path: &std::path::Path, text: &str) -> Result<(), String> {
-    std::fs::write(path, text).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    crate::paths::write_private(path, text.as_bytes()).map_err(|e| e.to_string())
 }
 
 /// Dirección de este ordenador en la red local (para decírsela a los puestos).
@@ -706,13 +700,13 @@ impl State {
         }
         let tmp = self.path.with_extension("json.tmp");
         {
-            let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+            let mut f = crate::paths::create_private(&tmp).map_err(|e| e.to_string())?;
             f.write_all(self.snap.to_json().as_bytes()).map_err(|e| e.to_string())?;
             f.sync_all().map_err(|e| e.to_string())?;
         }
         std::fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
         // el fichero ya lo tiene todo: el diario empieza de nuevo
-        let journal = std::fs::File::create(sync::journal_path(&self.path)).map_err(|e| e.to_string())?;
+        let journal = crate::paths::create_private(&sync::journal_path(&self.path)).map_err(|e| e.to_string())?;
         self.journal = Some(journal);
         self.journal_lines = 0;
         self.journal_bytes = 0;
@@ -754,7 +748,7 @@ impl State {
         let p = self.path.with_file_name("sesiones.json");
         if let Ok(t) = serde_json::to_string(&self.sessions) {
             let tmp = p.with_extension("json.tmp");
-            if std::fs::write(&tmp, t).is_ok() {
+            if crate::paths::write_private(&tmp, t.as_bytes()).is_ok() {
                 let _ = std::fs::rename(&tmp, &p);
             }
         }
@@ -2296,6 +2290,73 @@ mod tests {
         let port = closed.local_addr().unwrap().port();
         drop(closed);
         assert_eq!(connect(&mut Remote::new(&format!("127.0.0.1:{port}"), "CLAVE", 0), "Puesto", 1).unwrap_err(), NO_CONNECTION);
+    }
+
+    /// T-F3-01. Ensayo de instalación en Linux con las raíces aisladas de las
+    /// pruebas (`paths`): el servidor crea su clave y su identidad una vez,
+    /// en un fichero solo para su usuario; un puesto se da de alta y apunta la
+    /// huella que enseña el servidor; los datos, el diario, las sesiones y
+    /// las copias quedan solo para el usuario; cada usuario hace solo lo de
+    /// su permiso; y el cifrado del disco se comprueba de verdad.
+    #[cfg(unix)]
+    #[test]
+    fn installation_rehearsal_on_linux() {
+        use crate::app::ChainOp;
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert!(config_path().starts_with(std::env::temp_dir()) || std::env::var_os(crate::paths::ROOT_VAR).is_some(), "raíz aislada: {}", config_path().display());
+        // 1. instalar el servidor: clave e identidad, una sola vez
+        let cfg = ensure_server_config().unwrap();
+        assert_eq!(mode(&config_path()), 0o600, "la clave de la clínica, solo para el usuario");
+        let again = ensure_server_config().unwrap();
+        assert_eq!((again.key.clone(), again.pin()), (cfg.key.clone(), cfg.pin()), "repetirlo no cambia la identidad");
+        let identity = cfg.identity().unwrap();
+        let dir = std::env::temp_dir().join(format!("ds_ensayo_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clinica.json");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let (p2, k2, id2) = (path.clone(), cfg.key.clone(), identity.clone());
+        let h = std::thread::spawn(move || serve(listener, p2, k2, id2, Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap())));
+        // 2. alta de un puesto: apunta la huella, la misma que enseña el servidor
+        let mut station = Remote::new(&addr, &cfg.key, 0);
+        connect(&mut station, "Recepción", 1).unwrap();
+        assert_eq!(fingerprint(&station.pinned()), fingerprint(&cfg.pin()));
+        assert_eq!(Remote::new(&addr, "CLAVE_MALA", 0).access().unwrap_err(), WRONG_KEY);
+        // 3. trabajar: un cambio y una operación con su permiso
+        let rec = signed_in(&addr, &cfg.key, "Recepción", 2, "0000");
+        let (mut a, mut sa) = rec.load().unwrap();
+        let pid = a.patients[0].id;
+        a.patients.iter_mut().find(|p| p.id == pid).unwrap().notes.push_str(" (ensayo)");
+        rec.push(&mut a, &mut sa).unwrap();
+        assert!(rec.chain_op(&mut a, &mut sa, &ChainOp::Reconcile.json()).unwrap_err().contains("banco"), "Recepción no lleva el banco");
+        let dirc = signed_in(&addr, &cfg.key, "Dirección", 1, "0000");
+        let (mut b, mut sb) = dirc.load().unwrap();
+        assert!(dirc.chain_op(&mut b, &mut sb, &ChainOp::Reconcile.json()).is_ok(), "Dirección sí");
+        // 4. lo que queda en el disco, solo para el usuario
+        for f in [path.clone(), crate::sync::journal_path(&path), path.with_file_name("sesiones.json")] {
+            if f.exists() {
+                assert_eq!(mode(&f), 0o600, "{}", f.display());
+            }
+        }
+        assert_eq!(mode(&path), 0o600);
+        let backup = crate::tools::create_backup_in(&crate::sync::on_disk(&path), &dir.join("copias"), "ensayo").unwrap();
+        assert_eq!(mode(&backup), 0o600, "la copia también");
+        // un fichero de datos de una versión anterior (legible por todos) se corrige al guardarlo
+        let old = dir.join("antiguo.json");
+        std::fs::write(&old, "{}").unwrap();
+        std::fs::set_permissions(&old, std::fs::Permissions::from_mode(0o644)).unwrap();
+        Db::write_full(&Db::sample(crate::model::today()), &old).unwrap();
+        assert_eq!(mode(&old), 0o600);
+        // 5. cifrado del disco: se comprueba de verdad (el resultado depende del ordenador)
+        match crate::disco::check_now() {
+            crate::disco::Disk::Checking => panic!("la comprobación tiene que terminar"),
+            other => eprintln!("cifrado del disco en este ordenador: {other:?}"),
+        }
+        rec.stop().unwrap();
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

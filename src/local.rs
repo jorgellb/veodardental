@@ -75,7 +75,7 @@ impl LocalStore {
         let mut line = sync::journal_line_of(rev, &changes);
         line.push('\n');
         if self.journal.is_none() {
-            self.journal = Some(OpenOptions::new().create(true).append(true).open(sync::journal_path(&self.path)).map_err(|e| format!("No se puede abrir el diario de cambios: {e}"))?);
+            self.journal = Some(crate::paths::append_private(&sync::journal_path(&self.path)).map_err(|e| format!("No se puede abrir el diario de cambios: {e}"))?);
         }
         if let Some(f) = self.journal.as_mut() {
             f.write_all(line.as_bytes()).and_then(|_| f.sync_data()).map_err(|e| format!("No se pudo guardar: {e}"))?;
@@ -97,7 +97,7 @@ impl LocalStore {
     /// Reescribe el fichero de datos entero y vacía el diario.
     pub fn rewrite(&mut self, db: &Db) -> Result<(), String> {
         Db::write_full(db, &self.path)?;
-        self.journal = Some(File::create(sync::journal_path(&self.path)).map_err(|e| format!("No se puede vaciar el diario de cambios: {e}"))?);
+        self.journal = Some(crate::paths::create_private(&sync::journal_path(&self.path)).map_err(|e| format!("No se puede vaciar el diario de cambios: {e}"))?);
         self.lines = 0;
         self.bytes = 0;
         Ok(())

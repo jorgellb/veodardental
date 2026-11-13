@@ -28,7 +28,7 @@ fn backup_name(when: NaiveDateTime, reason: &str, ext: &str) -> String {
 /// Escribe el fichero entero o nada (primero a un temporal y luego se renombra).
 fn write_whole(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| format!("No se puede escribir la copia: {e}"))?;
+    crate::paths::write_private(&tmp, bytes).map_err(|e| format!("No se puede escribir la copia: {e}"))?;
     std::fs::rename(&tmp, path).map_err(|e| format!("No se puede escribir la copia: {e}"))
 }
 
@@ -225,7 +225,7 @@ pub fn rekey_folder(dir: &Path, old: Option<&crate::cifrado::BackupKey>, new: &c
         let target = b.path.with_extension(crate::cifrado::EXT);
         let sealed = crate::cifrado::encrypt(&plain, new)?;
         let tmp = target.with_extension("tmp");
-        std::fs::write(&tmp, &sealed).map_err(|e| format!("No se pudo cifrar {}: {e}", b.path.display()))?;
+        crate::paths::write_private(&tmp, &sealed).map_err(|e| format!("No se pudo cifrar {}: {e}", b.path.display()))?;
         // comprobar lo escrito antes de quitar la copia vieja
         let check = std::fs::read(&tmp).ok().and_then(|w| crate::cifrado::decrypt_with_key(&w, new));
         if check.as_deref() != Some(plain.as_slice()) {

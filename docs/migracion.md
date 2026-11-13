@@ -126,7 +126,11 @@ Un campo con asterisco es obligatorio.
 - **Citas.** Las pasadas quedan finalizadas, sin recordatorio; las futuras, con su recordatorio de siempre.
 - **Documentos.**
   - Se conserva su ruta: el fichero se queda donde está. Una ruta relativa se completa con la carpeta indicada.
-  - El informe avisa de cuántos ficheros no están en este ordenador. Las rutas de red (`\\servidor\recurso`) no se comprueban: en Windows, mirarlas ya conecta con ese servidor y le da las credenciales del usuario.
+  - El informe avisa de cuántos ficheros no están en este ordenador.
+  - **Rutas de otro ordenador:** `\\servidor\recurso`, `//servidor/…`, con las barras mezcladas, `\\?\UNC\…`, `\\.\…` o `\??\…`.
+    - Solo se importan si están dentro de la «Carpeta de los documentos» indicada (y sin `..`). Si no, quedan fuera con su explicación.
+    - Por qué: abrirlas, o solo mirarlas, conecta con ese servidor y le da las credenciales de Windows de quien las abre.
+    - Dentro de la carpeta indicada no se comprueba si existen.
   - El tipo se deduce de la extensión y del campo «tipo» (panorámica, periapical, foto, TAC, escaneado 3D o documento).
 - **Doctores y mutuas.** Se buscan por nombre o alias. Uno que no está va al doctor del paciente, o queda con tarifa privada, con un aviso que dice cuántas filas son.
 - **Repetir y retomar.** Una importación cortada (o hecha por partes) se termina repitiéndola con todas las hojas, aunque las filas vengan en otro orden. Lo ya importado cuenta como «ya estaban».
