@@ -70,6 +70,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F5-10: Mi espacio, portal del paciente con autorización por objeto y por responsable | E-057 | `077c751` |
 | Revisión de seguridad: Mi espacio (responsable y entrada sin DNI) | E-058 | `0d4df76` |
 | T-F5-11: idiomas (castellano, catalán, euskera, gallego e inglés) | E-059 | `750f1df` |
+| Revisión de seguridad: la palabra de baja de cada idioma | E-060 | `67ccec1` |
 
 ## Siguiente acción
 Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
