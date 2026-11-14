@@ -120,14 +120,14 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
             ui.horizontal_wrapped(|ui| {
                 let col = match t.state {
                     CardState::Aprobada => OK,
-                    CardState::Denegada | CardState::Cancelada => MUTED,
+                    CardState::Denegada | CardState::Cancelada => MUTED(),
                     CardState::Desconocida => WARN,
                     _ => INFO,
                 };
                 pill(ui, t.state.label(), col);
                 ui.label(format!("{} {} · {} · {}", if t.kind == CardKind::Venta { "Cobro" } else { "Devolución" }, Cents(t.amount), t.created.format("%d/%m %H:%M"), t.reference));
                 if !t.card.is_empty() {
-                    ui.label(RichText::new(&t.card).color(MUTED));
+                    ui.label(RichText::new(&t.card).color(MUTED()));
                 }
                 let busy = app.card.job.is_some();
                 match (t.state, t.provider.as_str()) {
@@ -216,14 +216,14 @@ fn financing_card(app: &mut App, ui: &mut Ui, pid: u32) {
                     if matches!(f.state, FinState::Pagada) {
                         OK
                     } else if matches!(f.state, FinState::Denegada | FinState::Cancelada) {
-                        MUTED
+                        MUTED()
                     } else {
                         INFO
                     },
                 );
                 ui.label(format!("{} · {} en {} meses {}", f.provider, Cents(f.amount), f.months, f.provider_ref));
                 if let Some((d, r)) = f.paid {
-                    ui.label(RichText::new(format!("pagó {} el {}", Cents(r), d.format("%d/%m/%Y"))).color(MUTED));
+                    ui.label(RichText::new(format!("pagó {} el {}", Cents(r), d.format("%d/%m/%Y"))).color(MUTED()));
                 }
             });
             ui.horizontal_wrapped(|ui| {

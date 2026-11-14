@@ -60,14 +60,14 @@ pub fn card_for(app: &mut App, ui: &mut Ui, pid: u32) {
         });
         if open {
             if !crate::alertas::REVIEWED {
-                ui.label(RichText::new("Textos pendientes de revisión por un odontólogo de la clínica.").size(12.0).color(MUTED));
+                ui.label(RichText::new("Textos pendientes de revisión por un odontólogo de la clínica.").size(12.0).color(MUTED()));
             }
             for r in &rules {
                 ui.add_space(4.0);
                 ui.label(RichText::new(r.title).font(sbf(13.0)));
                 ui.label(RichText::new(r.check).size(13.0));
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(format!("Fuente: {}", r.source)).size(12.0).color(MUTED));
+                    ui.label(RichText::new(format!("Fuente: {}", r.source)).size(12.0).color(MUTED()));
                     ui.hyperlink_to(RichText::new("ver").size(12.0), r.url);
                 });
             }

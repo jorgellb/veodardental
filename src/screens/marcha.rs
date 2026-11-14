@@ -148,11 +148,11 @@ fn row_body(ui: &mut Ui, c: &Check) -> Option<Goto> {
     let col = match c.status {
         Status::Listo => OK,
         Status::Pendiente => WARN,
-        Status::Opcional => SUBTLE,
+        Status::Opcional => SUBTLE(),
     };
     let mut go = None;
     ui.add_space(4.0);
-    egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE)).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(14, 11)).show(ui, |ui| {
+    egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE())).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(14, 11)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_top(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(30.0, 30.0), Sense::hover());
@@ -189,7 +189,7 @@ fn row_body(ui: &mut Ui, c: &Check) -> Option<Goto> {
                         ui.label(RichText::new(c.title).font(sbf(15.0)).color(HEADING));
                         pill(ui, c.status.label(), col);
                     });
-                    ui.label(RichText::new(&c.detail).font(mdf(13.5)).color(MUTED));
+                    ui.label(RichText::new(&c.detail).font(mdf(13.5)).color(MUTED()));
                 })
                 .response;
             if button_w == 0.0 {

@@ -53,7 +53,7 @@ pub fn tab(app: &mut App, ui: &mut Ui) {
     }
     egui::Grid::new("campaigns").striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
         for h in ["Campaña", "Canal", "Estado", "Destinatarios"] {
-            ui.label(RichText::new(h).size(12.5).color(MUTED));
+            ui.label(RichText::new(h).size(12.5).color(MUTED()));
         }
         ui.end_row();
         for c in app.db.campaigns.iter().rev() {
@@ -172,7 +172,7 @@ fn draft(app: &mut App, ui: &mut Ui, before: Campaign) {
         }
         for (pid, text) in &prev.samples {
             ui.add_space(4.0);
-            ui.label(RichText::new(app.db.patient(*pid).map(|p| p.full_name()).unwrap_or_default()).size(12.5).color(MUTED));
+            ui.label(RichText::new(app.db.patient(*pid).map(|p| p.full_name()).unwrap_or_default()).size(12.5).color(MUTED()));
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(text);

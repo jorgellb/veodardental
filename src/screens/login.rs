@@ -113,13 +113,13 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                             ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = 1.0;
                                 ui.label(RichText::new("VeodarDental").font(bf(22.0)).color(HEADING));
-                                ui.label(RichText::new(&app.db.config.name).font(mdf(13.0)).color(MUTED));
+                                ui.label(RichText::new(&app.db.config.name).font(mdf(13.0)).color(MUTED()));
                             });
                         });
                         ui.add_space(26.0);
                         ui.label(RichText::new("Bienvenido de nuevo").font(bf(25.0)).color(HEADING));
                         ui.add_space(2.0);
-                        ui.label(RichText::new("Elija su usuario e introduzca la contraseña para entrar.").font(mdf(14.0)).color(MUTED));
+                        ui.label(RichText::new("Elija su usuario e introduzca la contraseña para entrar.").font(mdf(14.0)).color(MUTED()));
                         ui.add_space(18.0);
                         let cols = 3usize;
                         let gap = 10.0;
@@ -145,10 +145,10 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                         // segundo paso: el código de 6 cifras de la app del móvil
                         let coding = app.login.pending_code.is_some();
                         if coding {
-                            ui.label(RichText::new(format!("Código del móvil de {who}")).font(mdf(13.0)).color(MUTED));
-                            ui.label(RichText::new("Abra la app de autenticación del móvil y escriba el código de 6 cifras de VeodarDental.").font(mdf(12.5)).color(SUBTLE));
+                            ui.label(RichText::new(format!("Código del móvil de {who}")).font(mdf(13.0)).color(MUTED()));
+                            ui.label(RichText::new("Abra la app de autenticación del móvil y escriba el código de 6 cifras de VeodarDental.").font(mdf(12.5)).color(SUBTLE()));
                         } else {
-                            ui.label(RichText::new(format!("Contraseña de {who}")).font(mdf(13.0)).color(MUTED));
+                            ui.label(RichText::new(format!("Contraseña de {who}")).font(mdf(13.0)).color(MUTED()));
                         }
                         ui.add_space(2.0);
                         let r = if coding {
@@ -174,7 +174,7 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing = vec2(kgap, kgap);
                             for k in keys {
-                                let b = egui::Button::new(RichText::new(k).font(sbf(16.0)).color(TEXT)).fill(Color32::from_rgb(246, 248, 251)).stroke(Stroke::new(1.0, HAIRLINE)).min_size(vec2(kw, 42.0)).corner_radius(CornerRadius::same(10));
+                                let b = egui::Button::new(RichText::new(k).font(sbf(16.0)).color(TEXT)).fill(Color32::from_rgb(246, 248, 251)).stroke(Stroke::new(1.0, HAIRLINE())).min_size(vec2(kw, 42.0)).corner_radius(CornerRadius::same(10));
                                 if ui.add(b).clicked() {
                                     let (t, max) = if coding { (&mut app.login.code, 6) } else { (&mut app.login.pin, 32) };
                                     if k == "⌫" {
@@ -211,8 +211,8 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                         } else {
                             ui.horizontal(|ui| {
                                 let (d, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
-                                ui.painter().circle_filled(d.center(), 3.0, SUBTLE);
-                                ui.label(RichText::new("Contraseña inicial de todos los usuarios: 0000 (se pedirá cambiarla al entrar).").font(mdf(12.5)).color(SUBTLE));
+                                ui.painter().circle_filled(d.center(), 3.0, SUBTLE());
+                                ui.label(RichText::new("Contraseña inicial de todos los usuarios: 0000 (se pedirá cambiarla al entrar).").font(mdf(12.5)).color(SUBTLE()));
                             });
                         }
                     });
@@ -238,12 +238,12 @@ fn user_tile(ui: &mut Ui, app: &App, u: &User, w: f32) -> bool {
     let (fill, stroke) = if sel {
         (ACCENT_SOFT, Stroke::new(1.5, ACCENT))
     } else if resp.hovered() {
-        (Color32::from_rgb(248, 250, 252), Stroke::new(1.0, mix(BORDER, ACCENT, 0.35)))
+        (Color32::from_rgb(248, 250, 252), Stroke::new(1.0, mix(BORDER(), ACCENT, 0.35)))
     } else {
-        (CARD, Stroke::new(1.0, BORDER))
+        (CARD, Stroke::new(1.0, BORDER()))
     };
     p.rect(r, CornerRadius::same(14), fill, stroke, egui::StrokeKind::Inside);
-    avatar(p, r.left_center() + vec2(29.0, 0.0), 17.0, &u.name, if u.active { color } else { SUBTLE });
+    avatar(p, r.left_center() + vec2(29.0, 0.0), 17.0, &u.name, if u.active { color } else { SUBTLE() });
     let x = r.left() + 56.0;
     let max_w = r.right() - x - if sel { 28.0 } else { 10.0 };
     let one_line = |text: &str, font: egui::FontId, color: Color32| {
@@ -254,8 +254,8 @@ fn user_tile(ui: &mut Ui, app: &App, u: &User, w: f32) -> bool {
     let name = one_line(&u.name, sbf(14.5), if sel { ACCENT_DARK } else { HEADING });
     p.galley(egui::pos2(x, r.center().y - name.size().y + 1.0), name, HEADING);
     let sub = if u.active { u.profile.label() } else { "Bloqueado" };
-    let sub = one_line(sub, mdf(12.3), if u.active { MUTED } else { DANGER });
-    p.galley(egui::pos2(x, r.center().y + 2.0), sub, MUTED);
+    let sub = one_line(sub, mdf(12.3), if u.active { MUTED() } else { DANGER });
+    p.galley(egui::pos2(x, r.center().y + 2.0), sub, MUTED());
     if sel {
         let c = egui::pos2(r.right() - 17.0, r.center().y);
         p.circle_filled(c, 8.0, ACCENT);
@@ -279,12 +279,12 @@ pub fn change_pin_dialog(app: &mut App, ctx: &egui::Context) {
         ui.set_width(420.0);
         title(ui, "Cambiar contraseña", if must { "Está usando la contraseña inicial. Elija una propia para proteger los datos de los pacientes." } else { "" });
         if !must {
-            ui.label(RichText::new("Contraseña actual").color(MUTED));
+            ui.label(RichText::new("Contraseña actual").color(MUTED()));
             ui.add_sized([380.0, 36.0], egui::TextEdit::singleline(&mut app.login.old_pin).password(true));
         }
-        ui.label(RichText::new("Nueva contraseña").color(MUTED));
+        ui.label(RichText::new("Nueva contraseña").color(MUTED()));
         ui.add_sized([380.0, 36.0], egui::TextEdit::singleline(&mut app.login.new_pin).password(true));
-        ui.label(RichText::new("Repita la nueva contraseña").color(MUTED));
+        ui.label(RichText::new("Repita la nueva contraseña").color(MUTED()));
         ui.add_sized([380.0, 36.0], egui::TextEdit::singleline(&mut app.login.new_pin2).password(true));
         if !app.login.error.is_empty() {
             ui.label(RichText::new(&app.login.error).color(DANGER));
@@ -325,7 +325,7 @@ fn enroll_card(app: &mut App, ui: &mut Ui, id: u32) {
     let uri = crate::totp::uri(&secret, &format!("{name} ({})", app.db.config.name), "VeodarDental");
     let (mut confirm, mut cancel) = (false, false);
     ui.add_space(6.0);
-    egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE)).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::same(14)).show(ui, |ui| {
+    egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE())).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::same(14)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_top(|ui| {
             let _ = crate::screens::verifactu::draw_qr(ui, &uri, 176.0);
@@ -418,7 +418,7 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     field(ui, "Nombre", &mut u.name, 200.0);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Perfil").size(13.5).color(MUTED));
+                        ui.label(RichText::new("Perfil").size(13.5).color(MUTED()));
                         crate::theme::combo("u_prof").width(210.0).selected_text(u.profile.label()).show_ui(ui, |ui| {
                             for p in Profile::ALL {
                                 ui.selectable_value(&mut u.profile, p, p.label());
@@ -426,7 +426,7 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                         });
                     });
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Colaborador").size(13.5).color(MUTED));
+                        ui.label(RichText::new("Colaborador").size(13.5).color(MUTED()));
                         let cur = u.doctor_id.and_then(|d| docs.iter().find(|x| x.0 == d)).map(|x| x.1.clone()).unwrap_or_else(|| "—".into());
                         crate::theme::combo("u_doc").width(150.0).selected_text(cur).show_ui(ui, |ui| {
                             ui.selectable_value(&mut u.doctor_id, None, "—");
@@ -477,7 +477,7 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Código del móvil al entrar").family(sb()));
                     if u.totp_secret.is_empty() {
-                        pill(ui, "Sin activar", SUBTLE);
+                        pill(ui, "Sin activar", SUBTLE());
                         if ui.button("Activar el código del móvil").on_hover_text("Además de la contraseña, al entrar pedirá el código de 6 cifras de una app de autenticación del móvil").clicked() {
                             totp_on = true;
                         }

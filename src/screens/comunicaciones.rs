@@ -269,7 +269,7 @@ pub fn sms_settings(app: &mut App, ui: &mut Ui) {
         });
         ui.horizontal_wrapped(|ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new("Clave de la pasarela").color(MUTED));
+                ui.label(RichText::new("Clave de la pasarela").color(MUTED()));
                 ui.add_sized([280.0, 34.0], egui::TextEdit::singleline(&mut app.sms.token).password(true));
             });
             ui.vertical(|ui| {
@@ -290,7 +290,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         title(ui, "Comunicaciones", "Recordatorios de cita, avisos de revisión, cumpleaños y seguimiento de presupuestos por WhatsApp, SMS y email");
     });
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (i, n) in ["Mensajes", "Plantillas de mensajes", "Plantillas de documentos", "💬 Confirmaciones por WhatsApp", "📣 Campañas"].iter().enumerate() {
             if ui.selectable_label(app.comms.tab == i, *n).clicked() {
                 app.comms.tab = i;
@@ -341,7 +341,7 @@ fn messages(app: &mut App, ui: &mut Ui) {
                     let emails = app.db.pending_emails();
                     if let Some(ob) = &app.comms.outbox {
                         ui.add(egui::Spinner::new().size(16.0));
-                        ui.label(RichText::new(format!("Enviando correos: {} de {}…", ob.done, ob.total)).color(MUTED));
+                        ui.label(RichText::new(format!("Enviando correos: {} de {}…", ob.done, ob.total)).color(MUTED()));
                     } else if !emails.is_empty()
                         && app.db.mail.ready()
                         && ui
@@ -368,9 +368,9 @@ fn messages(app: &mut App, ui: &mut Ui) {
                     let m = &app.db.mail;
                     let me = crate::shared::machine_name();
                     let txt = if !m.ready() {
-                        ("Los correos se abren uno a uno en su programa de correo: configure el correo de la clínica para enviarlos desde aquí.".to_string(), MUTED)
+                        ("Los correos se abren uno a uno en su programa de correo: configure el correo de la clínica para enviarlos desde aquí.".to_string(), MUTED())
                     } else if !m.auto_send {
-                        ("Envío automático por correo desactivado: los correos se envían con el botón «Enviar por correo».".to_string(), MUTED)
+                        ("Envío automático por correo desactivado: los correos se envían con el botón «Enviar por correo».".to_string(), MUTED())
                     } else if m.auto_station != me {
                         (format!("Envío automático por correo: cada día entre las {}:00 y las {}:00 desde el ordenador «{}».", m.auto_hour, m.auto_until, m.auto_station), INFO)
                     } else if m.last_auto == Some(app.today) {
@@ -401,7 +401,7 @@ fn messages(app: &mut App, ui: &mut Ui) {
                             MsgState::Pendiente if failed => DANGER,
                             MsgState::Pendiente => WARN,
                             MsgState::Enviado => OK,
-                            MsgState::Descartado => MUTED,
+                            MsgState::Descartado => MUTED(),
                         };
                         let cells = [
                             cell(m.created.format("%d/%m %H:%M").to_string()),
@@ -507,7 +507,7 @@ fn detail(app: &mut App, ui: &mut Ui) {
                     };
                     if sending && m.channel == Channel::Email && app.db.mail.ready() {
                         ui.add(egui::Spinner::new().size(16.0));
-                        ui.label(RichText::new("Enviando…").color(MUTED));
+                        ui.label(RichText::new("Enviando…").color(MUTED()));
                     } else if primary(ui, label).clicked() {
                         let current = app.db.messages.iter().find(|x| x.id == id).cloned().unwrap();
                         send(app, &ctx, &current);
@@ -577,7 +577,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                 for t in &list {
                     ui.horizontal(|ui| {
                         pill(ui, t.channel.label(), channel_color(t.channel));
-                        if ui.selectable_label(app.comms.tpl_sel == Some(t.id), RichText::new(&t.name).color(if t.active { TEXT } else { MUTED })).clicked() {
+                        if ui.selectable_label(app.comms.tpl_sel == Some(t.id), RichText::new(&t.name).color(if t.active { TEXT } else { MUTED() })).clicked() {
                             app.comms.tpl_sel = Some(t.id);
                         }
                     });
@@ -598,7 +598,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                     field(ui, "Nombre", &mut t.name, 380.0);
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
-                            ui.label(RichText::new("Tipo").size(13.5).color(MUTED));
+                            ui.label(RichText::new("Tipo").size(13.5).color(MUTED()));
                             crate::theme::combo("mt_kind").width(240.0).selected_text(t.kind.label()).show_ui(ui, |ui| {
                                 for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::Cumpleanos, MsgKind::PresupuestoPendiente, MsgKind::Libre] {
                                     ui.selectable_value(&mut t.kind, k, k.label());
@@ -606,7 +606,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                             });
                         });
                         ui.vertical(|ui| {
-                            ui.label(RichText::new("Canal").size(13.5).color(MUTED));
+                            ui.label(RichText::new("Canal").size(13.5).color(MUTED()));
                             ui.horizontal(|ui| {
                                 for c in Channel::ALL {
                                     ui.selectable_value(&mut t.channel, c, c.label());
@@ -623,7 +623,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                                     _ => "Días",
                                 })
                                 .size(13.5)
-                                .color(MUTED),
+                                .color(MUTED()),
                             );
                             ui.add(egui::DragValue::new(&mut t.days).range(0..=60));
                         });
@@ -631,7 +631,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                     if t.channel == Channel::Email {
                         field(ui, "Asunto", &mut t.subject, 380.0);
                     }
-                    ui.label(RichText::new("Texto").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Texto").size(13.5).color(MUTED()));
                     ui.add(egui::TextEdit::multiline(&mut t.text).desired_rows(6).desired_width(f32::INFINITY));
                     let all = format!("{} {}", t.subject, t.text);
                     placeholder_help(ui, &all, t.kind);
@@ -726,7 +726,7 @@ fn doc_templates(app: &mut App, ui: &mut Ui) {
                         field(ui, "Categoría", &mut t.category, 200.0);
                     });
                     ui.checkbox(&mut t.marks_gdpr, "Al firmarlo, registra el consentimiento de protección de datos del paciente");
-                    ui.label(RichText::new("Texto del documento").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Texto del documento").size(13.5).color(MUTED()));
                     ui.add(egui::TextEdit::multiline(&mut t.body).desired_rows(16).desired_width(f32::INFINITY));
                     muted(ui, format!("Comodines: {DOC_PLACEHOLDERS}"));
                     if serde_json::to_string(t).unwrap_or_default() != before {
@@ -759,7 +759,9 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
             for c in Channel::ALL {
                 ui.selectable_value(&mut app.comms.free_channel, c, c.label());
             }
-            ui.add_sized([ui.available_width() - 110.0, 34.0], egui::TextEdit::singleline(&mut app.comms.free_text).hint_text("Escriba un mensaje para el paciente…"));
+            // sitio para «Enviar» (más ancho con los controles grandes del modo tableta)
+            let reserve = ui.spacing().button_padding.x * 2.0 + 80.0;
+            ui.add_sized([(ui.available_width() - reserve).max(120.0), ui.spacing().interact_size.y], egui::TextEdit::singleline(&mut app.comms.free_text).hint_text("Escriba un mensaje para el paciente…"));
             if primary(ui, "Enviar").clicked() && !app.comms.free_text.trim().is_empty() {
                 let ch = app.comms.free_channel;
                 let to = if ch == Channel::Email { p.email.clone() } else { p.mobile.clone() };

@@ -167,8 +167,8 @@ pub fn tick(app: &mut App, time: f64) {
 /// Marca para la esquina del bloque de la cita en la agenda.
 pub fn appt_badge(db: &Db, appt_id: u32) -> Option<(&'static str, Color32)> {
     Some(match db.wa_for_appt(appt_id)?.state {
-        WaState::Enviando => ("💬…", MUTED),
-        WaState::Enviado | WaState::Entregado => ("💬", MUTED),
+        WaState::Enviando => ("💬…", MUTED()),
+        WaState::Enviado | WaState::Entregado => ("💬", MUTED()),
         WaState::Leido => ("💬 leído", INFO),
         WaState::Confirmada => ("💬 ✔", OK),
         WaState::NoViene => ("💬 ✖", DANGER),
@@ -192,7 +192,7 @@ pub fn state_color(s: WaState) -> Color32 {
         WaState::NoViene | WaState::Fallido => DANGER,
         WaState::Respuesta => WARN,
         WaState::Leido => INFO,
-        _ => MUTED,
+        _ => MUTED(),
     }
 }
 
@@ -200,7 +200,7 @@ pub fn state_color(s: WaState) -> Color32 {
 
 fn copy_row(app: &mut App, ui: &mut Ui, label: &str, text: &str) {
     ui.horizontal(|ui| {
-        lab(ui, 210.0, RichText::new(label).color(MUTED));
+        lab(ui, 210.0, RichText::new(label).color(MUTED()));
         let w = (ui.available_width() - 100.0).max(200.0);
         lab(ui, w, RichText::new(text).family(sb())).on_hover_text(text);
         if ui.small_button("Copiar").clicked() {
@@ -212,7 +212,7 @@ fn copy_row(app: &mut App, ui: &mut Ui, label: &str, text: &str) {
 
 fn secret(ui: &mut Ui, label: &str, value: &mut String, show: bool, width: f32) {
     ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(13.0).color(MUTED));
+        ui.label(RichText::new(label).size(13.0).color(MUTED()));
         ui.add_sized([width, 34.0], egui::TextEdit::singleline(value).password(!show));
     });
 }
@@ -336,7 +336,7 @@ fn gateway_form(app: &mut App, ui: &mut Ui) {
         });
     }
     ui.checkbox(&mut app.wa.show_secrets, "Mostrar las claves (se guardan solo en este ordenador)");
-    ui.label(RichText::new("Texto del recordatorio (puede usar [NOMBRE], [CLINICA], [FECHA], [HORA], [DOCTOR] y [ENLACE], el enlace para confirmar, cambiar o anular la cita)").size(13.0).color(MUTED));
+    ui.label(RichText::new("Texto del recordatorio (puede usar [NOMBRE], [CLINICA], [FECHA], [HORA], [DOCTOR] y [ENLACE], el enlace para confirmar, cambiar o anular la cita)").size(13.0).color(MUTED()));
     ui.add(egui::TextEdit::multiline(&mut app.wa.form.gw_text).desired_rows(2).desired_width(f32::INFINITY));
     let f = &mut app.wa.form;
     ui.horizontal_wrapped(|ui| {
@@ -376,7 +376,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         } else if !sender.is_empty() {
             ui.label(RichText::new(format!("Activo en el ordenador «{sender}»: desde allí se envían los recordatorios y se leen las respuestas.")).color(INFO));
         } else {
-            ui.label(RichText::new("Desactivado: los recordatorios de WhatsApp se envían a mano desde Comunicaciones.").color(MUTED));
+            ui.label(RichText::new("Desactivado: los recordatorios de WhatsApp se envían a mano desde Comunicaciones.").color(MUTED()));
         }
         muted(ui, "El día laborable anterior a cada cita, el programa envía el recordatorio y lee la respuesta: si confirma, la cita pasa a Confirmada; si no puede, se anula, se libera el hueco y se crea una tarea para darle otra fecha.");
         ui.add_space(6.0);
@@ -579,7 +579,7 @@ pub fn log_tab(app: &mut App, ui: &mut Ui) {
                 });
                 let reply = if m.reply.is_empty() { "—".to_string() } else { format!("«{}» {}", m.reply, m.reply_at.map(|d| d.format("%H:%M").to_string()).unwrap_or_default()) };
                 lab(ui, 240.0 * s, reply);
-                lab(ui, 110.0 * s, RichText::new(m.sent_at.map(|d| d.format("%d/%m %H:%M").to_string()).unwrap_or_default()).color(MUTED));
+                lab(ui, 110.0 * s, RichText::new(m.sent_at.map(|d| d.format("%d/%m %H:%M").to_string()).unwrap_or_default()).color(MUTED()));
                 ui.spacing_mut().item_spacing.x = 6.0;
                 if !live && (m.state.waiting() || m.state == WaState::Respuesta) {
                     if ui.small_button("Simular «Sí»").on_hover_text("Ver qué pasa si el paciente confirma").clicked() {

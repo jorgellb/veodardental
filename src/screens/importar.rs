@@ -144,7 +144,7 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
         let mut connect = false;
         ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut s.windows_auth, "Usuario de Windows");
-            ui.label(RichText::new("Cifrado").color(MUTED));
+            ui.label(RichText::new("Cifrado").color(MUTED()));
             crate::theme::combo("sql_enc").width(250.0).selected_text(["Sin cifrado (servidores antiguos)", "Si el servidor lo admite", "Obligatorio"][s.encrypt.min(2) as usize]).show_ui(ui, |ui| {
                 ui.selectable_value(&mut s.encrypt, 1, "Si el servidor lo admite");
                 ui.selectable_value(&mut s.encrypt, 2, "Obligatorio");
@@ -167,7 +167,7 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
             ui.label(RichText::new(&app.imp.sql_status).color(if ok {
                 INFO
             } else if busy {
-                MUTED
+                MUTED()
             } else {
                 DANGER
             }));
@@ -193,7 +193,7 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
         // cualquier programa: una tabla o una consulta
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Otra tabla:").color(MUTED));
+            ui.label(RichText::new("Otra tabla:").color(MUTED()));
             crate::theme::combo("sql_table").width(280.0).height(400.0).selected_text(if app.imp.sql_table.is_empty() { "Elegir tabla…".to_string() } else { app.imp.sql_table.clone() }).show_ui(ui, |ui| {
                 for (t, n) in d.tables.iter().filter(|t| t.1 > 0) {
                     ui.selectable_value(&mut app.imp.sql_table, t.clone(), format!("{t} ({n} filas)"));
@@ -229,7 +229,7 @@ pub fn sql_panel(app: &mut App, ui: &mut Ui) {
 fn sql_field(ui: &mut Ui, label: &str, hint: &str, value: &mut String, width: f32, password: bool) {
     ui.vertical(|ui| {
         ui.set_width(width);
-        ui.label(RichText::new(label).font(crate::theme::mdf(12.8)).color(MUTED));
+        ui.label(RichText::new(label).font(crate::theme::mdf(12.8)).color(MUTED()));
         ui.add_space(-3.0);
         ui.add_sized([width, 36.0], egui::TextEdit::singleline(value).password(password).hint_text(hint).margin(egui::vec2(10.0, 8.0)));
     });
@@ -257,7 +257,7 @@ pub fn gesden_panel(app: &mut App, ui: &mut Ui) {
             for t in &others {
                 pill(ui, &format!("{} · {} tratamientos", pretty_text(&t.nombre), t.tratamientos.len()), INFO);
             }
-            pill(ui, &format!("{inactive} mutuas o tarifas dadas de baja"), MUTED);
+            pill(ui, &format!("{inactive} mutuas o tarifas dadas de baja"), MUTED());
         });
         ui.add_space(6.0);
         // vista previa con los nombres como quedarán

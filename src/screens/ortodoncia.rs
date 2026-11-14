@@ -26,7 +26,7 @@ impl Default for OrthoUi {
 
 pub fn state_color(s: OrthoState) -> Color32 {
     match s {
-        OrthoState::Estudio => MUTED,
+        OrthoState::Estudio => MUTED(),
         OrthoState::Activo => INFO,
         OrthoState::Retencion => ACCENT,
         OrthoState::Finalizado => OK,
@@ -62,7 +62,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         ui.add_space(4.0);
         kpi(ui, w, "Controles atrasados", &late.to_string(), "fecha de control superada", DANGER);
         ui.add_space(4.0);
-        kpi(ui, w, "En estudio", &study.to_string(), "pendientes de empezar", MUTED);
+        kpi(ui, w, "En estudio", &study.to_string(), "pendientes de empezar", MUTED());
         ui.add_space(4.0);
         kpi(ui, w, "En retención", &retention.to_string(), "revisiones de retenedor", ACCENT);
     });
@@ -104,7 +104,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                             // en su propia línea: a 1280 px no cabe junto al nombre y la fase
                             if let Some(n) = c.next_control().filter(|_| matches!(c.state, OrthoState::Activo | OrthoState::Retencion)) {
                                 let late = n < today && c.state == OrthoState::Activo;
-                                ui.label(RichText::new(format!("Próximo control {}", fmt_date(n))).color(if late { DANGER } else { MUTED }).size(13.5));
+                                ui.label(RichText::new(format!("Próximo control {}", fmt_date(n))).color(if late { DANGER } else { MUTED() }).size(13.5));
                             }
                             let pr = c.progress(today);
                             ui.horizontal(|ui| {
@@ -181,9 +181,9 @@ fn detail(app: &mut App, ui: &mut Ui) {
             ui.label("Honorarios");
             ui.add(egui::DragValue::new(&mut c.fee).range(0.0..=50000.0).speed(10.0).suffix(" €"));
         });
-        ui.label(RichText::new("Diagnóstico").size(13.5).color(MUTED));
+        ui.label(RichText::new("Diagnóstico").size(13.5).color(MUTED()));
         ui.add(egui::TextEdit::multiline(&mut c.diagnosis).desired_rows(2).desired_width(f32::INFINITY));
-        ui.label(RichText::new("Objetivos").size(13.5).color(MUTED));
+        ui.label(RichText::new("Objetivos").size(13.5).color(MUTED()));
         ui.add(egui::TextEdit::multiline(&mut c.objectives).desired_rows(2).desired_width(f32::INFINITY));
         ui.horizontal_wrapped(|ui| {
             for s in OrthoState::ALL {

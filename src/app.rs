@@ -223,6 +223,8 @@ pub struct App {
     pub perio_voice: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Grupo de clínicas (claves de esta clínica y vista del grupo).
     pub grupo: screens::grupo::GroupUi,
+    /// Pantalla de este puesto: modo tableta y contraste alto (T-F6-06).
+    pub display: theme::Display,
     /// Datáfono y financiación en la cuenta del paciente.
     pub card: screens::datafono::CardUi,
     /// Autorizaciones de la compañía y respuestas de las liquidaciones.
@@ -231,7 +233,9 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<PathBuf>, start: Option<Screen>, patient: Option<u32>, tab: Option<PatTab>) -> Self {
-        theme::apply(&cc.egui_ctx);
+        // con el ajuste de pantalla de este puesto (tableta, contraste)
+        let display = theme::load_display();
+        theme::apply_display(&cc.egui_ctx, display);
         let live = shot.is_none();
         let mut persist = shot.is_none();
         // un solo ordenador: los datos se bloquean para esta ventana (otra
@@ -375,6 +379,7 @@ impl App {
             perio_audio: String::new(),
             perio_voice: None,
             grupo: Default::default(),
+            display,
             card: Default::default(),
             auth_ui: Default::default(),
         };
@@ -1811,8 +1816,8 @@ impl App {
                     let sw = [230.0, 170.0, 96.0][tier];
                     let r = ui.add_sized([sw, 38.0], egui::TextEdit::singleline(&mut self.search).frame(Frame::NONE).align(egui::Align2::LEFT_CENTER).hint_text("Buscar paciente, Nº historial, NIF o teléfono"));
                     let c = r.rect.left_center() - vec2(20.0, 0.0);
-                    ui.painter().circle_stroke(c - vec2(1.5, 1.5), 5.5, Stroke::new(1.8, SUBTLE));
-                    ui.painter().line_segment([c + vec2(2.6, 2.6), c + vec2(6.5, 6.5)], Stroke::new(2.0, SUBTLE));
+                    ui.painter().circle_stroke(c - vec2(1.5, 1.5), 5.5, Stroke::new(1.8, SUBTLE()));
+                    ui.painter().line_segment([c + vec2(2.6, 2.6), c + vec2(6.5, 6.5)], Stroke::new(2.0, SUBTLE()));
                     r
                 })
                 .inner;
@@ -1839,6 +1844,11 @@ impl App {
                         }
                     });
                 });
+                // con el teclado: Enter abre el primero
+                let enter = (resp.has_focus() || resp.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if enter && chosen.is_none() {
+                    chosen = screens::pacientes::search(&self.db, &self.search, 1).first().copied();
+                }
                 if let Some(pid) = chosen {
                     self.search.clear();
                     self.open_patient(pid, PatTab::Resumen);
@@ -1892,9 +1902,26 @@ impl App {
                         self.lock("Pantalla bloqueada");
                         ui.close();
                     }
+                    ui.separator();
+                    // de este aparato (no de la clínica): se guarda en este ordenador
+                    let mut d = self.display;
+                    ui.checkbox(&mut d.tablet, "Modo tableta (controles grandes)");
+                    ui.checkbox(&mut d.high_contrast, "Contraste alto");
+                    if d != self.display {
+                        self.set_display(ui.ctx(), d);
+                    }
                 });
             });
         });
+    }
+
+    /// Cambia el ajuste de pantalla de este puesto y lo guarda en este ordenador.
+    pub fn set_display(&mut self, ctx: &egui::Context, d: theme::Display) {
+        self.display = d;
+        theme::apply_display(ctx, d);
+        if let Err(e) = theme::save_display(d) {
+            self.warn(format!("No se pudo guardar el ajuste de pantalla: {e}"));
+        }
     }
 
     pub fn profile(&self) -> crate::users::Profile {
@@ -1958,10 +1985,10 @@ impl App {
     fn statusbar(&mut self, ui: &mut Ui) {
         ui.horizontal_centered(|ui| {
             ui.add_space(6.0);
-            ui.label(RichText::new(format!("Usuario: {}", self.db.config.current_user)).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("Usuario: {}", self.db.config.current_user)).size(12.5).color(MUTED()));
             ui.separator();
             let cname = if self.db.multi_center() { self.db.center_name(self.db.config.current_center) } else { self.db.config.name.clone() };
-            ui.label(RichText::new(format!("Centro: {cname}")).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("Centro: {cname}")).size(12.5).color(MUTED()));
             ui.separator();
             match self.db.open_cash() {
                 Some(c) => {
@@ -1974,15 +2001,15 @@ impl App {
             }
             ui.separator();
             let waiting = self.db.appointments.iter().filter(|a| a.date == self.today && crate::model::cid(a.center_id) == crate::model::cid(self.db.config.current_center) && a.state == ApptState::SalaEspera).count();
-            ui.label(RichText::new(format!("Sala de espera: {waiting}")).size(12.5).color(if waiting > 0 { WARN } else { MUTED }));
+            ui.label(RichText::new(format!("Sala de espera: {waiting}")).size(12.5).color(if waiting > 0 { WARN } else { MUTED() }));
             theme::right_aligned(ui, |ui| {
                 ui.add_space(6.0);
                 if !self.persist {
-                    ui.label(RichText::new("Modo demostración (sin guardar)").size(12.5).color(MUTED));
+                    ui.label(RichText::new("Modo demostración (sin guardar)").size(12.5).color(MUTED()));
                 } else if let Some(e) = &self.save_error {
                     ui.label(RichText::new(format!("⚠ {e}")).size(12.5).color(DANGER));
                 } else if self.dirty {
-                    ui.label(RichText::new("Guardando…").size(12.5).color(MUTED));
+                    ui.label(RichText::new("Guardando…").size(12.5).color(MUTED()));
                 } else {
                     ui.label(RichText::new("✔ Datos guardados").size(12.5).color(OK)).on_hover_text(Db::path().display().to_string());
                 }
@@ -2108,9 +2135,9 @@ impl eframe::App for App {
         });
         egui::Panel::top("top")
             .exact_size(66.0)
-            .frame(Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER)).inner_margin(Margin::symmetric(20, 0)).shadow(egui::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 8) }))
+            .frame(Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER())).inner_margin(Margin::symmetric(20, 0)).shadow(egui::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 8) }))
             .show(ui, |ui| self.topbar(ui));
-        egui::Panel::bottom("status").exact_size(32.0).frame(Frame::new().fill(Color32::from_rgb(250, 251, 253)).stroke(Stroke::new(1.0, BORDER)).inner_margin(Margin::symmetric(14, 0))).show(ui, |ui| self.statusbar(ui));
+        egui::Panel::bottom("status").exact_size(32.0).frame(Frame::new().fill(Color32::from_rgb(250, 251, 253)).stroke(Stroke::new(1.0, BORDER())).inner_margin(Margin::symmetric(14, 0))).show(ui, |ui| self.statusbar(ui));
         egui::CentralPanel::default().frame(Frame::new().fill(BG).inner_margin(Margin::symmetric(26, 22))).show(ui, |ui| match self.screen {
             Screen::Inicio | Screen::Caja | Screen::Tarifas | Screen::Colaboradores | Screen::Modulos | Screen::Imagenes | Screen::Almacen | Screen::Laboratorio | Screen::Gastos | Screen::Ortodoncia | Screen::Listin | Screen::Bancos => {
                 let mut sa = egui::ScrollArea::vertical().id_salt(("page", self.screen as u8)).auto_shrink([false, false]);

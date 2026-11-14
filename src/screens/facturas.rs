@@ -95,7 +95,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 } else if f.rectifies.is_some() {
                     ("Rectificativa", WARN)
                 } else if f.rectified_by.is_some() {
-                    ("Anulada", MUTED)
+                    ("Anulada", MUTED())
                 } else {
                     ("Ordinaria", TEXT)
                 };
@@ -108,7 +108,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     cell(money(f.base())),
                     cell(money(f.vat())),
                     cellc(money(f.total()), if f.total() < 0.0 { DANGER } else { TEXT }),
-                    cellc(format!("{}…", &f.hash[..12.min(f.hash.len())]), MUTED),
+                    cellc(format!("{}…", &f.hash[..12.min(f.hash.len())]), MUTED()),
                 ];
                 if tbl.row(ui, i, false, &cells).clicked() {
                     open = Some(f.id);
@@ -177,7 +177,7 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
                     }
                     ui.label(format!("{} · {}", fmt_date(f.date), money(f.total())));
                     if f.rectified_by.is_some() {
-                        pill(ui, "Anulada", MUTED);
+                        pill(ui, "Anulada", MUTED());
                     }
                     if f.rectifies.is_some() {
                         pill(ui, "Rectificativa", WARN);
@@ -236,8 +236,8 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
-                    ui.label(RichText::new(format!("Base imponible {}  ·  IVA {}", money(f.base()), money(f.vat()))).font(crate::theme::mdf(13.5)).color(MUTED));
-                    ui.label(RichText::new(f.exemption_legend()).font(crate::theme::mdf(12.3)).color(SUBTLE));
+                    ui.label(RichText::new(format!("Base imponible {}  ·  IVA {}", money(f.base()), money(f.vat()))).font(crate::theme::mdf(13.5)).color(MUTED()));
+                    ui.label(RichText::new(f.exemption_legend()).font(crate::theme::mdf(12.3)).color(SUBTLE()));
                 });
                 right_aligned(ui, |ui| {
                     let c = if f.total() < 0.0 { DANGER } else { ACCENT_DARK };
@@ -245,7 +245,7 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                         ui.horizontal(|ui| {
                             // el diseño va de derecha a izquierda: primero el importe
                             ui.label(RichText::new(money(f.total())).font(crate::theme::bf(24.0)).color(c));
-                            ui.label(RichText::new("TOTAL").font(crate::theme::sbf(12.5)).color(mix(c, MUTED, 0.4)));
+                            ui.label(RichText::new("TOTAL").font(crate::theme::sbf(12.5)).color(mix(c, MUTED(), 0.4)));
                         });
                     });
                 });
@@ -281,7 +281,7 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
             ui.add_space(4.0);
         }
         let (sep, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 9.0), egui::Sense::hover());
-        ui.painter().hline(sep.x_range(), sep.center().y, egui::Stroke::new(1.0, HAIRLINE));
+        ui.painter().hline(sep.x_range(), sep.center().y, egui::Stroke::new(1.0, HAIRLINE()));
         ui.horizontal(|ui| {
             if primary(ui, "🖨 Imprimir / PDF").clicked() {
                 match crate::screens::centros::print_invoice(app, ui.ctx(), f.id) {

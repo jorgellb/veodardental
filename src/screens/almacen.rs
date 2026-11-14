@@ -193,7 +193,7 @@ fn products(app: &mut App, ui: &mut Ui) {
                         };
                         let cells = [
                             cell(&p.code),
-                            cellc(&p.name, if p.active { TEXT } else { MUTED }),
+                            cellc(&p.name, if p.active { TEXT } else { MUTED() }),
                             cell(&p.family),
                             cellc(format!("{} {}", qty(p.stock), if low { "⚠" } else { "" }), if low { DANGER } else { TEXT }),
                             cell(qty(p.min_stock)),
@@ -426,7 +426,7 @@ fn orders(app: &mut App, ui: &mut Ui) {
                 let mut pick = None;
                 for (i, o) in list.iter().enumerate() {
                     let col = match o.state {
-                        OrderState::Borrador => MUTED,
+                        OrderState::Borrador => MUTED(),
                         OrderState::PorAprobar => WARN,
                         OrderState::Aprobado | OrderState::Enviado | OrderState::Parcial => INFO,
                         OrderState::Recibido => OK,
@@ -482,7 +482,7 @@ fn orders(app: &mut App, ui: &mut Ui) {
                                         l.qty = packs * per;
                                         touched = true;
                                     }
-                                    ui.label(RichText::new(format!("× {per}")).color(MUTED));
+                                    ui.label(RichText::new(format!("× {per}")).color(MUTED()));
                                 } else {
                                     touched |= ui.add(egui::DragValue::new(&mut l.qty).range(0.0..=100000.0)).on_hover_text("Cantidad").changed();
                                 }
@@ -680,7 +680,7 @@ fn suppliers(app: &mut App, ui: &mut Ui) {
                 field(ui, "Persona de contacto", &mut s.contact, 300.0);
                 ui.checkbox(&mut s.is_lab, "Es un laboratorio protésico");
                 ui.checkbox(&mut s.auto_send, "Mandarle por correo los pedidos aprobados, sin enviarlos a mano").on_hover_text("Solo si además está activado en «Pedidos» (Dirección) y el correo de la clínica está configurado");
-                ui.label(RichText::new("Notas").size(13.5).color(MUTED));
+                ui.label(RichText::new("Notas").size(13.5).color(MUTED()));
                 ui.add(egui::TextEdit::multiline(&mut s.notes).desired_rows(3).desired_width(f32::INFINITY));
                 if serde_json::to_string(s).unwrap_or_default() != before {
                     app.dirty = true;

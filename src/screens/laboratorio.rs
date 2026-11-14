@@ -10,7 +10,7 @@ use egui::{Color32, RichText, Ui};
 
 pub fn state_color(s: LabState) -> Color32 {
     match s {
-        LabState::Pendiente => MUTED,
+        LabState::Pendiente => MUTED(),
         LabState::Enviado => INFO,
         LabState::EnPrueba => Color32::from_rgb(142, 98, 214),
         LabState::Recibido => ACCENT,
@@ -184,21 +184,21 @@ fn detail(app: &mut App, ui: &mut Ui) {
                 });
             });
             ui.horizontal(|ui| {
-                lab(ui, 100.0, RichText::new("Enviado").color(MUTED));
+                lab(ui, 100.0, RichText::new("Enviado").color(MUTED()));
                 crate::screens::date_picker(ui, "lw_sent", &mut w.sent);
             });
             ui.horizontal(|ui| {
-                lab(ui, 100.0, RichText::new("Prevista").color(MUTED));
+                lab(ui, 100.0, RichText::new("Prevista").color(MUTED()));
                 crate::screens::date_picker(ui, "lw_due", &mut w.due);
             });
             ui.horizontal(|ui| {
                 ui.label("Coste");
                 ui.add(egui::DragValue::new(&mut w.cost).range(0.0..=100000.0).speed(1.0).suffix(" €"));
             });
-            ui.label(RichText::new("Indicaciones para el laboratorio").size(13.5).color(MUTED));
+            ui.label(RichText::new("Indicaciones para el laboratorio").size(13.5).color(MUTED()));
             ui.add(egui::TextEdit::multiline(&mut w.notes).desired_rows(3).desired_width(f32::INFINITY));
             ui.add_space(6.0);
-            ui.label(RichText::new("Cambiar estado").size(13.5).color(MUTED));
+            ui.label(RichText::new("Cambiar estado").size(13.5).color(MUTED()));
             ui.horizontal_wrapped(|ui| {
                 for s in LabState::ALL {
                     let sel = w.state == s;
@@ -221,7 +221,7 @@ fn detail(app: &mut App, ui: &mut Ui) {
                 Some(t) => {
                     ui.horizontal_wrapped(|ui| {
                         pill(ui, "Orden enviada", OK);
-                        ui.label(RichText::new(format!("{} · {}", t.format("%d/%m/%Y %H:%M"), w.order_to)).size(12.5).color(MUTED));
+                        ui.label(RichText::new(format!("{} · {}", t.format("%d/%m/%Y %H:%M"), w.order_to)).size(12.5).color(MUTED()));
                     });
                 }
                 None => muted(ui, "La orden aún no se ha enviado."),
@@ -229,14 +229,14 @@ fn detail(app: &mut App, ui: &mut Ui) {
             // correo del laboratorio (se puede escribir aquí mismo)
             if let Some(s) = app.db.suppliers.iter_mut().find(|s| s.id == w.lab_id) {
                 ui.horizontal(|ui| {
-                    lab(ui, 100.0, RichText::new("Correo").color(MUTED));
+                    lab(ui, 100.0, RichText::new("Correo").color(MUTED()));
                     if ui.add(egui::TextEdit::singleline(&mut s.email).hint_text("pedidos@laboratorio.es").desired_width(ui.available_width())).changed() {
                         app.dirty = true;
                     }
                 });
             }
             ui.add_space(2.0);
-            ui.label(RichText::new("Adjuntar de la galería del paciente").size(13.5).color(MUTED));
+            ui.label(RichText::new("Adjuntar de la galería del paciente").size(13.5).color(MUTED()));
             if !clinical {
                 muted(ui, format!("Las imágenes las adjunta un doctor desde su puesto (este puesto no recibe imágenes){}.", if w.attachments.is_empty() { String::new() } else { format!("; esta orden lleva {}", w.attachments.len()) }));
             }
@@ -263,7 +263,7 @@ fn detail(app: &mut App, ui: &mut Ui) {
             if sending {
                 ui.horizontal(|ui| {
                     ui.add(egui::Spinner::new().size(16.0));
-                    ui.label(RichText::new("Enviando la orden…").color(MUTED));
+                    ui.label(RichText::new("Enviando la orden…").color(MUTED()));
                 });
             } else {
                 let b = egui::Button::new(RichText::new("✉ Enviar por correo").color(Color32::WHITE).font(sbf(14.5))).fill(ACCENT).stroke(egui::Stroke::new(1.0, ACCENT_DARK)).corner_radius(egui::CornerRadius::same(10));
@@ -281,7 +281,7 @@ fn detail(app: &mut App, ui: &mut Ui) {
                 }
             });
             if !app.db.mail.ready() {
-                ui.label(RichText::new("Sin correo configurado en el programa: se abrirá su programa de correo y se guardará el paquete para adjuntarlo.").size(12.0).color(MUTED));
+                ui.label(RichText::new("Sin correo configurado en el programa: se abrirá su programa de correo y se guardará el paquete para adjuntarlo.").size(12.0).color(MUTED()));
                 if ui.link(RichText::new("Configurar el correo ›").size(12.5)).clicked() {
                     settings = true;
                 }
@@ -461,10 +461,10 @@ pub fn patient_block(app: &mut App, ui: &mut Ui, pid: u32) {
         for w in &list {
             ui.horizontal(|ui| {
                 pill(ui, w.state.label(), state_color(w.state));
-                ui.label(format!("{} · {} · prevista {}", w.description, app.db.supplier_name(w.lab_id), fmt_date(w.due)));
                 if w.overdue(app.today) {
                     pill(ui, "Retrasado", DANGER);
                 }
+                line(ui, format!("{} · {} · prevista {}", w.description, app.db.supplier_name(w.lab_id), fmt_date(w.due)));
             });
         }
         let n = app.db.prosthetic_without_lab(pid).len();

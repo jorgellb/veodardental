@@ -650,7 +650,7 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                         }
                         let teeth: Vec<String> = img.teeth.iter().map(|t| t.to_string()).collect();
                         p.text(rect.min + vec2(118.0, 12.0), Align2::LEFT_TOP, img.kind.short(), sbf(14.5), TEXT);
-                        p.text(rect.min + vec2(118.0, 34.0), Align2::LEFT_TOP, format!("{}{}", fmt_date(img.date), if teeth.is_empty() { String::new() } else { format!(" · pieza {}", teeth.join("-")) }), FontId::proportional(13.0), MUTED);
+                        p.text(rect.min + vec2(118.0, 34.0), Align2::LEFT_TOP, format!("{}{}", fmt_date(img.date), if teeth.is_empty() { String::new() } else { format!(" · pieza {}", teeth.join("-")) }), FontId::proportional(13.0), MUTED());
                         p.with_clip_rect(rect).text(rect.min + vec2(118.0, 54.0), Align2::LEFT_TOP, &img.source, FontId::proportional(12.5), ACCENT);
                         if resp.clicked() {
                             app.img.selected = Some(img.id);
@@ -776,7 +776,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
             }
         }
     }
-    p.rect_stroke(rect, CornerRadius::same(14), Stroke::new(1.0, BORDER), StrokeKind::Inside);
+    p.rect_stroke(rect, CornerRadius::same(14), Stroke::new(1.0, BORDER()), StrokeKind::Inside);
     ui.add_space(8.0);
     // datos
     card(ui, |ui| {
@@ -792,11 +792,11 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                 }
             });
             let mut t: String = m.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" ");
-            ui.label(RichText::new("Piezas").color(MUTED));
+            ui.label(RichText::new("Piezas").color(MUTED()));
             if ui.add_sized([110.0, 32.0], egui::TextEdit::singleline(&mut t)).changed() {
                 m.teeth = t.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).filter(|t| crate::screens::pacientes::valid_tooth(*t)).collect();
             }
-            ui.label(RichText::new("Notas").color(MUTED));
+            ui.label(RichText::new("Notas").color(MUTED()));
             ui.add_sized([260.0, 32.0], egui::TextEdit::singleline(&mut m.notes));
             muted(ui, format!("Origen: {}", m.source));
             right_aligned(ui, |ui| {
@@ -899,11 +899,11 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                             ROW_ALT
                         },
                     );
-                    p.text(rect.min + vec2(14.0, rect.height() / 2.0), Align2::LEFT_CENTER, kind_icon(c.kind), FontId::proportional(22.0), if c.enabled { ACCENT } else { MUTED });
-                    p.text(rect.min + vec2(50.0, 10.0), Align2::LEFT_TOP, &c.name, sbf(15.0), if c.enabled { TEXT } else { MUTED });
-                    p.text(rect.min + vec2(50.0, 32.0), Align2::LEFT_TOP, format!("{} · {}", c.vendor, c.kind.short()), FontId::proportional(13.0), MUTED);
+                    p.text(rect.min + vec2(14.0, rect.height() / 2.0), Align2::LEFT_CENTER, kind_icon(c.kind), FontId::proportional(22.0), if c.enabled { ACCENT } else { MUTED() });
+                    p.text(rect.min + vec2(50.0, 10.0), Align2::LEFT_TOP, &c.name, sbf(15.0), if c.enabled { TEXT } else { MUTED() });
+                    p.text(rect.min + vec2(50.0, 32.0), Align2::LEFT_TOP, format!("{} · {}", c.vendor, c.kind.short()), FontId::proportional(13.0), MUTED());
                     let (st, col) = if !c.enabled {
-                        ("Desactivado", MUTED)
+                        ("Desactivado", MUTED())
                     } else if found {
                         ("Programa encontrado", OK)
                     } else {
@@ -933,7 +933,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                     ui.checkbox(&mut c.enabled, "Activo (aparece en la ficha del paciente)");
                     field(ui, "Nombre", &mut c.name, 300.0);
                     field(ui, "Fabricante / programa", &mut c.vendor, 300.0);
-                    ui.label(RichText::new("Tipo de imagen").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Tipo de imagen").size(13.5).color(MUTED()));
                     crate::theme::combo("con_kind").width(300.0).selected_text(c.kind.label()).show_ui(ui, |ui| {
                         for k in ImageKind::ALL {
                             ui.selectable_value(&mut c.kind, k, k.label());

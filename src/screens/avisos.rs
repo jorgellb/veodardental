@@ -42,7 +42,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     egui::Window::new("Avisos al equipo").id(egui::Id::unique("chat_window")).open(&mut open).collapsible(false).resizable(false).anchor(Align2::RIGHT_TOP, vec2(-18.0, 76.0)).default_width(420.0).show(ctx, |ui| {
         ui.set_width(420.0);
-        ui.label(RichText::new("Para").color(MUTED).size(13.5));
+        ui.label(RichText::new("Para").color(MUTED()).size(13.5));
         ui.horizontal_wrapped(|ui| {
             let users: Vec<String> = app.db.users.iter().filter(|u| u.active && u.name != user).map(|u| u.name.clone()).collect();
             if ui.selectable_label(app.chat.to.is_empty(), "Todos").clicked() {
@@ -55,7 +55,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             }
         });
         ui.add_space(6.0);
-        ui.label(RichText::new("Frases rápidas (se envían con un clic)").color(MUTED).size(13.5));
+        ui.label(RichText::new("Frases rápidas (se envían con un clic)").color(MUTED()).size(13.5));
         ui.horizontal_wrapped(|ui| {
             for q in crate::chat::QUICK {
                 if ui.button(q).clicked() {
@@ -83,7 +83,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             for m in recent.iter().take(30) {
                 let mine = m.from == user;
                 let dir = if mine { format!("→ {}", if m.to.is_empty() { "Todos" } else { &m.to }) } else { format!("← {}", m.from) };
-                ui.label(RichText::new(format!("{}  {}  ·  {}", m.when.format("%H:%M"), dir, m.text)).size(14.0).color(if mine { MUTED } else { TEXT }));
+                ui.label(RichText::new(format!("{}  {}  ·  {}", m.when.format("%H:%M"), dir, m.text)).size(14.0).color(if mine { MUTED() } else { TEXT }));
             }
         });
     });
@@ -123,7 +123,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
                     ui.set_max_width(336.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("💬 {}", m.from)).family(sb()));
-                        ui.label(RichText::new(m.when.format("%H:%M").to_string()).color(MUTED).size(13.0));
+                        ui.label(RichText::new(m.when.format("%H:%M").to_string()).color(MUTED()).size(13.0));
                     });
                     ui.label(RichText::new(&m.text).size(16.0));
                     ui.horizontal_wrapped(|ui| {

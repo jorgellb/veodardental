@@ -215,7 +215,7 @@ pub fn treatment_picker(ui: &mut egui::Ui, id: &str, db: &crate::model::Db, tari
                 continue;
             }
             if t.group != last {
-                ui.label(RichText::new(&t.group).size(12.5).color(MUTED));
+                ui.label(RichText::new(&t.group).size(12.5).color(MUTED()));
                 last = t.group.clone();
             }
             if ui.selectable_label(*code == t.code, show(t)).clicked() {
@@ -227,7 +227,7 @@ pub fn treatment_picker(ui: &mut egui::Ui, id: &str, db: &crate::model::Db, tari
             n += 1;
         }
         if n == 0 {
-            ui.label(RichText::new("Ningún tratamiento coincide con la búsqueda").color(MUTED));
+            ui.label(RichText::new("Ningún tratamiento coincide con la búsqueda").color(MUTED()));
         }
     });
     changed

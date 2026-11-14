@@ -3044,7 +3044,7 @@ fn every_screen_fits_1280_wide() {
             }
         }
         // las pestañas de Informes y los apartados de Configuración
-        for tab in 0..9 {
+        for tab in 0..10 {
             {
                 let a = h.state_mut();
                 a.screen = crate::app::Screen::Informes;
@@ -3557,4 +3557,92 @@ fn an_order_above_the_amount_waits_for_approval() {
     h.get_by_label("Lo aprueba quien lleva los gastos.");
     assert!(h.query_by_label("Aprobar pedido").is_none());
     assert!(h.query_by_label("Ajustes de los pedidos").is_none());
+}
+
+/// Modo tableta (T-F6-06): controles del tamaño del dedo y las pantallas
+/// principales caben en una tableta apaisada de 1280×800; el contraste alto
+/// oscurece el texto secundario.
+#[test]
+fn tablet_mode_has_touch_sized_controls_and_fits_1280() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let ctx = h.ctx.clone();
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.set_display(&ctx, crate::theme::Display { tablet: true, high_contrast: false });
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.ctx.global_style().spacing.interact_size, crate::theme::TOUCH);
+    let height = |h: &Harness<'_, App>, label: &str| egui_kittest::kittest::NodeT::accesskit_node(&h.get_by_label(label)).bounding_box().map(|r| r.height()).unwrap_or(0.0);
+    assert!(height(&h, "＋ Nueva cita") >= 44.0, "botón del tamaño del dedo: {}", height(&h, "＋ Nueva cita"));
+    let mut problems = vec![];
+    use crate::app::Screen;
+    for screen in [Screen::Inicio, Screen::Agenda, Screen::Pacientes, Screen::Cobros, Screen::Caja, Screen::Comunicaciones] {
+        h.state_mut().screen = screen;
+        for _ in 0..3 {
+            h.step();
+        }
+        for (label, x) in offscreen(&h, 1280.0) {
+            problems.push(format!("{screen:?}: «{label}» hasta x={x:.0}"));
+        }
+    }
+    for tab in [crate::app::PatTab::Resumen, crate::app::PatTab::Odontograma, crate::app::PatTab::Historial, crate::app::PatTab::Cuenta, crate::app::PatTab::Citas] {
+        h.state_mut().open_patient(101, tab);
+        for _ in 0..3 {
+            h.step();
+        }
+        for (label, x) in offscreen(&h, 1280.0) {
+            problems.push(format!("ficha {tab:?}: «{label}» hasta x={x:.0}"));
+        }
+    }
+    assert!(problems.is_empty(), "en modo tableta se sale de la pantalla:\n{}", problems.join("\n"));
+    // contraste alto: el texto secundario, más oscuro (y se deja como estaba)
+    let ctx = h.ctx.clone();
+    h.state_mut().set_display(&ctx, crate::theme::Display { tablet: false, high_contrast: true });
+    assert_eq!(crate::theme::MUTED(), crate::theme::palette(true).muted);
+    h.state_mut().set_display(&ctx, crate::theme::Display::default());
+    assert_eq!(crate::theme::MUTED(), crate::theme::palette(false).muted);
+}
+
+/// Sin ratón (T-F6-06): Ctrl+F lleva a la búsqueda, se escribe y Enter abre
+/// la ficha del paciente.
+#[test]
+fn a_patient_is_found_and_opened_with_the_keyboard() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let (pid, name) = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Inicio;
+        a.patient = None;
+        let p = a.db.patients.iter().find(|p| p.id == 104).unwrap();
+        (p.id, p.last_name.split_whitespace().next().unwrap().to_string())
+    };
+    for _ in 0..3 {
+        h.step();
+    }
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::F);
+    h.step();
+    // se escribe donde está el foco (la búsqueda), como con un teclado
+    h.event(egui::Event::Text(name.clone()));
+    for _ in 0..3 {
+        h.step();
+    }
+    h.key_press(egui::Key::Enter);
+    for _ in 0..3 {
+        h.step();
+    }
+    let a = h.state();
+    assert_eq!(a.screen, crate::app::Screen::Pacientes, "abre la ficha");
+    assert_eq!(a.patient, crate::screens::pacientes::search(&a.db, &name, 1).first().copied().or(Some(pid)));
+    assert!(a.search.is_empty());
 }

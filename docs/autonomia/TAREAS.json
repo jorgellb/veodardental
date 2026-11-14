@@ -2783,8 +2783,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Controles grandes, contraste ajustable y flujos principales sin ratón, con pruebas de pantalla",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-074"]
   },
   {
    "id": "T-F6-07",

@@ -204,7 +204,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         match (app.phone.port, app.phone.error.clone()) {
             (Some(p), _) => ui.label(RichText::new(format!("✔ Este puesto recibe los avisos de llamada (puerto local {p}).")).color(OK)),
             (None, Some(e)) => ui.label(RichText::new(format!("⚠ Los avisos de llamada no están activos en este puesto: {e}")).color(WARN)),
-            _ => ui.label(RichText::new("Desactivado en el modo demostración.").color(MUTED)),
+            _ => ui.label(RichText::new("Desactivado en el modo demostración.").color(MUTED())),
         };
         muted(
             ui,
@@ -215,7 +215,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         let rows = [("Ejecutar programa", format!("\"{exe}\" --llamada NÚMERO")), ("Abrir dirección", format!("http://127.0.0.1:{}/llamada?numero=NÚMERO", app.phone.port.unwrap_or(CALL_PORT)))];
         for (label, text) in rows {
             ui.horizontal(|ui| {
-                lab(ui, 150.0, RichText::new(label).color(MUTED));
+                lab(ui, 150.0, RichText::new(label).color(MUTED()));
                 let w = (ui.available_width() - 100.0).max(220.0);
                 lab(ui, w, RichText::new(&text).family(sb())).on_hover_text(&text);
                 if ui.small_button("Copiar").clicked() {
@@ -261,7 +261,7 @@ pub fn recent_calls(app: &mut App, ui: &mut Ui) {
         let mut open = None;
         for c in list.iter().take(12) {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(c.when.format("%d/%m %H:%M").to_string()).color(MUTED).size(13.5));
+                ui.label(RichText::new(c.when.format("%d/%m %H:%M").to_string()).color(MUTED()).size(13.5));
                 ui.label(RichText::new(pretty(&c.number)).size(14.0));
                 match c.patients.first() {
                     Some(pid) => {
@@ -272,7 +272,7 @@ pub fn recent_calls(app: &mut App, ui: &mut Ui) {
                         }
                     }
                     None => {
-                        ui.add(egui::Label::new(RichText::new(if c.other.is_empty() { "desconocido".to_string() } else { c.other.clone() }).color(MUTED).size(14.0)).truncate());
+                        ui.add(egui::Label::new(RichText::new(if c.other.is_empty() { "desconocido".to_string() } else { c.other.clone() }).color(MUTED()).size(14.0)).truncate());
                     }
                 }
             });

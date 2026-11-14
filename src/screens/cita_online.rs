@@ -304,7 +304,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
                     pill(ui, "Conectando…", INFO);
                 }
                 None => {
-                    pill(ui, "Sin publicar", MUTED);
+                    pill(ui, "Sin publicar", MUTED());
                 }
             });
         });
@@ -318,7 +318,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             match &exe {
                 Some(p) => {
                     ui.label(RichText::new("✔ cloudflared:").color(OK));
-                    ui.label(RichText::new(p.display().to_string()).size(12.5).color(MUTED));
+                    ui.label(RichText::new(p.display().to_string()).size(12.5).color(MUTED()));
                 }
                 None => {
                     ui.label(RichText::new("No se encuentra cloudflared en este ordenador.").color(WARN));
@@ -332,7 +332,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             ui.label(RichText::new(crate::tunnel::install_hint()).size(12.5).color(TEXT));
             let c = &mut app.db.booking;
             ui.horizontal(|ui| {
-                ui.label(RichText::new("o su ruta:").size(12.5).color(MUTED));
+                ui.label(RichText::new("o su ruta:").size(12.5).color(MUTED()));
                 if ui.add(egui::TextEdit::singleline(&mut c.tunnel_exe).hint_text(if cfg!(windows) { r"C:\Program Files (x86)\cloudflared\cloudflared.exe" } else { "/usr/local/bin/cloudflared" }).desired_width(ui.available_width())).changed() {
                     action = 9;
                 }
@@ -342,7 +342,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
         // token
         {
             let c = &mut app.db.booking;
-            ui.label(RichText::new("Código (token) del túnel").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("Código (token) del túnel").font(mdf(12.8)).color(MUTED()));
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut c.tunnel_token).password(!app.booking.show_token).hint_text("eyJhIjoi…").desired_width((ui.available_width() - 120.0).max(120.0)));
                 if ui.button(if app.booking.show_token { "Ocultar" } else { "Mostrar" }).clicked() {
@@ -370,7 +370,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             let base = app.db.booking.public_url.trim().to_string();
             if app.booking.check.is_some() {
                 ui.add(egui::Spinner::new().size(16.0));
-                ui.label(RichText::new("Comprobando desde internet…").color(MUTED));
+                ui.label(RichText::new("Comprobando desde internet…").color(MUTED()));
             } else if ui
                 .add_enabled(base.starts_with("https://") && app.booking.server.is_some(), egui::Button::new("Comprobar desde internet"))
                 .on_hover_text("Abre la dirección para los pacientes por internet y comprueba que llega a esta página")
@@ -391,7 +391,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             }
         });
         if !here {
-            ui.label(RichText::new("Active la cita online en este ordenador para poder publicarla.").size(12.5).color(MUTED));
+            ui.label(RichText::new("Active la cita online en este ordenador para poder publicarla.").size(12.5).color(MUTED()));
         }
         if let Some(e) = &app.booking.tunnel_error {
             ui.label(RichText::new(e).size(12.5).color(DANGER));
@@ -404,7 +404,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
                 && let Some(u) = &s.url
             {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("Dirección temporal:").size(12.5).color(MUTED));
+                    ui.label(RichText::new("Dirección temporal:").size(12.5).color(MUTED()));
                     ui.label(RichText::new(u).size(12.5).color(ACCENT_DARK));
                     if ui.small_button("Copiar").clicked() {
                         ui.ctx().copy_text(u.clone());
@@ -419,7 +419,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
                 egui::CollapsingHeader::new(RichText::new("Ver el registro de cloudflared").size(12.5)).id_salt("cf_log").show(ui, |ui| {
                     egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
                         for l in s.log.iter().rev().take(25) {
-                            ui.label(RichText::new(l).size(11.0).monospace().color(MUTED));
+                            ui.label(RichText::new(l).size(11.0).monospace().color(MUTED()));
                         }
                     });
                 });
@@ -448,7 +448,7 @@ fn tunnel_card(app: &mut App, ui: &mut Ui) {
             {
                 ui.label(RichText::new(format!("{}. {t}", n + 1)).size(12.5).color(TEXT));
             }
-            ui.label(RichText::new("Para recibir las respuestas de WhatsApp añada otro «Public hostname» que apunte al puerto del receptor de WhatsApp.").size(12.0).color(MUTED));
+            ui.label(RichText::new("Para recibir las respuestas de WhatsApp añada otro «Public hostname» que apunte al puerto del receptor de WhatsApp.").size(12.0).color(MUTED()));
         });
     });
     match action {
@@ -523,7 +523,7 @@ pub fn appt_link_row(app: &mut App, ui: &mut Ui, appt: u32) {
             ui.label(RichText::new("Enlace del paciente («Mi cita»)").font(sbf(13.5)).color(HEADING));
             match &link {
                 None => {
-                    ui.label(RichText::new("aún no enviado").size(12.5).color(MUTED));
+                    ui.label(RichText::new("aún no enviado").size(12.5).color(MUTED()));
                 }
                 Some(l) => {
                     if let Some(t) = l.confirmed {
@@ -536,7 +536,7 @@ pub fn appt_link_row(app: &mut App, ui: &mut Ui, appt: u32) {
                         pill(ui, &format!("Cuestionario de salud recibido el {}", t.format("%d/%m")), INFO);
                     }
                     if l.confirmed.is_none() && l.cancelled.is_none() && l.health_at.is_none() {
-                        ui.label(RichText::new("creado; el paciente aún no ha hecho nada").size(12.5).color(MUTED));
+                        ui.label(RichText::new("creado; el paciente aún no ha hecho nada").size(12.5).color(MUTED()));
                     }
                 }
             }
@@ -670,7 +670,7 @@ pub fn doc_link_row(app: &mut App, ui: &mut Ui, doc_id: u32) {
             ui.label(RichText::new("Firma por internet").font(sbf(13.5)).color(HEADING));
             match &link {
                 None => {
-                    ui.label(RichText::new("el paciente lo lee y lo firma desde el móvil").size(12.5).color(MUTED));
+                    ui.label(RichText::new("el paciente lo lee y lo firma desde el móvil").size(12.5).color(MUTED()));
                 }
                 Some(l) => {
                     if let Some(t) = l.signed.filter(|_| d.signed) {
@@ -682,9 +682,9 @@ pub fn doc_link_row(app: &mut App, ui: &mut Ui, doc_id: u32) {
                     } else if let Some(t) = l.viewed {
                         pill(ui, &format!("Lo leyó el {}", t.format("%d/%m %H:%M")), INFO);
                     } else if !l.sent_to.is_empty() {
-                        pill(ui, &format!("Enviado a {}", l.sent_to), MUTED);
+                        pill(ui, &format!("Enviado a {}", l.sent_to), MUTED());
                     } else {
-                        ui.label(RichText::new("enlace creado, aún sin abrir").size(12.5).color(MUTED));
+                        ui.label(RichText::new("enlace creado, aún sin abrir").size(12.5).color(MUTED()));
                     }
                 }
             }
@@ -694,10 +694,10 @@ pub fn doc_link_row(app: &mut App, ui: &mut Ui, doc_id: u32) {
                 ui.label(RichText::new(format!("❓ {} — «{q}»", t.format("%d/%m %H:%M"))).size(12.5).color(TEXT));
             }
             if l.declined.is_some() && !l.decline_reason.is_empty() {
-                ui.label(RichText::new(format!("Comentario: «{}»", l.decline_reason)).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("Comentario: «{}»", l.decline_reason)).size(12.5).color(MUTED()));
             }
             if l.signed.is_some() && d.signed {
-                ui.label(RichText::new(format!("Desde la dirección {} · huella {}…", if l.ip.is_empty() { "desconocida" } else { &l.ip }, l.doc_hash.chars().take(16).collect::<String>())).size(12.0).color(MUTED));
+                ui.label(RichText::new(format!("Desde la dirección {} · huella {}…", if l.ip.is_empty() { "desconocida" } else { &l.ip }, l.doc_hash.chars().take(16).collect::<String>())).size(12.0).color(MUTED()));
             }
         }
         if !d.signed {
@@ -843,7 +843,7 @@ pub fn budget_link_row(app: &mut App, ui: &mut Ui, bid: u32) {
             ui.label(RichText::new("Firma por internet").font(sbf(13.5)).color(HEADING));
             match &link {
                 None => {
-                    ui.label(RichText::new("el paciente lo revisa y lo firma desde el móvil").size(12.5).color(MUTED));
+                    ui.label(RichText::new("el paciente lo revisa y lo firma desde el móvil").size(12.5).color(MUTED()));
                 }
                 Some(l) => {
                     if l.accepted {
@@ -856,9 +856,9 @@ pub fn budget_link_row(app: &mut App, ui: &mut Ui, bid: u32) {
                     } else if let Some(t) = l.viewed {
                         pill(ui, &format!("Lo vio el {}", t.format("%d/%m %H:%M")), INFO);
                     } else if !l.sent_to.is_empty() {
-                        pill(ui, &format!("Enviado a {}", l.sent_to), MUTED);
+                        pill(ui, &format!("Enviado a {}", l.sent_to), MUTED());
                     } else {
-                        ui.label(RichText::new("enlace creado, aún sin abrir").size(12.5).color(MUTED));
+                        ui.label(RichText::new("enlace creado, aún sin abrir").size(12.5).color(MUTED()));
                     }
                 }
             }
@@ -868,7 +868,7 @@ pub fn budget_link_row(app: &mut App, ui: &mut Ui, bid: u32) {
                 ui.label(RichText::new(format!("❓ {} — «{q}»", t.format("%d/%m %H:%M"))).size(12.5).color(TEXT));
             }
             if !l.accepted && l.decided.is_some() && !l.reason.is_empty() {
-                ui.label(RichText::new(format!("Motivo: «{}»", l.reason)).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("Motivo: «{}»", l.reason)).size(12.5).color(MUTED()));
             }
         }
         ui.horizontal(|ui| {
@@ -1060,7 +1060,7 @@ pub fn offers_card(app: &mut App, ui: &mut Ui) {
                         pill(ui, &txt, OK);
                     }
                     st => {
-                        pill(ui, st.label(), MUTED);
+                        pill(ui, st.label(), MUTED());
                     }
                 }
             });
@@ -1162,7 +1162,7 @@ pub fn agenda_card(app: &mut App, ui: &mut Ui) {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.label(RichText::new("Citas pedidas por internet").font(sbf(15.0)).color(HEADING));
-                ui.label(RichText::new(format!("{} por confirmar", list.len())).font(mdf(12.5)).color(MUTED));
+                ui.label(RichText::new(format!("{} por confirmar", list.len())).font(mdf(12.5)).color(MUTED()));
             });
         });
         for r in list.iter().take(6) {
@@ -1173,14 +1173,14 @@ pub fn agenda_card(app: &mut App, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&r.name).font(sbf(14.0)).color(HEADING));
                     right_aligned(ui, |ui| {
-                        ui.label(RichText::new(ago(r.received)).size(11.5).color(SUBTLE));
+                        ui.label(RichText::new(ago(r.received)).size(11.5).color(SUBTLE()));
                     });
                 });
                 let doc = app.db.doctor(r.doctor_id).map(|d| d.alias.clone()).unwrap_or_default();
                 if let Some(old) = r.replaces.and_then(|id| app.db.appointments.iter().find(|a| a.id == id)) {
                     ui.horizontal(|ui| {
                         pill(ui, "Cambio de hora", INFO);
-                        ui.label(RichText::new(format!("antes: {} {} · {}", weekday_es(old.date).chars().take(3).collect::<String>(), old.date.format("%d/%m"), old.start.format("%H:%M"))).size(12.0).color(MUTED).strikethrough());
+                        ui.label(RichText::new(format!("antes: {} {} · {}", weekday_es(old.date).chars().take(3).collect::<String>(), old.date.format("%d/%m"), old.start.format("%H:%M"))).size(12.0).color(MUTED()).strikethrough());
                     });
                 }
                 ui.label(RichText::new(format!("{} {} · {}", weekday_es(r.date).chars().take(3).collect::<String>(), r.date.format("%d/%m"), r.start.format("%H:%M"))).font(sbf(13.5)).color(mix(VIOLET, HEADING, 0.35)));
@@ -1190,7 +1190,7 @@ pub fn agenda_card(app: &mut App, ui: &mut Ui) {
                     None if r.first_visit => "Paciente nuevo (primera visita)".into(),
                     None => "Sin ficha con ese teléfono".into(),
                 };
-                ui.label(RichText::new(format!("{} · {}", r.phone, who)).size(12.0).color(MUTED));
+                ui.label(RichText::new(format!("{} · {}", r.phone, who)).size(12.0).color(MUTED()));
                 if !r.notes.trim().is_empty() && r.replaces.is_none() {
                     ui.label(RichText::new(format!("«{}»", r.notes.trim())).size(12.0).italics().color(TEXT));
                 }
@@ -1273,7 +1273,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 section(ui, "Página de cita online");
                 right_aligned(ui, |ui| {
                     if !c.enabled {
-                        pill(ui, "Desactivada", MUTED);
+                        pill(ui, "Desactivada", MUTED());
                     } else if c.station != me {
                         pill(ui, "En otro ordenador", INFO);
                     } else if running {
@@ -1304,12 +1304,12 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Puerto").font(mdf(12.8)).color(MUTED));
+                    ui.label(RichText::new("Puerto").font(mdf(12.8)).color(MUTED()));
                     ui.add(egui::DragValue::new(&mut c.port).range(1024..=65535));
                 });
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("En este ordenador").font(mdf(12.8)).color(MUTED));
+                    ui.label(RichText::new("En este ordenador").font(mdf(12.8)).color(MUTED()));
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&local).font(mdf(13.5)).color(HEADING));
                         if ui.add_enabled(running, egui::Button::new("Abrir la página")).clicked() {
@@ -1322,7 +1322,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             ui.add_space(4.0);
             let w = (ui.available_width() / 1.1 - 4.0).min(460.0);
             field(ui, "Dirección para los pacientes (https)", &mut c.public_url, w);
-            ui.label(RichText::new("Para abrirla desde casa hace falta una dirección https que llegue a este ordenador: un túnel (Cloudflare Tunnel, ngrok…) o el servidor de la web de la clínica. Sirve el mismo túnel que para WhatsApp. Póngala como enlace «Pedir cita» en su web, en Google o en las redes.").size(12.0).color(MUTED));
+            ui.label(RichText::new("Para abrirla desde casa hace falta una dirección https que llegue a este ordenador: un túnel (Cloudflare Tunnel, ngrok…) o el servidor de la web de la clínica. Sirve el mismo túnel que para WhatsApp. Póngala como enlace «Pedir cita» en su web, en Google o en las redes.").size(12.0).color(MUTED()));
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 crate::screens::verifactu::draw_qr(ui, &url, 112.0);
@@ -1356,19 +1356,19 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 lab(ui, 150.0, RichText::new("Plazo máximo").color(TEXT));
                 ui.add(egui::DragValue::new(&mut c.days_ahead).range(1..=180).suffix(" días"));
-                ui.label(RichText::new("por delante").color(MUTED));
+                ui.label(RichText::new("por delante").color(MUTED()));
             });
             ui.horizontal(|ui| {
                 lab(ui, 150.0, RichText::new("Antelación mínima").color(TEXT));
                 ui.add(egui::DragValue::new(&mut c.min_notice_hours).range(0..=168).suffix(" h"));
-                ui.label(RichText::new("antes de la cita").color(MUTED));
+                ui.label(RichText::new("antes de la cita").color(MUTED()));
             });
             ui.add_space(4.0);
-            ui.label(RichText::new("Profesionales que se ofrecen").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("Profesionales que se ofrecen").font(mdf(12.8)).color(MUTED()));
             ui.horizontal_wrapped(|ui| {
                 for (id, alias, _) in &docs {
                     let on = c.doctors.is_empty() || c.doctors.contains(id);
-                    let b = egui::Button::new(RichText::new(alias).size(13.0).color(if on { ACCENT_DARK } else { MUTED })).fill(if on { ACCENT_SOFT } else { CARD }).stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER })).corner_radius(CornerRadius::same(14));
+                    let b = egui::Button::new(RichText::new(alias).size(13.0).color(if on { ACCENT_DARK } else { MUTED() })).fill(if on { ACCENT_SOFT } else { CARD }).stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER() })).corner_radius(CornerRadius::same(14));
                     if ui.add(b).clicked() {
                         if c.doctors.is_empty() {
                             c.doctors = docs.iter().map(|d| d.0).filter(|d| d != id).collect();
@@ -1386,7 +1386,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             ui.add_space(6.0);
             ui.checkbox(&mut c.auto_confirm, "Confirmar las citas sin revisarlas (se apuntan solas en la agenda)");
             if !c.auto_confirm {
-                ui.label(RichText::new("Las solicitudes aparecen en la agenda para confirmarlas o rechazarlas con un clic, y su hueco queda reservado mientras tanto.").size(12.0).color(MUTED));
+                ui.label(RichText::new("Las solicitudes aparecen en la agenda para confirmarlas o rechazarlas con un clic, y su hueco queda reservado mientras tanto.").size(12.0).color(MUTED()));
             }
             ui.checkbox(&mut c.email_patient, "Avisar al paciente por correo al confirmar o rechazar (con la cita para su calendario)");
             if c.email_patient && !app.db.mail.ready() {
@@ -1398,7 +1398,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 });
             }
             ui.add_space(6.0);
-            ui.label(RichText::new("Texto de bienvenida").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("Texto de bienvenida").font(mdf(12.8)).color(MUTED()));
             ui.add(egui::TextEdit::multiline(&mut c.intro).desired_rows(2).desired_width(f32::INFINITY));
         });
         cols[0].add_space(8.0);
@@ -1418,7 +1418,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                     ui.label("antes (después, llamando)");
                 });
                 ui.checkbox(&mut c.ask_health, "Pedir el cuestionario de salud a quien no lo tiene o lo tiene de hace más de un año");
-                ui.label(RichText::new("Las respuestas llegan a la ficha sin firmar, para revisarlas con el paciente; las de riesgo (anticoagulantes, alergias…) se convierten en avisos. La página nunca muestra respuestas anteriores.").size(12.0).color(MUTED));
+                ui.label(RichText::new("Las respuestas llegan a la ficha sin firmar, para revisarlas con el paciente; las de riesgo (anticoagulantes, alergias…) se convierten en avisos. La página nunca muestra respuestas anteriores.").size(12.0).color(MUTED()));
             });
             if c.links && c.public_url.trim().is_empty() {
                 ui.label(RichText::new("Falta la dirección para los pacientes (https): sin ella el enlace sólo abre en este ordenador.").size(12.0).color(WARN));
@@ -1440,7 +1440,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             let mut remove = None;
             for (i, r) in c.reasons.iter_mut().enumerate() {
                 ui.add_space(6.0);
-                egui::Frame::new().fill(if r.active { ROW_ALT } else { CARD }).stroke(Stroke::new(1.0, HAIRLINE)).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
+                egui::Frame::new().fill(if r.active { ROW_ALT } else { CARD }).stroke(Stroke::new(1.0, HAIRLINE())).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.checkbox(&mut r.active, "").on_hover_text("Se ofrece en la página");
@@ -1452,7 +1452,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                         ui.add_space(6.0);
                         for (id, alias, _) in &docs {
                             let on = r.doctors.contains(id);
-                            let b = egui::Button::new(RichText::new(alias).size(12.0).color(if on { Color32::WHITE } else { MUTED })).fill(if on { ACCENT } else { CARD }).stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER })).corner_radius(CornerRadius::same(10));
+                            let b = egui::Button::new(RichText::new(alias).size(12.0).color(if on { Color32::WHITE } else { MUTED() })).fill(if on { ACCENT } else { CARD }).stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER() })).corner_radius(CornerRadius::same(10));
                             if ui.add(b).clicked() {
                                 if on {
                                     r.doctors.retain(|d| d != id);
@@ -1487,7 +1487,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 ui.horizontal_wrapped(|ui| {
                     for n in [2u32, 3, 4, 6, 10, 12, 18, 24] {
                         let on = c.installment_options.contains(&n);
-                        let b = egui::Button::new(RichText::new(n.to_string()).size(13.0).color(if on { Color32::WHITE } else { MUTED })).fill(if on { ACCENT } else { CARD }).stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER })).corner_radius(CornerRadius::same(10)).min_size(vec2(34.0, 26.0));
+                        let b = egui::Button::new(RichText::new(n.to_string()).size(13.0).color(if on { Color32::WHITE } else { MUTED() })).fill(if on { ACCENT } else { CARD }).stroke(Stroke::new(1.0, if on { ACCENT } else { BORDER() })).corner_radius(CornerRadius::same(10)).min_size(vec2(34.0, 26.0));
                         if ui.add(b).clicked() {
                             if on {
                                 c.installment_options.retain(|x| *x != n);
@@ -1501,9 +1501,9 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     ui.label("A partir de");
                     ui.add(egui::DragValue::new(&mut c.finance_min).range(0.0..=100000.0).speed(10.0).suffix(" €"));
-                    ui.label(RichText::new("de presupuesto").color(MUTED));
+                    ui.label(RichText::new("de presupuesto").color(MUTED()));
                 });
-                ui.label(RichText::new("Si el presupuesto ya tiene un plan de financiación, también se ofrece ese.").size(12.0).color(MUTED));
+                ui.label(RichText::new("Si el presupuesto ya tiene un plan de financiación, también se ofrece ese.").size(12.0).color(MUTED()));
             });
         });
         cols[1].add_space(8.0);
@@ -1522,9 +1522,9 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             ui.horizontal_wrapped(|ui| {
                 lab(ui, 210.0, RichText::new("Sólo con al menos").color(TEXT));
                 ui.add(egui::DragValue::new(&mut c.offer_min_hours).range(1..=72).suffix(" h"));
-                ui.label(RichText::new("de margen").color(MUTED));
+                ui.label(RichText::new("de margen").color(MUTED()));
             });
-            ui.label(RichText::new("Los huecos de anulaciones hechas en la clínica se ofrecen con un botón desde la agenda («Lista de espera»).").size(12.0).color(MUTED));
+            ui.label(RichText::new("Los huecos de anulaciones hechas en la clínica se ofrecen con un botón desde la agenda («Lista de espera»).").size(12.0).color(MUTED()));
         });
         cols[1].add_space(8.0);
         // ── historial ──

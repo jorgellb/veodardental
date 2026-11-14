@@ -17,10 +17,26 @@ pub const ACCENT_DARK: Color32 = Color32::from_rgb(15, 118, 110);
 pub const ACCENT_SOFT: Color32 = Color32::from_rgb(230, 246, 244);
 pub const HEADING: Color32 = Color32::from_rgb(11, 19, 36);
 pub const TEXT: Color32 = Color32::from_rgb(30, 41, 59);
-pub const MUTED: Color32 = Color32::from_rgb(100, 113, 135);
-pub const SUBTLE: Color32 = Color32::from_rgb(139, 151, 170);
-pub const BORDER: Color32 = Color32::from_rgb(228, 232, 239);
-pub const HAIRLINE: Color32 = Color32::from_rgb(238, 241, 246);
+/// Muted (más oscuro con el contraste alto: ver [`set_high_contrast`]).
+#[allow(non_snake_case)]
+pub fn MUTED() -> Color32 {
+    palette(high_contrast()).muted
+}
+/// Subtle (más oscuro con el contraste alto: ver [`set_high_contrast`]).
+#[allow(non_snake_case)]
+pub fn SUBTLE() -> Color32 {
+    palette(high_contrast()).subtle
+}
+/// Border (más oscuro con el contraste alto: ver [`set_high_contrast`]).
+#[allow(non_snake_case)]
+pub fn BORDER() -> Color32 {
+    palette(high_contrast()).border
+}
+/// Hairline (más oscuro con el contraste alto: ver [`set_high_contrast`]).
+#[allow(non_snake_case)]
+pub fn HAIRLINE() -> Color32 {
+    palette(high_contrast()).hairline
+}
 pub const DANGER: Color32 = Color32::from_rgb(220, 53, 69);
 pub const WARN: Color32 = Color32::from_rgb(217, 119, 6);
 pub const OK: Color32 = Color32::from_rgb(5, 150, 105);
@@ -28,6 +44,47 @@ pub const INFO: Color32 = Color32::from_rgb(37, 99, 235);
 pub const VIOLET: Color32 = Color32::from_rgb(124, 58, 237);
 pub const ROW_ALT: Color32 = Color32::from_rgb(249, 250, 252);
 pub const ROW_HOVER: Color32 = Color32::from_rgb(243, 248, 250);
+
+static HIGH_CONTRAST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// ¿Contraste alto en este puesto? (ver [`Display`])
+pub fn high_contrast() -> bool {
+    HIGH_CONTRAST.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_high_contrast(on: bool) {
+    HIGH_CONTRAST.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Los colores secundarios con y sin contraste alto.
+pub struct Palette {
+    pub muted: Color32,
+    pub subtle: Color32,
+    pub border: Color32,
+    pub hairline: Color32,
+}
+
+pub fn palette(high: bool) -> Palette {
+    if high {
+        Palette { muted: Color32::from_rgb(55, 65, 81), subtle: Color32::from_rgb(68, 77, 92), border: Color32::from_rgb(107, 114, 128), hairline: Color32::from_rgb(156, 163, 175) }
+    } else {
+        Palette { muted: Color32::from_rgb(100, 113, 135), subtle: Color32::from_rgb(139, 151, 170), border: Color32::from_rgb(228, 232, 239), hairline: Color32::from_rgb(238, 241, 246) }
+    }
+}
+
+/// Contraste entre dos colores (WCAG 2.1: de 1 a 21), para las pruebas.
+#[cfg(test)]
+pub fn contrast_ratio(a: Color32, b: Color32) -> f64 {
+    let lum = |c: Color32| {
+        let ch = |x: u8| {
+            let v = x as f64 / 255.0;
+            if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+    };
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
 
 pub fn rgb(c: [u8; 3]) -> Color32 {
     Color32::from_rgb(c[0], c[1], c[2])
@@ -111,7 +168,7 @@ pub fn apply(ctx: &egui::Context) {
     v.selection.bg_fill = Color32::from_rgb(204, 235, 231);
     v.selection.stroke = Stroke::new(1.5, ACCENT);
     v.hyperlink_color = ACCENT_DARK;
-    v.window_stroke = Stroke::new(1.0, BORDER);
+    v.window_stroke = Stroke::new(1.0, BORDER());
     v.window_corner_radius = CornerRadius::same(18);
     v.menu_corner_radius = CornerRadius::same(12);
     v.popup_shadow = egui::Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 26) };
@@ -119,7 +176,7 @@ pub fn apply(ctx: &egui::Context) {
     let radius = CornerRadius::same(10);
     let w = &mut v.widgets;
     // separadores y bordes de tarjetas
-    w.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
+    w.noninteractive.bg_stroke = Stroke::new(1.0, BORDER());
     w.noninteractive.fg_stroke = Stroke::new(1.0, TEXT);
     w.noninteractive.corner_radius = radius;
     // botones normales: blancos con borde fino
@@ -162,6 +219,87 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_global_style(style);
 }
 
+/// Pantalla de este puesto (T-F6-06): modo tableta (controles y texto más
+/// grandes para el dedo) y contraste alto. Se guarda en este ordenador
+/// (`pantalla.json`), no en los datos de la clínica.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Display {
+    #[serde(default)]
+    pub tablet: bool,
+    #[serde(default)]
+    pub high_contrast: bool,
+}
+
+fn display_path() -> std::path::PathBuf {
+    crate::paths::config().join(crate::brand::DIR).join("pantalla.json")
+}
+
+pub fn load_display() -> Display {
+    if cfg!(test) {
+        return Display::default();
+    }
+    std::fs::read_to_string(display_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+pub fn save_display(d: Display) -> Result<(), String> {
+    if cfg!(test) {
+        return Ok(());
+    }
+    let p = display_path();
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&p, serde_json::to_string_pretty(&d).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Tamaño mínimo de lo que se toca con el dedo en el modo tableta.
+pub const TOUCH: Vec2 = vec2(52.0, 48.0);
+
+/// El estilo con el ajuste de pantalla de este puesto.
+pub fn apply_display(ctx: &egui::Context, d: Display) {
+    set_high_contrast(d.high_contrast);
+    apply(ctx);
+    let mut style = (*ctx.global_style()).clone();
+    if d.tablet {
+        style.spacing.interact_size = TOUCH;
+        style.spacing.button_padding = vec2(20.0, 12.0);
+        style.spacing.item_spacing = vec2(12.0, 12.0);
+        style.spacing.icon_width = 24.0;
+        style.spacing.icon_width_inner = 14.0;
+        // barras de desplazamiento anchas y siempre visibles (flotantes: no
+        // quitan sitio a la pantalla)
+        let mut sc = egui::style::ScrollStyle::thin();
+        sc.bar_width = 14.0;
+        sc.floating_width = 14.0;
+        sc.dormant_handle_opacity = 0.7;
+        sc.dormant_background_opacity = 0.3;
+        style.spacing.scroll = sc;
+        use egui::TextStyle::*;
+        style.text_styles.insert(Body, FontId::proportional(17.0));
+        style.text_styles.insert(Button, mdf(16.5));
+        style.text_styles.insert(Small, FontId::proportional(14.0));
+    }
+    if d.high_contrast {
+        let v = &mut style.visuals;
+        v.override_text_color = Some(Color32::from_rgb(10, 15, 25));
+        v.selection.stroke = Stroke::new(2.5, ACCENT_DARK);
+        v.window_stroke = Stroke::new(1.5, BORDER());
+        let w = &mut v.widgets;
+        w.noninteractive.bg_stroke = Stroke::new(1.5, BORDER());
+        w.inactive.bg_stroke = Stroke::new(1.5, Color32::from_rgb(75, 85, 99));
+        w.inactive.fg_stroke = Stroke::new(1.5, Color32::from_rgb(10, 15, 25));
+        w.hovered.bg_stroke = Stroke::new(2.0, Color32::from_rgb(17, 24, 39));
+        w.active.bg_stroke = Stroke::new(2.0, ACCENT_DARK);
+    }
+    ctx.set_global_style(style);
+}
+
+/// Una línea de texto que no ensancha lo que la contiene: si no cabe, se
+/// corta con «…» y el texto entero sale al pasar por encima.
+pub fn line(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.add(egui::Label::new(text).truncate())
+}
+
 /// Degradado vertical (para el menú lateral y las cabeceras).
 pub fn vgradient(p: &Painter, r: Rect, top: Color32, bottom: Color32) {
     let mut m = Mesh::default();
@@ -183,7 +321,7 @@ pub fn chevron(_ui: &Ui, rect: Rect, v: &egui::style::WidgetVisuals, open: bool)
     } else if v.bg_stroke.color == ACCENT {
         ACCENT_DARK
     } else {
-        MUTED
+        MUTED()
     };
     let s = Stroke::new(1.6, col);
     let dir = if open { -1.0 } else { 1.0 };
@@ -258,7 +396,7 @@ pub fn radial_glow(p: &Painter, center: egui::Pos2, radius: f32, color: Color32,
 }
 
 pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER)).corner_radius(CornerRadius::same(16)).inner_margin(Margin::symmetric(22, 20)).shadow(shadow()).show(ui, add).inner
+    Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER())).corner_radius(CornerRadius::same(16)).inner_margin(Margin::symmetric(22, 20)).shadow(shadow()).show(ui, add).inner
 }
 
 /// Título de pantalla con subtítulo.
@@ -270,7 +408,7 @@ pub fn title(ui: &mut Ui, text: &str, sub: &str) {
         ui.add_space(2.0);
         ui.label(RichText::new(text).font(bf(27.0)).color(HEADING));
         if !sub.is_empty() {
-            ui.label(RichText::new(sub).font(mdf(14.0)).color(MUTED));
+            ui.label(RichText::new(sub).font(mdf(14.0)).color(MUTED()));
         }
         ui.add_space(12.0);
     });
@@ -282,7 +420,7 @@ pub fn section(ui: &mut Ui, text: &str) {
 }
 
 pub fn muted(ui: &mut Ui, text: impl Into<String>) {
-    ui.label(RichText::new(text.into()).color(MUTED).size(13.8));
+    ui.label(RichText::new(text.into()).color(MUTED()).size(13.8));
 }
 
 /// Etiqueta de color redondeada.
@@ -321,7 +459,7 @@ pub fn kpi_icon(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, co
     let r = CornerRadius::same(16);
     p.add(shadow().as_shape(rect, r));
     p.rect_filled(rect, r, CARD);
-    p.rect_stroke(rect, r, Stroke::new(1.0, BORDER), StrokeKind::Inside);
+    p.rect_stroke(rect, r, Stroke::new(1.0, BORDER()), StrokeKind::Inside);
     // icono en un cuadrado redondeado de color (solo si hay sitio)
     let x = match icon {
         Some(s) if width >= 210.0 => {
@@ -338,7 +476,7 @@ pub fn kpi_icon(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, co
     };
     let label_x = if x == 20.0 { 36.0 } else { x };
     let clip = p.with_clip_rect(rect.shrink(2.0));
-    clip.text(rect.min + vec2(label_x, 20.0), Align2::LEFT_TOP, label, mdf(13.2), MUTED);
+    clip.text(rect.min + vec2(label_x, 20.0), Align2::LEFT_TOP, label, mdf(13.2), MUTED());
     // el importe se reduce para que quepa entero en la tarjeta
     let room = rect.width() - x - 16.0;
     let mut size = 26.0;
@@ -378,7 +516,7 @@ pub fn field(ui: &mut Ui, label: &str, value: &mut String, width: f32) -> egui::
     // de la ventana (a 1280 px de ancho)
     let w = want.min(ui.available_width().max(60.0));
     ui.vertical(|ui| {
-        ui.label(RichText::new(label).font(mdf(12.8)).color(MUTED));
+        ui.label(RichText::new(label).font(mdf(12.8)).color(MUTED()));
         ui.add_space(-3.0);
         ui.add_sized([w, 36.0], egui::TextEdit::singleline(value).margin(vec2(10.0, 8.0)))
     })
@@ -390,13 +528,13 @@ pub fn info_row(ui: &mut Ui, label: &str, value: &str) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 34.0), Sense::hover());
     let p = ui.painter();
-    p.text(pos2(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, mdf(13.4), MUTED);
+    p.text(pos2(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, mdf(13.4), MUTED());
     let vx = rect.left() + 130.0f32.min(w * 0.4);
     let mut job = egui::text::LayoutJob::simple_singleline(if value.is_empty() { "—".to_string() } else { value.to_string() }, mdf(14.2), HEADING);
     job.wrap = egui::text::TextWrapping::truncate_at_width(rect.right() - vx);
     let g = p.layout_job(job);
     p.galley(pos2(vx, rect.center().y - g.size().y / 2.0), g, HEADING);
-    p.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, HAIRLINE));
+    p.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, HAIRLINE()));
     ui.add_space(-ui.spacing().item_spacing.y + 2.0);
 }
 
@@ -445,7 +583,7 @@ impl<'a> Table<'a> {
         let mut x = rect.min.x + 14.0;
         for (name, cw) in &self.cols {
             let clip = Rect::from_min_size(pos2(x, rect.min.y), vec2(cw * k - 6.0, rect.height()));
-            p.with_clip_rect(clip).text(pos2(x, rect.center().y), Align2::LEFT_CENTER, name.to_uppercase(), sbf(11.3), SUBTLE);
+            p.with_clip_rect(clip).text(pos2(x, rect.center().y), Align2::LEFT_CENTER, name.to_uppercase(), sbf(11.3), SUBTLE());
             x += cw * k;
         }
         ui.add_space(-4.0);
@@ -464,7 +602,7 @@ impl<'a> Table<'a> {
         } else if resp.hovered() {
             p.rect_filled(rect, CornerRadius::same(8), ROW_HOVER);
         }
-        p.hline(rect.x_range().shrink(6.0), rect.max.y - 0.5, Stroke::new(1.0, HAIRLINE));
+        p.hline(rect.x_range().shrink(6.0), rect.max.y - 0.5, Stroke::new(1.0, HAIRLINE()));
         let mut x = rect.min.x + 14.0;
         for (i, (_, cw)) in self.cols.iter().enumerate() {
             let cw = cw * k;
@@ -500,9 +638,9 @@ pub fn empty_state(ui: &mut Ui, text: &str) {
     ui.vertical_centered(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(44.0, 44.0), Sense::hover());
         ui.painter().circle_filled(r.center(), 22.0, Color32::from_rgb(240, 244, 248));
-        ui.painter().circle_stroke(r.center(), 9.0, Stroke::new(2.0, SUBTLE));
+        ui.painter().circle_stroke(r.center(), 9.0, Stroke::new(2.0, SUBTLE()));
         ui.add_space(6.0);
-        ui.label(RichText::new(text).color(MUTED).size(14.5));
+        ui.label(RichText::new(text).color(MUTED()).size(14.5));
     });
     ui.add_space(22.0);
 }
@@ -531,4 +669,28 @@ pub fn lab(ui: &mut Ui, w: f32, text: impl Into<egui::WidgetText>) -> egui::Resp
         ui.add(egui::Label::new(text).truncate())
     })
     .inner
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Contraste (WCAG 2.1) sobre el blanco de las tarjetas y el fondo: el
+    /// texto secundario, al menos 4,5 (AA); con contraste alto, 7 (AAA) el
+    /// texto y 3 los bordes (componentes de la interfaz).
+    #[test]
+    fn the_secondary_colours_meet_the_contrast_levels() {
+        for bg in [CARD, BG] {
+            let n = palette(false);
+            assert!(contrast_ratio(n.muted, bg) >= 4.5, "texto secundario normal: {:.2}", contrast_ratio(n.muted, bg));
+            assert!(contrast_ratio(TEXT, bg) >= 7.0 && contrast_ratio(HEADING, bg) >= 7.0);
+            let h = palette(true);
+            for (name, c) in [("secundario", h.muted), ("tenue", h.subtle)] {
+                assert!(contrast_ratio(c, bg) >= 7.0, "{name} con contraste alto: {:.2}", contrast_ratio(c, bg));
+            }
+            assert!(contrast_ratio(h.border, bg) >= 3.0, "bordes con contraste alto: {:.2}", contrast_ratio(h.border, bg));
+            assert!(contrast_ratio(h.hairline, bg) > contrast_ratio(n.hairline, bg));
+        }
+        assert!((contrast_ratio(Color32::BLACK, Color32::WHITE) - 21.0).abs() < 0.01);
+    }
 }

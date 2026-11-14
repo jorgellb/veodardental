@@ -1960,3 +1960,41 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 542 pasan (540 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-074 T-F6-06: modo tableta (controles grandes, contraste ajustable y uso sin ratón)
+- **Hecho (`theme::Display`, ajuste de cada aparato en `pantalla.json`, no de la clínica):**
+  - Se activa desde el menú del usuario (arriba a la derecha), que tiene todo el mundo: «Modo tableta» y «Contraste alto».
+  - **Modo tableta:**
+    - lo que se toca, al menos de 52 × 48 (`theme::TOUCH`);
+    - más relleno y separación;
+    - casillas e iconos más grandes;
+    - texto algo mayor;
+    - barras de desplazamiento anchas y siempre visibles, flotantes para no quitar sitio.
+  - **Contraste alto:** los colores secundarios (`MUTED`, `SUBTLE`, `BORDER`, `HAIRLINE`) pasan a ser funciones que miran el ajuste, y así cambian en toda la aplicación. Además, texto más oscuro, bordes y foco más gruesos.
+  - **Sin ratón:** Ctrl+F lleva a la búsqueda y Enter abre el primer paciente (antes había que pulsarlo). egui ya recorre los controles con Tab y los activa con Enter o espacio.
+  - **Arreglado por la prueba de pantalla:**
+    - con letra grande, filas largas en columnas (citas, recalls, llamadas, trabajos de laboratorio) ensanchaban todo lo de debajo. Ahora se recortan con «…» (`theme::line`) y el texto entero sale al pasar por encima;
+    - la fila de pestañas de Comunicaciones se parte en dos líneas si no cabe;
+    - el sitio para «Enviar» se reserva según el tamaño de los botones.
+  - **De paso:** la prueba de anchura a 1280 no recorría la pestaña Informes › Grupo de clínicas. Ahora sí, y cabe.
+- **Pruebas:**
+  - `theme::tests::the_secondary_colours_meet_the_contrast_levels`, con la fórmula de contraste de WCAG 2.1 sobre el blanco y el fondo:
+    - el texto secundario normal, al menos 4,5 (AA);
+    - con contraste alto, el texto secundario y el tenue, al menos 7 (AAA), y los bordes, al menos 3.
+
+    El tenue se oscureció un punto: daba 6,98.
+  - `ui_tests::tablet_mode_has_touch_sized_controls_and_fits_1280`:
+    - tamaño del dedo en el estilo y en un botón real (al menos 44 de alto);
+    - Inicio, Agenda, Pacientes, Cobros, Caja, Comunicaciones y la ficha (Resumen, Odontograma, Historial, Cuenta, Citas) caben a 1280×800;
+    - el contraste alto oscurece el texto secundario y se deja como estaba.
+
+    En la primera pasada encontró los desbordes de arriba.
+  - `ui_tests::a_patient_is_found_and_opened_with_the_keyboard`: Ctrl+F, escribir con el teclado y Enter abre la ficha.
+  - `ui_tests::every_screen_fits_1280_wide`, ahora con la pestaña 10 de Informes.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 545 pasan (543 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

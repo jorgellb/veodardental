@@ -286,11 +286,11 @@ fn password_card(app: &mut App, ui: &mut Ui) {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new(if key.is_some() { "Nueva contraseña" } else { "Contraseña de las copias" }).size(13.5).color(MUTED));
+                ui.label(RichText::new(if key.is_some() { "Nueva contraseña" } else { "Contraseña de las copias" }).size(13.5).color(MUTED()));
                 ui.add_sized([230.0, 34.0], egui::TextEdit::singleline(&mut app.tools.key_pw).password(true));
             });
             ui.vertical(|ui| {
-                ui.label(RichText::new("Repítala").size(13.5).color(MUTED));
+                ui.label(RichText::new("Repítala").size(13.5).color(MUTED()));
                 ui.add_sized([230.0, 34.0], egui::TextEdit::singleline(&mut app.tools.key_pw2).password(true));
             });
             ui.vertical(|ui| {
@@ -304,7 +304,7 @@ fn password_card(app: &mut App, ui: &mut Ui) {
         if let Some(k) = &key {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("¿La recuerda?").size(13.5).color(MUTED));
+                ui.label(RichText::new("¿La recuerda?").size(13.5).color(MUTED()));
                 ui.add_sized([230.0, 34.0], egui::TextEdit::singleline(&mut app.tools.key_test).password(true).hint_text("Escríbala para probarla"));
                 if ui.button("Probar").clicked() {
                     app.tools.key_msg = Some(if k.matches(&app.tools.key_test) { (true, "Es la contraseña de las copias.".into()) } else { (false, "No es la contraseña de las copias.".into()) });
@@ -417,7 +417,7 @@ fn restore_dialog(app: &mut App, ctx: &egui::Context) {
             }
             Ok(db) => {
                 ui.label(RichText::new(format!("La copia contiene: {}", summary(db))).color(OK));
-                ui.label(RichText::new(format!("Datos actuales: {}", summary(&app.db))).color(MUTED));
+                ui.label(RichText::new(format!("Datos actuales: {}", summary(&app.db))).color(MUTED()));
                 ui.add_space(6.0);
                 ui.label(RichText::new("Los datos actuales se sustituirán por los de la copia. Antes se guardará automáticamente una copia de los datos actuales.").color(WARN));
                 ui.add_space(8.0);
@@ -628,7 +628,7 @@ pub fn listin(app: &mut App, ui: &mut Ui) {
                         field(ui, "Móvil", &mut c.mobile, 130.0);
                     });
                     field(ui, "Email", &mut c.email, 300.0);
-                    ui.label(RichText::new("Notas").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Notas").size(13.5).color(MUTED()));
                     ui.add(egui::TextEdit::multiline(&mut c.notes).desired_rows(3).desired_width(f32::INFINITY));
                     if serde_json::to_string(c).unwrap_or_default() != before {
                         app.dirty = true;
@@ -841,7 +841,7 @@ pub fn consultas(app: &mut App, ui: &mut Ui) {
                             cell(&p.city),
                             cell(app.db.tariff_name(p.tariff_id)),
                             cell(app.db.last_visit(*id).map(fmt_date).unwrap_or_else(|| "nunca".into())),
-                            cellc(money(bal), if bal > 0.005 { DANGER } else { MUTED }),
+                            cellc(money(bal), if bal > 0.005 { DANGER } else { MUTED() }),
                         ],
                     )
                     .clicked()

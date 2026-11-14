@@ -21,9 +21,9 @@ fn state_pill(ui: &mut Ui, r: &PayRequest, now: chrono::NaiveDateTime) {
         PayState::Pendiente => ("Pendiente de pago", INFO),
         PayState::Pagado if r.refund_due => ("Pagado · hay que devolver", DANGER),
         PayState::Pagado => ("Pagado", OK),
-        PayState::Retenido => ("Señal retenida", MUTED),
-        PayState::Devuelto => ("Devuelto", MUTED),
-        PayState::Anulado => ("Anulado", MUTED),
+        PayState::Retenido => ("Señal retenida", MUTED()),
+        PayState::Devuelto => ("Devuelto", MUTED()),
+        PayState::Anulado => ("Anulado", MUTED()),
     };
     pill(ui, t, c);
 }
@@ -98,7 +98,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         let (st, col) = match r.state {
             PayState::Pendiente if !r.uncertain(now).is_empty() => ("Sin confirmar", WARN),
             PayState::Pagado if r.refund_due => ("Hay que devolver", DANGER),
-            s => (s.label(), if s == PayState::Pagado { OK } else { MUTED }),
+            s => (s.label(), if s == PayState::Pagado { OK } else { MUTED() }),
         };
         let sel = app.booking.pay_sel == Some(r.id);
         if tbl.row(ui, i, sel, &[cell(r.created.format("%d/%m/%Y").to_string()), cell(app.db.patient_name(r.patient_id)), cell(&r.concept), cell(crate::cents::Cents(r.amount).to_string()), cellc(st, col)]).clicked() {
@@ -252,7 +252,7 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
             ui.add(egui::DragValue::new(&mut c.deposit.refund_hours).range(0..=720).suffix(" h"));
         });
         if c.deposit.amount > 0 {
-            ui.label(RichText::new(format!("Lo que verá el paciente: «{}»", c.deposit.text())).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("Lo que verá el paciente: «{}»", c.deposit.text())).size(12.5).color(MUTED()));
         }
     });
     if app.db.config.pay_online != before {

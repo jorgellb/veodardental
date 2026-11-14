@@ -235,9 +235,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     if app.agenda.view == View::Dia {
                         let mut on = !app.agenda.hidden.contains(&c.id);
                         let dc = rgb(c.color);
-                        let b = egui::Button::new(RichText::new(format!("●  {}", c.alias)).font(mdf(13.5)).color(if on { mix(dc, HEADING, 0.35) } else { SUBTLE }))
+                        let b = egui::Button::new(RichText::new(format!("●  {}", c.alias)).font(mdf(13.5)).color(if on { mix(dc, HEADING, 0.35) } else { SUBTLE() }))
                             .fill(if on { tint(dc, 0.13) } else { CARD })
-                            .stroke(Stroke::new(1.0, if on { tint(dc, 0.45) } else { BORDER }))
+                            .stroke(Stroke::new(1.0, if on { tint(dc, 0.45) } else { BORDER() }))
                             .corner_radius(CornerRadius::same(17))
                             .min_size(vec2(0.0, 34.0));
                         if ui.add(b).clicked() {
@@ -261,7 +261,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 });
             });
             ui.add_space(4.0);
-            egui::Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER)).corner_radius(CornerRadius::same(12)).show(ui, |ui| {
+            egui::Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER())).corner_radius(CornerRadius::same(12)).show(ui, |ui| {
                 egui::ScrollArea::vertical().id_salt("agd_scroll").auto_shrink([false, false]).max_height(avail.y - 70.0).show(ui, |ui| {
                     grid(app, ui);
                 });
@@ -335,9 +335,9 @@ fn grid(app: &mut App, ui: &mut Ui) {
         p.rect_filled(hr.shrink(2.0), CornerRadius::same(6), if is_today && app.agenda.view == View::Semana { tint(ACCENT, 0.15) } else { tint(c.color, 0.12) });
         p.with_clip_rect(hr.shrink2(vec2(6.0, 0.0)).with_max_x(hr.max.x - 22.0)).text(hr.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, &c.title, FontId::proportional(14.5), TEXT);
         let n = app.db.appointments.iter().filter(|a| a.date == c.date && a.doctor_id == c.doctor && !a.state.is_cancelled()).count();
-        p.text(hr.right_center() - vec2(8.0, 0.0), Align2::RIGHT_CENTER, n.to_string(), FontId::proportional(12.5), MUTED);
+        p.text(hr.right_center() - vec2(8.0, 0.0), Align2::RIGHT_CENTER, n.to_string(), FontId::proportional(12.5), MUTED());
         if i > 0 {
-            p.line_segment([pos2(x, rect.min.y + head_h), pos2(x, rect.max.y)], Stroke::new(1.0, BORDER));
+            p.line_segment([pos2(x, rect.min.y + head_h), pos2(x, rect.max.y)], Stroke::new(1.0, BORDER()));
         }
         // fuera del horario del profesional (o de la clínica), en gris
         if app.db.holiday(c.date).is_none() {
@@ -352,7 +352,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
             }
             if shifts.is_empty() {
                 let why = if app.db.clinic_day(c.date).is_empty() { "Cerrado" } else { "No pasa consulta" };
-                p.text(pos2(x + col_w / 2.0, y_of(open) + 40.0), Align2::CENTER_CENTER, why, FontId::proportional(14.0), MUTED);
+                p.text(pos2(x + col_w / 2.0, y_of(open) + 40.0), Align2::CENTER_CENTER, why, FontId::proportional(14.0), MUTED());
             }
         }
         if let Some(h) = app.db.holiday(c.date) {
@@ -367,7 +367,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
         let full = m % 60 == 0;
         p.line_segment([pos2(rect.min.x + time_w, y), pos2(rect.max.x, y)], Stroke::new(1.0, if full { Color32::from_rgb(222, 228, 236) } else { Color32::from_rgb(242, 245, 248) }));
         if m % 30 == 0 && m < close {
-            p.text(pos2(rect.min.x + time_w - 8.0, y), Align2::RIGHT_TOP, format!("{:02}:{:02}", m / 60, m % 60), FontId::proportional(if full { 12.0 } else { 10.5 }), if full { TEXT } else { MUTED });
+            p.text(pos2(rect.min.x + time_w - 8.0, y), Align2::RIGHT_TOP, format!("{:02}:{:02}", m / 60, m % 60), FontId::proportional(if full { 12.0 } else { 10.5 }), if full { TEXT } else { MUTED() });
         }
         m += 15;
     }
@@ -383,7 +383,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
                 ph.line_segment([pos2(xx, r.max.y), pos2(xx + r.height(), r.min.y)], Stroke::new(1.0, Color32::from_rgb(222, 226, 232)));
                 xx += 9.0;
             }
-            p.text(r.center(), Align2::CENTER_CENTER, &b.reason, FontId::proportional(13.5), MUTED);
+            p.text(r.center(), Align2::CENTER_CENTER, &b.reason, FontId::proportional(13.5), MUTED());
         }
     }
     // citas pedidas por internet, aún por confirmar: contorno discontinuo
@@ -400,7 +400,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
         let clip = p.with_clip_rect(rr.shrink(3.0));
         clip.text(rr.min + vec2(10.0, 5.0), Align2::LEFT_TOP, format!("{} {} · por internet", hm(r.start), r.name), FontId::proportional(13.0), mix(violet, HEADING, 0.3));
         if rr.height() > 34.0 {
-            clip.text(rr.min + vec2(10.0, 23.0), Align2::LEFT_TOP, format!("{} · por confirmar", r.reason), FontId::proportional(12.0), MUTED);
+            clip.text(rr.min + vec2(10.0, 23.0), Align2::LEFT_TOP, format!("{} · por confirmar", r.reason), FontId::proportional(12.0), MUTED());
         }
         ui.interact(rr, ui.scope_id().with(("req", r.id)), Sense::hover()).on_hover_text("Cita pedida por internet: confírmela o recházela en el panel de la derecha.");
     }
@@ -474,7 +474,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
         let clip = p.with_clip_rect(r.shrink(2.0));
         let name = app.db.appt_name(a);
         let alert = a.patient_id.and_then(|id| app.db.patient(id)).map(|p| !p.alerts.is_empty() || !p.allergies.is_empty()).unwrap_or(false);
-        let tc = if cancelled { MUTED } else { TEXT };
+        let tc = if cancelled { MUTED() } else { TEXT };
         // en un carril estrecho (citas solapadas), primero el nombre: la hora ya
         // se ve por dónde empieza la cita
         let mut line1 = if r.width() < 150.0 { format!("{name} · {}", hm(a.start)) } else { format!("{} {}", hm(a.start), name) };
@@ -509,7 +509,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
             clip.galley(br.min + vec2(4.0, 1.0), g, col);
         }
         if r.height() > 30.0 {
-            clip.text(r.min + vec2(12.0, 21.0), Align2::LEFT_TOP, format!("{} · {}", a.reason, a.state.label()), FontId::proportional(12.5), if cancelled { MUTED } else { mix(st_col, HEADING, 0.15) });
+            clip.text(r.min + vec2(12.0, 21.0), Align2::LEFT_TOP, format!("{} · {}", a.reason, a.state.label()), FontId::proportional(12.5), if cancelled { MUTED() } else { mix(st_col, HEADING, 0.15) });
         }
         if let Some(t) = wait_text {
             clip.text(r.right_top() + vec2(-6.0, 5.0), Align2::RIGHT_TOP, t, mdf(12.0), WARN);
@@ -735,7 +735,7 @@ fn side(app: &mut App, ui: &mut Ui) {
                     }
                 });
             });
-            ui.label(RichText::new(format!("{} · {} · {}", w.reason, app.db.doctor_alias(w.doctor_id), w.preference)).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("{} · {} · {}", w.reason, app.db.doctor_alias(w.doctor_id), w.preference)).size(12.5).color(MUTED()));
             ui.add_space(4.0);
         }
         if let Some(id) = remove {
@@ -850,11 +850,11 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Fecha").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Fecha").size(13.5).color(MUTED()));
                     crate::screens::date_picker(ui, "appt_date", &mut d.a.date);
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Hora").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Hora").size(13.5).color(MUTED()));
                     ui.horizontal(|ui| {
                         let mut h = d.a.start.hour();
                         let mut m = d.a.start.minute();
@@ -866,11 +866,11 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     });
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Duración").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Duración").size(13.5).color(MUTED()));
                     ui.add(egui::DragValue::new(&mut d.a.minutes).range(5..=480).speed(5).suffix(" min"));
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Doctor").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Doctor").size(13.5).color(MUTED()));
                     crate::theme::combo("dlg_doc").width(150.0).selected_text(app.db.doctor_alias(d.a.doctor_id)).show_ui(ui, |ui| {
                         for c in app.db.collaborators.iter().filter(|c| c.active) {
                             ui.selectable_value(&mut d.a.doctor_id, c.id, &c.alias);
@@ -878,7 +878,7 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     });
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Gabinete").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Gabinete").size(13.5).color(MUTED()));
                     crate::theme::combo("dlg_box").width(140.0).selected_text(app.db.box_name(d.a.box_id)).show_ui(ui, |ui| {
                         for b in app.db.boxes.iter().filter(|b| cid(b.center_id) == cid(app.db.config.current_center)) {
                             ui.selectable_value(&mut d.a.box_id, b.id, &b.name);
@@ -888,7 +888,7 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
             });
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Tratamiento").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Tratamiento").size(13.5).color(MUTED()));
                     let before = d.a.treatment_code.clone();
                     let tariff = d.a.patient_id.and_then(|pid| app.db.patient(pid)).map(|p| p.tariff_id).unwrap_or(1);
                     crate::screens::treatment_picker(ui, "dlg_tto", &app.db, tariff, &mut d.a.treatment_code, 260.0, |t| t.minutes > 0, |t| format!("{} ({} min)", t.description, t.minutes));
@@ -901,7 +901,7 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                 });
                 field(ui, "Motivo", &mut d.a.reason, 300.0);
             });
-            ui.label(RichText::new("Situación").size(13.5).color(MUTED));
+            ui.label(RichText::new("Situación").size(13.5).color(MUTED()));
             ui.horizontal_wrapped(|ui| {
                 for st in ApptState::ALL {
                     let sel = d.a.state == st;
@@ -947,7 +947,7 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
             {
                 ui.label(RichText::new(t).color(crate::screens::whatsapp::WA_GREEN));
             }
-            ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
+            ui.label(RichText::new("Observaciones").size(13.5).color(MUTED()));
             ui.add(egui::TextEdit::multiline(&mut d.a.notes).desired_rows(2).desired_width(f32::INFINITY));
             // enlace personal de la cita (cita online activada)
             if !d.is_new && app.db.booking.enabled && app.db.booking.links {

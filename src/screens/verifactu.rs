@@ -185,7 +185,7 @@ pub fn draw_qr(ui: &mut Ui, text: &str, size: f32) -> egui::Response {
             }
         }
     }
-    p.rect_stroke(rect, CornerRadius::same(6), Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
+    p.rect_stroke(rect, CornerRadius::same(6), Stroke::new(1.0, BORDER()), egui::StrokeKind::Inside);
     resp
 }
 
@@ -194,7 +194,7 @@ fn state_color(st: &AeatStatus) -> Color32 {
         "Correcto" => OK,
         "AceptadoConErrores" => WARN,
         "Incorrecto" => DANGER,
-        "NoAplica" => MUTED,
+        "NoAplica" => MUTED(),
         _ => INFO,
     }
 }
@@ -202,7 +202,7 @@ fn state_color(st: &AeatStatus) -> Color32 {
 /// Recuadro VERI*FACTU del diálogo de una factura: QR, leyenda y estado del envío.
 pub fn invoice_box(app: &mut App, ui: &mut Ui, f: &Invoice) {
     let enabled = app.db.verifactu.active();
-    egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE)).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(18, 14)).show(ui, |ui| {
+    egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE())).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(18, 14)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_top(|ui| {
             if enabled {
@@ -233,7 +233,7 @@ pub fn invoice_box(app: &mut App, ui: &mut Ui, f: &Invoice) {
                             pill(ui, w, INFO);
                         }
                         if before && st.state.is_empty() {
-                            pill(ui, "Emitida antes de activar VERI*FACTU", MUTED);
+                            pill(ui, "Emitida antes de activar VERI*FACTU", MUTED());
                         } else {
                             pill(ui, st.label(), state_color(&st));
                         }
@@ -251,7 +251,7 @@ pub fn invoice_box(app: &mut App, ui: &mut Ui, f: &Invoice) {
                     }
                 }
                 ui.label(RichText::new(format!("Huella: {}", f.hash)).monospace().size(12.0));
-                ui.label(RichText::new(format!("Huella anterior: {}", if f.prev_hash.is_empty() { "(primer registro)".into() } else { f.prev_hash.clone() })).monospace().size(12.0).color(MUTED));
+                ui.label(RichText::new(format!("Huella anterior: {}", if f.prev_hash.is_empty() { "(primer registro)".into() } else { f.prev_hash.clone() })).monospace().size(12.0).color(MUTED()));
                 if !enabled {
                     muted(ui, "La huella encadena cada factura con la anterior: cualquier cambio posterior se detecta con «Verificar integridad». Active el envío a la AEAT en Facturas › VERI*FACTU.");
                 }
@@ -465,14 +465,14 @@ fn settings_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
         muted(ui, "Cada factura que se emita se envía a la AEAT con su huella encadenada y lleva impreso el código QR con la leyenda «VERI*FACTU». Las facturas emitidas antes de activarlo no se envían.");
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Entorno").font(mdf(13.0)).color(MUTED));
+            ui.label(RichText::new("Entorno").font(mdf(13.0)).color(MUTED()));
             for e in [Env::Pruebas, Env::Produccion] {
                 if ui.selectable_label(cfg.env == e, e.label()).clicked() {
                     cfg.env = e;
                 }
             }
             ui.add_space(12.0);
-            ui.label(RichText::new("Certificado").font(mdf(13.0)).color(MUTED));
+            ui.label(RichText::new("Certificado").font(mdf(13.0)).color(MUTED()));
             ui.radio_value(&mut cfg.seal, false, "De la persona o representante");
             ui.radio_value(&mut cfg.seal, true, "Sello electrónico de la empresa");
         });
@@ -519,7 +519,7 @@ fn settings_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
         ui.horizontal_wrapped(|ui| {
             field(ui, "Fichero del certificado (.p12 / .pfx)", &mut c.path, 340.0);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Contraseña").font(mdf(12.8)).color(MUTED));
+                ui.label(RichText::new("Contraseña").font(mdf(12.8)).color(MUTED()));
                 ui.add_sized([180.0, 36.0], egui::TextEdit::singleline(&mut c.password).password(!show));
             });
         });
@@ -633,9 +633,9 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 let st = it.aeat();
                 let before = since.map(|s| it.created() < s).unwrap_or(false) && st.state.is_empty();
                 let (label, col) = if !enabled && st.state.is_empty() {
-                    ("Sin enviar", MUTED)
+                    ("Sin enviar", MUTED())
                 } else if before {
-                    ("Anterior a VERI*FACTU", MUTED)
+                    ("Anterior a VERI*FACTU", MUTED())
                 } else {
                     (st.label(), state_color(st))
                 };
@@ -659,7 +659,7 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                         cell(&f.client_name),
                         cell(money(f.total())),
                         cellc(label, col),
-                        cellc(note, if st.sent_ok() { MUTED } else { DANGER }),
+                        cellc(note, if st.sent_ok() { MUTED() } else { DANGER }),
                     ],
                 ))
             })

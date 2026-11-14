@@ -179,7 +179,7 @@ fn editor(app: &mut App, ui: &mut Ui) {
             let before = serde_json::to_string(e).unwrap_or_default();
             section(ui, "Editar gasto");
             ui.horizontal(|ui| {
-                lab(ui, 70.0, RichText::new("Fecha").color(MUTED));
+                lab(ui, 70.0, RichText::new("Fecha").color(MUTED()));
                 crate::screens::date_picker(ui, "e_date", &mut e.date);
             });
             field(ui, "Proveedor", &mut e.supplier, 300.0);
@@ -187,7 +187,7 @@ fn editor(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 field(ui, "Nº factura", &mut e.invoice_no, 120.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Categoría").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Categoría").size(13.5).color(MUTED()));
                     crate::theme::combo("e_cat").width(150.0).selected_text(&e.category).show_ui(ui, |ui| {
                         for c in EXPENSE_CATEGORIES {
                             ui.selectable_value(&mut e.category, c.to_string(), c);
@@ -217,7 +217,7 @@ fn editor(app: &mut App, ui: &mut Ui) {
             if !e.paid {
                 let mut d = e.due.unwrap_or(e.date);
                 ui.horizontal(|ui| {
-                    lab(ui, 90.0, RichText::new("Vencimiento").color(MUTED));
+                    lab(ui, 90.0, RichText::new("Vencimiento").color(MUTED()));
                     if crate::screens::date_picker(ui, "e_due", &mut d) {
                         e.due = Some(d);
                     }

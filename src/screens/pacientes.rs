@@ -89,7 +89,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             } else if resp.hovered() {
                 ui.painter().rect_filled(rect, CornerRadius::same(8), Color32::from_rgb(232, 238, 244));
             }
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, name, if sel { crate::theme::sbf(fs) } else { FontId::proportional(fs) }, if sel { TEXT } else { MUTED });
+            ui.painter().text(rect.center(), Align2::CENTER_CENTER, name, if sel { crate::theme::sbf(fs) } else { FontId::proportional(fs) }, if sel { TEXT } else { MUTED() });
             if resp.clicked() {
                 app.pat_tab = tab;
             }
@@ -258,7 +258,7 @@ fn header(app: &mut App, ui: &mut Ui, pid: u32) {
                     ui.label(RichText::new(p.full_name()).size(23.5).family(crate::theme::sb()));
                     pill(ui, &format!("Nº historial {}", p.history_no), INFO);
                     if !p.active {
-                        pill(ui, "Inactivo", MUTED);
+                        pill(ui, "Inactivo", MUTED());
                     }
                 });
                 let age = p.age(app.today).map(|a| format!("{a} años")).unwrap_or_default();
@@ -356,7 +356,7 @@ fn list(app: &mut App, ui: &mut Ui) {
                     cell(app.db.doctor_alias(p.doctor_id)),
                     cell(app.db.last_visit(pid).map(fmt_date).unwrap_or_default()),
                     cell(next),
-                    cellc(money(bal), if bal > 0.005 { DANGER } else { MUTED }),
+                    cellc(money(bal), if bal > 0.005 { DANGER } else { MUTED() }),
                 ];
                 if tbl.row(ui, i, app.patient == Some(pid), &cells).clicked() {
                     open = Some(pid);
@@ -394,7 +394,7 @@ fn resumen(app: &mut App, ui: &mut Ui, pid: u32) {
             info_row(ui, "Alta", &p.registered.map(fmt_date).unwrap_or_default());
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let ok = |b: bool| if b { OK } else { MUTED };
+                let ok = |b: bool| if b { OK } else { MUTED() };
                 pill(ui, "SMS", ok(p.accepts_sms));
                 pill(ui, "Email", ok(p.accepts_email));
                 pill(ui, "WhatsApp", ok(p.accepts_whatsapp));
@@ -412,7 +412,7 @@ fn resumen(app: &mut App, ui: &mut Ui, pid: u32) {
             for a in future.iter().take(4) {
                 ui.horizontal(|ui| {
                     pill(ui, a.state.label(), rgb(a.state.color()));
-                    ui.label(format!("{} {} · {} · {}", fmt_date(a.date), a.start.format("%H:%M"), a.reason, app.db.doctor_alias(a.doctor_id)));
+                    line(ui, format!("{} {} · {} · {}", fmt_date(a.date), a.start.format("%H:%M"), a.reason, app.db.doctor_alias(a.doctor_id)));
                 });
             }
             ui.add_space(8.0);
@@ -422,14 +422,14 @@ fn resumen(app: &mut App, ui: &mut Ui, pid: u32) {
                 muted(ui, "Ninguno.");
             }
             for r in recs {
-                ui.label(format!("{} · {}", fmt_date(r.date), r.reason));
+                line(ui, format!("{} · {}", fmt_date(r.date), r.reason));
             }
             let calls: Vec<String> = app.db.calls_of(pid).iter().take(3).map(|c| format!("{} · {}", c.when.format("%d/%m/%Y %H:%M"), crate::phone::pretty(&c.number))).collect();
             if !calls.is_empty() {
                 ui.add_space(8.0);
                 section(ui, "Últimas llamadas");
                 for c in calls {
-                    ui.label(format!("📞 {c}"));
+                    line(ui, format!("📞 {c}"));
                 }
             }
         });
@@ -540,9 +540,9 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
         ui.set_width(ui.available_width());
         section(ui, "Antecedentes y notas clínicas");
         if let Some(p) = app.db.patient_mut(pid) {
-            ui.label(RichText::new("Antecedentes médicos").size(13.5).color(MUTED));
+            ui.label(RichText::new("Antecedentes médicos").size(13.5).color(MUTED()));
             let a = ui.add(egui::TextEdit::multiline(&mut p.background).desired_rows(3).desired_width(f32::INFINITY));
-            ui.label(RichText::new("Notas").size(13.5).color(MUTED));
+            ui.label(RichText::new("Notas").size(13.5).color(MUTED()));
             let b = ui.add(egui::TextEdit::multiline(&mut p.notes).desired_rows(3).desired_width(f32::INFINITY));
             if a.changed() || b.changed() {
                 app.changed();
@@ -592,7 +592,7 @@ fn implants(app: &mut App, ui: &mut Ui, pid: u32) {
         });
         ui.horizontal(|ui| {
             for (t, w) in [("FECHA · PIEZA", 150.0), ("PRODUCTO", 260.0), ("LOTE", 180.0), ("CADUCA", 90.0)] {
-                lab(ui, w, RichText::new(t).size(12.0).color(MUTED));
+                lab(ui, w, RichText::new(t).size(12.0).color(MUTED()));
             }
         });
         for Row { id: mid, when, name, lot, expiry, options } in rows.iter() {
@@ -608,7 +608,7 @@ fn implants(app: &mut App, ui: &mut Ui, pid: u32) {
                             }
                         }
                         if options.is_empty() {
-                            ui.label(RichText::new("No hay lotes de este producto en el almacén").color(MUTED));
+                            ui.label(RichText::new("No hay lotes de este producto en el almacén").color(MUTED()));
                         }
                     });
                 } else {
@@ -647,7 +647,7 @@ fn add_entry_row(app: &mut App, ui: &mut Ui, pid: u32) {
     let first = app.db.treatments_for(tariff).next().map(|t| t.code.clone()).unwrap_or_default();
     let mut st: (String, String, TxState, u32) = ui.data_mut(|d| d.get_temp(key)).unwrap_or((first, String::new(), TxState::Realizado, app.db.patient(pid).map(|p| p.doctor_id).unwrap_or(1)));
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Añadir:").color(MUTED));
+        ui.label(RichText::new("Añadir:").color(MUTED()));
         crate::screens::treatment_picker(ui, &format!("add_tto{pid}"), &app.db, tariff, &mut st.0, 300.0, |_| true, |t| format!("{} · {}", t.code, t.description));
         ui.add_sized([110.0, 34.0], egui::TextEdit::singleline(&mut st.1).hint_text("Piezas: 16 17"));
         crate::theme::combo("add_state").width(100.0).selected_text(st.2.label()).show_ui(ui, |ui| {
@@ -711,14 +711,14 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
             ui.horizontal(|ui| {
                 field(ui, "NIF / NIE", &mut p.nif, 120.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Fecha de nacimiento").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Fecha de nacimiento").size(13.5).color(MUTED()));
                     let mut d = p.birth.unwrap_or_else(|| NaiveDate::from_ymd_opt(1990, 1, 1).unwrap());
                     if crate::screens::date_picker(ui, "birth", &mut d) {
                         p.birth = Some(d);
                     }
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Sexo").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Sexo").size(13.5).color(MUTED()));
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut p.sex, "F".to_string(), "Mujer");
                         ui.radio_value(&mut p.sex, "M".to_string(), "Hombre");
@@ -759,7 +759,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
             section(ui, "Datos administrativos");
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Tarifa / Mutua").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Tarifa / Mutua").size(13.5).color(MUTED()));
                     let cur = tariffs.iter().find(|t| t.0 == p.tariff_id).map(|t| t.1.clone()).unwrap_or_default();
                     crate::theme::combo("pf_tar").width(200.0).selected_text(cur).show_ui(ui, |ui| {
                         for (id, n) in tariffs {
@@ -771,7 +771,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
             });
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Doctor responsable").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Doctor responsable").size(13.5).color(MUTED()));
                     let cur = docs.iter().find(|t| t.0 == p.doctor_id).map(|t| t.1.clone()).unwrap_or_default();
                     crate::theme::combo("pf_doc").width(200.0).selected_text(cur).show_ui(ui, |ui| {
                         for (id, n) in docs {
@@ -780,11 +780,11 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                     });
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Descuento %").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Descuento %").size(13.5).color(MUTED()));
                     ui.add(egui::DragValue::new(&mut p.discount_pct).range(0.0..=100.0).speed(0.5));
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Estado").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Estado").size(13.5).color(MUTED()));
                     ui.checkbox(&mut p.active, "Paciente activo");
                 });
             });
@@ -793,7 +793,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
             ui.horizontal(|ui| {
                 field(ui, "IBAN", &mut p.iban, 250.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Mandato").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Mandato").size(13.5).color(MUTED()));
                     ui.checkbox(&mut p.sepa_signed, "Firmado");
                 });
             });
@@ -819,7 +819,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                 field(ui, "Nombre y apellidos", &mut p.payer.name, 210.0);
                 field(ui, "NIF", &mut p.payer.nif, 110.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Parentesco").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Parentesco").size(13.5).color(MUTED()));
                     crate::theme::combo("pf_rel").width(110.0).selected_text(if p.payer.relation.is_empty() { "—".to_string() } else { p.payer.relation.clone() }).show_ui(ui, |ui| {
                         for r in ["Padre", "Madre", "Tutor legal", "Cónyuge", "Hijo/a", "Otro"] {
                             ui.selectable_value(&mut p.payer.relation, r.to_string(), r);
@@ -845,7 +845,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                     p.marketing = on.then(crate::model::today);
                 }
                 if let Some(d) = p.marketing {
-                    ui.label(RichText::new(format!("desde el {}", d.format("%d/%m/%Y"))).size(12.5).color(MUTED));
+                    ui.label(RichText::new(format!("desde el {}", d.format("%d/%m/%Y"))).size(12.5).color(MUTED()));
                 }
             });
             ui.horizontal(|ui| {
@@ -864,7 +864,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                 });
             });
             // baja por finalidad: estos avisos no le llegan por ningún canal
-            ui.label(RichText::new("Avisos que quiere recibir").size(12.5).color(MUTED));
+            ui.label(RichText::new("Avisos que quiere recibir").size(12.5).color(MUTED()));
             ui.horizontal_wrapped(|ui| {
                 use crate::comms::MsgKind;
                 for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::PresupuestoPendiente, MsgKind::Cumpleanos, MsgKind::Encuesta, MsgKind::Campana] {
@@ -1054,7 +1054,7 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
                     } else if overdue {
                         DANGER
                     } else {
-                        MUTED
+                        MUTED()
                     };
                     egui::Frame::new().fill(tint(col, 0.1)).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
                         ui.vertical(|ui| {
@@ -1106,7 +1106,8 @@ fn citas(app: &mut App, ui: &mut Ui, pid: u32) {
                 ui.horizontal(|ui| {
                     pill(ui, a.state.label(), rgb(a.state.color()));
                     let txt = format!("{} {} · {} · {}", fmt_date(a.date), a.start.format("%H:%M"), a.reason, app.db.doctor_alias(a.doctor_id));
-                    if ui.add(egui::Label::new(txt).sense(Sense::click())).on_hover_text("Abrir cita").clicked() {
+                    // recortada si no cabe (en columnas, una fila ancha ensancha lo de debajo)
+                    if ui.add(egui::Label::new(txt).truncate().sense(Sense::click())).on_hover_text("Abrir cita").clicked() {
                         edit = Some(a.clone());
                     }
                 });
@@ -1125,11 +1126,11 @@ fn citas(app: &mut App, ui: &mut Ui, pid: u32) {
             for r in &list {
                 ui.horizontal(|ui| {
                     pill(ui, r.state.label(), crate::screens::recalls::state_color(r.state));
-                    ui.label(format!("{} · {}", fmt_date(r.date), r.reason));
+                    line(ui, format!("{} · {}", fmt_date(r.date), r.reason));
                 });
             }
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (reason, months) in [("Revisión semestral", 6), ("Higiene anual", 12)] {
                     if ui.button(format!("＋ {reason}")).clicked() {
                         let id = app.db.new_id();

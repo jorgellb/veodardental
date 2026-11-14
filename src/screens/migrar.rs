@@ -188,20 +188,20 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
             let m = &mut app.imp.mig;
-            ui.label(RichText::new("Posibles duplicados:").color(MUTED));
+            ui.label(RichText::new("Posibles duplicados:").color(MUTED()));
             crate::theme::combo("mig_dup").width(210.0).selected_text(m.duplicates.label()).show_ui(ui, |ui| {
                 for d in [DupPolicy::Skip, DupPolicy::Link, DupPolicy::New] {
                     dirty |= ui.selectable_value(&mut m.duplicates, d, d.label()).changed();
                 }
             });
-            ui.label(RichText::new("Saldos:").color(MUTED));
+            ui.label(RichText::new("Saldos:").color(MUTED()));
             let bl = |b: BalancePolicy| if b == BalancePolicy::Report { "Solo informar de la diferencia" } else { "Ajustar al del programa anterior" };
             crate::theme::combo("mig_bal").width(250.0).selected_text(bl(m.balance)).show_ui(ui, |ui| {
                 for b in [BalancePolicy::Report, BalancePolicy::Adjust] {
                     dirty |= ui.selectable_value(&mut m.balance, b, bl(b)).changed();
                 }
             });
-            ui.label(RichText::new("Doctor si no dice:").color(MUTED));
+            ui.label(RichText::new("Doctor si no dice:").color(MUTED()));
             let cur = app.db.doctor(m.doctor).map(|d| d.name.clone()).unwrap_or_else(|| "—".into());
             crate::theme::combo("mig_doc").width(200.0).selected_text(cur).show_ui(ui, |ui| {
                 for d in app.db.collaborators.iter().filter(|d| d.active) {
@@ -223,7 +223,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             })
             .inner;
         for b in &blockers {
-            ui.label(RichText::new(b).color(MUTED));
+            ui.label(RichText::new(b).color(MUTED()));
         }
         if simulate {
             let rep = dry_run(&app.db, &app.imp.mig.src(), &app.imp.mig.options(app.today));
@@ -277,7 +277,7 @@ fn sheet_row(app: &mut App, ui: &mut Ui, ctx: &egui::Context, (i, e, w): (usize,
                 }
             }
             None => {
-                ui.label(RichText::new(if i == 0 { "obligatoria" } else { "opcional" }).color(SUBTLE));
+                ui.label(RichText::new(if i == 0 { "obligatoria" } else { "opcional" }).color(SUBTLE()));
             }
         }
     }
@@ -295,7 +295,7 @@ fn columns(app: &mut App, ui: &mut Ui, i: usize) -> bool {
         for (k, fd) in t.entity.fields().iter().enumerate() {
             ui.vertical(|ui| {
                 ui.set_width(250.0);
-                ui.label(RichText::new(format!("{}{}", fd.label, if fd.required { " *" } else { "" })).color(if fd.required { HEADING } else { MUTED }));
+                ui.label(RichText::new(format!("{}{}", fd.label, if fd.required { " *" } else { "" })).color(if fd.required { HEADING } else { MUTED() }));
                 let cur = opts.iter().find(|o| o.0 == t.map[k]).map(|o| o.1.clone()).unwrap_or_default();
                 crate::theme::combo(("mig_col", i, k)).width(240.0).selected_text(cur).show_ui(ui, |ui| {
                     for (v, n) in &opts {
@@ -303,7 +303,7 @@ fn columns(app: &mut App, ui: &mut Ui, i: usize) -> bool {
                     }
                 });
                 let sample = t.map[k].and_then(|c| first.get(c)).cloned().unwrap_or_default();
-                ui.label(RichText::new(if sample.is_empty() { " ".to_string() } else { format!("p. ej. {sample}") }).color(SUBTLE).size(12.0));
+                ui.label(RichText::new(if sample.is_empty() { " ".to_string() } else { format!("p. ej. {sample}") }).color(SUBTLE()).size(12.0));
             });
         }
     });
@@ -311,7 +311,7 @@ fn columns(app: &mut App, ui: &mut Ui, i: usize) -> bool {
     let cols: Vec<(&str, usize)> = t.entity.fields().iter().enumerate().filter_map(|(k, fd)| t.map[k].map(|c| (fd.label, c))).collect();
     if !cols.is_empty() {
         ui.add_space(4.0);
-        ui.label(RichText::new(format!("Vista previa ({} de {} filas)", t.sheet.rows.len().min(3), t.sheet.rows.len())).color(MUTED));
+        ui.label(RichText::new(format!("Vista previa ({} de {} filas)", t.sheet.rows.len().min(3), t.sheet.rows.len())).color(MUTED()));
         egui::ScrollArea::horizontal().id_salt(("mig_prev", i)).show(ui, |ui| {
             egui::Grid::new(("mig_prev_g", i)).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
                 for (name, _) in &cols {
@@ -335,7 +335,7 @@ fn columns(app: &mut App, ui: &mut Ui, i: usize) -> bool {
 fn profiles(app: &mut App, ui: &mut Ui) -> bool {
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Perfil de columnas:").color(MUTED));
+        ui.label(RichText::new("Perfil de columnas:").color(MUTED()));
         let names: Vec<String> = app.db.config.mig_profiles.iter().map(|p| p.name.clone()).collect();
         crate::theme::combo("mig_prof").width(220.0).selected_text(if names.is_empty() { "ninguno guardado".to_string() } else { "Aplicar uno…".to_string() }).show_ui(ui, |ui| {
             for n in &names {
@@ -437,7 +437,7 @@ fn report(app: &mut App, ui: &mut Ui) {
                         }
                     });
                     if !d.same_person {
-                        ui.label(RichText::new("solo coincide el NIF: no se puede unir").color(SUBTLE));
+                        ui.label(RichText::new("solo coincide el NIF: no se puede unir").color(SUBTLE()));
                     }
                 });
             }
@@ -460,7 +460,7 @@ fn report(app: &mut App, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Filas con problemas y avisos").family(sb()));
             let m = &mut app.imp.mig;
-            for (k, name, color) in [(None, "Todos", MUTED), (Some(ProblemKind::Error), "Errores", DANGER), (Some(ProblemKind::Excluded), "Sin importar", WARN), (Some(ProblemKind::Warning), "Avisos", INFO)] {
+            for (k, name, color) in [(None, "Todos", MUTED()), (Some(ProblemKind::Error), "Errores", DANGER), (Some(ProblemKind::Excluded), "Sin importar", WARN), (Some(ProblemKind::Warning), "Avisos", INFO)] {
                 let n = k.map(|k| rep.count(k)).unwrap_or(rep.problems.len());
                 if ui.selectable_label(m.show == k, RichText::new(format!("{name} ({n})")).color(color)).clicked() {
                     m.show = k;

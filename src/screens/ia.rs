@@ -185,7 +185,7 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
                 if app.db.ia.enabled {
                     pill(ui, &format!("Activo · {ready} agentes listos"), if ready > 0 { OK } else { WARN });
                 } else {
-                    pill(ui, "Desactivado", MUTED);
+                    pill(ui, "Desactivado", MUTED());
                 }
             });
         });
@@ -207,7 +207,7 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
             cfg.enabled = false;
         }
         ui.add_space(6.0);
-        ui.label(RichText::new("Qué agentes se usan por defecto").font(mdf(13.0)).color(MUTED));
+        ui.label(RichText::new("Qué agentes se usan por defecto").font(mdf(13.0)).color(MUTED()));
         mode_picker(ui, &mut cfg.mode);
         ui.add_space(10.0);
     });
@@ -247,7 +247,7 @@ fn agents_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
         for (group_free, title) in [(true, "GRATUITOS"), (false, "DE PAGO")] {
             let ids: Vec<u32> = app.db.ia.agents.iter().filter(|a| a.free == group_free).map(|a| a.id).collect();
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("{title} · {}", ids.len())).font(sbf(11.5)).color(SUBTLE));
+            ui.label(RichText::new(format!("{title} · {}", ids.len())).font(sbf(11.5)).color(SUBTLE()));
             if ids.is_empty() {
                 muted(ui, if group_free { "Ninguno. Añada, por ejemplo, modelos «:free» de OpenRouter o Gemini." } else { "Ninguno." });
             }
@@ -256,7 +256,7 @@ fn agents_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 let editing = app.ia.edit == Some(a.id);
                 egui::Frame::new()
                     .fill(if editing { ACCENT_SOFT } else { ROW_ALT })
-                    .stroke(Stroke::new(1.0, if editing { tint(ACCENT, 0.4) } else { HAIRLINE }))
+                    .stroke(Stroke::new(1.0, if editing { tint(ACCENT, 0.4) } else { HAIRLINE() }))
                     .corner_radius(CornerRadius::same(12))
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
@@ -264,12 +264,12 @@ fn agents_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                         ui.horizontal(|ui| {
                             // número de orden
                             let (r, _) = ui.allocate_exact_size(vec2(24.0, 24.0), egui::Sense::hover());
-                            ui.painter().circle_filled(r.center(), 12.0, if a.enabled { tint(ACCENT, 0.15) } else { HAIRLINE });
-                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, (pos + 1).to_string(), sbf(12.0), if a.enabled { ACCENT_DARK } else { SUBTLE });
+                            ui.painter().circle_filled(r.center(), 12.0, if a.enabled { tint(ACCENT, 0.15) } else { HAIRLINE() });
+                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, (pos + 1).to_string(), sbf(12.0), if a.enabled { ACCENT_DARK } else { SUBTLE() });
                             ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = 1.0;
-                                ui.label(RichText::new(&a.name).font(sbf(14.0)).color(if a.enabled { HEADING } else { SUBTLE }));
-                                ui.label(RichText::new(format!("{} · {}", a.provider.label(), a.model)).font(mdf(12.3)).color(MUTED));
+                                ui.label(RichText::new(&a.name).font(sbf(14.0)).color(if a.enabled { HEADING } else { SUBTLE() }));
+                                ui.label(RichText::new(format!("{} · {}", a.provider.label(), a.model)).font(mdf(12.3)).color(MUTED()));
                             });
                             right_aligned(ui, |ui| {
                                 if ui.small_button("Editar").clicked() {
@@ -352,7 +352,7 @@ fn agents_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 ui.add(egui::DragValue::new(&mut cfg.max_paid_month).range(0..=10_000)).on_hover_text("Pasado el máximo, los agentes de pago no se consultan hasta el mes siguiente (0: ninguno). Los gratuitos no cuentan.");
             });
             ui.checkbox(&mut cfg.send_age, "Enviar la edad del paciente (ayuda a distinguir la dentición temporal)");
-            ui.label(RichText::new("Indicaciones para todos los análisis (opcional)").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("Indicaciones para todos los análisis (opcional)").font(mdf(12.8)).color(MUTED()));
             ui.add(egui::TextEdit::multiline(&mut cfg.extra).desired_rows(2).desired_width(f32::INFINITY).hint_text("Por ejemplo: fíjate especialmente en caries interproximales y en el nivel óseo."));
         });
     });
@@ -369,7 +369,7 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
         ui.horizontal_wrapped(|ui| {
             field(ui, "Nombre", &mut a.name, 220.0);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Proveedor").font(mdf(12.8)).color(MUTED));
+                ui.label(RichText::new("Proveedor").font(mdf(12.8)).color(MUTED()));
                 let old = a.provider;
                 crate::theme::combo(("ia_prov", id)).width(220.0).selected_text(a.provider.label()).show_ui(ui, |ui| {
                     for p in Provider::ALL {
@@ -389,7 +389,7 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
         muted(ui, a.provider.note());
         ui.horizontal_wrapped(|ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new(if a.provider.needs_key() { "Clave (API key)" } else { "Clave (si el servicio la pide)" }).font(mdf(12.8)).color(MUTED));
+                ui.label(RichText::new(if a.provider.needs_key() { "Clave (API key)" } else { "Clave (si el servicio la pide)" }).font(mdf(12.8)).color(MUTED()));
                 ui.horizontal(|ui| {
                     ui.add_sized([300.0, 36.0], egui::TextEdit::singleline(&mut a.api_key).password(!*show_key).hint_text("Pegue aquí la clave"));
                     ui.toggle_value(show_key, if *show_key { "Ocultar" } else { "Ver" });
@@ -402,7 +402,7 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
         ui.horizontal_wrapped(|ui| {
             field(ui, "Modelo (debe admitir imágenes)", &mut a.model, 330.0);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Sugeridos").font(mdf(12.8)).color(MUTED));
+                ui.label(RichText::new("Sugeridos").font(mdf(12.8)).color(MUTED()));
                 crate::theme::combo(("ia_sug", id)).width(240.0).selected_text("Elegir…").show_ui(ui, |ui| {
                     for (m, f) in a.provider.suggested() {
                         if ui.selectable_label(a.model == *m, format!("{m}{}", if *f { "  · gratuito" } else { "" })).clicked() {
@@ -421,7 +421,7 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
         });
         muted(ui, "Los proveedores cambian sus modelos a menudo: si uno deja de existir, elija otro con «Ver modelos del proveedor».");
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Tipo").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("Tipo").font(mdf(12.8)).color(MUTED()));
             ui.radio_value(&mut a.free, true, "Gratuito");
             ui.radio_value(&mut a.free, false, "De pago");
             ui.add_space(12.0);
@@ -462,7 +462,7 @@ fn agent_editor(app: &mut App, ui: &mut Ui, ctx: &egui::Context, id: u32) {
                             match m.free {
                                 Some(true) => pill(ui, "Gratuito", OK),
                                 Some(false) => pill(ui, "De pago", INFO),
-                                None => pill(ui, "Precio no indicado", MUTED),
+                                None => pill(ui, "Precio no indicado", MUTED()),
                             };
                             if m.vision == Some(true) {
                                 pill(ui, "Imágenes", ACCENT);
@@ -547,7 +547,7 @@ fn analyze_controls(app: &mut App, ui: &mut Ui, img: &PatientImage, ctx: &egui::
         let busy_other = app.ia.job.is_some() && !busy_here;
         let mut mode = app.ia.mode.unwrap_or(app.db.ia.mode);
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Usar").font(mdf(13.0)).color(MUTED));
+            ui.label(RichText::new("Usar").font(mdf(13.0)).color(MUTED()));
             for m in Mode::ALL {
                 let n = ia::chain(&app.db.ia, m).len();
                 if ui.selectable_label(mode == m, format!("{} ({n})", m.short())).on_hover_text(m.label()).clicked() {
@@ -607,11 +607,11 @@ fn saved_reports(app: &mut App, ui: &mut Ui, img: &PatientImage) {
 fn attempts_list(ui: &mut Ui, attempts: &[ia::Attempt]) {
     for (i, t) in attempts.iter().enumerate() {
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(format!("{}.", i + 1)).font(mdf(12.3)).color(SUBTLE));
+            ui.label(RichText::new(format!("{}.", i + 1)).font(mdf(12.3)).color(SUBTLE()));
             ui.label(RichText::new(&t.agent).font(sbf(12.3)).color(TEXT));
             free_pill(ui, t.free);
             ui.label(RichText::new(if t.ok { "respondió".to_string() } else { t.message.clone() }).font(mdf(12.3)).color(if t.ok { OK } else { DANGER }));
-            ui.label(RichText::new(format!("{:.1} s", t.millis as f32 / 1000.0)).font(mdf(12.0)).color(SUBTLE));
+            ui.label(RichText::new(format!("{:.1} s", t.millis as f32 / 1000.0)).font(mdf(12.0)).color(SUBTLE()));
         });
     }
 }
@@ -648,7 +648,7 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
     }
     if !an.findings.is_empty() {
         ui.add_space(6.0);
-        ui.label(RichText::new("HALLAZGOS").font(sbf(11.5)).color(SUBTLE));
+        ui.label(RichText::new("HALLAZGOS").font(sbf(11.5)).color(SUBTLE()));
         for f in &an.findings {
             egui::Frame::new().fill(ROW_ALT).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -673,7 +673,7 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
                             }
                         });
                         if !f.description.is_empty() {
-                            ui.label(RichText::new(&f.description).font(mdf(12.8)).color(MUTED));
+                            ui.label(RichText::new(&f.description).font(mdf(12.8)).color(MUTED()));
                         }
                     });
                 });
@@ -707,13 +707,13 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
         }
         Some(v) => {
             let what = if v.valid { "Revisado" } else { "Descartado" };
-            ui.label(RichText::new(format!("{what} por {} el {}", v.by, v.at.format("%d/%m/%Y %H:%M"))).font(mdf(12.5)).color(if v.valid { OK } else { MUTED }));
+            ui.label(RichText::new(format!("{what} por {} el {}", v.by, v.at.format("%d/%m/%Y %H:%M"))).font(mdf(12.5)).color(if v.valid { OK } else { MUTED() }));
         }
     }
     let mut plan = false;
     if !an.proposals.is_empty() && r.review.as_ref().is_none_or(|v| v.valid) {
         ui.add_space(6.0);
-        ui.label(RichText::new("PROPUESTA DE TRATAMIENTO (márquelas para pasarlas al plan)").font(sbf(11.5)).color(SUBTLE));
+        ui.label(RichText::new("PROPUESTA DE TRATAMIENTO (márquelas para pasarlas al plan)").font(sbf(11.5)).color(SUBTLE()));
         for (i, p) in an.proposals.iter().enumerate() {
             let done = r.planned.contains(&i);
             let tx = app.db.ia_treatment(p);
@@ -750,7 +750,7 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
             if !p.reason.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(28.0);
-                    ui.label(RichText::new(&p.reason).font(mdf(12.5)).color(MUTED));
+                    ui.label(RichText::new(&p.reason).font(mdf(12.5)).color(MUTED()));
                 });
             }
         }
@@ -781,7 +781,7 @@ fn report_view(app: &mut App, ui: &mut Ui, r: &IaReport, img: &PatientImage) {
             }
         });
     });
-    ui.label(RichText::new("Resultado generado por inteligencia artificial: puede equivocarse. El diagnóstico y el plan los decide el dentista.").font(mdf(11.8)).color(SUBTLE));
+    ui.label(RichText::new("Resultado generado por inteligencia artificial: puede equivocarse. El diagnóstico y el plan los decide el dentista.").font(mdf(11.8)).color(SUBTLE()));
     if let Some(v) = review {
         match app.db.review_ia_report(r.id, v) {
             Ok(()) => app.changed(),

@@ -141,7 +141,7 @@ fn options_card(app: &mut App, ui: &mut Ui) {
         section(ui, "Herramienta");
         ui.label(RichText::new(app.odg.tool.label()).size(15.0).color(ACCENT));
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Tratamiento").color(MUTED));
+            ui.label(RichText::new("Tratamiento").color(MUTED()));
             let tool = app.odg.tool;
             let options: Vec<(String, String)> = app.db.treatments.iter().filter(|t| t.active && t.odg == tool).map(|t| (t.code.clone(), format!("{} · {}", t.code, t.description))).collect();
             let current = options.iter().find(|o| o.0 == app.odg.code).map(|o| o.1.clone()).unwrap_or_else(|| "—".into());
@@ -160,7 +160,7 @@ fn options_card(app: &mut App, ui: &mut Ui) {
                 }
             }
             ui.add_space(8.0);
-            ui.label(RichText::new("Doctor").color(MUTED));
+            ui.label(RichText::new("Doctor").color(MUTED()));
             let docs: Vec<(u32, String)> = app.db.collaborators.iter().filter(|c| c.active).map(|c| (c.id, c.alias.clone())).collect();
             crate::theme::combo("odg_doc").selected_text(app.db.doctor_alias(app.odg.doctor)).show_ui(ui, |ui| {
                 for (id, n) in &docs {
@@ -170,7 +170,7 @@ fn options_card(app: &mut App, ui: &mut Ui) {
             ui.checkbox(&mut app.odg.child, "Dentición temporal");
             if app.odg.tool.uses_faces() {
                 ui.add_space(8.0);
-                ui.label(RichText::new("Caras").color(MUTED));
+                ui.label(RichText::new("Caras").color(MUTED()));
                 for (i, f) in FACES.iter().enumerate() {
                     ui.toggle_value(&mut app.odg.faces[i], *f).on_hover_text(match *f {
                         "M" => "Mesial",
@@ -509,7 +509,7 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
         let unbudgeted = planned.iter().filter(|e| e.budget_id.is_none()).count();
         section(ui, "Tratamientos previstos");
         let total: f64 = planned.iter().map(|e| e.amount()).sum();
-        ui.label(RichText::new(format!("{} tratamientos · {}", planned.len(), money(total))).color(MUTED));
+        ui.label(RichText::new(format!("{} tratamientos · {}", planned.len(), money(total))).color(MUTED()));
         ui.add_space(4.0);
         egui::ScrollArea::vertical().max_height(180.0).id_salt("odg_planned").show(ui, |ui| {
             for e in &planned {

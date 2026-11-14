@@ -66,13 +66,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         if resp.hovered() {
                             p.rect_filled(rect, CornerRadius::same(12), ROW_HOVER);
                         }
-                        p.hline(rect.x_range().shrink(8.0), rect.max.y - 0.5, egui::Stroke::new(1.0, HAIRLINE));
+                        p.hline(rect.x_range().shrink(8.0), rect.max.y - 0.5, egui::Stroke::new(1.0, HAIRLINE()));
                         // hora
-                        p.text(rect.min + vec2(14.0, 13.0), egui::Align2::LEFT_TOP, a.start.format("%H:%M").to_string(), bf(16.0), if a.state.is_cancelled() { SUBTLE } else { HEADING });
-                        p.text(rect.min + vec2(14.0, 36.0), egui::Align2::LEFT_TOP, format!("{} min", a.minutes), mdf(12.0), SUBTLE);
+                        p.text(rect.min + vec2(14.0, 13.0), egui::Align2::LEFT_TOP, a.start.format("%H:%M").to_string(), bf(16.0), if a.state.is_cancelled() { SUBTLE() } else { HEADING });
+                        p.text(rect.min + vec2(14.0, 36.0), egui::Align2::LEFT_TOP, format!("{} min", a.minutes), mdf(12.0), SUBTLE());
                         // línea de tiempo con el estado de la cita
                         let x = rect.min.x + 80.0;
-                        p.vline(x, rect.y_range(), egui::Stroke::new(2.0, HAIRLINE));
+                        p.vline(x, rect.y_range(), egui::Stroke::new(2.0, HAIRLINE()));
                         p.circle_filled(egui::pos2(x, rect.center().y), 6.5, CARD);
                         p.circle_stroke(egui::pos2(x, rect.center().y), 5.5, egui::Stroke::new(2.6, sc));
                         let name = app.db.appt_name(a);
@@ -89,14 +89,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                             format!("{}{}", name, if alert { "  ⚠" } else { "" }),
                             sbf(15.0),
                             if a.state.is_cancelled() {
-                                MUTED
+                                MUTED()
                             } else if alert {
                                 mix(DANGER, HEADING, 0.3)
                             } else {
                                 HEADING
                             },
                         );
-                        clip.text(egui::pos2(x + 62.0, rect.min.y + 36.0), egui::Align2::LEFT_TOP, format!("{} · {} · {}", a.reason, app.db.doctor_alias(a.doctor_id), app.db.box_name(a.box_id)), egui::FontId::proportional(13.0), MUTED);
+                        clip.text(egui::pos2(x + 62.0, rect.min.y + 36.0), egui::Align2::LEFT_TOP, format!("{} · {} · {}", a.reason, app.db.doctor_alias(a.doctor_id), app.db.box_name(a.box_id)), egui::FontId::proportional(13.0), MUTED());
                         let pr = egui::Rect::from_min_size(egui::pos2(pill_x, rect.min.y + 19.0), vec2(126.0, 26.0));
                         p.rect_filled(pr, CornerRadius::same(13), tint(sc, 0.11));
                         p.rect_stroke(pr, CornerRadius::same(13), egui::Stroke::new(1.0, tint(sc, 0.28)), egui::StrokeKind::Inside);
@@ -292,6 +292,6 @@ fn aviso(ui: &mut Ui, color: egui::Color32, text: impl Into<String>) -> bool {
     p.circle_filled(c, 11.0, tint(color, 0.13));
     p.circle_filled(c, 4.0, color);
     p.with_clip_rect(rect.shrink2(vec2(30.0, 0.0))).text(rect.left_center() + vec2(40.0, 0.0), egui::Align2::LEFT_CENTER, text, mdf(14.0), HEADING);
-    p.text(rect.right_center() - vec2(14.0, 1.0), egui::Align2::RIGHT_CENTER, "›", sbf(18.0), if resp.hovered() { ACCENT } else { SUBTLE });
+    p.text(rect.right_center() - vec2(14.0, 1.0), egui::Align2::RIGHT_CENTER, "›", sbf(18.0), if resp.hovered() { ACCENT } else { SUBTLE() });
     resp.clicked()
 }

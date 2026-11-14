@@ -102,7 +102,7 @@ pub fn pay_dialog(app: &mut App, ctx: &egui::Context, mut d: PayDraft) -> Dialog
             }
         });
         if !matches!(d.kind, PayKind::Anulacion(_)) {
-            ui.label(RichText::new(if d.kind == PayKind::Devolucion { "Cómo se devuelve" } else { "Forma de pago" }).size(13.5).color(MUTED));
+            ui.label(RichText::new(if d.kind == PayKind::Devolucion { "Cómo se devuelve" } else { "Forma de pago" }).size(13.5).color(MUTED()));
             ui.horizontal_wrapped(|ui| {
                 for m in PAY_METHODS {
                     // la financiación la usa la financiera, no el paciente que paga su cuota
@@ -213,9 +213,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().button_padding.x = 11.0;
             ui.spacing_mut().item_spacing.x = 6.0;
-            ui.label(RichText::new("Desde").font(crate::theme::mdf(13.5)).color(MUTED));
+            ui.label(RichText::new("Desde").font(crate::theme::mdf(13.5)).color(MUTED()));
             crate::screens::date_picker(ui, "pay_from", &mut app.lists.pay_from);
-            ui.label(RichText::new("hasta").font(crate::theme::mdf(13.5)).color(MUTED));
+            ui.label(RichText::new("hasta").font(crate::theme::mdf(13.5)).color(MUTED()));
             crate::screens::date_picker(ui, "pay_to", &mut app.lists.pay_to);
             ui.add_space(6.0);
             if ui.selectable_label(app.lists.pay_method.is_none(), "Todas").clicked() {

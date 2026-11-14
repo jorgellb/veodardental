@@ -82,7 +82,7 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                         },
                     );
                     p.with_clip_rect(rect.shrink(4.0)).text(rect.min + vec2(12.0, 10.0), egui::Align2::LEFT_TOP, &d.title, sbf(14.5), TEXT);
-                    p.text(rect.min + vec2(12.0, 34.0), egui::Align2::LEFT_TOP, format!("{} · {}", fmt_date(d.date), d.category), egui::FontId::proportional(12.5), MUTED);
+                    p.text(rect.min + vec2(12.0, 34.0), egui::Align2::LEFT_TOP, format!("{} · {}", fmt_date(d.date), d.category), egui::FontId::proportional(12.5), MUTED());
                     let (t, c) = if d.revoked_at.is_some() {
                         ("Revocado", DANGER)
                     } else if crate::firmado::doc_integrity(d) == crate::firmado::Integrity::Modified {
@@ -123,7 +123,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
     let Some(d) = app.db.documents.iter().find(|d| d.id == id).cloned() else { return };
     let vw = ui.available_width();
     // «papel»
-    egui::Frame::new().fill(Color32::WHITE).stroke(Stroke::new(1.0, BORDER)).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(40, 30)).shadow(shadow()).show(ui, |ui| {
+    egui::Frame::new().fill(Color32::WHITE).stroke(Stroke::new(1.0, BORDER())).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(40, 30)).shadow(shadow()).show(ui, |ui| {
         ui.set_width(vw - 80.0);
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
@@ -144,11 +144,11 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
             // firma del paciente
             ui.vertical(|ui| {
                 let rep = app.db.representative(d.patient_id, app.today);
-                ui.label(RichText::new(if rep.is_some() { "Firma del padre, madre o tutor (paciente menor de 16 años)" } else { "Firma del paciente" }).size(13.0).color(MUTED));
+                ui.label(RichText::new(if rep.is_some() { "Firma del padre, madre o tutor (paciente menor de 16 años)" } else { "Firma del paciente" }).size(13.0).color(MUTED()));
                 let (rect, resp) = ui.allocate_exact_size(vec2(320.0, 120.0), Sense::drag());
                 let p = ui.painter();
                 p.rect_filled(rect, CornerRadius::same(8), if d.signed { Color32::WHITE } else { Color32::from_rgb(248, 250, 253) });
-                p.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, if d.signed { BORDER } else { ACCENT }), StrokeKind::Inside);
+                p.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, if d.signed { BORDER() } else { ACCENT }), StrokeKind::Inside);
                 p.line_segment([rect.left_bottom() + vec2(16.0, -26.0), rect.right_bottom() + vec2(-16.0, -26.0)], Stroke::new(1.0, Color32::from_rgb(210, 216, 226)));
                 if d.signed {
                     draw_strokes(p, rect, &d.signature, Color32::from_rgb(20, 40, 110));
@@ -164,7 +164,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                     }
                     draw_strokes(p, rect, &app.docs.strokes, Color32::from_rgb(20, 40, 110));
                     if app.docs.strokes.is_empty() {
-                        p.text(rect.center(), egui::Align2::CENTER_CENTER, "Firme aquí con el ratón o la tableta", egui::FontId::proportional(13.0), MUTED);
+                        p.text(rect.center(), egui::Align2::CENTER_CENTER, "Firme aquí con el ratón o la tableta", egui::FontId::proportional(13.0), MUTED());
                     }
                     if resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
@@ -173,7 +173,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
             });
             ui.add_space(20.0);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Profesional").size(13.0).color(MUTED));
+                ui.label(RichText::new("Profesional").size(13.0).color(MUTED()));
                 ui.label(RichText::new(app.db.doctor(d.doctor_id).map(|c| c.name.clone()).unwrap_or_default()).family(sb()));
                 muted(ui, app.db.doctor(d.doctor_id).map(|c| format!("Nº colegiado {}", c.license)).unwrap_or_default());
                 if d.signed {
@@ -184,7 +184,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                     let col = match integrity {
                         crate::firmado::Integrity::Modified => DANGER,
                         crate::firmado::Integrity::Intact => OK,
-                        _ => MUTED,
+                        _ => MUTED(),
                     };
                     ui.label(RichText::new(integrity.label()).font(mdf(12.3)).color(col));
                     if let Some(t) = d.revoked_at {
@@ -217,7 +217,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                 if rep.as_deref() == Some("") {
                     ui.label(RichText::new("Es menor de 16 años: firma su padre, madre o tutor (anótelo en Filiación › Responsable).").color(WARN));
                 }
-                ui.label(RichText::new("Firmante").color(MUTED));
+                ui.label(RichText::new("Firmante").color(MUTED()));
                 ui.add_sized([220.0, 34.0], egui::TextEdit::singleline(&mut app.docs.signer));
                 if primary(ui, "✍ Firmar documento").clicked() {
                     let strokes = std::mem::take(&mut app.docs.strokes);
@@ -269,9 +269,9 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
             let mut go = false;
             let mut cancel = false;
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Revoca").color(MUTED));
+                ui.label(RichText::new("Revoca").color(MUTED()));
                 ui.add_sized([200.0, 32.0], egui::TextEdit::singleline(by));
-                ui.label(RichText::new("Motivo").color(MUTED));
+                ui.label(RichText::new("Motivo").color(MUTED()));
                 ui.add_sized([260.0, 32.0], egui::TextEdit::singleline(reason).hint_text("Lo que indica el paciente"));
                 go = primary(ui, "Anotar revocación").clicked();
                 cancel = ui.button("Cancelar").clicked();

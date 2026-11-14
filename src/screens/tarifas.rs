@@ -82,7 +82,7 @@ fn tariffs(app: &mut App, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     lab(ui, 46.0, &tr.code);
                     lab(ui, 180.0, &tr.description);
-                    lab(ui, 76.0, RichText::new(money(tr.price)).color(MUTED));
+                    lab(ui, 76.0, RichText::new(money(tr.price)).color(MUTED()));
                     match specific {
                         Some(i) => {
                             ui.add_sized([96.0, 32.0], egui::DragValue::new(&mut t.prices[i].price).range(0.0..=100000.0).speed(1.0).fixed_decimals(2).suffix(" €"));
@@ -97,7 +97,7 @@ fn tariffs(app: &mut App, ui: &mut Ui) {
                             let p = round2(tr.price * (1.0 - t.discount_pct / 100.0));
                             lab(ui, 96.0, money(p));
                             if ins {
-                                lab(ui, 96.0, RichText::new("—").color(MUTED));
+                                lab(ui, 96.0, RichText::new("—").color(MUTED()));
                             }
                             if ui.small_button("✎").on_hover_text("Fijar un precio específico (p. ej. 0 € si lo cubre la póliza)").clicked() {
                                 t.prices.push(TariffPrice { code: tr.code.clone(), price: p, insurer_fee: 0.0 });
@@ -152,7 +152,7 @@ fn treatments(app: &mut App, ui: &mut Ui) {
                     Some(id) => format!("{} · solo {}", t.group, app.db.tariff_name(id)),
                     None => t.group.clone(),
                 };
-                let cells = [cell(&t.code), cellc(&t.description, if t.active { TEXT } else { MUTED }), cell(group), cell(money(t.price)), cell(t.minutes.to_string())];
+                let cells = [cell(&t.code), cellc(&t.description, if t.active { TEXT } else { MUTED() }), cell(group), cell(money(t.price)), cell(t.minutes.to_string())];
                 if tbl.row(ui, i, sel, &cells).clicked() {
                     pick = Some(t.code.clone());
                 }

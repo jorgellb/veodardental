@@ -130,7 +130,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
     }
     // plantilla del tratamiento
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Plantilla").color(MUTED));
+        ui.label(RichText::new("Plantilla").color(MUTED()));
         let today: Vec<(u32, crate::model::OdgKind, Vec<u8>)> = app.db.entries.iter().filter(|e| e.patient_id == n.patient_id && e.date == app.today).map(|e| (e.id, e.odg, e.teeth.clone())).collect();
         let templates = app.db.config.evo_templates.clone();
         for t in &templates {
@@ -157,7 +157,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
     let stt = crate::evolucion::load_stt();
     ui.horizontal_wrapped(|ui| {
         if stt.enabled() {
-            ui.label(RichText::new("Dictado").color(MUTED));
+            ui.label(RichText::new("Dictado").color(MUTED()));
             ui.add(egui::TextEdit::singleline(&mut app.evo.audio_path).hint_text("Ruta de la grabación (wav, mp3, m4a…)").desired_width(320.0));
             ui.checkbox(&mut app.evo.delete_audio, "Borrar la grabación al terminar");
             if app.evo.job.is_none() && ui.button("Transcribir").clicked() {

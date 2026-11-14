@@ -65,7 +65,7 @@ fn open(app: &mut App, ui: &mut Ui, s: CashSession) {
     let pays: Vec<Payment> = app.db.session_payments(s.id).cloned().collect();
     let w = kpi_w(ui, 4);
     ui.horizontal(|ui| {
-        kpi(ui, w, "Fondo inicial", &money(s.opening_balance), &format!("abierta {} por {}", s.opened.format("%d/%m %H:%M"), s.user), MUTED);
+        kpi(ui, w, "Fondo inicial", &money(s.opening_balance), &format!("abierta {} por {}", s.opened.format("%d/%m %H:%M"), s.user), MUTED());
         ui.add_space(4.0);
         let cash: f64 = pays.iter().filter(|p| p.method == "Efectivo").map(|p| p.amount).sum();
         kpi(ui, w, "Cobros en efectivo", &money(cash), &format!("{} cobros", pays.iter().filter(|p| p.method == "Efectivo").count()), OK);
@@ -150,7 +150,7 @@ fn open(app: &mut App, ui: &mut Ui, s: CashSession) {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("Contado: {}", money(counted))).family(crate::theme::sb()));
-                ui.label(RichText::new(format!("Esperado: {}", money(expected))).color(MUTED));
+                ui.label(RichText::new(format!("Esperado: {}", money(expected))).color(MUTED()));
             });
             let (txt, col) = if diff.abs() < 0.005 {
                 ("Caja cuadrada ✔".to_string(), OK)

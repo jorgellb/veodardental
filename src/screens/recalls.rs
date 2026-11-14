@@ -11,7 +11,7 @@ pub fn state_color(s: RecallState) -> Color32 {
         RecallState::Pendiente => WARN,
         RecallState::Contactado => INFO,
         RecallState::Citado => OK,
-        RecallState::Rechazado => MUTED,
+        RecallState::Rechazado => MUTED(),
     }
 }
 
@@ -74,7 +74,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 let p = app.db.patient(r.patient_id).cloned().unwrap_or_default();
                 let cells = [
                     cellc(fmt_date(r.date), if r.date < app.today && r.state == RecallState::Pendiente { DANGER } else { TEXT }),
-                    cellc(if p.active { p.full_name() } else { format!("{} (de baja)", p.full_name()) }, if p.active { TEXT } else { MUTED }),
+                    cellc(if p.active { p.full_name() } else { format!("{} (de baja)", p.full_name()) }, if p.active { TEXT } else { MUTED() }),
                     cell(&p.mobile),
                     cell(&r.reason),
                     cell(app.db.doctor_alias(r.doctor_id)),
@@ -130,5 +130,5 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.add_space(6.0);
-    ui.label(RichText::new("Los recalls se generan solos al realizar higienes, revisiones, implantes, periodoncia u ortodoncia; al dar cita se marcan como «Citado».").size(13.5).color(MUTED));
+    ui.label(RichText::new("Los recalls se generan solos al realizar higienes, revisiones, implantes, periodoncia u ortodoncia; al dar cita se marcan como «Citado».").size(13.5).color(MUTED()));
 }

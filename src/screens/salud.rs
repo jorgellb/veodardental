@@ -82,7 +82,7 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         });
         if locked {
             let integrity = app.db.health_integrity(orig.id);
-            let col = if integrity == crate::firmado::Integrity::Modified { DANGER } else { MUTED };
+            let col = if integrity == crate::firmado::Integrity::Modified { DANGER } else { MUTED() };
             ui.label(RichText::new(integrity.label()).font(mdf(12.3)).color(col));
         } else {
             ui.checkbox(&mut f.signed, "Revisado y firmado por el paciente");
@@ -93,7 +93,7 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         if !alerts.is_empty() || !allergies.is_empty() {
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Avisos para la ficha:").color(MUTED));
+                ui.label(RichText::new("Avisos para la ficha:").color(MUTED()));
                 for a in &alerts {
                     pill(ui, &format!("⚠ {a}"), DANGER);
                 }
@@ -104,7 +104,7 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         }
         if !interests.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Oportunidades:").color(MUTED));
+                ui.label(RichText::new("Oportunidades:").color(MUTED()));
                 for i in &interests {
                     pill(ui, i, ACCENT);
                 }
@@ -156,7 +156,7 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
                         ui.label("Cepillados al día");
                         ui.add(egui::DragValue::new(&mut f.brushings).range(0..=6));
                     });
-                    ui.label(RichText::new("Utiliza para su higiene").color(MUTED));
+                    ui.label(RichText::new("Utiliza para su higiene").color(MUTED()));
                     ui.horizontal_wrapped(|ui| {
                         for a in AIDS {
                             let mut on = f.aids.iter().any(|x| x == a);
@@ -223,7 +223,7 @@ pub fn captacion(app: &mut App, ui: &mut Ui) {
         }
         let tbl = Table::new("captacion", vec![("Procedencia", 220.0), ("Pacientes", 100.0), ("% del total", 110.0), ("Producción generada", 170.0), ("", 360.0)]);
         tbl.header(ui);
-        let palette = [ACCENT, INFO, Color32::from_rgb(214, 96, 140), WARN, Color32::from_rgb(110, 90, 200), OK, MUTED, DANGER];
+        let palette = [ACCENT, INFO, Color32::from_rgb(214, 96, 140), WARN, Color32::from_rgb(110, 90, 200), OK, MUTED(), DANGER];
         for (i, (k, n, prod)) in rows.iter().enumerate() {
             let r = tbl.row(ui, i, false, &[cell(k), cell(n.to_string()), cell(format!("{:.0} %", *n as f64 * 100.0 / total.max(1) as f64)), cell(money(*prod)), cell("")]);
             let w = (r.rect.width() * 0.3) * (*n as f32 / max as f32);

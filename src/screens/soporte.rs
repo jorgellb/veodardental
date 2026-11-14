@@ -31,7 +31,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
         }
         let Some(report) = app.support.report.clone() else { return };
         ui.add_space(6.0);
-        ui.label(RichText::new("Esto es todo lo que lleva:").color(MUTED));
+        ui.label(RichText::new("Esto es todo lo que lleva:").color(MUTED()));
         egui::ScrollArea::vertical().id_salt("soporte_prev").max_height(260.0).show(ui, |ui| {
             let mut text = report.clone();
             ui.add(egui::TextEdit::multiline(&mut text).interactive(false).desired_width(f32::INFINITY).font(egui::TextStyle::Monospace));
@@ -86,7 +86,7 @@ pub fn pilot_panel(app: &mut App, ui: &mut Ui) {
         let rows = crate::medidas::summary(&app.db.measures, now - chrono::Duration::days(30), now);
         egui::Grid::new("piloto").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
             for (k, v) in rows {
-                ui.label(RichText::new(k).color(MUTED));
+                ui.label(RichText::new(k).color(MUTED()));
                 ui.label(v);
                 ui.end_row();
             }

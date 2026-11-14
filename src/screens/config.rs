@@ -139,7 +139,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 18.0;
         // menú de apartados
         ui.allocate_ui_with_layout(egui::vec2(nav_w, h), egui::Layout::top_down(egui::Align::Min), |ui| {
-            egui::Frame::new().fill(CARD).stroke(egui::Stroke::new(1.0, BORDER)).corner_radius(egui::CornerRadius::same(16)).inner_margin(egui::Margin::symmetric(10, 8)).shadow(shadow()).show(ui, |ui| {
+            egui::Frame::new().fill(CARD).stroke(egui::Stroke::new(1.0, BORDER())).corner_radius(egui::CornerRadius::same(16)).inner_margin(egui::Margin::symmetric(10, 8)).shadow(shadow()).show(ui, |ui| {
                 ui.set_width(nav_w - 20.0);
                 egui::ScrollArea::vertical().id_salt("cfg_nav").auto_shrink([false, true]).max_height(h - 28.0).show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
@@ -149,7 +149,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         }
                         // rótulo del grupo, compacto
                         let (gr, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 17.0), egui::Sense::hover());
-                        ui.painter().text(egui::pos2(gr.min.x + 10.0, gr.center().y + 2.0), egui::Align2::LEFT_CENTER, group.to_uppercase(), sbf(10.6), SUBTLE);
+                        ui.painter().text(egui::pos2(gr.min.x + 10.0, gr.center().y + 2.0), egui::Align2::LEFT_CENTER, group.to_uppercase(), sbf(10.6), SUBTLE());
                         ui.add_space(0.0);
                         for t in tabs.iter() {
                             if nav_item(ui, *t, app.lists.cfg_tab == *t) {
@@ -172,7 +172,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(RichText::new(tab.label()).font(bf(22.0)).color(HEADING));
-                    ui.label(RichText::new(tab.desc()).font(mdf(13.5)).color(MUTED));
+                    ui.label(RichText::new(tab.desc()).font(mdf(13.5)).color(MUTED()));
                 });
             });
             ui.add_space(12.0);
@@ -317,7 +317,7 @@ fn clinic_tab(app: &mut App, ui: &mut Ui) {
             ui.set_width(ui.available_width());
             let c = &mut app.db.config;
             section(ui, "Agenda");
-            ui.label(RichText::new("Intervalo de la agenda").size(13.5).color(MUTED));
+            ui.label(RichText::new("Intervalo de la agenda").size(13.5).color(MUTED()));
             crate::theme::combo("slot").width(140.0).selected_text(format!("{} min", c.slot_minutes)).show_ui(ui, |ui| {
                 for m in [5, 10, 15, 20, 30] {
                     ui.selectable_value(&mut c.slot_minutes, m, format!("{m} min"));
@@ -368,7 +368,7 @@ fn boxes_tab(app: &mut App, ui: &mut Ui) {
         let names: Vec<(u32, String)> = app.db.centers.iter().map(|c| (c.id, c.name.clone())).collect();
         let used: Vec<u32> = app.db.appointments.iter().map(|a| a.box_id).collect();
         for b in app.db.boxes.iter_mut() {
-            egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE)).corner_radius(egui::CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+            egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE())).corner_radius(egui::CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
@@ -413,21 +413,21 @@ fn billing_tab(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 field(ui, "Serie de recibos", &mut c.receipt_series, 120.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Siguiente nº").size(13.5).color(MUTED));
+                    ui.label(RichText::new("Siguiente nº").size(13.5).color(MUTED()));
                     ui.add(egui::DragValue::new(&mut c.next_receipt).range(1..=999_999));
                 });
             });
             ui.vertical(|ui| {
-                ui.label(RichText::new("Validez de los presupuestos").size(13.5).color(MUTED));
+                ui.label(RichText::new("Validez de los presupuestos").size(13.5).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut c.budget_valid_days).range(1..=730).suffix(" días"));
             });
-            ui.label(RichText::new("Las facturas se numeran solas, sin huecos.").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("Las facturas se numeran solas, sin huecos.").font(mdf(12.8)).color(MUTED()));
             ui.add_space(8.0);
             section(ui, "Exención de IVA en las facturas nuevas");
             for v in crate::model::VatExemption::ALL {
                 ui.radio_value(&mut c.vat_exemption, v, format!("Art. {}: {}", v.article(), v.scope()));
             }
-            ui.label(RichText::new("La elección es de la gestoría. Cada factura guarda la suya al emitirse: las ya emitidas no cambian.").font(mdf(12.8)).color(MUTED));
+            ui.label(RichText::new("La elección es de la gestoría. Cada factura guarda la suya al emitirse: las ya emitidas no cambian.").font(mdf(12.8)).color(MUTED()));
         });
         card(&mut cols[1], |ui| {
             ui.set_width(ui.available_width());
@@ -491,7 +491,7 @@ pub fn week_editor(ui: &mut Ui, id: impl egui::AsIdSalt, w: &mut crate::horario:
                 w.0[d] = if on { vec![Shift::new(default.0, default.1)] } else { vec![] };
             }
             if w.0[d].is_empty() {
-                ui.label(RichText::new(off).color(MUTED));
+                ui.label(RichText::new(off).color(MUTED()));
                 ui.end_row();
                 continue;
             }
@@ -560,7 +560,8 @@ pub fn collaborators(app: &mut App, ui: &mut Ui) {
             tbl.header(ui);
             let mut pick = None;
             for (i, c) in app.db.collaborators.iter().enumerate() {
-                if tbl.row(ui, i, app.lists.collab_sel == Some(c.id), &[cell(&c.code), cellc(&c.alias, rgb(c.color)), cell(&c.name), cell(&c.specialty), cellc(if c.active { "Activo" } else { "Baja" }, if c.active { OK } else { MUTED })]).clicked() {
+                if tbl.row(ui, i, app.lists.collab_sel == Some(c.id), &[cell(&c.code), cellc(&c.alias, rgb(c.color)), cell(&c.name), cell(&c.specialty), cellc(if c.active { "Activo" } else { "Baja" }, if c.active { OK } else { MUTED() })]).clicked()
+                {
                     pick = Some(c.id);
                 }
             }
@@ -786,7 +787,7 @@ fn integrations(app: &mut App, ui: &mut Ui) {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 for (name, desc, screen, place) in pair {
-                    egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE)).corner_radius(egui::CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(14, 12)).show(ui, |ui| {
+                    egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE())).corner_radius(egui::CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(14, 12)).show(ui, |ui| {
                         ui.set_width(col_w - 30.0);
                         ui.set_min_height(58.0);
                         ui.horizontal_top(|ui| {
@@ -800,7 +801,7 @@ fn integrations(app: &mut App, ui: &mut Ui) {
                                 ui.set_width(text_w);
                                 ui.spacing_mut().item_spacing.y = 2.0;
                                 ui.label(RichText::new(*name).font(crate::theme::sbf(14.5)).color(HEADING));
-                                ui.label(RichText::new(*desc).font(crate::theme::mdf(12.8)).color(MUTED));
+                                ui.label(RichText::new(*desc).font(crate::theme::mdf(12.8)).color(MUTED()));
                                 ui.label(RichText::new(format!("Se configura en {place}")).font(crate::theme::mdf(12.0)).color(ACCENT_DARK));
                             });
                             // el texto deja un hueco fijo a la derecha para el botón
@@ -810,7 +811,7 @@ fn integrations(app: &mut App, ui: &mut Ui) {
                                         go = Some((*screen, *name));
                                     }
                                 } else {
-                                    ui.label(RichText::new("Sin permiso").font(crate::theme::mdf(12.0)).color(SUBTLE)).on_hover_text("Su perfil de usuario no puede abrir esta sección");
+                                    ui.label(RichText::new("Sin permiso").font(crate::theme::mdf(12.0)).color(SUBTLE())).on_hover_text("Su perfil de usuario no puede abrir esta sección");
                                 }
                             });
                         });
@@ -852,7 +853,7 @@ fn books_card(app: &mut App, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
             field(ui, "Epígrafe del IAE de la clínica", &mut app.db.config.iae_epigrafe, 140.0);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Tipo de actividad").size(13.0).color(MUTED));
+                ui.label(RichText::new("Tipo de actividad").size(13.0).color(MUTED()));
                 let cur = crate::libros::Activity::of(&app.db).kind;
                 crate::theme::combo("libros_tipo")
                     .width(320.0)
@@ -868,7 +869,7 @@ fn books_card(app: &mut App, ui: &mut Ui) {
                     });
             });
             ui.vertical(|ui| {
-                ui.label(RichText::new("Año").size(13.0).color(MUTED));
+                ui.label(RichText::new("Año").size(13.0).color(MUTED()));
                 ui.add(egui::DragValue::new(&mut app.lists.books_year).range(2000..=2100));
             });
         });

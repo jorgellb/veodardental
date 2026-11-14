@@ -35,7 +35,7 @@ pub fn punch_card(app: &mut App, ui: &mut Ui) {
         let today = effective(&mine, me, app.today);
         ui.horizontal_wrapped(|ui| {
             for p in &today {
-                pill(ui, &format!("{} {}", p.kind.label(), p.at.format("%H:%M")), MUTED);
+                pill(ui, &format!("{} {}", p.kind.label(), p.at.format("%H:%M")), MUTED());
             }
             if today.is_empty() {
                 muted(ui, "Hoy aún no ha fichado.");
@@ -79,9 +79,9 @@ pub fn admin_panel(app: &mut App, ui: &mut Ui) {
                     ui.selectable_value(&mut app.jornada.user, *id, n);
                 }
             });
-            ui.label(RichText::new("Del").color(MUTED));
+            ui.label(RichText::new("Del").color(MUTED()));
             crate::screens::date_picker(ui, "jor_from", &mut app.jornada.from);
-            ui.label(RichText::new("al").color(MUTED));
+            ui.label(RichText::new("al").color(MUTED()));
             crate::screens::date_picker(ui, "jor_to", &mut app.jornada.to);
             if ui.button("💾 Exportar (CSV) a Documentos").clicked() {
                 let ids: Vec<u32> = users.iter().map(|u| u.0).collect();

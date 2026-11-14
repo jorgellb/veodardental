@@ -32,7 +32,7 @@ fn mode_text(app: &App) -> (String, egui::Color32) {
     } else if shared() {
         (format!("Este ordenador usa la carpeta compartida {} ({}).", station().data_dir, station_label()), INFO)
     } else {
-        ("Los datos están solo en este ordenador.".to_string(), MUTED)
+        ("Los datos están solo en este ordenador.".to_string(), MUTED())
     }
 }
 

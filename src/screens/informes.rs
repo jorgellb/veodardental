@@ -355,8 +355,8 @@ pub fn chart(ui: &mut Ui, data: &[(String, f64, f64)], h: f32) {
     for i in 0..=4 {
         let v = max * i as f64 / 4.0;
         let y = plot.max.y - plot.height() * i as f32 / 4.0;
-        p.line_segment([pos2(plot.min.x, y), pos2(plot.max.x, y)], egui::Stroke::new(1.0, BORDER));
-        p.text(pos2(plot.min.x - 6.0, y), Align2::RIGHT_CENTER, format!("{:.0} €", v), FontId::proportional(12.5), MUTED);
+        p.line_segment([pos2(plot.min.x, y), pos2(plot.max.x, y)], egui::Stroke::new(1.0, BORDER()));
+        p.text(pos2(plot.min.x - 6.0, y), Align2::RIGHT_CENTER, format!("{:.0} €", v), FontId::proportional(12.5), MUTED());
     }
     let n = data.len().max(1) as f32;
     let slot = plot.width() / n;
@@ -368,7 +368,7 @@ pub fn chart(ui: &mut Ui, data: &[(String, f64, f64)], h: f32) {
             let r = egui::Rect::from_min_size(pos2(x + slot / 2.0 - bw + k as f32 * bw, plot.max.y - hh), vec2(bw - 2.0, hh));
             p.rect_filled(r, CornerRadius::same(3), *c);
         }
-        p.text(pos2(x + slot / 2.0, plot.max.y + 6.0), Align2::CENTER_TOP, label, FontId::proportional(12.5), MUTED);
+        p.text(pos2(x + slot / 2.0, plot.max.y + 6.0), Align2::CENTER_TOP, label, FontId::proportional(12.5), MUTED());
     }
 }
 
@@ -475,14 +475,14 @@ fn dashboard(app: &mut App, ui: &mut Ui) {
         // con etiquetas (no pintado): se leen con un lector de pantalla
         egui::Grid::new("kpi").num_columns(5).striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
             for h in ["Indicador", "Valor", "Anterior", "Objetivo", ""] {
-                ui.label(RichText::new(h).font(sbf(13.0)).color(MUTED));
+                ui.label(RichText::new(h).font(sbf(13.0)).color(MUTED()));
             }
             ui.end_row();
             for (name, v, prev, goal, ok, how) in rows {
                 ui.vertical(|ui| {
                     ui.set_width(first);
                     ui.label(RichText::new(name).font(sbf(14.0)));
-                    ui.label(RichText::new(how).size(12.5).color(MUTED));
+                    ui.label(RichText::new(how).size(12.5).color(MUTED()));
                 });
                 ui.label(RichText::new(v).font(sbf(15.0)));
                 ui.label(prev);

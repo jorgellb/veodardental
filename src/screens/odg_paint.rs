@@ -48,9 +48,9 @@ pub fn skin(dark: bool) -> Skin {
     } else {
         Skin {
             bg: CARD,
-            border: BORDER,
+            border: BORDER(),
             text: HEADING,
-            muted: MUTED,
+            muted: MUTED(),
             tile: Color32::from_rgb(248, 250, 252),
             tile_hover: Color32::from_rgb(240, 244, 248),
             tile_sel: ACCENT_SOFT,

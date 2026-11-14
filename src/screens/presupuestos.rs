@@ -11,7 +11,7 @@ pub fn state_color(s: BudgetState) -> Color32 {
         BudgetState::Pendiente => WARN,
         BudgetState::Aceptado => OK,
         BudgetState::Rechazado => DANGER,
-        BudgetState::Cerrado => MUTED,
+        BudgetState::Cerrado => MUTED(),
     }
 }
 
@@ -100,7 +100,7 @@ fn table(app: &mut App, ui: &mut Ui, list: &[Budget], with_patient: bool) {
             cell(app.db.doctor_alias(b.doctor_id)),
             cell(app.db.tariff_name(b.tariff_id)),
             cellc(b.state.label(), state_color(b.state)),
-            cellc(fmt_date(exp), if b.state == BudgetState::Pendiente && exp < app.today { DANGER } else { MUTED }),
+            cellc(fmt_date(exp), if b.state == BudgetState::Pendiente && exp < app.today { DANGER } else { MUTED() }),
             cell(money(b.total())),
         ]);
         if tbl.row(ui, i, false, &cells).clicked() {
@@ -167,7 +167,7 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 ui.horizontal(|ui| {
                     field(ui, "Título", &mut b.title, 320.0);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Doctor").size(13.5).color(MUTED));
+                        ui.label(RichText::new("Doctor").size(13.5).color(MUTED()));
                         crate::theme::combo("b_doc").width(130.0).selected_text(app.db.doctor_alias(b.doctor_id)).show_ui(ui, |ui| {
                             for c in &app.db.collaborators {
                                 ui.selectable_value(&mut b.doctor_id, c.id, &c.alias);
@@ -175,7 +175,7 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                         });
                     });
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Tarifa").size(13.5).color(MUTED));
+                        ui.label(RichText::new("Tarifa").size(13.5).color(MUTED()));
                         let before = b.tariff_id;
                         crate::theme::combo("b_tar").width(190.0).selected_text(app.db.tariff_name(b.tariff_id)).show_ui(ui, |ui| {
                             for t in &app.db.tariffs {
@@ -189,7 +189,7 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                         }
                     });
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Validez (días)").size(13.5).color(MUTED));
+                        ui.label(RichText::new("Validez (días)").size(13.5).color(MUTED()));
                         ui.add(egui::DragValue::new(&mut b.valid_days).range(1..=730));
                     });
                 });
@@ -455,7 +455,7 @@ fn plan_card(app: &App, ui: &mut Ui, b: &mut Budget, editable: bool, act: &mut O
             });
         }
         if let Some(n) = b.tp.discarded_for {
-            ui.label(RichText::new(format!("Descartado: se eligió otra alternativa del plan (#{n}).")).color(MUTED));
+            ui.label(RichText::new(format!("Descartado: se eligió otra alternativa del plan (#{n}).")).color(MUTED()));
         }
         // fases con su subtotal (suman exactamente el total)
         let phases = b.phase_totals();
@@ -502,7 +502,7 @@ fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
     let first = app.db.treatments_for(b.tariff_id).find(|t| t.odg != OdgKind::Ausente).map(|t| t.code.clone()).unwrap_or_default();
     let mut st: (String, String) = ui.data_mut(|d| d.get_temp(key)).unwrap_or((first, String::new()));
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Añadir línea:").color(MUTED));
+        ui.label(RichText::new("Añadir línea:").color(MUTED()));
         let tariff = b.tariff_id;
         crate::screens::treatment_picker(ui, &format!("bl_tto{}", b.id), &app.db, tariff, &mut st.0, 320.0, |t| t.odg != OdgKind::Ausente, |t| format!("{} · {} · {}", t.code, t.description, money(app.db.price_for(&t.code, tariff))));
         ui.add_sized([110.0, 32.0], egui::TextEdit::singleline(&mut st.1).hint_text("Piezas: 36 37"));

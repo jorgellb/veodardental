@@ -117,7 +117,7 @@ pub fn view(app: &mut App, ui: &mut Ui) {
         for (i, l) in links.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(&l.name).family(sb()));
-                ui.label(RichText::new(&l.address).color(MUTED));
+                ui.label(RichText::new(&l.address).color(MUTED()));
                 if ui.small_button("Quitar").clicked() {
                     let mut v = links.clone();
                     v.remove(i);
@@ -182,7 +182,7 @@ pub fn view(app: &mut App, ui: &mut Ui) {
     ui.add_space(6.0);
     egui::Grid::new("group_summary").striped(true).spacing([16.0, 6.0]).show(ui, |ui| {
         for h in ["Clínica", "Centro", "Actos", "Producción", "Cobrado", "Citas", "Acudió", "No acudió"] {
-            ui.label(RichText::new(h).size(12.5).color(MUTED));
+            ui.label(RichText::new(h).size(12.5).color(MUTED()));
         }
         ui.end_row();
         for s in &ok {

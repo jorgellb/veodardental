@@ -143,7 +143,7 @@ fn estado_color(e: u8) -> Color32 {
         3 | 4 => OK,
         2 => DANGER,
         8 | 10 => WARN,
-        5 | 11 => MUTED,
+        5 | 11 => MUTED(),
         _ => INFO,
     }
 }
@@ -249,7 +249,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
         } else {
             // quién receta: solo quien puede (no una higienista ni sin nº de colegiado)
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Prescriptor").color(MUTED));
+                ui.label(RichText::new("Prescriptor").color(MUTED()));
                 let cur = app.db.doctor(r.doctor_id).map(|d| d.name.clone()).unwrap_or_default();
                 let mut chosen = r.doctor_id;
                 crate::theme::combo("rx_prescriber").width(260.0).selected_text(cur).show_ui(ui, |ui| {
@@ -342,7 +342,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
                         sorted.sort_by(|a, b| a.group.cmp(&b.group));
                         for d in &sorted {
                             if d.group != last {
-                                ui.label(RichText::new(&d.group).size(12.0).color(MUTED));
+                                ui.label(RichText::new(&d.group).size(12.0).color(MUTED()));
                                 last = d.group.clone();
                             }
                             ui.selectable_value(&mut app.rx.drug, d.name.clone(), &d.name);
@@ -354,7 +354,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
                         rm.items.push(rx_item_from_drug(d));
                     }
                 });
-                ui.label(RichText::new("Observaciones").size(13.5).color(MUTED));
+                ui.label(RichText::new("Observaciones").size(13.5).color(MUTED()));
                 ui.add(egui::TextEdit::multiline(&mut rm.notes).desired_rows(2).desired_width(f32::INFINITY));
                 if issued {
                     // emitida: nada cambia
@@ -403,7 +403,7 @@ fn editor(app: &mut App, ui: &mut Ui, id: u32) {
 /// Datos de la receta oficial de un medicamento (conexión directa).
 fn official_item_fields(ui: &mut Ui, i: usize, it: &mut RxItem) {
     ui.add_space(4.0);
-    ui.label(RichText::new("Datos para la receta oficial").size(12.5).color(MUTED));
+    ui.label(RichText::new("Datos para la receta oficial").size(12.5).color(MUTED()));
     ui.horizontal_wrapped(|ui| {
         crate::theme::combo(("rx_tipo", i)).width(170.0).selected_text(["Medicamento", "Producto sanitario", "Nutrición", "Vacuna individualizada", "Fórmula magistral"][it.product_type.min(4) as usize]).show_ui(ui, |ui| {
             for (v, l) in [(0u8, "Medicamento"), (1, "Producto sanitario"), (4, "Fórmula magistral")] {
@@ -414,7 +414,7 @@ fn official_item_fields(ui: &mut Ui, i: usize, it: &mut RxItem) {
             ui.add_sized([340.0, 30.0], egui::TextEdit::singleline(&mut it.composition).hint_text("Composición de la fórmula"));
         } else {
             ui.add_sized([120.0, 30.0], egui::TextEdit::singleline(&mut it.cn).hint_text("Código nacional"));
-            ui.label(RichText::new("o").color(MUTED));
+            ui.label(RichText::new("o").color(MUTED()));
             ui.add_sized([150.0, 30.0], egui::TextEdit::singleline(&mut it.active_code).hint_text("Cód. principio activo"));
             ui.add_sized([100.0, 30.0], egui::TextEdit::singleline(&mut it.dosage).hint_text("Dosis (600 mg)"));
         }
@@ -466,7 +466,7 @@ fn direct_card(app: &mut App, ui: &mut Ui, id: u32) {
         ui.horizontal_wrapped(|ui| {
             field(ui, &format!("Certificado de firma de {} en este ordenador (.p12 / .pfx)", app.db.doctor_alias(r.doctor_id)), &mut app.rx.cert_path, 420.0);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Contraseña del certificado").size(13.5).color(MUTED));
+                ui.label(RichText::new("Contraseña del certificado").size(13.5).color(MUTED()));
                 ui.add_sized([180.0, 32.0], egui::TextEdit::singleline(&mut app.rx.password).password(true));
             });
         });
@@ -790,7 +790,7 @@ fn official_card(app: &mut App, ui: &mut Ui, id: u32) {
             muted(ui, format!("Emitida el {} en {}. La farmacia la valida con el código de verificación.", r.erx_date.map(fmt_date).unwrap_or_default(), r.erx_platform));
             // el código se corrige por otro, nunca se quita: la receta emitida se queda como está
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Corregir el código").color(MUTED));
+                ui.label(RichText::new("Corregir el código").color(MUTED()));
                 ui.add_sized([200.0, 32.0], egui::TextEdit::singleline(&mut app.rx.cve).hint_text("El código correcto"));
                 if ui.button("Corregir").clicked() {
                     let code = app.rx.cve.trim().to_uppercase();
@@ -883,7 +883,7 @@ pub fn config_panel(app: &mut App, ui: &mut Ui) {
         egui::ScrollArea::horizontal().id_salt("erx_docs_sc").show(ui, |ui| {
             egui::Grid::new("erx_docs").num_columns(5).spacing([22.0, 8.0]).show(ui, |ui| {
                 for h in ["Profesional", "Nº colegiado", "Certificado de firma", "Alta en la plataforma", "Estado"] {
-                    ui.label(RichText::new(h).color(MUTED).size(13.0));
+                    ui.label(RichText::new(h).color(MUTED()).size(13.0));
                 }
                 ui.end_row();
                 for (id, alias, lic) in docs {
@@ -935,7 +935,7 @@ fn phase(ui: &mut Ui, done: bool, title: &str, detail: &str, button: Option<&str
     let col = if done { OK } else { WARN };
     let mut clicked = false;
     ui.add_space(3.0);
-    egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE)).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
+    egui::Frame::new().fill(ROW_ALT).stroke(egui::Stroke::new(1.0, HAIRLINE())).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_top(|ui| {
             let (r, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
@@ -957,7 +957,7 @@ fn phase(ui: &mut Ui, done: bool, title: &str, detail: &str, button: Option<&str
                     ui.set_width(tw);
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(RichText::new(title).family(sb()).size(14.5).color(HEADING));
-                    ui.label(RichText::new(detail).size(13.5).color(MUTED));
+                    ui.label(RichText::new(detail).size(13.5).color(MUTED()));
                 })
                 .response;
             if let Some(b) = button {
@@ -1037,14 +1037,14 @@ fn real_pharmacies(app: &mut App, ui: &mut Ui) {
                         Kind::Programa => OK,
                         Kind::Parcial => WARN,
                         Kind::Instalacion | Kind::Documento => INFO,
-                        Kind::Opcional => SUBTLE,
+                        Kind::Opcional => SUBTLE(),
                     };
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(c.code).family(sb()).size(13.5).color(HEADING));
                         ui.label(RichText::new(c.title).size(13.5).color(TEXT));
                         pill(ui, c.kind.label(), col);
                     });
-                    ui.label(RichText::new(c.how).size(13.0).color(MUTED));
+                    ui.label(RichText::new(c.how).size(13.0).color(MUTED()));
                     ui.add_space(4.0);
                 }
             });
@@ -1196,7 +1196,7 @@ fn direct_panel(app: &mut App, ui: &mut Ui) {
             ui.label(RichText::new(&app.rx.status).color(INFO));
         }
         ui.add_space(4.0);
-        ui.label(RichText::new("Correo de cada prescriptor (va en la receta; si se deja vacío, el de la clínica)").size(13.5).color(MUTED));
+        ui.label(RichText::new("Correo de cada prescriptor (va en la receta; si se deja vacío, el de la clínica)").size(13.5).color(MUTED()));
         let docs: Vec<(u32, String)> = app.db.collaborators.iter().filter(|c| c.active && c.license.trim() != "-").map(|c| (c.id, c.alias.clone())).collect();
         ui.horizontal_wrapped(|ui| {
             for (id, alias) in docs {

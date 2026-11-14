@@ -50,7 +50,7 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
             section(ui, "Envío automático de las comunicaciones");
             right_aligned(ui, |ui| {
                 if !c.auto_send {
-                    pill(ui, "Desactivado", MUTED);
+                    pill(ui, "Desactivado", MUTED());
                 } else if c.auto_station != me {
                     pill(ui, "En otro ordenador", INFO);
                 } else if c.last_auto == Some(app.today) {
@@ -73,14 +73,14 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
             c.auto_station = me.clone();
         }
         if !c.ready() {
-            ui.label(RichText::new("Primero configure y active el correo de arriba.").size(12.5).color(MUTED));
+            ui.label(RichText::new("Primero configure y active el correo de arriba.").size(12.5).color(MUTED()));
         }
         ui.horizontal_wrapped(|ui| {
             ui.label("Entre las");
             ui.add(egui::DragValue::new(&mut c.auto_hour).range(0..=22).suffix(":00"));
             ui.label("y las");
             ui.add(egui::DragValue::new(&mut c.auto_until).range(1..=24).suffix(":00"));
-            ui.label(RichText::new("(si el ordenador está apagado, se envía al encenderlo; de noche, a la mañana siguiente)").size(12.5).color(MUTED));
+            ui.label(RichText::new("(si el ordenador está apagado, se envía al encenderlo; de noche, a la mañana siguiente)").size(12.5).color(MUTED()));
         });
         ui.horizontal_wrapped(|ui| {
             if c.auto_station.trim().is_empty() || c.auto_station == me {
@@ -92,19 +92,19 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
                 }
             }
             if let Some(d) = c.last_auto {
-                ui.label(RichText::new(format!("· Último envío automático: {}", fmt_date(d))).size(12.5).color(MUTED));
+                ui.label(RichText::new(format!("· Último envío automático: {}", fmt_date(d))).size(12.5).color(MUTED()));
             }
         });
         ui.add_space(4.0);
         if by_mail.is_empty() {
             ui.label(RichText::new("No hay plantillas activas por correo: active o cree alguna en Comunicaciones › Plantillas de mensajes.").size(12.5).color(WARN));
         } else {
-            ui.label(RichText::new(format!("Plantillas por correo: {}.", by_mail.join(" · "))).size(12.5).color(MUTED));
+            ui.label(RichText::new(format!("Plantillas por correo: {}.", by_mail.join(" · "))).size(12.5).color(MUTED()));
         }
         ui.horizontal(|ui| {
             if sending {
                 ui.add(egui::Spinner::new().size(16.0));
-                ui.label(RichText::new("Enviando…").color(MUTED));
+                ui.label(RichText::new("Enviando…").color(MUTED()));
             } else if ui.add_enabled(c.ready(), egui::Button::new("Hacer ahora el envío de hoy")).on_hover_text("Prepara los mensajes de hoy y envía ya los de correo").clicked() {
                 run_now = true;
             }
@@ -121,7 +121,7 @@ fn auto_card(app: &mut App, ui: &mut Ui) -> bool {
 }
 
 fn small_label(ui: &mut Ui, t: &str) {
-    ui.label(RichText::new(t).font(mdf(12.8)).color(MUTED));
+    ui.label(RichText::new(t).font(mdf(12.8)).color(MUTED()));
 }
 
 pub fn panel(app: &mut App, ui: &mut Ui) {
@@ -142,7 +142,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                     } else if c.enabled {
                         pill(ui, "Faltan datos", WARN);
                     } else {
-                        pill(ui, "Desactivado", MUTED);
+                        pill(ui, "Desactivado", MUTED());
                     }
                 });
             });
@@ -156,7 +156,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                     let sel = c.host.eq_ignore_ascii_case(host);
                     let b = egui::Button::new(RichText::new(name).size(12.8).color(if sel { ACCENT_DARK } else { TEXT }))
                         .fill(if sel { ACCENT_SOFT } else { CARD })
-                        .stroke(Stroke::new(1.0, if sel { ACCENT } else { BORDER }))
+                        .stroke(Stroke::new(1.0, if sel { ACCENT } else { BORDER() }))
                         .corner_radius(CornerRadius::same(10));
                     if ui.add(b).clicked() {
                         c.host = host.into();
@@ -226,13 +226,13 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             if app.mail_ui.test_job.is_some() {
                 ui.horizontal(|ui| {
                     ui.add(egui::Spinner::new().size(18.0));
-                    ui.label(RichText::new("Enviando…").color(MUTED));
+                    ui.label(RichText::new("Enviando…").color(MUTED()));
                 });
             } else if ui.add_enabled(ok, egui::Button::new(RichText::new("Enviar correo de prueba").color(egui::Color32::WHITE).font(sbf(14.5))).fill(ACCENT).corner_radius(CornerRadius::same(10)).min_size(egui::vec2(0.0, 38.0))).clicked() {
                 send_test = Some(app.mail_ui.test_to.clone().unwrap_or_default());
             }
             if !ok {
-                ui.label(RichText::new("Active el envío e indique el servidor y la dirección del remitente.").size(12.5).color(MUTED));
+                ui.label(RichText::new("Active el envío e indique el servidor y la dirección del remitente.").size(12.5).color(MUTED()));
             }
             match &app.mail_ui.test_result {
                 Some(Ok(m)) => {

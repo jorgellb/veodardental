@@ -66,7 +66,7 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
         }
         ui.vertical(|ui| {
             let col = if !t.pending() {
-                MUTED
+                MUTED()
             } else if t.overdue(app.today) {
                 DANGER
             } else {
@@ -87,7 +87,7 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
                 }
                 if let Some(d) = t.due {
                     let txt = if d == app.today { "hoy".to_string() } else { fmt_date(d) };
-                    ui.label(RichText::new(format!("📅 {txt}")).size(13.0).color(if t.overdue(app.today) { DANGER } else { MUTED }));
+                    ui.label(RichText::new(format!("📅 {txt}")).size(13.0).color(if t.overdue(app.today) { DANGER } else { MUTED() }));
                 }
                 let to = if t.to.is_empty() {
                     "todo el equipo".to_string()
@@ -96,7 +96,7 @@ fn task_row(app: &mut App, ui: &mut Ui, t: &Task, me: &str) -> Option<(u32, bool
                 } else {
                     format!("para {}", t.to)
                 };
-                ui.label(RichText::new(format!("{to} · de {}", t.by)).size(13.0).color(MUTED));
+                ui.label(RichText::new(format!("{to} · de {}", t.by)).size(13.0).color(MUTED()));
                 if let Some(d) = t.done_on {
                     ui.label(RichText::new(format!("hecha el {} por {}", fmt_date(d), t.done_by)).size(13.0).color(OK));
                 }

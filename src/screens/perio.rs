@@ -194,7 +194,7 @@ fn legend(ui: &mut Ui, with_prev: bool) {
             pill(ui, n, c);
         }
         right_aligned(ui, |ui| {
-            ui.label(RichText::new("Pulse una pieza para editarla").font(mdf(12.5)).color(SUBTLE));
+            ui.label(RichText::new("Pulse una pieza para editarla").font(mdf(12.5)).color(SUBTLE()));
         });
     });
 }
@@ -253,7 +253,7 @@ fn arch_block(ui: &mut Ui, arch: &[u8], upper: bool, chart: &PerioChart, prev: O
     let x_of = |i: usize| rect.min.x + LABEL_W + i as f32 * tw + if i >= arch.len() / 2 { MID_GAP } else { 0.0 };
     let mut y = rect.min.y;
     // título
-    p.text(pos2(rect.min.x, y + 9.0), Align2::LEFT_CENTER, if upper { "ARCADA SUPERIOR" } else { "ARCADA INFERIOR" }, sbf(11.5), MUTED);
+    p.text(pos2(rect.min.x, y + 9.0), Align2::LEFT_CENTER, if upper { "ARCADA SUPERIOR" } else { "ARCADA INFERIOR" }, sbf(11.5), MUTED());
     y += title_h;
     let top_table = Rect::from_min_size(pos2(rect.min.x, y), vec2(width, top_rows.len() as f32 * ROW_H));
     y = top_table.max.y + 4.0;
@@ -301,7 +301,7 @@ fn arch_block(ui: &mut Ui, arch: &[u8], upper: bool, chart: &PerioChart, prev: O
             p.rect_filled(Rect::from_center_size(c, vec2(30.0, 20.0)), CornerRadius::same(10), ACCENT);
             p.text(c, Align2::CENTER_CENTER, t.to_string(), sbf(13.0), Color32::WHITE);
         } else {
-            p.text(c, Align2::CENTER_CENTER, t.to_string(), sbf(13.0), if missing { SUBTLE } else { HEADING });
+            p.text(c, Align2::CENTER_CENTER, t.to_string(), sbf(13.0), if missing { SUBTLE() } else { HEADING });
         }
     }
     // línea media
@@ -324,7 +324,7 @@ fn table(p: &Painter, r: Rect, rows: &[Row], arch: &[u8], chart: &PerioChart, si
         if k % 2 == 0 {
             p.rect_filled(Rect::from_min_max(pos2(rr.min.x + LABEL_W - 4.0, rr.min.y), rr.max), CornerRadius::same(4), Color32::from_rgba_unmultiplied(241, 245, 249, 150));
         }
-        p.text(pos2(rr.min.x + 2.0, rr.center().y), Align2::LEFT_CENTER, row.label(), mdf(11.8), MUTED);
+        p.text(pos2(rr.min.x + 2.0, rr.center().y), Align2::LEFT_CENTER, row.label(), mdf(11.8), MUTED());
         for (i, &t) in arch.iter().enumerate() {
             let Some(pt) = chart.teeth.iter().find(|x| x.tooth == t) else { continue };
             if pt.missing {
@@ -428,7 +428,7 @@ fn band(p: &Painter, r: Rect, arch: &[u8], _upper: bool, chart: &PerioChart, pre
     for k in [3, 6, 9, 12] {
         let yy = cej_y + ap * k as f32 * mm;
         if r.y_range().contains(yy) {
-            p.text(pos2(x_start - 6.0, yy), Align2::RIGHT_CENTER, format!("{k}"), mdf(9.5), SUBTLE);
+            p.text(pos2(x_start - 6.0, yy), Align2::RIGHT_CENTER, format!("{k}"), mdf(9.5), SUBTLE());
         }
     }
     // piezas
@@ -548,7 +548,7 @@ fn editor_popover(app: &mut App, ui: &mut Ui, sel: u32, t: u8, col: Rect) {
     egui::Area::new(egui::Id::unique("perio_editor")).order(egui::Order::Foreground).fixed_pos(pos2(x, y)).constrain(true).show(ui.ctx(), |ui| {
         egui::Frame::new()
             .fill(CARD)
-            .stroke(Stroke::new(1.0, BORDER))
+            .stroke(Stroke::new(1.0, BORDER()))
             .corner_radius(CornerRadius::same(16))
             .inner_margin(egui::Margin::symmetric(18, 16))
             .shadow(egui::Shadow { offset: [0, 14], blur: 40, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 46) })
@@ -561,7 +561,7 @@ fn editor_popover(app: &mut App, ui: &mut Ui, sel: u32, t: u8, col: Rect) {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 1.0;
                         ui.label(RichText::new(format!("Pieza {t}")).font(bf(19.0)).color(HEADING));
-                        ui.label(RichText::new(tooth_name(t)).font(mdf(12.5)).color(MUTED));
+                        ui.label(RichText::new(tooth_name(t)).font(mdf(12.5)).color(MUTED()));
                     });
                     right_aligned(ui, |ui| {
                         if ui.add(egui::Button::new(RichText::new("✕").size(13.0)).min_size(vec2(30.0, 30.0)).corner_radius(CornerRadius::same(15))).on_hover_text("Cerrar").clicked() {
@@ -580,7 +580,7 @@ fn editor_popover(app: &mut App, ui: &mut Ui, sel: u32, t: u8, col: Rect) {
                         egui::Grid::new(("pg", band)).num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
                             ui.label("");
                             for s in sites {
-                                ui.label(RichText::new(s).font(mdf(11.5)).color(MUTED));
+                                ui.label(RichText::new(s).font(mdf(11.5)).color(MUTED()));
                             }
                             ui.end_row();
                             ui.label(RichText::new("Sondaje").font(mdf(12.5)));
@@ -617,7 +617,7 @@ fn editor_popover(app: &mut App, ui: &mut Ui, sel: u32, t: u8, col: Rect) {
                     });
                     let ins: Vec<String> = (0..6).map(|i| pt.attachment(i).to_string()).collect();
                     ui.add_space(4.0);
-                    ui.label(RichText::new(format!("Nivel de inserción (mm): {}", ins.join(" · "))).font(mdf(12.0)).color(MUTED));
+                    ui.label(RichText::new(format!("Nivel de inserción (mm): {}", ins.join(" · "))).font(mdf(12.0)).color(MUTED()));
                 }
                 changed = serde_json::to_string(&*pt).unwrap_or_default() != before;
             });

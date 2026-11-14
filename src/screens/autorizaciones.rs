@@ -75,7 +75,7 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
                     if shown == "Aprobada" {
                         OK
                     } else if matches!(shown, "Denegada" | "Anulada" | "Caducada") {
-                        MUTED
+                        MUTED()
                     } else {
                         INFO
                     },
@@ -83,10 +83,10 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
                 ui.label(RichText::new(&r.reference).family(sb()));
                 ui.label(r.lines.iter().map(|l| format!("{} {}", l.code, l.description)).collect::<Vec<_>>().join(" · "));
                 if !r.number.is_empty() {
-                    ui.label(RichText::new(format!("nº {}", r.number)).color(MUTED));
+                    ui.label(RichText::new(format!("nº {}", r.number)).color(MUTED()));
                 }
                 if let Some(d) = r.valid_until {
-                    ui.label(RichText::new(format!("válida hasta el {}", d.format("%d/%m/%Y"))).color(MUTED));
+                    ui.label(RichText::new(format!("válida hasta el {}", d.format("%d/%m/%Y"))).color(MUTED()));
                 }
             });
             ui.horizontal_wrapped(|ui| match r.state {
