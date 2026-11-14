@@ -362,9 +362,10 @@ pub(crate) mod tests {
         let (port, h) = smtp_that(false);
         assert!(matches!(send_tracked(&cfg(port), "ana@example.com", "Cita", "Hola", &[]), Err(SendError::NotSent(_))));
         h.join().unwrap();
-        // nadie escuchando en el puerto: no salió
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        assert!(matches!(send_tracked(&cfg(closed), "ana@example.com", "Cita", "Hola", &[]), Err(SendError::NotSent(_))));
+        // nadie escuchando en el puerto: no salió. El puerto 1 queda fuera de
+        // los que el sistema da a los servidores de las demás pruebas (que
+        // corren a la vez): un puerto recién cerrado lo podía coger otra.
+        assert!(matches!(send_tracked(&cfg(1), "ana@example.com", "Cita", "Hola", &[]), Err(SendError::NotSent(_))));
     }
 
     #[test]

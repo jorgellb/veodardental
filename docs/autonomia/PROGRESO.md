@@ -99,28 +99,20 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-CIERRE-01: restauración ensayada en carpeta aislada con relaciones, dinero y diario comprobados | E-086 | `1ea9a48` |
 
 ## Siguiente acción
-Las fases 1 a 6 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS, cada cosa con su tarea X:
-- piloto, AEAT con certificado y Meta;
-- firma de código y clave de versiones;
-- homologación foral;
-- revisiones externas (B-13, paquete en `docs/revision_externa`);
-- TPV, transcripción, revisión clínica y traducciones;
-- alojamiento en la nube (B-18);
-- datáfono y financiación (B-19);
-- aseguradoras (B-20);
-- grupo real de clínicas (B-21).
+**Ingeniería disponible completada; validaciones o activaciones externas pendientes.** Las tareas de ingeniería de las fases 0 a 6, las transversales y las de cierre están hechas. El resumen de la entrega está en `ENTREGA.md`.
 
-Quedan:
-1. **Transversales:**
-   - T-R7-1: el dinero, al céntimo, con pruebas de propiedades;
-   - T-R7-5: autorización en el servidor, ruta por ruta;
-   - T-R7-6: límites de entrada;
-   - T-R7-7: minimización de datos;
-   - T-INI-07: catálogo de invariantes;
-   - T-PROC-01 y T-PROC-02: evidencia de los límites y del ciclo.
-2. **Cierre:**
-   - T-CIERRE-01: restauración ensayada en una carpeta aislada;
-   - T-CIERRE-02: verificador, órdenes de calidad, `ENTREGA.md` y resumen en la conversación.
+Lo que queda espera a otros. Cada cosa tiene su bloqueo en `BLOQUEOS.md` y su tarea `BLOQUEADA_EXTERNA` en `TAREAS.json`, con el paso exacto para resolverla:
+- piloto (B-08), AEAT con el certificado de la clínica (B-06), Meta (B-07);
+- firma de código (B-25) y clave de versiones (B-27);
+- homologación foral (B-12);
+- revisiones externas (B-13, con el paquete de `docs/revision_externa`);
+- TPV (B-14), transcripción (B-15), revisión clínica (B-16) y traducciones (B-17);
+- nube (B-18), datáfono y financiación (B-19), aseguradoras (B-20) y grupo real de clínicas (B-21).
+
+Si se reanuda:
+1. Comprobar que la batería y el verificador siguen en verde: `tools/aislado.sh cargo run --locked --example verificar_objetivo`.
+2. Atender lo que llegue de los bloqueos: cada uno dice qué prueba hacer después.
+3. No hacer push, fusión ni versiones sin una autorización expresa.
 
 ## Notas para seguir
 - La anchura a 1280 px la vigila `ui_tests::every_screen_fits_1280_wide`. Una pantalla nueva o cambiada debe pasarla. Para los campos, `field`; para las tablas, `Table`; en filas de campos, `horizontal_wrapped`.

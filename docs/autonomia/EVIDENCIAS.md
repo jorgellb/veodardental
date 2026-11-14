@@ -2244,3 +2244,24 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 575 pasan (573 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-087 T-CIERRE-02: cierre con el verificador, las órdenes de calidad y la entrega
+- **Verificador del objetivo**, en modo de cierre (`tools/aislado.sh cargo run --locked --example verificar_objetivo`, sin `--progreso`): «RESULTADO: condición de cierre cumplida», con código 0.
+  - 134 requisitos, todos con tareas: 106 se cumplen por completo y 28 solo esperan validaciones externas.
+  - 127 tareas: 100 hechas, 0 de ingeniería pendientes y 27 bloqueadas por una dependencia externa.
+- **Compilación de distribución:** `cargo build --workspace --release --locked`, código 0, para Linux x86_64. No prueba Windows ni macOS (B-24).
+- **Entrega:** `docs/autonomia/ENTREGA.md`, con lo entregado por fase, la evidencia de los flujos críticos, las limitaciones y las dependencias externas agrupadas por responsable, con su paso mínimo. El resultado está descrito como «ingeniería disponible completada; validaciones o activaciones externas pendientes».
+- **Seguimiento:** «Siguiente acción» de `PROGRESO.md` puesta al día para reanudar.
+- **Fallo encontrado en la batería de cierre:** `mail::tests::a_cut_after_the_data_is_uncertain_and_a_rejection_is_not` falló una vez.
+  - **Causa:** para probar «nadie escuchando», la prueba abría un puerto y lo cerraba enseguida. Otra prueba que corría a la vez podía coger ese mismo puerto, y entonces sí había alguien escuchando. Sola pasó 15 veces de 15. Con las pruebas nuevas, que abren muchas conexiones a la vez, la carrera se dio.
+  - **Lo mismo** en `whatsapp::tests::network_errors_tell_not_sent_from_uncertain` y en la parte «sin conexión» de `server::tests::old_versions_get_a_clear_message`.
+  - **Corrección** (solo en las pruebas, sin cambiar lo que comprueban): usan el puerto 1. Queda fuera de los puertos que el sistema da a los servidores de prueba (32768 a 60999 en este ordenador), y en él no escucha nadie.
+  - **Comprobado:** la batería entera pasa tres veces seguidas.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 575 pasan (573 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas; igual en las tres pasadas |
+| `cargo build --workspace --release --locked` | 0 | — |

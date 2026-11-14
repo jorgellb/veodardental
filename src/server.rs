@@ -3033,11 +3033,10 @@ mod tests {
         let e = connect(&mut Remote::new(&format!("127.0.0.1:{port}"), "CLAVE", 0), "Puesto", 1).unwrap_err();
         assert_eq!(e, OLD_SERVER);
         assert!(t.elapsed() < Duration::from_secs(10), "sin esperas largas: {:?}", t.elapsed());
-        // y si no hay nadie, «sin conexión» enseguida
-        let closed = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = closed.local_addr().unwrap().port();
-        drop(closed);
-        assert_eq!(connect(&mut Remote::new(&format!("127.0.0.1:{port}"), "CLAVE", 0), "Puesto", 1).unwrap_err(), NO_CONNECTION);
+        // y si no hay nadie, «sin conexión» enseguida. El puerto 1 queda fuera
+        // de los que el sistema da a los servidores de las demás pruebas (que
+        // corren a la vez): un puerto recién cerrado lo podía coger otra.
+        assert_eq!(connect(&mut Remote::new("127.0.0.1:1", "CLAVE", 0), "Puesto", 1).unwrap_err(), NO_CONNECTION);
     }
 
     /// T-F3-01. Ensayo de instalación en Linux con las raíces aisladas de las

@@ -1563,9 +1563,10 @@ mod tests {
     /// respuesta, no se sabe (no se reintenta).
     #[test]
     fn network_errors_tell_not_sent_from_uncertain() {
-        // nadie escuchando: no salió
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let s = WaSettings { api_base: format!("http://127.0.0.1:{closed}/v27.0"), ..cfg() };
+        // nadie escuchando: no salió. El puerto 1 queda fuera de los que el
+        // sistema da a los servidores de las demás pruebas (que corren a la
+        // vez): un puerto recién cerrado lo podía coger otra.
+        let s = WaSettings { api_base: "http://127.0.0.1:1/v27.0".into(), ..cfg() };
         let e = post_message(&s, &text_request("34600111222", "hola")).unwrap_err();
         assert!(!e.starts_with(UNCERTAIN), "{e}");
         // recibe la petición y se corta sin contestar: no se sabe

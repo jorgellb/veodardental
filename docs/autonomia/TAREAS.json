@@ -1124,8 +1124,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "ENTREGA.md con evidencias, limitaciones y pasos externos; verificador y calidad mostrados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-087"]
   },
   {
    "id": "T-F0-01",
