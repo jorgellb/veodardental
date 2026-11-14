@@ -51,10 +51,11 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F4-01: receta privada, organismos confirmados en el expediente | E-038 | `0904e4a` |
 | T-F4-04: cifrado de los datos, diario y copias con claves gestionadas, rotación y recuperación | E-039 | `2c862c8` |
 | Revisión de seguridad del cifrado de los datos (sin vuelta atrás a sin cifrar) | E-040 | `0f80d57` |
+| T-F4-08: facturación foral (territorio confirmado, TicketBAI preparado, sin homologar ni activar) | E-041 | `51c4d65` |
 
 ## Siguiente acción
 Las fases 1, 2 y 3 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones y esquemas de los programas de origen. Toca la fase 4: requisitos normativos y protección de datos.
-1. T-F4-08 y T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`); hechas T-F4-00 a T-F4-07.
+1. T-F4-09 (ver `TAREAS.json` y la fase 4 de `VEODARDENTAL_GOAL.md`); hechas T-F4-00 a T-F4-08.
    - Consultar documentación oficial vigente; registrar fuente, fecha, versión y efecto, y separar lo confirmado de lo pendiente.
    - Inventariar lo que ya hay: receta electrónica (srep*), registro de accesos (`access_log`), herramientas RGPD, cifrado (`cifrado.rs`), carpeta compartida (`shared.rs`) y registro de jornada.
 2. Después, las fases 5 y 6 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08) y el cierre (T-CIERRE-01/02).
