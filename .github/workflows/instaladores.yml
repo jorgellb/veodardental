@@ -31,8 +31,14 @@ permissions:
   contents: read
 
 jobs:
+  # Las pruebas, en cada sistema: compilar en Linux no demuestra que funcione en
+  # Windows o en macOS (B-24).
   pruebas:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -40,9 +46,10 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Bibliotecas de Linux
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev openssl
       - name: Pruebas automáticas
-        run: cargo test --locked
+        run: cargo test --workspace --all-targets --locked
 
   instaladores:
     needs: pruebas
@@ -56,7 +63,8 @@ jobs:
           - os: macos-latest
             nombre: macos-apple-silicon
             formatos: app,dmg
-          - os: macos-13
+          # macos-13 ya no está disponible en GitHub; esta es la imagen Intel actual.
+          - os: macos-15-intel
             nombre: macos-intel
             formatos: app,dmg
           - os: ubuntu-22.04
@@ -96,6 +104,17 @@ jobs:
           test -f usr/share/applications/*.desktop
           ls usr/share/icons/hicolor/*/apps/ >/dev/null
           VEODARDENTAL_RAIZ="$PWD/raiz" ./usr/bin/veodardental --comprobar
+
+      # ── el programa compilado arranca en Windows y en macOS (sin ventana) ──
+      - name: Comprobar el programa compilado
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=target/release/veodardental
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$bin.exe"; fi
+          mkdir -p "$RUNNER_TEMP/raiz"
+          VEODARDENTAL_RAIZ="$RUNNER_TEMP/raiz" "$bin" --comprobar
 
       # ── firma en Windows (solo con certificado) ──
       - name: Firmar los instaladores de Windows

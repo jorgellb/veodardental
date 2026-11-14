@@ -239,9 +239,9 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: máquinas o runners de Windows y macOS.
 - Por qué: compilar en Linux no prueba Windows ni macOS.
 - Parte afectada: T-F3-01X.
-- Preparación terminada: T-F3-01 (ensayo en Linux) y el flujo de CI multiplataforma.
+- Preparación terminada: T-F3-01 (ensayo en Linux) y el flujo de CI multiplataforma. El flujo «Instaladores» pasa la batería de pruebas en Linux, Windows y macOS. Después compila los instaladores de Windows, macOS (Apple Silicon e Intel) y Linux, y arranca el programa compilado en cada sistema (`--comprobar`).
 - Responsable: propietario del producto.
-- Paso para desbloquear: lanzar el flujo «Instaladores» en GitHub o probar en máquinas reales.
+- Paso para desbloquear: subir el código a un repositorio privado de GitHub, lanzar el flujo «Instaladores» y, con lo que salga, probar la instalación en un ordenador real de cada sistema.
 - Prueba posterior: instalación, servidor y puesto funcionando en cada sistema.
 
 ## B-25 Certificados de firma de código
