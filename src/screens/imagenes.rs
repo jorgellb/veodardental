@@ -29,11 +29,28 @@ pub struct ImgState {
     pub new_kind: ImageKind,
     pub new_teeth: String,
     pub edit_connector: Option<u32>,
+    /// Visor de DICOM/CBCT y STL (ver `visor3d`).
+    pub v3d: crate::screens::visor3d::V3d,
+    /// Imagen con la que se compara la elegida.
+    pub compare: Option<u32>,
 }
 
 impl Default for ImgState {
     fn default() -> Self {
-        ImgState { selected: None, filter: None, zoom: 1.0, pan: egui::Vec2::ZERO, adjust: Adjust::default(), cache: HashMap::new(), new_path: String::new(), new_kind: ImageKind::Periapical, new_teeth: String::new(), edit_connector: Some(1) }
+        ImgState {
+            selected: None,
+            filter: None,
+            zoom: 1.0,
+            pan: egui::Vec2::ZERO,
+            adjust: Adjust::default(),
+            cache: HashMap::new(),
+            new_path: String::new(),
+            new_kind: ImageKind::Periapical,
+            new_teeth: String::new(),
+            edit_connector: Some(1),
+            v3d: Default::default(),
+            compare: None,
+        }
     }
 }
 
@@ -365,6 +382,11 @@ pub fn rgb_for_ai(img: &PatientImage) -> Result<image::RgbImage, String> {
 }
 
 impl ImgState {
+    /// Textura de una imagen plana con los ajustes de la pantalla (para comparar).
+    pub fn flat_texture(&mut self, ctx: &egui::Context, img: &PatientImage) -> Option<(egui::TextureId, [usize; 2])> {
+        self.texture(ctx, img, true)
+    }
+
     /// Textura de una imagen (con ajustes si `adjusted`), cacheada.
     fn texture(&mut self, ctx: &egui::Context, img: &PatientImage, adjusted: bool) -> Option<(egui::TextureId, [usize; 2])> {
         let a = if adjusted { self.adjust } else { Adjust::default() };
@@ -661,6 +683,11 @@ fn kind_icon(k: ImageKind) -> &'static str {
 
 fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
     let Some(img) = app.db.images.iter().find(|i| i.id == id).cloned() else { return };
+    if let Some(other) = app.img.compare.filter(|o| *o != id && app.db.images.iter().any(|i| i.id == *o && i.patient_id == img.patient_id)) {
+        crate::screens::visor3d::compare(app, ui, id, other);
+        return;
+    }
+    let in_viewer = crate::screens::visor3d::handles(&img);
     // controles
     let vw = ui.available_width();
     card(ui, |ui| {
@@ -678,6 +705,18 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
                     app.img.adjust.rot = (app.img.adjust.rot + 1) % 4;
                 }
                 ui.toggle_value(&mut app.img.adjust.invert, "Negativo");
+                // comparar con otra imagen plana del mismo paciente
+                let others: Vec<(u32, String)> =
+                    app.db.images.iter().filter(|o| o.patient_id == img.patient_id && o.id != img.id && (o.demo || file_kind(&o.path) == "img")).map(|o| (o.id, format!("{} · {}", fmt_date(o.date), o.kind.label()))).collect();
+                if !in_viewer && !others.is_empty() {
+                    crate::theme::combo("img_compare").width(220.0).selected_text("Comparar con…").show_ui(ui, |ui| {
+                        for (oid, label) in others {
+                            if ui.selectable_label(false, label).clicked() {
+                                app.img.compare = Some(oid);
+                            }
+                        }
+                    });
+                }
             });
         });
         ui.horizontal(|ui| {
@@ -710,23 +749,30 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
         app.img.pan = egui::Vec2::ZERO;
     }
     let ctx = ui.ctx().clone();
-    match app.img.texture(&ctx, &img, true) {
-        Some((tid, size)) => {
-            let k = (rect.width() / size[0] as f32).min(rect.height() / size[1] as f32) * 0.96 * app.img.zoom;
-            let r = Rect::from_center_size(rect.center() + app.img.pan, vec2(size[0] as f32 * k, size[1] as f32 * k));
-            p.image(tid, r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-            if img.demo {
-                p.text(rect.left_bottom() + vec2(12.0, -12.0), Align2::LEFT_BOTTOM, "Imagen de demostración", FontId::proportional(12.0), Color32::from_rgb(150, 160, 175));
+    if in_viewer {
+        let name = app.db.patient_name(img.patient_id);
+        crate::screens::visor3d::show(&mut app.img.v3d, ui, &img, rect, &name);
+        ui.add_space(6.0);
+        crate::screens::visor3d::controls(&mut app.img.v3d, ui);
+    } else {
+        match app.img.texture(&ctx, &img, true) {
+            Some((tid, size)) => {
+                let k = (rect.width() / size[0] as f32).min(rect.height() / size[1] as f32) * 0.96 * app.img.zoom;
+                let r = Rect::from_center_size(rect.center() + app.img.pan, vec2(size[0] as f32 * k, size[1] as f32 * k));
+                p.image(tid, r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                if img.demo {
+                    p.text(rect.left_bottom() + vec2(12.0, -12.0), Align2::LEFT_BOTTOM, "Imagen de demostración", FontId::proportional(12.0), Color32::from_rgb(150, 160, 175));
+                }
             }
-        }
-        None => {
-            let txt = match file_kind(&img.path) {
-                "3d" => "Modelo 3D (STL): ábralo con el programa del escáner",
-                _ => "Estudio DICOM / TAC: ábralo con el visor 3D",
-            };
-            p.text(rect.center() - vec2(0.0, 16.0), Align2::CENTER_CENTER, txt, sbf(16.0), Color32::from_rgb(170, 200, 240));
-            if !img.path.is_empty() && !Path::new(&img.path).exists() {
-                p.text(rect.center() + vec2(0.0, 14.0), Align2::CENTER_CENTER, "(el fichero ya no existe en esta ruta)", FontId::proportional(13.0), Color32::from_rgb(230, 120, 120));
+            None => {
+                let txt = match file_kind(&img.path) {
+                    "3d" => "Modelo 3D (STL): ábralo con el programa del escáner",
+                    _ => "Estudio DICOM / TAC: ábralo con el visor 3D",
+                };
+                p.text(rect.center() - vec2(0.0, 16.0), Align2::CENTER_CENTER, txt, sbf(16.0), Color32::from_rgb(170, 200, 240));
+                if !img.path.is_empty() && !Path::new(&img.path).exists() {
+                    p.text(rect.center() + vec2(0.0, 14.0), Align2::CENTER_CENTER, "(el fichero ya no existe en esta ruta)", FontId::proportional(13.0), Color32::from_rgb(230, 120, 120));
+                }
             }
         }
     }

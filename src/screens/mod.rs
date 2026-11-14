@@ -45,6 +45,7 @@ pub mod tareas;
 pub mod tarifas;
 pub mod teeth;
 pub mod verifactu;
+pub mod visor3d;
 pub mod whatsapp;
 
 use crate::app::{App, ConfirmAction, Dialog};

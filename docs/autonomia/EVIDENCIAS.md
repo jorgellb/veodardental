@@ -1276,3 +1276,37 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 476 pasan, 0 fallan, 10 ignoradas |
+
+## E-049 T-F5-06: visor DICOM/CBCT y STL, y comparación de radiografías
+- **DICOM (`src/dicom.rs`):** lector propio de DICOM Parte 10, sin dependencias nuevas.
+  - Lee DICOM sin comprimir, en sintaxis implícita y explícita *little endian*, y salta las secuencias anidadas.
+  - Admite 8 o 16 bits, con o sin signo, en escala de grises (MONOCHROME1 y 2) y RGB entrelazado o por planos, con el reescalado y la ventana del fichero.
+- **CBCT:** una carpeta de cortes, ordenados por su posición (no por el nombre del fichero), o un fichero multicorte. Hay vistas axial, coronal y sagital con la proporción real (tamaño de píxel y distancia entre cortes), y se saltan los ficheros de la carpeta que no son DICOM.
+- **Orientación y escala:**
+  - letras de los bordes según `ImageOrientationPatient`;
+  - barra de 10 mm;
+  - el paciente y la fecha que dice el fichero, con un aviso si el nombre no es el de la ficha.
+- **STL (`src/stl.rs`):** binario y ASCII, medidas en mm y vista sombreada girada con profundidad (z-buffer), calculada en segundo plano.
+- **Límites:**
+  - 512 MB de píxeles y 5 millones de triángulos como mucho;
+  - las sintaxis comprimidas (JPEG, JPEG 2000, RLE) se rechazan con un aviso para exportar sin comprimir;
+  - un fichero cortado o incoherente da un error, nunca un pánico. Se probó con 3000 DICOM y 2000 STL mutados o al azar.
+- **Sin bloquear la pantalla:** la carga y la vista del STL van en un hilo aparte, y la pantalla muestra «Cargando…».
+- **Comparación:** dos imágenes del mismo paciente (si no, se niega), la más antigua a la izquierda («Antes» / «Después»), con fecha, tipo, piezas, los días entre una y otra, y el mismo zoom y el mismo giro en las dos.
+- **Sin diagnóstico automático:** solo se ve.
+- **Muestras:** sintéticas, generadas en las pruebas. No se ha usado ningún estudio real.
+- **Pruebas:**
+  - `dicom::tests::synthetic_images_are_read_with_scale_window_and_orientation`;
+  - `dicom::tests::a_cbct_series_is_ordered_and_resliced_with_its_proportions`;
+  - `dicom::tests::invalid_compressed_huge_or_random_files_are_refused_without_panicking`;
+  - `stl::tests::binary_and_ascii_models_are_read_and_measured`;
+  - `stl::tests::invalid_cut_or_huge_models_are_refused_without_panicking`;
+  - `visor3d::tests::the_name_in_the_file_is_checked_against_the_patient`;
+  - `ui_tests::dicom_stl_and_comparison_are_shown_in_the_viewer`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 483 pasan, 0 fallan, 10 ignoradas |

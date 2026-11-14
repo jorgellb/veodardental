@@ -2523,6 +2523,83 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Visor dentro del programa: un estudio DICOM y un modelo STL sintéticos se
+/// cargan en segundo plano y se ven con sus medidas; un fichero dañado da un
+/// aviso; y dos radiografías del mismo paciente se comparan lado a lado.
+#[test]
+fn dicom_stl_and_comparison_are_shown_in_the_viewer() {
+    let dir = std::env::temp_dir().join(format!("ds_visor_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let dcm = dir.join("corte.dcm");
+    std::fs::write(&dcm, crate::dicom::tests::synth(true, 40, 60, 0.0, 1, |y, x| (y * 10 + x) as u16, "1.2.840.10008.1.2.1", &[])).unwrap();
+    let stl = dir.join("modelo.stl");
+    std::fs::write(&stl, crate::stl::tests::binary(&crate::stl::tests::cube(10.0))).unwrap();
+    let bad = dir.join("dañado.dcm");
+    std::fs::write(&bad, b"no es un dicom").unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1600.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let pid = 101;
+    let add = |a: &mut App, path: &std::path::Path, kind: crate::model::ImageKind| {
+        let mut i = a.db.images.iter().find(|i| i.patient_id == pid).cloned().expect("imagen de ejemplo");
+        (i.id, i.path, i.kind, i.demo) = (a.db.new_id(), path.display().to_string(), kind, false);
+        a.db.images.push(i.clone());
+        i.id
+    };
+    let (d, m, b) = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let ids = (add(a, &dcm, crate::model::ImageKind::Tac), add(a, &stl, crate::model::ImageKind::Escaneo3D), add(a, &bad, crate::model::ImageKind::Tac));
+        a.open_patient(pid, crate::app::PatTab::Imagenes);
+        ids
+    };
+    let wait = |h: &mut Harness<'static, App>, ok: &dyn Fn(&App) -> bool| {
+        for _ in 0..300 {
+            h.step();
+            if ok(h.state()) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("no terminó de cargar");
+    };
+    h.state_mut().img.selected = Some(d);
+    wait(&mut h, &|a| a.img.v3d.view == crate::dicom::View::Axial && a.img.v3d.error.is_none() && !h_loading(a));
+    h.get_by_label("Ventana del fichero");
+    h.query_all_by_label_contains("60×40 píxeles").next().expect("el tamaño del estudio");
+    h.state_mut().img.selected = Some(m);
+    wait(&mut h, &|a| !h_loading(a));
+    for _ in 0..50 {
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    h.query_all_by_label_contains("10.0 × 10.0 × 10.0 mm").next().expect("las medidas del modelo");
+    h.state_mut().img.selected = Some(b);
+    wait(&mut h, &|a| a.img.v3d.error.is_some());
+    assert!(h.state().img.v3d.error.as_deref().unwrap().contains("DICM"));
+    // comparación de dos imágenes planas del mismo paciente
+    let flats: Vec<u32> = h.state().db.images.iter().filter(|i| i.patient_id == pid && i.demo).map(|i| i.id).take(2).collect();
+    assert_eq!(flats.len(), 2, "el paciente de ejemplo tiene dos imágenes");
+    {
+        let a = h.state_mut();
+        a.img.selected = Some(flats[0]);
+        a.img.compare = Some(flats[1]);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.query_all_by_label_contains("Antes:").next().expect("la más antigua a la izquierda");
+    h.query_all_by_label_contains("días entre una y otra").next().expect("los días entre las dos");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn h_loading(a: &App) -> bool {
+    a.img.v3d.loading()
+}
+
 /// Sondaje por voz: el dictado se interpreta, los cambios se ven antes de
 /// aplicarlos y lo dudoso (un sondaje mal transcrito) no se aplica.
 #[test]

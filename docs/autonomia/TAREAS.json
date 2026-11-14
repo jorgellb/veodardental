@@ -2535,8 +2535,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Muestras sintéticas o públicas, orientación y escala, límites de memoria, sin bloquear la interfaz y ficheros inválidos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-049"
+   ]
   },
   {
    "id": "T-F5-07",
