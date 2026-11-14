@@ -932,8 +932,9 @@ impl State {
             }
         }
         // campañas: programarlas, cancelarlas, cambiar qué dicen o a quién llegan
-        // y borrarlas es cosa de Dirección; los demás puestos solo pasan a la
-        // cola lo que toca y hacen borradores (`campanas::tick_only`)
+        // y borrarlas es cosa de Dirección; los demás puestos solo hacen
+        // borradores (`campanas::draft_only`). Los mensajes de una campaña
+        // programada los pasa a la cola el propio servidor (`ChainOp::QueueCampaigns`)
         if !admin {
             let snap = &self.snap;
             changes.retain(|c| {
@@ -943,7 +944,7 @@ impl State {
                 let parse = |j: Option<&String>| j.and_then(|j| serde_json::from_str::<crate::campanas::Campaign>(j).ok());
                 let current = parse(c.key.as_deref().and_then(|k| snap.get("campaigns", Some(k))));
                 let after = parse(c.after.as_ref());
-                (c.after.is_none() || after.is_some()) && crate::campanas::tick_only(current.as_ref(), after.as_ref())
+                (c.after.is_none() || after.is_some()) && crate::campanas::draft_only(current.as_ref(), after.as_ref())
             });
         }
         // un paciente con los datos bloqueados tampoco lo borra otro perfil
@@ -3394,10 +3395,13 @@ mod tests {
     /// Alertas revisadas y esterilización en red: el servidor sella quién y
     /// cuándo; un visto o un uso anotado no se cambia ni se borra desde un
     /// puesto; un lote retirado no vuelve y un ciclo fallido no vuelve atrás.
-    /// Campañas: recepción hace borradores y pasa a la cola lo que toca, pero
-    /// programarlas, cambiar a quién llegan o borrarlas es cosa de Dirección.
+    /// Campañas: recepción hace borradores, pero programarlas, cambiarlas,
+    /// borrarlas o marcar destinatarios no. Los mensajes los pasa a la cola el
+    /// servidor (`ChainOp::QueueCampaigns`, que cualquiera puede pedir), con
+    /// su hora: cada destinatario marcado apunta a un mensaje suyo de verdad.
     #[test]
-    fn only_direction_schedules_campaigns_and_any_station_queues_them() {
+    fn only_direction_schedules_campaigns_and_the_server_queues_them() {
+        use crate::app::ChainOp;
         use crate::campanas::{CampState, Campaign, Recipient};
         let (addr, path, h) = start("CLAVE49");
         let dir = signed_in(&addr, "CLAVE49", "Despacho", 1, "0000");
@@ -3423,18 +3427,16 @@ mod tests {
         d.station = dir.station;
         let n = d.campaign_schedule(id, at).unwrap();
         dir.push(&mut d, &mut sd).unwrap();
-        // recepción pasa los mensajes a la cola (sí), y añade a alguien (no)
+        let programmed = crate::sync::on_disk(&path).campaigns.iter().find(|c| c.id == id).unwrap().clone();
+        assert_eq!((programmed.state, programmed.recipients.len()), (CampState::Programada, n));
+        // recepción no marca destinatarios (ni como pasados a la cola ni
+        // como que ya no podían recibirla), no añade a nadie, no la cambia ni la borra
         let (mut a, mut sa) = rec.load().unwrap();
         a.station = rec.station;
-        assert_eq!(a.campaign_tick(at), n);
-        rec.push(&mut a, &mut sa).unwrap();
-        let disk = crate::sync::on_disk(&path);
-        let c = disk.campaigns.iter().find(|c| c.id == id).unwrap().clone();
-        assert_eq!(c.state, CampState::Terminada);
-        assert_eq!(disk.messages.iter().filter(|m| m.related == Some(id)).count(), n, "en la cola, sin enviar");
-        let (mut a, mut sa) = rec.load().unwrap();
-        a.station = rec.station;
+        a.campaign_tick(at);
+        a.messages.retain(|m| m.related != Some(id));
         let x = a.campaigns.iter_mut().find(|c| c.id == id).unwrap();
+        x.recipients.iter_mut().for_each(|r| r.message_id = None);
         x.recipients.push(Recipient { patient_id: 101, sent: None, message_id: None, known_appts: vec![] });
         x.text = "Otra cosa".into();
         rec.push(&mut a, &mut sa).unwrap();
@@ -3442,7 +3444,21 @@ mod tests {
         a.station = rec.station;
         a.campaigns.retain(|c| c.id != id);
         rec.push(&mut a, &mut sa).unwrap();
-        assert_eq!(crate::sync::on_disk(&path).campaigns.iter().find(|c| c.id == id), Some(&c), "ni la cambia ni la borra");
+        assert_eq!(crate::sync::on_disk(&path).campaigns.iter().find(|c| c.id == id), Some(&programmed), "ni la marca, ni la cambia, ni la borra");
+        // el servidor pasa a la cola lo que toca ahora (según su hora, puede
+        // que nada): lo que marca, con su mensaje de verdad
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        let k = rec.chain_op(&mut a, &mut sa, &ChainOp::QueueCampaigns.json()).unwrap() as usize;
+        let disk = crate::sync::on_disk(&path);
+        let c = disk.campaigns.iter().find(|c| c.id == id).unwrap();
+        let marked: Vec<&Recipient> = c.recipients.iter().filter(|r| r.message_id.is_some()).collect();
+        assert_eq!(marked.len(), k);
+        for r in marked {
+            let m = disk.messages.iter().find(|m| Some(m.id) == r.message_id).expect("el mensaje existe");
+            assert_eq!((m.patient_id, m.related, m.kind, m.state), (r.patient_id, Some(id), crate::comms::MsgKind::Campana, crate::comms::MsgState::Pendiente));
+        }
+        assert_eq!(disk.messages.iter().filter(|m| m.related == Some(id)).count(), k, "y ninguno más");
         dir.stop().unwrap();
         h.join().unwrap();
     }

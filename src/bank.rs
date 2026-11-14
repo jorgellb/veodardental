@@ -762,9 +762,9 @@ impl Db {
                 k.no_messages.push(*kind);
             }
         }
-        if k.marketing.is_none() {
-            k.marketing = r.marketing;
-        }
+        // el consentimiento para promociones, solo si lo tienen las dos fichas
+        // (con la fecha más reciente): ante la duda, sin promociones
+        k.marketing = k.marketing.zip(r.marketing).map(|(a, b)| a.max(b));
         let kname = k.full_name();
         macro_rules! move_pid {
             ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == remove { x.patient_id = keep; } } )* };
@@ -1000,6 +1000,8 @@ mod tests {
         db.campaigns.push(camp);
         db.patients.iter_mut().find(|p| p.id == remove).unwrap().no_messages.push(crate::comms::MsgKind::Campana);
         db.patients.iter_mut().find(|p| p.id == keep).unwrap().no_messages.clear();
+        db.patients.iter_mut().find(|p| p.id == remove).unwrap().marketing = Some(d());
+        db.patients.iter_mut().find(|p| p.id == keep).unwrap().marketing = None;
         let before: Vec<String> = {
             let mut v = vec![];
             references(&serde_json::to_value(&db).unwrap(), remove as u64, "", &mut v);
@@ -1014,6 +1016,7 @@ mod tests {
         assert!(!db.patient_lots(keep).is_empty(), "sus implantes, con su lote");
         assert!(db.tasks.iter().any(|t| t.patient_id == Some(keep) && t.text == "Llamar"));
         assert!(db.patient(keep).unwrap().no_messages.contains(&crate::comms::MsgKind::Campana), "la baja dada en la otra ficha sigue valiendo");
+        assert_eq!(db.patient(keep).unwrap().marketing, None, "el consentimiento para promociones, solo si lo tenían las dos");
     }
 
     fn n43_line22(date: &str, debe: bool, cents: u64, r1: &str) -> String {

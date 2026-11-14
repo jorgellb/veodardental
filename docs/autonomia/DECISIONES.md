@@ -155,7 +155,9 @@ Hasta ahora solo había consentimiento de protección de datos y de cada canal. 
   - sin otra campaña al mismo paciente en los días anteriores que diga.
 
   Desde la cola se envían como los demás. Cada mensaje lleva cómo darse de baja, en el idioma del paciente.
-- **Quién.** La programa y la cancela Dirección. Los demás perfiles hacen borradores y pasan a la cola lo que toca. El servidor lo comprueba (`campanas::tick_only`).
+- **Quién.** La programa y la cancela Dirección; los demás perfiles solo hacen borradores. El servidor lo comprueba (`campanas::draft_only`).
+  - Los mensajes de una campaña programada los pasa a la cola el servidor, con sus datos y su hora (`ChainOp::QueueCampaigns`, que cualquier puesto puede pedir). Sin servidor, lo hace el propio programa.
+  - Así ningún puesto marca destinatarios, ni se salta a nadie, ni cambia la hora de envío.
   - Elegir por tratamiento usa datos de salud: solo lo ajusta un perfil clínico, y el texto del mensaje no puede llevar comodines de salud.
   - Si se puede elegir por tratamiento para promociones, y con qué texto de consentimiento, lo decide el DPO (`docs/revision_externa/dpo.md`).
 - **Atribución.** Se cuenta una cita si cumple todo esto:

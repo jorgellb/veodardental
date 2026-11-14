@@ -1550,3 +1550,28 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 513 pasan, 0 fallan, 10 ignoradas |
+
+## E-062 Revisión de seguridad de las campañas: el servidor pasa los mensajes a la cola
+- **Hallazgos:**
+  1. Un puesto que no era de Dirección podía marcar destinatarios de una campaña programada: como «ya no podían recibirla» (para saltárselos) o con un mensaje inventado. Para el servidor era lo que hace el paso a la cola.
+  2. Al fusionar dos fichas, el consentimiento para promociones de la que se eliminaba pasaba a la que se conserva aunque esta no lo tuviera.
+- **Correcciones:**
+  - **Servidor:** los mensajes de una campaña programada los pasa a la cola el servidor, con sus datos y su hora (`ChainOp::QueueCampaigns`, que cualquier puesto puede pedir; sin servidor, el propio programa).
+    - De otro perfil que no sea Dirección solo acepta borradores (`campanas::draft_only`): ni marcar destinatarios, ni programar, cambiar, cancelar o borrar.
+    - El puesto solo lo pide cuando hay algo que pasar (`Db::campaigns_due`).
+  - **Fusión:** el consentimiento para promociones se conserva solo si lo tenían las dos fichas (con la fecha más reciente).
+- **Pruebas:**
+  - `server::tests::only_direction_schedules_campaigns_and_the_server_queues_them` (antes `…_and_any_station_queues_them`):
+    - recepción no programa;
+    - recepción no marca destinatarios (ni como pasados a la cola ni como saltados), no añade a nadie, no cambia el texto y no borra;
+    - lo que marca el servidor apunta a un mensaje de verdad del paciente y de la campaña, y no hay más.
+  - `campanas::tests::the_server_has_everything_it_needs_to_queue`: con solo las listas que prepara el servidor da lo mismo que con todo, y todo lo que cambia está entre lo que guarda. Comprobado que falla si se quita «messages» de esas listas.
+  - `campanas::tests::only_direction_schedules_or_changes_a_campaign`: marcar o saltarse a alguien, o devolverla a borrador, ya no lo acepta `draft_only`; `campaigns_due` respeta el horario y el fin de semana.
+  - `bank::tests::merging_moves_everything_of_the_removed_patient`: además, el consentimiento solo de una ficha no pasa a la que se conserva.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 514 pasan, 0 fallan, 10 ignoradas |

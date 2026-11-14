@@ -120,8 +120,9 @@ contratado en este trabajo.
 
 ## 5 ter. Campañas (promociones)
 - Solo le llegan a quien ha aceptado expresamente recibir promociones, con la fecha (Filiación), además del consentimiento de protección de datos y el del canal. Quien se da de baja de las campañas no las recibe. Las dos cosas se vuelven a mirar al pasar cada mensaje a la cola.
+- Al fusionar dos fichas, el consentimiento para promociones solo se conserva si lo tenían las dos; una baja dada en cualquiera de ellas sigue valiendo.
 - Cada mensaje dice cómo darse de baja, en el idioma del paciente. Un «BAJA» (o la palabra de su idioma) contestado por WhatsApp lo da de baja.
-- La programa Dirección, también en red (`server::tests::only_direction_schedules_campaigns_and_any_station_queues_them`). El texto no puede llevar datos de salud.
+- La programa Dirección, también en red. Los mensajes los pasa a la cola el servidor, con su hora; ningún puesto marca destinatarios (`server::tests::only_direction_schedules_campaigns_and_the_server_queues_them`). El texto no puede llevar datos de salud.
 - Pruebas: `campanas::tests::the_preview_shows_who_and_why_not_and_scheduling_freezes_the_list` y `campanas::tests::queueing_respects_hours_weekdays_daily_limit_and_late_unsubscribes`.
 - **Decide:**
   - el texto del consentimiento para promociones;

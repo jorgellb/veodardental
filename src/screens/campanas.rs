@@ -20,18 +20,18 @@ pub struct CampUi {
     last_tick: Option<chrono::NaiveDateTime>,
 }
 
-/// Una vez por minuto: pasa a la cola los mensajes de las campañas
-/// programadas que tocan (horario y límite de cada una). No envía nada.
+/// Una vez por minuto: si toca, pasa a la cola los mensajes de las campañas
+/// programadas (horario y límite de cada una). En red lo hace el servidor,
+/// con sus datos y su hora. No envía nada.
 pub fn tick(app: &mut App) {
     let now = crate::model::now();
     let minute = now.date().and_hms_opt(chrono::Timelike::hour(&now), chrono::Timelike::minute(&now), 0);
-    if app.comms.camp.last_tick == minute || !app.db.campaigns.iter().any(|c| c.state == CampState::Programada) {
+    if app.comms.camp.last_tick == minute || !app.db.campaigns_due(now) {
         return;
     }
     app.comms.camp.last_tick = minute;
-    if app.db.campaign_tick(now) > 0 {
-        app.changed();
-    }
+    // si falla (sin conexión), se vuelve a intentar al minuto siguiente
+    let _ = app.chain_op(crate::app::ChainOp::QueueCampaigns);
 }
 
 pub fn tab(app: &mut App, ui: &mut Ui) {

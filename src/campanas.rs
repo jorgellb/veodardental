@@ -18,7 +18,8 @@
 //!   por qué, y los primeros mensajes tal como saldrán. Al programarla, la
 //!   lista queda fija.
 //! - **Quién:** la programa o la cancela Dirección (también en el servidor,
-//!   [`tick_only`]); cualquier puesto pasa a la cola los mensajes que tocan.
+//!   [`draft_only`]). Los mensajes que tocan los pasa a la cola el servidor
+//!   (o el propio programa, sin servidor), con sus datos y su hora.
 //! - **Resultados atribuibles, con un criterio explícito ([`CRITERION`]):**
 //!   una cita se atribuye a la campaña si es del paciente, no existía cuando
 //!   se le pasó el mensaje a la cola, no está anulada y su fecha está en los
@@ -487,24 +488,22 @@ impl Db {
     }
 }
 
-/// Lo que puede cambiar en una campaña un usuario que no es de Dirección: lo
-/// que hace [`Db::campaign_tick`] (marcar destinatarios como pasados a la cola
-/// y darla por terminada) y sus borradores. Programarla, cancelarla, cambiar
-/// a quién llega o qué dice, o borrarla, no.
-pub fn tick_only(current: Option<&Campaign>, after: Option<&Campaign>) -> bool {
+/// Lo que puede cambiar en una campaña un usuario que no es de Dirección:
+/// sus borradores. Programarla, cancelarla, cambiar qué dice o a quién llega,
+/// borrarla o marcar destinatarios, no: los mensajes de una campaña programada
+/// los pasa a la cola el servidor, con sus datos y su hora
+/// (`ChainOp::QueueCampaigns`).
+pub fn draft_only(current: Option<&Campaign>, after: Option<&Campaign>) -> bool {
     let draft = |c: &Campaign| c.state == CampState::Borrador && c.recipients.is_empty();
-    match (current, after) {
-        (None, Some(a)) => draft(a),
-        (Some(c), Some(a)) if draft(c) => draft(a),
-        (Some(c), Some(a)) => {
-            let same = |x: &Campaign| (x.id, x.name.clone(), x.segment.clone(), x.channel, x.subject.clone(), x.text.clone(), x.min_days, x.from_hour, x.to_hour, x.per_day, x.attribution_days, x.created_by.clone());
-            let open = c.state == CampState::Programada;
-            let state_ok = a.state == c.state || (open && a.state == CampState::Terminada && a.recipients.iter().all(|r| r.sent.is_some()));
-            let recipients_ok = c.recipients.len() == a.recipients.len() && c.recipients.iter().zip(&a.recipients).all(|(x, y)| x.patient_id == y.patient_id && (x == y || (open && x.sent.is_none() && y.sent.is_some())));
-            same(c) == same(a) && state_ok && recipients_ok
-        }
-        (Some(c), None) => draft(c),
-        (None, None) => true,
+    current.is_none_or(draft) && after.is_none_or(draft)
+}
+
+impl Db {
+    /// ¿Hay ahora mensajes de campañas que pasar a la cola? (para no pedirlo
+    /// al servidor cada minuto si no hay nada)
+    pub fn campaigns_due(&self, now: NaiveDateTime) -> bool {
+        let workday = now.weekday().num_days_from_monday() < 5;
+        workday && self.campaigns.iter().any(|c| c.state == CampState::Programada && now.hour() >= c.from_hour && now.hour() < c.to_hour && c.recipients.iter().any(|r| r.sent.is_none()))
     }
 }
 
@@ -714,35 +713,63 @@ mod tests {
         assert_eq!((r.appts, r.attended), (1, 1), "ni la que ya tenía, ni la de fuera de plazo, ni la anulada");
     }
 
+    /// El servidor pasa los mensajes a la cola solo con las listas que prepara
+    /// para `ChainOp::QueueCampaigns`: tiene que dar lo mismo que con todo.
+    #[test]
+    fn the_server_has_everything_it_needs_to_queue() {
+        let (mut db, _) = clinic();
+        let mut c = camp(&mut db, "Higiene");
+        c.text = "Hola [NOMBRE], [DOCTOR] le espera en [CLINICA] ([TELCLINICA]).".into();
+        put(&mut db, &c);
+        db.campaign_schedule(c.id, at(16, 9)).unwrap();
+        let (_, fields) = crate::app::ChainOp::QueueCampaigns.needs();
+        let snap = crate::sync::Snapshot::from_db(&db);
+        let mut partial = crate::sync::partial_db(&snap, fields).unwrap();
+        let mut full = db.clone();
+        let n = full.campaign_tick(at(16, 12));
+        assert!(n > 0);
+        assert_eq!(partial.campaign_tick(at(16, 12)), n);
+        assert_eq!(get(&partial, c.id), get(&full, c.id));
+        let texts = |d: &Db| d.messages.iter().filter(|m| m.related == Some(c.id)).map(|m| (m.patient_id, m.to.clone(), m.text.clone())).collect::<Vec<_>>();
+        assert_eq!(texts(&partial), texts(&full), "los mismos mensajes, con el mismo texto");
+        // y todo lo que cambia está entre lo que el servidor guarda
+        let (before, after) = (serde_json::to_value(&db).unwrap(), serde_json::to_value(&full).unwrap());
+        for (k, v) in after.as_object().unwrap() {
+            if before[k.as_str()] != *v {
+                assert!(fields.contains(&k.as_str()), "cambia «{k}» y el servidor no lo prepara");
+            }
+        }
+    }
+
     #[test]
     fn only_direction_schedules_or_changes_a_campaign() {
         let (mut db, _) = clinic();
         let draft = camp(&mut db, "Borrador");
-        assert!(tick_only(None, Some(&draft)), "un borrador lo hace cualquiera");
+        assert!(draft_only(None, Some(&draft)), "un borrador lo hace cualquiera");
         let mut edited = draft.clone();
         edited.text = "Otro texto".into();
-        assert!(tick_only(Some(&draft), Some(&edited)));
+        assert!(draft_only(Some(&draft), Some(&edited)));
+        assert!(draft_only(Some(&draft), None), "y lo borra");
         db.campaign_schedule(draft.id, at(16, 9)).unwrap();
         let sched = get(&db, draft.id);
-        assert!(!tick_only(Some(&draft), Some(&sched)), "programarla, no");
+        assert!(!draft_only(Some(&draft), Some(&sched)), "programarla, no");
+        assert!(db.campaigns_due(at(16, 12)) && !db.campaigns_due(at(16, 9)) && !db.campaigns_due(at(21, 12)));
         db.campaign_tick(at(16, 12));
         let ticked = get(&db, draft.id);
-        assert!(tick_only(Some(&sched), Some(&ticked)), "pasar mensajes a la cola, sí");
-        let mut more = sched.clone();
-        more.recipients.push(Recipient { patient_id: 99_999, sent: None, message_id: None, known_appts: vec![] });
-        assert!(!tick_only(Some(&sched), Some(&more)), "añadir destinatarios, no");
-        let mut swapped = sched.clone();
-        swapped.recipients[0].patient_id = 99_999;
-        assert!(!tick_only(Some(&sched), Some(&swapped)), "cambiarlos, no");
+        assert!(!db.campaigns_due(at(16, 12)), "ya no queda nada");
+        assert!(!draft_only(Some(&sched), Some(&ticked)), "marcar destinatarios, tampoco: lo hace el servidor");
+        let mut skipped = sched.clone();
+        skipped.recipients[0].sent = Some(at(16, 12));
+        assert!(!draft_only(Some(&sched), Some(&skipped)), "ni saltarse a alguien");
         let mut texted = sched.clone();
         texted.text = "Otra cosa".into();
-        assert!(!tick_only(Some(&sched), Some(&texted)), "cambiar el texto, no");
+        assert!(!draft_only(Some(&sched), Some(&texted)), "cambiar el texto, no");
         let mut cancelled = sched.clone();
         cancelled.state = CampState::Cancelada;
-        assert!(!tick_only(Some(&sched), Some(&cancelled)), "cancelarla, no");
-        assert!(!tick_only(Some(&sched), None), "borrarla, no");
-        let mut unsent = ticked.clone();
-        unsent.recipients[0].sent = None;
-        assert!(!tick_only(Some(&ticked), Some(&unsent)), "ni deshacer lo pasado a la cola");
+        assert!(!draft_only(Some(&sched), Some(&cancelled)), "cancelarla, no");
+        assert!(!draft_only(Some(&sched), None), "borrarla, no");
+        let mut back = sched.clone();
+        (back.state, back.recipients) = (CampState::Borrador, vec![]);
+        assert!(!draft_only(Some(&sched), Some(&back)), "ni devolverla a borrador");
     }
 }
