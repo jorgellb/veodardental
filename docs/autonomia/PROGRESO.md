@@ -67,6 +67,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: esterilización comprobada por el servidor | E-054 | `7e9b2cb` |
 | Revisión de seguridad: etiquetas de lotes únicas con una sola regla | E-055 | `b8211c0` |
 | T-F5-09: encuestas de satisfacción y solicitud de reseñas | E-056 | `20c5438` |
+| T-F5-10: Mi espacio, portal del paciente con autorización por objeto y por responsable | E-057 | `077c751` |
 
 ## Siguiente acción
 Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
