@@ -11,93 +11,93 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Tarea | Evidencia | Commit |
 |---|---|---|
 | T-INI-01, T-INI-03: estado y batería inicial | E-001 | — |
-| T-INI-02: aislamiento de rutas | E-002 | `3e48461` |
-| Formato | E-003 | `aca725a` |
-| T-INI-04, T-INI-05, T-F0-01, T-F0-07: seguimiento, verificador y encargo | E-004 | `50431a3`, `6f8d19c` |
-| T-F0-02 a T-F0-04: exención de IVA configurable para las facturas nuevas | E-005 | `441d546` |
-| T-F1-A1: documentos, consentimientos y cuestionarios | E-006 | `b2cf77b` |
-| T-F1-A2: recetas y vademécum | E-007 | `00838cc` |
-| Revisión de seguridad de las áreas 1 y 2 | E-008 | `7c55ab2` |
-| T-F1-A3: odontograma, periodontograma e historial | E-009 | `dee610b` |
-| T-F1-A4: bancos y conciliación | E-010 | `d6f2e0a` |
-| T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `7fd53f0` |
-| T-F1-A6: comunicaciones | E-012 | `cdddd05` |
-| T-F1-A7: ortodoncia | E-013 | `d0c52f4` |
-| T-F1-A8: IA de radiografías | E-014 | `6e2a560` |
-| Revisión de seguridad del área 8 | E-015 | `802798a` |
-| T-F1-A9: cita online y portales | E-016 | `80670ec` |
-| T-F1-A10: telefonía y laboratorio digital | E-017 | `4c09bf7` |
-| T-F1-11: todas las pantallas a 1280×720 y 1280×800 | E-018 | `84a667a` |
-| T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | `bcfa695` |
-| T-F1-13: informes con oráculo independiente (hecho en el área 5) | E-011 | `7fd53f0` |
-| T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | `3d777b0` |
-| T-F2-01 a T-F2-09: motor de migración, asistente, conciliación, GESDEN/Novaclinic, perfiles y documentación | E-021 | `e4e3298` |
-| Revisión de seguridad de la fase 2, ficheros solo para el usuario y T-F3-01: ensayo de instalación | E-022 | `e44ee0a` |
-| T-F3-02: actualizaciones coordinadas (versión de datos, bandeja de pendientes, paquetes firmados y vuelta atrás) | E-023 | `7704bd1` |
-| T-F3-03: firma condicionada a secretos, empaquetado comprobado y bandeja por usuario (revisión de seguridad) | E-024 | `c08cd25` |
-| T-F3-04: registro de errores e informe para soporte; firma solo con etiqueta y sesión caducada (revisión de seguridad) | E-025 | `2945231` |
-| T-F3-05: ensayo de restauración y clave de recuperación; nombres fuera del registro (revisión de seguridad) | E-026 | `9bdf3b7` |
-| T-F3-06: VERI*FACTU contra una AEAT simulada (rechazo, caída, reintento idéntico y conciliación) | E-027 | `8a5bb6a` |
-| T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | `3f51833` |
-| T-F3-09: instrumentos del piloto (tiempos y pasos, incidencias, disponibilidad y restauraciones) | E-029 | `445396c` |
-| T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | `4380f92` |
-| T-F4-00: normativa consultada (fuente, fecha, versión y efecto) | E-031 | `03a9036` |
-| T-F4-02: registro de accesos a cada historia (encadenado, fuera de los datos, en red por el servidor) | E-032 | `e1d4ce0` |
-| T-F4-03: derechos RGPD (solicitudes, exportación íntegra, limitación, bloqueo; supresión desactivada); revisión de seguridad del registro de accesos | E-033 | `1141e02` |
-| T-F4-05: retirada de la carpeta compartida con paso al servidor; bloqueo en el servidor y exportación sin ficheros ajenos (revisión de seguridad) | E-034 | `952fa58` |
-| T-F4-06: registro de jornada (fichar, correcciones trazables, acceso por rol, exportación; en red lo hace cumplir el servidor) | E-035 | `e7d3b06` |
-| Revisión de seguridad de la jornada en red | E-036 | `41c80cb` |
-| T-F4-07: libros registro en el formato común de la AEAT | E-037 | `9309580` |
-| T-F4-01: receta privada, organismos confirmados en el expediente | E-038 | `0904e4a` |
-| T-F4-04: cifrado de los datos, diario y copias con claves gestionadas, rotación y recuperación | E-039 | `2c862c8` |
-| Revisión de seguridad del cifrado de los datos (sin vuelta atrás a sin cifrar) | E-040 | `0f80d57` |
-| T-F4-08: facturación foral (territorio confirmado, TicketBAI preparado, sin homologar ni activar) | E-041 | `51c4d65` |
-| T-F4-09: pruebas para la gestoría, el DPO y la auditoría de seguridad (docs/revision_externa) | E-042 | `fe0af03` |
-| T-F5-01: cuadro de mando con fórmulas definidas y verificación independiente | E-043 | `ccc20bb` |
-| T-F5-02: pago por internet (Redsys por redirección y Bizum), sin cargos | E-044 | `1dff1c8` |
-| T-F5-03: plan de tratamiento por fases y alternativas (versión de datos 2) | E-045 | `57db409` |
-| T-F5-04: notas de evolución con plantillas, dictado, transcripción y resumen revisado | E-046 | `d1d2d85` |
-| Revisión de seguridad: confirmación sellada por el servidor y fusión que guarda notas, pagos y derechos | E-047 | `842eef9` |
-| T-F5-05: periodontograma por voz con corrección y confirmación visibles | E-048 | `0d1b386` |
-| T-F5-06: visor DICOM/CBCT y STL, y comparación de radiografías | E-049 | `6637bc5` |
-| Revisión de seguridad: memoria de los DICOM y tamaño de los STL | E-050 | `107cb20` |
-| T-F5-07: alertas clínicas ampliadas con fuente citada y revisión del profesional | E-051 | `a65de92` |
-| Revisión de seguridad: vistos de alertas sellados por el servidor | E-052 | `c5e63d5` |
-| T-F5-08: esterilización (ciclos, lotes, pacientes, incidencias y afectados) | E-053 | `c5e63d5` |
-| Revisión de seguridad: esterilización comprobada por el servidor | E-054 | `7e9b2cb` |
-| Revisión de seguridad: etiquetas de lotes únicas con una sola regla | E-055 | `b8211c0` |
-| T-F5-09: encuestas de satisfacción y solicitud de reseñas | E-056 | `20c5438` |
-| T-F5-10: Mi espacio, portal del paciente con autorización por objeto y por responsable | E-057 | `077c751` |
-| Revisión de seguridad: Mi espacio (responsable y entrada sin DNI) | E-058 | `0d4df76` |
-| T-F5-11: idiomas (castellano, catalán, euskera, gallego e inglés) | E-059 | `750f1df` |
-| Revisión de seguridad: la palabra de baja de cada idioma | E-060 | `67ccec1` |
-| T-F5-12: campañas a grupos de pacientes con consentimiento, límites, previsualización y atribución | E-061 | `bfe56e4` |
-| Revisión de seguridad: el servidor pasa a la cola los mensajes de las campañas | E-062 | `e51bbdd` |
-| T-F6-01: grupos de clínicas (sociedades, centros con permisos y vista del grupo) | E-063 | `6d277fb` |
-| T-F6-02: servidor en la nube opcional, desplegado y ensayado en local | E-064 | `1f554e5` |
-| Revisión de seguridad: carpeta del servicio y clave fuera de la orden | E-065 | `9bd690a` |
-| T-F6-03: datáfono y financiación (adaptadores, estados, conciliación, cancelación y recuperación) | E-066 | `ae1cca9` |
-| Revisión de seguridad: sacar dinero y el banco con su permiso en el servidor | E-067 | `c4e49e5` |
-| Revisión de seguridad: financiación, caja y devoluciones con datáfono por su camino | E-068 | `6ac5e61` |
-| T-F6-04: aseguradoras (autorizaciones y liquidaciones, flujo interno y contrato) | E-069 | `c9518d1` |
-| Revisión de seguridad: autorizaciones y liquidaciones solo por el servidor | E-070 | `ab124fe` |
-| T-F6-05: pedidos por stock mínimo con aprobación, unidades de compra, lotes y recepción | E-071 | `759c52b` |
-| Revisión de seguridad: configuración, pedidos partidos y correo del proveedor | E-072 | `39aad16` |
-| Revisión de seguridad: configuración por lista de lo permitido y sin proveedores repetidos | E-073 | `e6f220f` |
-| T-F6-06: modo tableta (controles grandes, contraste ajustable y uso sin ratón) | E-074 | `80e5f03` |
-| T-F6-07, T-INI-08 y T-F6-08: calidad continua y mediciones reproducibles por versión (D-28) | E-075 | `486b58c` |
-| T-F6-09: escenario sintético de un grupo de clínicas con permisos y totales | E-076 | `486b58c` |
-| T-INI-06: funciones que el informe da por existentes, comprobadas en el código | E-077 | `486b58c` |
-| T-R7-1: dinero al céntimo con pruebas de propiedades, sin tocar lo ya guardado (D-29) | E-078 | `0bb9405` |
-| T-R7-5: autorización en el servidor, rutas revisadas y matrices por perfil | E-079 | `7f94af7` |
-| T-R7-6: límites de entradas, ficheros y tareas con sus pruebas; conexiones quietas acotadas | E-080 | `992280b` |
-| Revisión automática de E-080: plazo total para la cabecera y conexiones por red IPv6 /64 | E-081 | `000b2ed` |
-| T-R7-7: minimización en registro, enlaces personales, mensajes, IA y laboratorio (D-30) | E-082 | `c1a4141` |
-| T-INI-07: catálogo de invariantes protegidos con sus pruebas; las que faltaban | E-083 | `00f5d97` |
-| T-PROC-01: límites del encargo respetados; ningún servicio real se activa solo | E-084 | `f830cb6` |
-| T-PROC-02: ciclo por tarea anotado, con comprobación automática del seguimiento | E-085 | `6d02ca9` |
-| T-CIERRE-01: restauración ensayada en carpeta aislada con relaciones, dinero y diario comprobados | E-086 | `1ea9a48` |
-| T-CIERRE-02: cierre con el verificador, las órdenes de calidad y ENTREGA.md | E-087 | `5215e07` |
+| T-INI-02: aislamiento de rutas | E-002 | `d7b977c` |
+| Formato | E-003 | `48892cd` |
+| T-INI-04, T-INI-05, T-F0-01, T-F0-07: seguimiento, verificador y encargo | E-004 | `59830ff`, `6380167` |
+| T-F0-02 a T-F0-04: exención de IVA configurable para las facturas nuevas | E-005 | `b72d019` |
+| T-F1-A1: documentos, consentimientos y cuestionarios | E-006 | `7d7c3ad` |
+| T-F1-A2: recetas y vademécum | E-007 | `78a0501` |
+| Revisión de seguridad de las áreas 1 y 2 | E-008 | `9e5b5bb` |
+| T-F1-A3: odontograma, periodontograma e historial | E-009 | `5e799b4` |
+| T-F1-A4: bancos y conciliación | E-010 | `cab3ec3` |
+| T-F1-A5: informes (y tipo `Cents` para T-R7-1) | E-011 | `667a823` |
+| T-F1-A6: comunicaciones | E-012 | `f53a393` |
+| T-F1-A7: ortodoncia | E-013 | `2022500` |
+| T-F1-A8: IA de radiografías | E-014 | `0182c31` |
+| Revisión de seguridad del área 8 | E-015 | `63ff805` |
+| T-F1-A9: cita online y portales | E-016 | `ed521d2` |
+| T-F1-A10: telefonía y laboratorio digital | E-017 | `6560771` |
+| T-F1-11: todas las pantallas a 1280×720 y 1280×800 | E-018 | `376fa45` |
+| T-F1-12a a T-F1-12d: concurrencia, fallos, protocolo y entradas al azar | E-019 | `6958fbe` |
+| T-F1-13: informes con oráculo independiente (hecho en el área 5) | E-011 | `667a823` |
+| T-R7-2, T-R7-3 y T-R7-4: autoridad del servidor, anulaciones y escritura | E-020 | `5c64e38` |
+| T-F2-01 a T-F2-09: motor de migración, asistente, conciliación, GESDEN/Novaclinic, perfiles y documentación | E-021 | `24fd1b1` |
+| Revisión de seguridad de la fase 2, ficheros solo para el usuario y T-F3-01: ensayo de instalación | E-022 | `82c510c` |
+| T-F3-02: actualizaciones coordinadas (versión de datos, bandeja de pendientes, paquetes firmados y vuelta atrás) | E-023 | `f42e45c` |
+| T-F3-03: firma condicionada a secretos, empaquetado comprobado y bandeja por usuario (revisión de seguridad) | E-024 | `8817b9e` |
+| T-F3-04: registro de errores e informe para soporte; firma solo con etiqueta y sesión caducada (revisión de seguridad) | E-025 | `ec6689f` |
+| T-F3-05: ensayo de restauración y clave de recuperación; nombres fuera del registro (revisión de seguridad) | E-026 | `132556e` |
+| T-F3-06: VERI*FACTU contra una AEAT simulada (rechazo, caída, reintento idéntico y conciliación) | E-027 | `b903894` |
+| T-F3-07: SMS por pasarela con idempotencia y resultados inciertos (WhatsApp y correo, ya en E-012) | E-028 | `79f17a9` |
+| T-F3-09: instrumentos del piloto (tiempos y pasos, incidencias, disponibilidad y restauraciones) | E-029 | `060c6b9` |
+| T-F3-08: guías de instalación, restauración y uso comprobadas contra el programa; fórmulas en los CSV (revisión de seguridad) | E-030 | `bcc514a` |
+| T-F4-00: normativa consultada (fuente, fecha, versión y efecto) | E-031 | `a7dc021` |
+| T-F4-02: registro de accesos a cada historia (encadenado, fuera de los datos, en red por el servidor) | E-032 | `2df4522` |
+| T-F4-03: derechos RGPD (solicitudes, exportación íntegra, limitación, bloqueo; supresión desactivada); revisión de seguridad del registro de accesos | E-033 | `a871f41` |
+| T-F4-05: retirada de la carpeta compartida con paso al servidor; bloqueo en el servidor y exportación sin ficheros ajenos (revisión de seguridad) | E-034 | `a4b4b6e` |
+| T-F4-06: registro de jornada (fichar, correcciones trazables, acceso por rol, exportación; en red lo hace cumplir el servidor) | E-035 | `7f8b84e` |
+| Revisión de seguridad de la jornada en red | E-036 | `a80caa0` |
+| T-F4-07: libros registro en el formato común de la AEAT | E-037 | `ec5e2f4` |
+| T-F4-01: receta privada, organismos confirmados en el expediente | E-038 | `25f2939` |
+| T-F4-04: cifrado de los datos, diario y copias con claves gestionadas, rotación y recuperación | E-039 | `9841d60` |
+| Revisión de seguridad del cifrado de los datos (sin vuelta atrás a sin cifrar) | E-040 | `fd63be5` |
+| T-F4-08: facturación foral (territorio confirmado, TicketBAI preparado, sin homologar ni activar) | E-041 | `04e63a7` |
+| T-F4-09: pruebas para la gestoría, el DPO y la auditoría de seguridad (docs/revision_externa) | E-042 | `ebf0576` |
+| T-F5-01: cuadro de mando con fórmulas definidas y verificación independiente | E-043 | `57a885a` |
+| T-F5-02: pago por internet (Redsys por redirección y Bizum), sin cargos | E-044 | `956902e` |
+| T-F5-03: plan de tratamiento por fases y alternativas (versión de datos 2) | E-045 | `590f472` |
+| T-F5-04: notas de evolución con plantillas, dictado, transcripción y resumen revisado | E-046 | `a75f31b` |
+| Revisión de seguridad: confirmación sellada por el servidor y fusión que guarda notas, pagos y derechos | E-047 | `863181b` |
+| T-F5-05: periodontograma por voz con corrección y confirmación visibles | E-048 | `d6a492f` |
+| T-F5-06: visor DICOM/CBCT y STL, y comparación de radiografías | E-049 | `79c4111` |
+| Revisión de seguridad: memoria de los DICOM y tamaño de los STL | E-050 | `4e9d322` |
+| T-F5-07: alertas clínicas ampliadas con fuente citada y revisión del profesional | E-051 | `05738f0` |
+| Revisión de seguridad: vistos de alertas sellados por el servidor | E-052 | `270b16f` |
+| T-F5-08: esterilización (ciclos, lotes, pacientes, incidencias y afectados) | E-053 | `270b16f` |
+| Revisión de seguridad: esterilización comprobada por el servidor | E-054 | `d9151d2` |
+| Revisión de seguridad: etiquetas de lotes únicas con una sola regla | E-055 | `11f68ad` |
+| T-F5-09: encuestas de satisfacción y solicitud de reseñas | E-056 | `52f1494` |
+| T-F5-10: Mi espacio, portal del paciente con autorización por objeto y por responsable | E-057 | `28bf1e3` |
+| Revisión de seguridad: Mi espacio (responsable y entrada sin DNI) | E-058 | `5e144a8` |
+| T-F5-11: idiomas (castellano, catalán, euskera, gallego e inglés) | E-059 | `a910d68` |
+| Revisión de seguridad: la palabra de baja de cada idioma | E-060 | `c5805b5` |
+| T-F5-12: campañas a grupos de pacientes con consentimiento, límites, previsualización y atribución | E-061 | `6626ded` |
+| Revisión de seguridad: el servidor pasa a la cola los mensajes de las campañas | E-062 | `64274e1` |
+| T-F6-01: grupos de clínicas (sociedades, centros con permisos y vista del grupo) | E-063 | `6b18ad3` |
+| T-F6-02: servidor en la nube opcional, desplegado y ensayado en local | E-064 | `bbcfb42` |
+| Revisión de seguridad: carpeta del servicio y clave fuera de la orden | E-065 | `cbf0170` |
+| T-F6-03: datáfono y financiación (adaptadores, estados, conciliación, cancelación y recuperación) | E-066 | `62ef01f` |
+| Revisión de seguridad: sacar dinero y el banco con su permiso en el servidor | E-067 | `b69930d` |
+| Revisión de seguridad: financiación, caja y devoluciones con datáfono por su camino | E-068 | `ea85c23` |
+| T-F6-04: aseguradoras (autorizaciones y liquidaciones, flujo interno y contrato) | E-069 | `e7159df` |
+| Revisión de seguridad: autorizaciones y liquidaciones solo por el servidor | E-070 | `41c73c3` |
+| T-F6-05: pedidos por stock mínimo con aprobación, unidades de compra, lotes y recepción | E-071 | `5fea745` |
+| Revisión de seguridad: configuración, pedidos partidos y correo del proveedor | E-072 | `dee0d7a` |
+| Revisión de seguridad: configuración por lista de lo permitido y sin proveedores repetidos | E-073 | `0b03caa` |
+| T-F6-06: modo tableta (controles grandes, contraste ajustable y uso sin ratón) | E-074 | `79ba37d` |
+| T-F6-07, T-INI-08 y T-F6-08: calidad continua y mediciones reproducibles por versión (D-28) | E-075 | `94b5caf` |
+| T-F6-09: escenario sintético de un grupo de clínicas con permisos y totales | E-076 | `94b5caf` |
+| T-INI-06: funciones que el informe da por existentes, comprobadas en el código | E-077 | `94b5caf` |
+| T-R7-1: dinero al céntimo con pruebas de propiedades, sin tocar lo ya guardado (D-29) | E-078 | `5b1e424` |
+| T-R7-5: autorización en el servidor, rutas revisadas y matrices por perfil | E-079 | `a2187f6` |
+| T-R7-6: límites de entradas, ficheros y tareas con sus pruebas; conexiones quietas acotadas | E-080 | `9b01b13` |
+| Revisión automática de E-080: plazo total para la cabecera y conexiones por red IPv6 /64 | E-081 | `4521adb` |
+| T-R7-7: minimización en registro, enlaces personales, mensajes, IA y laboratorio (D-30) | E-082 | `3d6696f` |
+| T-INI-07: catálogo de invariantes protegidos con sus pruebas; las que faltaban | E-083 | `4db8f60` |
+| T-PROC-01: límites del encargo respetados; ningún servicio real se activa solo | E-084 | `6fc53e6` |
+| T-PROC-02: ciclo por tarea anotado, con comprobación automática del seguimiento | E-085 | `c698424` |
+| T-CIERRE-01: restauración ensayada en carpeta aislada con relaciones, dinero y diario comprobados | E-086 | `44bb400` |
+| T-CIERRE-02: cierre con el verificador, las órdenes de calidad y ENTREGA.md | E-087 | `fd80ce5` |
 
 ## Siguiente acción
 **Ingeniería disponible completada; validaciones o activaciones externas pendientes.** Las tareas de ingeniería de las fases 0 a 6, las transversales y las de cierre están hechas. El resumen de la entrega está en `ENTREGA.md`.

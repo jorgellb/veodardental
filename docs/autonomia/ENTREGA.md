@@ -179,10 +179,10 @@ parte afectada, preparación terminada y prueba posterior) está en
   - B-08, piloto de un mes: acordarlo, instalar con la lista de instalación y activar los instrumentos de medida.
 
 ## 7. Git
-- **Commits propios:** 157 en `autonomia/fases-0-6` sobre `main` (`ade418b`), contando el de este cierre y su seguimiento. Van del primero (`3e48461`, aislamiento) al último. Todos llevan la línea «Co-Authored-By: Claude Opus 5.5».
+- **Commits propios:** 158 en `autonomia/fases-0-6` sobre `main` (`ade418b`). Cuentan el de este cierre, su seguimiento y el que actualiza los identificadores tras quitar la línea de coautores (D-31). Van del primero (`d7b977c`, aislamiento) al último. Todos están firmados por `jorgellb <jorgellb@gmail.com>`, sin coautores.
 - **HEAD final y estado:** se muestran al cierre en la conversación. El estado final es limpio, sin cambios sin guardar.
 - **Cambios ajenos que había al empezar:**
-  - `VEODARDENTAL_GOAL.md`, el encargo del propietario: se guardó sin cambios en su propio commit, `50431a3`, que cita su SHA-256 (D-04);
-  - `PLAN_DE_DESARROLLO.md`, del asistente de la sesión anterior: guardado en `6f8d19c`.
+  - `VEODARDENTAL_GOAL.md`, el encargo del propietario: se guardó sin cambios en su propio commit, `59830ff`, que cita su SHA-256 (D-04);
+  - `PLAN_DE_DESARROLLO.md`, del asistente de la sesión anterior: guardado en `6380167`.
   - No había más ramas, `stash` ni cambios sin guardar (`ESTADO_INICIAL.md`).
 - No se ha hecho reset destructivo, limpieza indiscriminada, rebase, force push ni push.

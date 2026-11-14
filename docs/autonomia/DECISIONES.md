@@ -14,7 +14,7 @@ Las capturas, mediciones y ensayos se lanzan siempre con `tools/aislado.sh`.
 ## D-03 Formato
 El encargo cita `cargo fmt --all -- --check` como control. El repositorio no tenía configuración y el código no estaba formateado. Se adopta `rustfmt.toml` con `max_width = 250` y `use_small_heuristics = "Max"`, que es lo más parecido al estilo existente: de las configuraciones medidas, la que menos cambia.
 
-Se aplica una sola vez en su propio commit (`aca725a`), sin cambios de comportamiento: pasan las pruebas y clippy estricto.
+Se aplica una sola vez en su propio commit (`48892cd`), sin cambios de comportamiento: pasan las pruebas y clippy estricto.
 
 ## D-04 Encargo en el repositorio
 La fase 0 pide conservar el encargo en el repositorio. `VEODARDENTAL_GOAL.md` se guarda tal como lo dejó el propietario, sin modificarlo, en un commit propio que cita su SHA-256. No se incluye ningún otro cambio ajeno.
@@ -278,4 +278,14 @@ Las facturas ya emitidas calculan su total al vuelo, y ese total entra en su hue
 - Los trabajos ya guardados conservan lo que tenían.
 
 **Consecuencia:** protección de datos por defecto (RGPD, artículo 25). Pruebas: `lab_order::tests::order_document_and_package` y `ui_tests::lab_order_sent_by_email_with_attachments`.
+
+## D-31 Los commits, solo a nombre de jorgellb
+**Contexto.** Los commits de la rama `autonomia/fases-0-6` llevaban la línea «Co-Authored-By: Claude Opus 5.5». El propietario no quiere colaboradores en los commits: solo `jorgellb <jorgellb@gmail.com>`.
+
+**Decisión:**
+- Se ha quitado esa línea de los mensajes de los 157 commits de la rama, con su permiso expreso. El contenido, los autores y las fechas son los mismos, y el árbol final es idéntico.
+- Los identificadores de commit han cambiado. Los que citan `PROGRESO.md`, `EVIDENCIAS.md`, `ENTREGA.md` y estas decisiones se han puesto al día. `docs_tests::tests::every_task_row_cites_its_evidence_and_commit_and_the_battery_is_recorded` comprueba que existen.
+- El historial anterior se conserva en la rama local `respaldo/fases-0-6-con-coautores`, que no se sube a ningún sitio.
+- Los commits nuevos van sin coautores.
+- Los 36 commits de `main`, anteriores a este encargo, siguen con la línea: no se han tocado.
 
