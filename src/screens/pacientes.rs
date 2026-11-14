@@ -838,6 +838,16 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
             ui.add_space(6.0);
             section(ui, "Protección de datos y comunicaciones");
             ui.checkbox(&mut p.accepts_gdpr, "Ha firmado el consentimiento de protección de datos");
+            // otra finalidad: promociones (campañas), con la fecha en que lo dio
+            ui.horizontal(|ui| {
+                let mut on = p.marketing.is_some();
+                if ui.checkbox(&mut on, "Acepta recibir promociones de la clínica (campañas)").changed() {
+                    p.marketing = on.then(crate::model::today);
+                }
+                if let Some(d) = p.marketing {
+                    ui.label(RichText::new(format!("desde el {}", d.format("%d/%m/%Y"))).size(12.5).color(MUTED));
+                }
+            });
             ui.horizontal(|ui| {
                 ui.checkbox(&mut p.accepts_sms, "SMS");
                 ui.checkbox(&mut p.accepts_email, "Email");
@@ -857,7 +867,7 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
             ui.label(RichText::new("Avisos que quiere recibir").size(12.5).color(MUTED));
             ui.horizontal_wrapped(|ui| {
                 use crate::comms::MsgKind;
-                for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::PresupuestoPendiente, MsgKind::Cumpleanos, MsgKind::Encuesta] {
+                for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::PresupuestoPendiente, MsgKind::Cumpleanos, MsgKind::Encuesta, MsgKind::Campana] {
                     let mut on = !p.no_messages.contains(&k);
                     if ui.checkbox(&mut on, k.label()).changed() {
                         if on {

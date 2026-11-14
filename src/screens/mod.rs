@@ -4,6 +4,7 @@ pub mod almacen;
 pub mod avisos;
 pub mod bancos;
 pub mod caja;
+pub mod campanas;
 pub mod centros;
 pub mod cita_online;
 pub mod cobros;

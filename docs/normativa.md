@@ -167,3 +167,17 @@ queda marcado como pendiente.
   - el enlace a la reseña se ofrece igual a todos, antes y después de responder y con cualquier nota;
   - la encuesta no condiciona nada y no hay incentivos.
 
+
+## Comunicaciones comerciales: campañas (T-F5-12)
+- **Fuentes, citadas de memoria y sin consultar en esta sesión; las confirma el DPO (`docs/revision_externa/dpo.md`):**
+  - Ley 34/2002 (LSSI), artículos 21 y 22. Una comunicación comercial por correo electrónico o un medio equivalente (SMS, mensajería) necesita una solicitud o una autorización expresa previa. En cada una hay que ofrecer una forma sencilla y gratuita de oponerse.
+  - RGPD:
+    - artículos 6.1.a y 7: el consentimiento tiene que poder demostrarse;
+    - artículo 9.2.a: los datos de salud necesitan un consentimiento explícito para esa finalidad;
+    - artículo 21.2 y 21.3: oposición a la mercadotecnia directa.
+  - LOPDGDD, artículo 23.4. Antes de la mercadotecnia directa hay que consultar los sistemas de exclusión publicitaria (Lista Robinson), salvo que el afectado haya consentido recibirla de quien la envía.
+- **Efecto en el código (`src/campanas.rs`, D-24):**
+  - solo a quien ha consentido expresamente, con fecha, y no se ha dado de baja;
+  - la forma de darse de baja va en cada mensaje;
+  - el texto no lleva datos de salud;
+  - elegir por tratamiento queda a decisión del DPO.

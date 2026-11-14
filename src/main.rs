@@ -9,6 +9,7 @@ mod bank;
 mod booking;
 mod brand;
 mod budget_link;
+mod campanas;
 mod cents;
 mod chat;
 mod cifrado;

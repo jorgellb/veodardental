@@ -1518,3 +1518,35 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 504 pasan, 0 fallan, 10 ignoradas |
+
+## E-061 T-F5-12: campañas a grupos de pacientes
+- **Hecho (`src/campanas.rs`, `src/screens/campanas.rs`, D-24):** pestaña «📣 Campañas» en Comunicaciones.
+  - **Segmento:** edad, última visita, presupuesto pendiente y tratamiento hecho o no en el último año. El tratamiento solo lo ajusta un perfil clínico.
+  - **Consentimiento por finalidad:** el de promociones, con fecha, en Filiación, además del de protección de datos y el del canal.
+    - La baja de las campañas es una clase de aviso más.
+    - Las dos cosas se vuelven a mirar al pasar cada mensaje a la cola.
+    - Al fusionar fichas no se pierde una baja (antes se perdían las bajas de la ficha eliminada).
+  - **Límites:** horario de lunes a viernes, máximo diario y días sin otra campaña al mismo paciente.
+  - **Previsualización:** cuántos la recibirán, cuántos se quedan fuera y por qué, y los primeros mensajes tal como saldrán. Al programarla, la lista queda fija.
+  - **Envío:** ninguno. Los mensajes solo pasan a la cola de «Mensajes», con la baja en el idioma del paciente, y desde allí se envían como los demás. Dos puestos no ponen dos mensajes al mismo paciente (también entran en la clave de duplicados).
+  - **Quién:** la programa y la cancela Dirección; el servidor no acepta de otro perfil que la programe, la cambie o la borre. Al cancelarla se descarta lo que está en la cola sin enviar.
+  - **Resultados:** pasados a la cola, por pasar, los que ya no podían recibirla, y las citas atribuidas y a cuántas acudió. El criterio está escrito en la pantalla (`campanas::CRITERION`).
+- **Pruebas (ninguna envía nada):**
+  - `campanas::tests::the_preview_shows_who_and_why_not_and_scheduling_freezes_the_list`: excluidos por motivo (sin consentimiento, de baja, sin contacto, campaña reciente), texto con los datos del paciente y la baja, comodines de salud rechazados y lista fija;
+  - `campanas::tests::segments_by_age_last_visit_budget_and_treatment`;
+  - `campanas::tests::queueing_respects_hours_weekdays_daily_limit_and_late_unsubscribes`: antes y después del horario, sábado, límite diario, una baja de última hora y la frecuencia entre campañas;
+  - `campanas::tests::cancelling_stops_what_is_left_and_drops_what_is_unsent`;
+  - `campanas::tests::two_stations_queue_one_message_per_patient`;
+  - `campanas::tests::results_attribute_only_new_appointments_within_the_window`: ni la cita que ya tenía, ni la de fuera de plazo, ni la anulada;
+  - `campanas::tests::only_direction_schedules_or_changes_a_campaign`;
+  - `server::tests::only_direction_schedules_campaigns_and_any_station_queues_them`: con el servidor de verdad, recepción no programa, ni añade destinatarios, ni cambia el texto, ni borra. Comprobado que falla si se quita la regla del servidor;
+  - `bank::tests::merging_moves_everything_of_the_removed_patient`: además, campañas y bajas;
+  - `ui_tests::a_campaign_is_previewed_and_scheduled_by_direction_only`: Dirección crea, previsualiza y programa; recepción no ve «Programar campaña»; el consentimiento en la ficha queda con su fecha.
+- **Pendiente externo (DPO):** el texto del consentimiento para promociones, si se puede elegir por tratamiento y cuánto se guardan las listas (`docs/revision_externa/dpo.md`, apartado 5 ter).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 513 pasan, 0 fallan, 10 ignoradas |

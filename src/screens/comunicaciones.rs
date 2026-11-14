@@ -22,11 +22,26 @@ pub struct CommsState {
     pub queued: Vec<u32>,
     /// Último envío de correos terminado: (cuándo, enviados, con error, automático).
     pub last_outbox: Option<(chrono::NaiveDateTime, usize, usize, bool)>,
+    /// Pestaña de campañas.
+    pub camp: crate::screens::campanas::CampUi,
 }
 
 impl Default for CommsState {
     fn default() -> Self {
-        CommsState { tab: 0, filter: Some(MsgState::Pendiente), selected: None, tpl_sel: Some(1), doc_tpl_sel: Some(1), last_skipped: 0, free_text: String::new(), free_channel: Channel::WhatsApp, outbox: None, queued: vec![], last_outbox: None }
+        CommsState {
+            tab: 0,
+            filter: Some(MsgState::Pendiente),
+            selected: None,
+            tpl_sel: Some(1),
+            doc_tpl_sel: Some(1),
+            last_skipped: 0,
+            free_text: String::new(),
+            free_channel: Channel::WhatsApp,
+            outbox: None,
+            queued: vec![],
+            last_outbox: None,
+            camp: Default::default(),
+        }
     }
 }
 
@@ -276,7 +291,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         title(ui, "Comunicaciones", "Recordatorios de cita, avisos de revisión, cumpleaños y seguimiento de presupuestos por WhatsApp, SMS y email");
     });
     ui.horizontal(|ui| {
-        for (i, n) in ["Mensajes", "Plantillas de mensajes", "Plantillas de documentos", "💬 Confirmaciones por WhatsApp"].iter().enumerate() {
+        for (i, n) in ["Mensajes", "Plantillas de mensajes", "Plantillas de documentos", "💬 Confirmaciones por WhatsApp", "📣 Campañas"].iter().enumerate() {
             if ui.selectable_label(app.comms.tab == i, *n).clicked() {
                 app.comms.tab = i;
             }
@@ -287,6 +302,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         0 => messages(app, ui),
         1 => msg_templates(app, ui),
         3 => crate::screens::whatsapp::log_tab(app, ui),
+        4 => crate::screens::campanas::tab(app, ui),
         _ => doc_templates(app, ui),
     }
 }

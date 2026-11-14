@@ -1307,6 +1307,7 @@ impl ChainOp {
             "sterile_packs",
             "surveys",
             "portal_access",
+            "campaigns",
             "config",
             "audit_log",
         ];
@@ -1818,6 +1819,7 @@ impl eframe::App for App {
                 screens::cita_online::tick(self, &ctx, time);
                 // y el envío automático de comunicaciones por correo
                 screens::comunicaciones::outbox_tick(self, &ctx);
+                screens::campanas::tick(self);
             }
             self.toast(&ctx);
             self.autosave(time);
@@ -1837,6 +1839,7 @@ impl eframe::App for App {
             screens::whatsapp::tick(self, time);
             screens::cita_online::tick(self, &ctx, time);
             screens::comunicaciones::outbox_tick(self, &ctx);
+            screens::campanas::tick(self);
             self.autosave(time);
             self.handle_screenshot(&ctx);
             return;
@@ -1895,6 +1898,7 @@ impl eframe::App for App {
         screens::cita_online::tick(self, &ctx, time);
         // correos que se están enviando y envío automático del día
         screens::comunicaciones::outbox_tick(self, &ctx);
+        screens::campanas::tick(self);
         screens::login::change_pin_dialog(self, &ctx);
         self.toast(&ctx);
         self.poll_shared(time);

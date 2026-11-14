@@ -756,6 +756,15 @@ impl Db {
         }
         k.accepts_gdpr |= r.accepts_gdpr;
         k.sepa_signed |= r.sepa_signed;
+        // una baja dada en cualquiera de las dos fichas sigue valiendo
+        for kind in &r.no_messages {
+            if !k.no_messages.contains(kind) {
+                k.no_messages.push(*kind);
+            }
+        }
+        if k.marketing.is_none() {
+            k.marketing = r.marketing;
+        }
         let kname = k.full_name();
         macro_rules! move_pid {
             ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == remove { x.patient_id = keep; } } )* };
@@ -778,6 +787,11 @@ impl Db {
         }
         for a in self.portal_access.iter_mut().filter(|a| a.holder == crate::portal_paciente::Holder::Patient(remove)) {
             a.holder = crate::portal_paciente::Holder::Patient(keep);
+        }
+        for c in self.campaigns.iter_mut() {
+            for r in c.recipients.iter_mut().filter(|r| r.patient_id == remove) {
+                r.patient_id = keep;
+            }
         }
         for p in self.sterile_packs.iter_mut() {
             if let Some(u) = p.used.as_mut().filter(|u| u.patient_id == remove) {
@@ -980,6 +994,12 @@ mod tests {
         if let Some(c) = db.calls.first_mut() {
             c.patients = vec![remove];
         }
+        // le llegó una campaña y se dio de baja de ellas en esta ficha
+        let mut camp = crate::campanas::Campaign::new(db.new_id(), "Higiene", crate::comms::Channel::WhatsApp, "Hola");
+        camp.recipients.push(crate::campanas::Recipient { patient_id: remove, sent: Some(now()), message_id: None, known_appts: vec![] });
+        db.campaigns.push(camp);
+        db.patients.iter_mut().find(|p| p.id == remove).unwrap().no_messages.push(crate::comms::MsgKind::Campana);
+        db.patients.iter_mut().find(|p| p.id == keep).unwrap().no_messages.clear();
         let before: Vec<String> = {
             let mut v = vec![];
             references(&serde_json::to_value(&db).unwrap(), remove as u64, "", &mut v);
@@ -993,6 +1013,7 @@ mod tests {
         // y lo suyo está ahora en la ficha que se conserva
         assert!(!db.patient_lots(keep).is_empty(), "sus implantes, con su lote");
         assert!(db.tasks.iter().any(|t| t.patient_id == Some(keep) && t.text == "Llamar"));
+        assert!(db.patient(keep).unwrap().no_messages.contains(&crate::comms::MsgKind::Campana), "la baja dada en la otra ficha sigue valiendo");
     }
 
     fn n43_line22(date: &str, debe: bool, cents: u64, r1: &str) -> String {

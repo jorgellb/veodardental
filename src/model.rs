@@ -203,6 +203,11 @@ pub struct Patient {
     /// Idioma de sus avisos, sus páginas y sus documentos (ninguno: castellano).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lang: Option<crate::i18n::Lang>,
+    /// Consentimiento expreso para recibir promociones (campañas), con la
+    /// fecha en que lo dio. Es otra finalidad: no basta con el de protección
+    /// de datos ni con el del canal (ver `campanas`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marketing: Option<NaiveDate>,
 }
 
 /// Persona responsable de un paciente: paga, recibe las facturas y, si el
@@ -890,6 +895,9 @@ pub struct Db {
     /// Accesos a «Mi espacio», el portal del paciente (ver `portal_paciente`).
     #[serde(default)]
     pub portal_access: Tracked<Vec<crate::portal_paciente::PortalAccess>>,
+    /// Campañas a grupos de pacientes (ver `campanas`).
+    #[serde(default)]
+    pub campaigns: Tracked<Vec<crate::campanas::Campaign>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

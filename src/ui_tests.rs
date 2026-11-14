@@ -3256,3 +3256,81 @@ fn a_new_station_cannot_set_up_a_shared_folder() {
     h.get_by_label(crate::shared::NO_NEW_SHARED);
     assert!(h.query_by_label("Usar esta carpeta en este puesto").is_none());
 }
+
+/// Campañas en Comunicaciones: Dirección crea una, ve a quién le llega y la
+/// programa (sin envío: los mensajes solo pasan a la cola); recepción no ve
+/// el botón de programar. Y en la ficha se da el consentimiento para
+/// promociones, con fecha.
+#[test]
+fn a_campaign_is_previewed_and_scheduled_by_direction_only() {
+    let build = || {
+        Harness::builder().with_size(egui::vec2(1280.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+            let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+            a.screenshot = None;
+            a
+        })
+    };
+    let mut h = build();
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.campaigns.clear();
+        for p in a.db.patients.iter_mut() {
+            (p.marketing, p.accepts_gdpr, p.accepts_whatsapp, p.mobile) = (Some(crate::model::today()), true, true, "600000000".into());
+            p.no_messages.clear();
+        }
+        a.screen = crate::app::Screen::Comunicaciones;
+        a.comms.tab = 4;
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("➕ Nueva campaña").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let id = h.state().db.campaigns.first().expect("campaña creada").id;
+    let n = h.state().db.campaign_preview(&h.state().db.campaigns[0], crate::model::now()).recipients.len();
+    assert!(n > 0);
+    h.get_by_label(&format!("La recibirán {n} pacientes."));
+    h.get_by_label("Programar campaña").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let c = h.state().db.campaigns.iter().find(|c| c.id == id).unwrap().clone();
+    assert_ne!(c.state, crate::campanas::CampState::Borrador, "programada");
+    assert_eq!(c.recipients.len(), n);
+    assert!(h.state().db.messages.iter().filter(|m| m.related == Some(id)).all(|m| m.state == crate::comms::MsgState::Pendiente && m.sent_at.is_none()), "nada enviado");
+    h.get_by_label("Resultados");
+    // recepción: ve el borrador, pero no lo programa
+    let mut h = build();
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.profile == crate::users::Profile::Recepcion).map(|u| u.id);
+        a.db.campaigns.clear();
+        let id = a.db.new_id();
+        a.db.campaigns.push(crate::campanas::Campaign::new(id, "Revisión", crate::comms::Channel::Sms, "Hola [NOMBRE]"));
+        a.comms.camp.selected = Some(id);
+        a.screen = crate::app::Screen::Comunicaciones;
+        a.comms.tab = 4;
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("La programa Dirección.");
+    assert!(h.query_by_label("Programar campaña").is_none());
+    // en la ficha, el consentimiento para promociones (con su fecha)
+    {
+        let a = h.state_mut();
+        a.db.patients.iter_mut().find(|p| p.id == 101).unwrap().marketing = None;
+        a.open_patient(101, crate::app::PatTab::Filiacion);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Acepta recibir promociones de la clínica (campañas)").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label(&format!("desde el {}", crate::model::today().format("%d/%m/%Y")));
+}

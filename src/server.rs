@@ -931,6 +931,21 @@ impl State {
                 c.after = c.after.as_deref().map(|a| view.restore(&c.field, a, current.as_ref())).transpose()?;
             }
         }
+        // campañas: programarlas, cancelarlas, cambiar qué dicen o a quién llegan
+        // y borrarlas es cosa de Dirección; los demás puestos solo pasan a la
+        // cola lo que toca y hacen borradores (`campanas::tick_only`)
+        if !admin {
+            let snap = &self.snap;
+            changes.retain(|c| {
+                if c.field != "campaigns" {
+                    return true;
+                }
+                let parse = |j: Option<&String>| j.and_then(|j| serde_json::from_str::<crate::campanas::Campaign>(j).ok());
+                let current = parse(c.key.as_deref().and_then(|k| snap.get("campaigns", Some(k))));
+                let after = parse(c.after.as_ref());
+                (c.after.is_none() || after.is_some()) && crate::campanas::tick_only(current.as_ref(), after.as_ref())
+            });
+        }
         // un paciente con los datos bloqueados tampoco lo borra otro perfil
         if !admin {
             changes.retain(|c| c.field != "patients" || c.after.is_some() || !c.key.as_deref().and_then(|k| self.snap.get("patients", Some(k))).and_then(|j| serde_json::from_str::<Value>(j).ok()).is_some_and(|v| !v["blocked"].is_null()));
@@ -3379,6 +3394,59 @@ mod tests {
     /// Alertas revisadas y esterilización en red: el servidor sella quién y
     /// cuándo; un visto o un uso anotado no se cambia ni se borra desde un
     /// puesto; un lote retirado no vuelve y un ciclo fallido no vuelve atrás.
+    /// Campañas: recepción hace borradores y pasa a la cola lo que toca, pero
+    /// programarlas, cambiar a quién llegan o borrarlas es cosa de Dirección.
+    #[test]
+    fn only_direction_schedules_campaigns_and_any_station_queues_them() {
+        use crate::campanas::{CampState, Campaign, Recipient};
+        let (addr, path, h) = start("CLAVE49");
+        let dir = signed_in(&addr, "CLAVE49", "Despacho", 1, "0000");
+        let rec = signed_in(&addr, "CLAVE49", "Recepción", 2, "0000");
+        let at = chrono::NaiveDate::from_ymd_opt(2026, 11, 16).unwrap().and_hms_opt(12, 0, 0).unwrap();
+        // recepción: un borrador sí; programarlo, no
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        for p in a.patients.iter_mut() {
+            (p.marketing, p.accepts_gdpr, p.accepts_whatsapp, p.mobile) = (Some(at.date()), true, true, "600000000".into());
+        }
+        let id = a.new_id();
+        a.campaigns.push(Campaign::new(id, "Higiene", crate::comms::Channel::WhatsApp, "Hola [NOMBRE]"));
+        rec.push(&mut a, &mut sa).unwrap();
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        assert!(a.campaigns.iter().any(|c| c.id == id), "el borrador");
+        a.campaign_schedule(id, at).unwrap();
+        rec.push(&mut a, &mut sa).unwrap();
+        assert_eq!(crate::sync::on_disk(&path).campaigns.iter().find(|c| c.id == id).unwrap().state, CampState::Borrador, "recepción no la programa");
+        // Dirección la programa
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.station = dir.station;
+        let n = d.campaign_schedule(id, at).unwrap();
+        dir.push(&mut d, &mut sd).unwrap();
+        // recepción pasa los mensajes a la cola (sí), y añade a alguien (no)
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        assert_eq!(a.campaign_tick(at), n);
+        rec.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let c = disk.campaigns.iter().find(|c| c.id == id).unwrap().clone();
+        assert_eq!(c.state, CampState::Terminada);
+        assert_eq!(disk.messages.iter().filter(|m| m.related == Some(id)).count(), n, "en la cola, sin enviar");
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        let x = a.campaigns.iter_mut().find(|c| c.id == id).unwrap();
+        x.recipients.push(Recipient { patient_id: 101, sent: None, message_id: None, known_appts: vec![] });
+        x.text = "Otra cosa".into();
+        rec.push(&mut a, &mut sa).unwrap();
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        a.campaigns.retain(|c| c.id != id);
+        rec.push(&mut a, &mut sa).unwrap();
+        assert_eq!(crate::sync::on_disk(&path).campaigns.iter().find(|c| c.id == id), Some(&c), "ni la cambia ni la borra");
+        dir.stop().unwrap();
+        h.join().unwrap();
+    }
+
     #[test]
     fn alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server() {
         let (addr, path, h) = start("CLAVE48");

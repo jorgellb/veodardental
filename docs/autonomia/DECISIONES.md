@@ -127,3 +127,41 @@ Las rutas locales se importan siempre, porque no salen del ordenador.
 - al abrir datos de la versión 1 se hace antes una copia.
 
 **Al pasar a la versión 2** (`Db::upgrade`): los consentimientos de siempre (extracción, implantes y endodoncia) reciben la clase de tratamiento que los pide. Las plantillas que la clínica haya cambiado no se tocan.
+
+**Ampliación (T-F5-12).** La versión 2 aún no se ha publicado. Incluye también lo de las campañas:
+- el consentimiento para promociones en la ficha (`Patient::marketing`);
+- la clase de mensaje `Campana`;
+- la lista `campaigns`.
+
+Al pasar de la versión 1 a la 2 nadie tiene consentimiento para promociones: hay que darlo expresamente. Un programa de la versión 1 que abra estos datos no los entiende y los abre sin guardar, como cuando no se pueden leer (no escribe encima).
+
+## D-24 Campañas: consentimiento propio, lista fija y atribución explícita
+**Contexto.** La fase 5 pide campañas a grupos de pacientes con:
+- consentimiento por finalidad;
+- bajas, horario y límites;
+- previsualización;
+- resultados atribuibles con criterios explícitos.
+
+Hasta ahora solo había consentimiento de protección de datos y de cada canal. Eso no basta para promociones.
+
+**Decisión (`src/campanas.rs`):**
+- **Consentimiento propio.** Una promoción solo le llega a quien la ha aceptado expresamente, con fecha (Filiación). Además hace falta el consentimiento de protección de datos y el del canal. La baja de las campañas es una clase de aviso más (`MsgKind::Campana`).
+  - Las dos cosas se vuelven a mirar al pasar cada mensaje a la cola: una baja de última hora manda.
+  - Al fusionar dos fichas, una baja dada en cualquiera de ellas sigue valiendo.
+- **Lista fija al programar.** Lo que se previsualiza es lo que se programa. Quien da su consentimiento después no entra en esa campaña.
+- **Sin envío directo.** La campaña solo pasa mensajes a la cola de Comunicaciones:
+  - de lunes a viernes y en su horario;
+  - con su límite diario;
+  - sin otra campaña al mismo paciente en los días anteriores que diga.
+
+  Desde la cola se envían como los demás. Cada mensaje lleva cómo darse de baja, en el idioma del paciente.
+- **Quién.** La programa y la cancela Dirección. Los demás perfiles hacen borradores y pasan a la cola lo que toca. El servidor lo comprueba (`campanas::tick_only`).
+  - Elegir por tratamiento usa datos de salud: solo lo ajusta un perfil clínico, y el texto del mensaje no puede llevar comodines de salud.
+  - Si se puede elegir por tratamiento para promociones, y con qué texto de consentimiento, lo decide el DPO (`docs/revision_externa/dpo.md`).
+- **Atribución.** Se cuenta una cita si cumple todo esto:
+  - es del paciente;
+  - no existía cuando se le pasó el mensaje a la cola (se guarda la lista de sus citas en ese momento);
+  - no está anulada;
+  - su fecha cae en el plazo de la campaña.
+
+  Se dice también si acudió. La pantalla avisa de que es una asociación, no una prueba de que la cita se deba a la campaña.

@@ -118,6 +118,16 @@ contratado en este trabajo.
 - Recepción no las recibe. Su lectura queda en el registro de accesos y salen en la exportación del paciente.
 - **Decide:** si se puede usar un proveedor externo para transcribir o resumir.
 
+## 5 ter. Campañas (promociones)
+- Solo le llegan a quien ha aceptado expresamente recibir promociones, con la fecha (Filiación), además del consentimiento de protección de datos y el del canal. Quien se da de baja de las campañas no las recibe. Las dos cosas se vuelven a mirar al pasar cada mensaje a la cola.
+- Cada mensaje dice cómo darse de baja, en el idioma del paciente. Un «BAJA» (o la palabra de su idioma) contestado por WhatsApp lo da de baja.
+- La programa Dirección, también en red (`server::tests::only_direction_schedules_campaigns_and_any_station_queues_them`). El texto no puede llevar datos de salud.
+- Pruebas: `campanas::tests::the_preview_shows_who_and_why_not_and_scheduling_freezes_the_list` y `campanas::tests::queueing_respects_hours_weekdays_daily_limit_and_late_unsubscribes`.
+- **Decide:**
+  - el texto del consentimiento para promociones;
+  - si se puede elegir a quién va una promoción por los tratamientos hechos (son datos de salud) y con qué consentimiento;
+  - cuánto se guarda la lista de a quién se le envió cada campaña.
+
 ## 6. Minimización en los registros
 - **Registro de errores:** antes de escribir se quitan correos, teléfonos,
   documentos, IBAN, rutas y nombres. Tiene un tamaño acotado y no sale solo

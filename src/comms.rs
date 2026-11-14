@@ -34,6 +34,9 @@ pub enum MsgKind {
     HuecoLibre,
     /// Encuesta de satisfacción tras una visita (ver `encuestas`).
     Encuesta,
+    /// Campaña a un grupo de pacientes (ver `campanas`): promoción, con su
+    /// propio consentimiento y su propia baja.
+    Campana,
 }
 
 impl MsgKind {
@@ -46,6 +49,7 @@ impl MsgKind {
             MsgKind::Libre => "Mensaje libre",
             MsgKind::HuecoLibre => "Hueco libre (lista de espera)",
             MsgKind::Encuesta => "Encuesta de satisfacción",
+            MsgKind::Campana => "Campañas y promociones",
         }
     }
 }
@@ -160,9 +164,10 @@ pub fn unknown_placeholders(text: &str, kind: MsgKind) -> Vec<String> {
 }
 
 /// Clave de un recordatorio de los que se generan solos (de cita, de revisión,
-/// de cumpleaños, de presupuesto): dos con la misma clave son el mismo aviso.
+/// de cumpleaños, de presupuesto, de una campaña): dos con la misma clave son
+/// el mismo aviso.
 pub fn auto_message_key(m: &Message) -> Option<String> {
-    let auto = matches!(m.kind, MsgKind::RecordatorioCita | MsgKind::Recall | MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente);
+    let auto = matches!(m.kind, MsgKind::RecordatorioCita | MsgKind::Recall | MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente | MsgKind::Campana);
     (auto && m.related.is_some()).then(|| format!("{:?}:{}:{}", m.kind, m.related.unwrap_or(0), m.patient_id))
 }
 
@@ -695,7 +700,8 @@ impl Db {
                         }
                     }
                 }
-                MsgKind::Libre | MsgKind::HuecoLibre => {}
+                // las campañas tienen su propio texto y su propio horario (`campaign_tick`)
+                MsgKind::Libre | MsgKind::HuecoLibre | MsgKind::Campana => {}
             }
         }
         (created, skipped)

@@ -2657,8 +2657,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas sin envíos reales",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-061"]
   },
   {
    "id": "T-F6-01",
