@@ -94,6 +94,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión automática de E-080: plazo total para la cabecera y conexiones por red IPv6 /64 | E-081 | `000b2ed` |
 | T-R7-7: minimización en registro, enlaces personales, mensajes, IA y laboratorio (D-30) | E-082 | `c1a4141` |
 | T-INI-07: catálogo de invariantes protegidos con sus pruebas; las que faltaban | E-083 | `00f5d97` |
+| T-PROC-01: límites del encargo respetados; ningún servicio real se activa solo | E-084 | `f830cb6` |
 
 ## Siguiente acción
 Las fases 1 a 6 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS, cada cosa con su tarea X:
