@@ -13,7 +13,12 @@ Qué hacer cuando hay que volver a una copia de los datos o a la versión anteri
 6. Queda apuntado en el «Registro de cambios» y en las «Medidas del piloto».
 
 ## Comprobar que las copias sirven (cada mes)
-- «Ensayo de restauración de la última copia» abre la copia en una carpeta aparte y comprueba, registro a registro, pacientes, citas, tratamientos, cobros, facturas, documentos e imágenes, además del total cobrado y la cadena de facturas.
+- «Ensayo de restauración de la última copia» abre la copia en una carpeta aparte y comprueba:
+  - registro a registro: pacientes, citas, tratamientos, cobros, facturas, documentos e imágenes;
+  - las relaciones: cada tratamiento, cobro, factura, presupuesto, documento, imagen y cita es de un paciente que está en la copia;
+  - el dinero: el total cobrado, el saldo de cada paciente y lo esperado en cada caja;
+  - la cadena de facturas;
+  - el diario: guarda un cambio en la copia restaurada, simula un cierre brusco y comprueba que, al abrirla, el cambio está.
 - No cambia los datos en uso y no deja nada descifrado.
 - Si algo sale en rojo, haga otra copia («Hacer copia ahora») y vuelva a ensayar. Si sigue fallando, avise a soporte («Preparar informe para soporte»).
 

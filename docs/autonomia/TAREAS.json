@@ -1103,8 +1103,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Copia restaurada abierta en carpeta aislada: pacientes, relaciones, documentos, dinero y diario comprobados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-086"]
   },
   {
    "id": "T-CIERRE-02",

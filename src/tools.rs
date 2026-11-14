@@ -237,10 +237,45 @@ pub fn restore_drill(path: &Path, password: Option<&str>, key: Option<&crate::ci
         }
         checks.push((format!("Cobrado en total: {}", paid(&original)), paid(&original) == paid(&back)));
         checks.push(("Cadena de facturas íntegra".to_string(), back.verify_chain().is_ok()));
+        // relaciones: lo de cada paciente apunta a un paciente que está en la copia
+        let pids: std::collections::HashSet<u32> = back.patients.iter().map(|p| p.id).collect();
+        let orphans = back
+            .entries
+            .iter()
+            .map(|x| x.patient_id)
+            .chain(back.payments.iter().map(|x| x.patient_id))
+            .chain(back.invoices.iter().map(|x| x.patient_id))
+            .chain(back.documents.iter().map(|x| x.patient_id))
+            .chain(back.images.iter().map(|x| x.patient_id))
+            .chain(back.budgets.iter().map(|x| x.patient_id))
+            .chain(back.appointments.iter().filter_map(|x| x.patient_id))
+            .filter(|p| !pids.contains(p))
+            .count();
+        checks.push(("Cada tratamiento, cobro, factura, presupuesto, documento, imagen y cita es de un paciente de la copia".to_string(), orphans == 0));
+        // dinero: el saldo de cada paciente y lo esperado en cada caja
+        let c = crate::cents::Cents::from_eur;
+        let balances = original.patients.iter().all(|p| c(original.patient_balance(p.id)) == c(back.patient_balance(p.id)));
+        checks.push((format!("Saldo de cada uno de los {} pacientes", original.patients.len()), balances));
+        let cash = original.cash.iter().zip(back.cash.iter()).all(|(a, b)| c(original.cash_expected(a)) == c(back.cash_expected(b)));
+        checks.push((format!("Lo esperado en cada una de las {} cajas", original.cash.len()), cash && original.cash.len() == back.cash.len()));
+        // diario: en la copia restaurada se guarda un cambio, el programa se
+        // «cae» sin cerrar y, al abrir, el cambio está y el diario se recoge
+        let mut work = back.clone();
+        let journal_ok = (|| -> Result<bool, String> {
+            let mut st = crate::local::LocalStore::new(data.clone(), crate::local::lock(&data)?, &mut work)?;
+            let Some(a) = work.appointments.first_mut() else { return Ok(true) };
+            a.notes = "Ensayo de restauración".into();
+            let saved = st.save(&mut work)? > 0 && crate::sync::journal_path(&data).exists();
+            drop(st);
+            let (again, err) = Db::load_from(&data, true);
+            Ok(saved && err.is_none() && again.appointments[0].notes == "Ensayo de restauración" && !crate::sync::journal_path(&data).exists())
+        })();
+        checks.push(("Se guarda en la copia restaurada y el diario la recupera tras un cierre brusco".to_string(), journal_ok == Ok(true)));
         Ok(Drill { checks })
     })();
     let _ = std::fs::remove_file(&data);
     let _ = std::fs::remove_file(crate::sync::journal_path(&data));
+    let _ = std::fs::remove_file(data.with_extension("bloqueo"));
     let _ = std::fs::remove_dir(dir);
     result
 }
@@ -600,6 +635,9 @@ mod tests {
             assert!(r.ok(), "{:?}", r.checks);
             assert!(r.checks.iter().any(|c| c.0.starts_with(&format!("{} pacientes", db.patients.len()))));
             assert!(r.checks.iter().any(|c| c.0 == "Cadena de facturas íntegra" && c.1));
+            for what in ["es de un paciente de la copia", "Saldo de cada uno", "en cada una de las", "el diario la recupera"] {
+                assert!(r.checks.iter().any(|c| c.0.contains(what) && c.1), "{what}: {:?}", r.checks);
+            }
             assert!(!drill.exists(), "el ensayo no deja datos descifrados");
         }
         assert_eq!(serde_json::to_string(&db).unwrap(), live, "los datos en uso, sin tocar");
@@ -610,6 +648,12 @@ mod tests {
         let bad = base.join("dañada.dscopia");
         std::fs::write(&bad, bytes).unwrap();
         assert!(restore_drill(&bad, Some("Sonrisa-2026"), None, &drill).is_err());
+        // una copia con un cobro de un paciente que no está, tampoco
+        let mut broken = db.clone();
+        broken.payments[0].patient_id = 9_999_999;
+        let odd = create_backup_in(&broken, &base.join("rota"), "rota").unwrap();
+        let r = restore_drill(&odd, None, None, &drill).unwrap();
+        assert!(!r.ok() && r.checks.iter().any(|c| c.0.contains("es de un paciente de la copia") && !c.1), "{:?}", r.checks);
         let _ = std::fs::remove_dir_all(&base);
     }
 

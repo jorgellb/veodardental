@@ -2222,3 +2222,25 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 574 pasan (572 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-086 T-CIERRE-01: restauración ensayada en una carpeta aislada, con comprobación del contenido
+- **El ensayo** (`tools::restore_drill`, botón «Ensayo de restauración de la última copia» en Configuración › Copias) abre la copia en una carpeta aparte, como la abriría el programa. Los datos en uso no se tocan y la carpeta no queda.
+- **Comprobaciones añadidas** a las que ya hacía (registro a registro, total cobrado y cadena de facturas):
+  - **Relaciones:** cada tratamiento, cobro, factura, presupuesto, documento, imagen y cita es de un paciente que está en la copia.
+  - **Dinero:** el saldo de cada paciente y lo esperado en cada caja.
+  - **Diario:** en la copia restaurada se guarda un cambio y el programa se cierra de golpe, sin cerrar los datos. Al abrirla, el cambio está y el diario se ha recogido.
+- **Pruebas:**
+  - `ui_tests::a_restore_drill_runs_from_the_backups_tab`: desde la pantalla, con `tools/aislado.sh`, se hace la copia con «Hacer copia ahora» y se ensaya. Salen bien todas las comprobaciones: pacientes, documentos, relaciones, saldos, cadena de facturas y diario. Ninguna sale en rojo, el ensayo queda en el registro de actividad como «correcto» y no deja carpeta.
+  - `tools::tests::a_restore_drill_checks_the_contents_and_the_key_lives_apart`, ampliada:
+    - con la clave de recuperación y con la contraseña, salen las comprobaciones nuevas;
+    - una copia dañada no se abre;
+    - una copia con un cobro de un paciente que no está no pasa el ensayo: sale en rojo la de las relaciones.
+- **Guía:** `docs/restauracion.md` dice qué comprueba el ensayo.
+- **Datos:** los de ejemplo. Ni la carpeta de copias de la clínica ni las copias del 11 y 12 de noviembre se han tocado.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 575 pasan (573 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

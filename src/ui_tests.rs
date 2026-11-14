@@ -1596,6 +1596,45 @@ fn go_live_checklist_and_empty_clinic() {
 /// Copias cifradas: se pone la contraseña de las copias en Configuración, la
 /// copia que ya había en la segunda carpeta queda cifrada, y para restaurarla
 /// en otro ordenador (sin la clave de este) se abre con la contraseña.
+/// T-CIERRE-01. Ensayo de restauración desde la pantalla, como lo haría la
+/// clínica: se hace una copia, se ensaya y cada comprobación sale bien.
+/// Incluye pacientes, relaciones, documentos, dinero, la cadena de facturas
+/// y el diario tras un cierre brusco. Queda en el registro de actividad, y
+/// la carpeta del ensayo no deja datos.
+#[test]
+fn a_restore_drill_runs_from_the_backups_tab() {
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1700.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        crate::screens::config::open(a, crate::screens::config::CfgTab::Copias);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("💾 Hacer copia ahora").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("🧪 Ensayo de restauración de la última copia").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let d = h.state().tools.drill.clone().expect("hay ensayo").expect("la copia se abre");
+    assert!(d.ok(), "{:?}", d.checks);
+    for what in ["pacientes, cada uno igual", "documentos, cada uno igual", "es de un paciente de la copia", "Saldo de cada uno", "Cadena de facturas íntegra", "el diario la recupera tras un cierre brusco"] {
+        assert!(d.checks.iter().any(|c| c.0.contains(what) && c.1), "{what}");
+    }
+    h.get_by_label_contains("✔ Se guarda en la copia restaurada");
+    assert!(h.query_by_label_contains("✖").is_none(), "ninguna comprobación falla");
+    assert!(h.state().db.audit_log.iter().any(|x| x.action == "Ensayo de restauración" && x.detail.ends_with("correcto")));
+    assert!(!std::fs::read_dir(crate::paths::data()).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with("ensayo_")), "el ensayo no deja carpeta");
+}
+
 #[test]
 fn backup_password_encrypts_the_second_copy() {
     let extra = std::env::temp_dir().join(format!("ds_ui_bk_{}", std::process::id()));
