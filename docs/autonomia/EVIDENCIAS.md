@@ -1502,3 +1502,19 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 503 pasan, 0 fallan, 10 ignoradas |
+
+## E-060 Revisión de seguridad: la palabra de baja de cada idioma
+- **Hallazgo:** el pie de baja en catalán y gallego pide contestar «BAIXA», pero la respuesta por WhatsApp solo se reconocía como baja si decía «BAJA» o «STOP» o una frase en castellano. Un paciente que contestaba lo que se le pedía seguía recibiendo mensajes.
+- **Corrección (`src/whatsapp.rs`, `is_opt_out`):**
+  - vale la palabra de cada pie («BAJA», «BAIXA») y «STOP» y «UNSUBSCRIBE»;
+  - valen las formas habituales de pedirlo en catalán, gallego, euskera e inglés («no vull rebre», «non quero recibir», «ez dut jaso nahi», «don't want to receive»…), sin tener en cuenta los apóstrofos.
+- **Pruebas:**
+  - `whatsapp::tests::the_word_each_footer_asks_for_is_an_opt_out`: saca del pie de cada idioma la palabra en mayúsculas que se pide contestar y comprueba que esa palabra, en mayúsculas, minúsculas o con punto, da de baja. Si una traducción cambia la palabra sin que se reconozca, la prueba falla. Comprueba también frases habituales en cada idioma;
+  - `whatsapp::tests::replying_baja_stops_whatsapp`: además, «No vull canviar la cita» y «Non podo ir» no son una baja.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 504 pasan, 0 fallan, 10 ignoradas |

@@ -306,11 +306,32 @@ pub fn date_text(d: NaiveDate) -> String {
     format!("{} {} de {}", weekday_es(d), d.day(), month_es(d.month()))
 }
 
-/// ¿Pide no recibir más mensajes («BAJA», «STOP», «darme de baja»…)?
+/// ¿Pide no recibir más mensajes («BAJA», «STOP», «darme de baja»…)? Vale
+/// también la palabra que dice el pie de cada idioma («BAIXA» en catalán y
+/// gallego) y las formas habituales de decirlo en esos idiomas.
 pub fn is_opt_out(text: &str) -> bool {
-    let t = fold(text);
+    let t = fold(text).replace(['\'', '’'], "");
     let t = t.trim().trim_matches(|c: char| !c.is_alphanumeric());
-    t == "baja" || t == "stop" || ["de baja", "no quiero recibir", "no me envie", "no me mande", "no quiero mas mensajes", "no quiero mensajes"].iter().any(|k| t.contains(k))
+    const WORDS: [&str; 4] = ["baja", "baixa", "stop", "unsubscribe"];
+    const PHRASES: [&str; 14] = [
+        "de baja",
+        "no quiero recibir",
+        "no me envie",
+        "no me mande",
+        "no quiero mas mensajes",
+        "no quiero mensajes",
+        // catalán y gallego
+        "de baixa",
+        "no vull rebre",
+        "no em envieu",
+        "non quero recibir",
+        "non me envien",
+        // euskera e inglés
+        "ez dut jaso nahi",
+        "do not want to receive",
+        "dont want to receive",
+    ];
+    WORDS.contains(&t) || PHRASES.iter().any(|k| t.contains(k))
 }
 
 /// ¿Dice que sí (Some(true)), que no (Some(false)) o no está claro (None)?
@@ -1494,6 +1515,27 @@ mod tests {
         assert_eq!(db.appointments.iter().find(|a| a.id == appt).unwrap().state, ApptState::Confirmada);
     }
 
+    /// El pie de baja de cada idioma dice una palabra («BAJA», «BAIXA»…):
+    /// esa palabra, contestada tal cual, tiene que dar de baja. Y las formas
+    /// habituales de pedirlo en cada idioma también.
+    #[test]
+    fn the_word_each_footer_asks_for_is_an_opt_out() {
+        use crate::i18n::{Lang, tr};
+        for lang in Lang::ALL {
+            let footer = tr(lang, "Si no quiere recibir estos mensajes, respóndanos con la palabra BAJA o llámenos al [TELCLINICA].").replace("[TELCLINICA]", "944 000 000");
+            let words: Vec<&str> = footer.split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 4 && w.chars().all(|c| c.is_uppercase())).collect();
+            assert!(!words.is_empty(), "{lang:?}: el pie dice qué palabra contestar: {footer}");
+            for w in words {
+                for reply in [w.to_string(), w.to_lowercase(), format!("{w}."), format!(" {} ", w.to_lowercase())] {
+                    assert!(is_opt_out(&reply), "{lang:?}: «{reply}» tiene que dar de baja");
+                }
+            }
+        }
+        for t in ["Vull donar-me de baixa", "No vull rebre més missatges", "Quero darme de baixa", "Non quero recibir máis mensaxes", "Ez dut jaso nahi", "Unsubscribe", "I don't want to receive these"] {
+            assert!(is_opt_out(t), "{t}");
+        }
+    }
+
     /// «BAJA» por WhatsApp: no se le envían más WhatsApp (a ese número),
     /// queda en el registro de cambios y recepción lo sabe.
     #[test]
@@ -1501,7 +1543,7 @@ mod tests {
         for t in ["BAJA", "baja.", "Stop", "Quiero darme de baja", "no quiero recibir más mensajes"] {
             assert!(is_opt_out(t), "{t}");
         }
-        for t in ["No", "Sí", "No puedo ir", "¿Me da cita?"] {
+        for t in ["No", "Sí", "No puedo ir", "¿Me da cita?", "No vull canviar la cita", "Non podo ir"] {
             assert!(!is_opt_out(t), "{t}");
         }
         let mut db = Db::sample(friday());
