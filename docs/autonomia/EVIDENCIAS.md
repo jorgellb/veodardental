@@ -1415,3 +1415,8 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
     - no se usa un lote de un ciclo sin validar;
     - no se acepta un lote nuevo en un ciclo validado.
   - `vista::tests::reception_does_not_get_clinical_data` incluye las listas clínicas nuevas.
+
+## E-055 Revisión de seguridad: etiquetas de lotes únicas con una sola regla
+- **Hallazgo:** al comprobar que la etiqueta de un lote nuevo es única, los lotes de la misma tanda se comparaban distinguiendo mayúsculas y los del servidor sin distinguirlas. Dos lotes «dup-1» y «DUP-1» de la misma tanda pasaban los dos.
+- **Corrección (`src/server.rs`):** las dos comprobaciones normalizan igual (sin espacios y en minúsculas), y una etiqueta vacía no vale.
+- **Prueba:** `server::tests::alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server` manda dos lotes nuevos con «dup-1» y « DUP-1 » en la misma tanda: entra uno.

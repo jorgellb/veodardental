@@ -1120,9 +1120,12 @@ impl State {
                     // lote nuevo: de un ciclo en curso, sin usar ni retirar, con etiqueta única
                     (None, Some(mut a)) => {
                         let cycle_ok = new_cycles.contains(&a.cycle_id) || snap_cycle(a.cycle_id).is_some_and(|x| x.state == CycleState::EnCurso);
-                        let unique = !new_codes.contains(&a.code) && !self.snap.records.get("sterile_packs").is_some_and(|r| r.iter().any(|(_, j)| serde_json::from_str::<Pack>(j).is_ok_and(|p| p.code.eq_ignore_ascii_case(&a.code))));
+                        // la misma regla en las dos comprobaciones: sin espacios y sin distinguir mayúsculas
+                        let norm = |s: &str| s.trim().to_ascii_lowercase();
+                        let code = norm(&a.code);
+                        let unique = !code.is_empty() && !new_codes.contains(&code) && !self.snap.records.get("sterile_packs").is_some_and(|r| r.iter().any(|(_, j)| serde_json::from_str::<Pack>(j).is_ok_and(|p| norm(&p.code) == code)));
                         if cycle_ok && unique {
-                            new_codes.push(a.code.clone());
+                            new_codes.push(code);
                             (a.used, a.withdrawn) = (None, None);
                             Some(a)
                         } else {
@@ -3413,6 +3416,17 @@ mod tests {
         a.sterile_packs.iter_mut().find(|p| p.code == codes[1]).unwrap().withdrawn = Some("Envoltorio dañado".into());
         rd.push(&mut a, &mut sa).unwrap();
         assert!(!crate::sync::on_disk(&path).sterile_packs.iter().any(|p| p.id == extra), "un lote nuevo solo en un ciclo en curso");
+        // dos lotes nuevos de la misma tanda con la misma etiqueta (mayúsculas, espacios): solo uno
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        let c2 = a.new_cycle("Autoclave 3", "134 ºC", &["Z".into()], 30, then).unwrap();
+        let (p1, p2) = (a.new_id(), a.new_id());
+        for (id, code) in [(p1, "dup-1"), (p2, " DUP-1 ")] {
+            a.sterile_packs.push(crate::esterilizacion::Pack { id, code: code.into(), cycle_id: c2, contents: "x".into(), expires: then.date() + chrono::Duration::days(30), used: None, withdrawn: None });
+        }
+        rd.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.sterile_packs.iter().filter(|p| p.id == p1 || p.id == p2).count(), 1, "la misma etiqueta no entra dos veces");
         let disk = crate::sync::on_disk(&path);
         let ack = disk.alert_acks.iter().find(|x| x.rule == "anticoagulantes").unwrap().clone();
         assert_eq!(ack.by, me, "lo pone el servidor");
