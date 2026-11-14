@@ -146,7 +146,7 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: elección y alta de un proveedor de transcripción (o descarga autorizada de un modelo local) y su prueba real.
 - Por qué: transcribir audio requiere un servicio o un modelo; el encargo prohíbe gastar créditos o crear cuentas.
 - Parte afectada: transcripción real de notas y periodontograma por voz (T-F5-04X).
-- Preparación terminada: T-F5-04 (E-046). Las notas de evolución transcriben con cualquier servicio compatible con la API de OpenAI (`/v1/audio/transcriptions`), probado con un doble de prueba. T-F5-05, pendiente.
+- Preparación terminada: T-F5-04 (E-046). Las notas de evolución transcriben con cualquier servicio compatible con la API de OpenAI (`/v1/audio/transcriptions`), probado con un doble de prueba. T-F5-05 (E-048), con el mismo servicio, o con el dictado del teclado del móvil.
 - Grabar desde el micrófono del ordenador dentro del programa también queda pendiente. Hoy se transcribe una grabación hecha con el móvil o con la grabadora del sistema; el programa no guarda el audio y puede borrar la grabación al terminar.
 - Responsable: clínica.
 - Paso para desbloquear: elegir proveedor o modelo y configurarlo en Configuración › Inteligencia artificial.

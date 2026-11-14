@@ -45,6 +45,7 @@ mod mssql;
 mod nomenclator;
 mod pago;
 mod paths;
+mod perio_voz;
 mod phone;
 mod plan;
 mod portal;

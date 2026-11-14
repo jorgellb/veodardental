@@ -216,6 +216,11 @@ pub struct App {
     pub bank: screens::bancos::BankUi,
     /// Notas de evolución: el borrador y el dictado en curso.
     pub evo: screens::evolucion::EvoUi,
+    /// Sondaje por voz: el dictado, lo interpretado, la grabación y su transcripción en curso.
+    pub perio_dictation: String,
+    pub perio_parsed: Option<crate::perio_voz::Parsed>,
+    pub perio_audio: String,
+    pub perio_voice: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
 }
 
 impl App {
@@ -359,6 +364,10 @@ impl App {
             tools: screens::herramientas::ToolsState::default(),
             bank: screens::bancos::BankUi::default(),
             evo: Default::default(),
+            perio_dictation: String::new(),
+            perio_parsed: None,
+            perio_audio: String::new(),
+            perio_voice: None,
         };
         if let Some(w) = clock {
             app.toast = Some((w, 15.0, crate::theme::WARN));

@@ -2520,8 +2520,10 @@
     "T-F5-04"
    ],
    "criterio": "Pruebas con ruido y errores simulados; nada ambiguo entra en la historia",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-048"
+   ]
   },
   {
    "id": "T-F5-06",

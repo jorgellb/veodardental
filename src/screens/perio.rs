@@ -146,6 +146,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
         app.lists.perio_tooth = if app.lists.perio_tooth == Some(t) { None } else { Some(t) };
     }
     ui.add_space(8.0);
+    voice_card(app, ui, sel);
+    ui.add_space(8.0);
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Notas del sondaje");
@@ -626,4 +628,77 @@ fn editor_popover(app: &mut App, ui: &mut Ui, sel: u32, t: u8, col: Rect) {
     if close || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.lists.perio_tooth = None;
     }
+}
+
+/// Sondaje por voz (ver `crate::perio_voz`): el dictado se interpreta, los
+/// cambios se ven uno a uno con lo dudoso señalado, y solo se aplican al
+/// confirmarlos.
+fn voice_card(app: &mut App, ui: &mut Ui, sel: u32) {
+    // grabación transcrita: al texto del dictado
+    if let Some(rx) = app.perio_voice.take() {
+        match rx.try_recv() {
+            Ok(Ok(t)) => {
+                app.perio_dictation = if app.perio_dictation.trim().is_empty() { t } else { format!("{} {t}", app.perio_dictation) };
+                app.perio_parsed = None;
+            }
+            Ok(Err(e)) => app.warn(e),
+            Err(std::sync::mpsc::TryRecvError::Empty) => app.perio_voice = Some(rx),
+            Err(_) => app.warn("La transcripción se interrumpió."),
+        }
+    }
+    let Some(chart) = app.db.perio.iter().find(|c| c.id == sel).cloned() else { return };
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Sondaje por voz");
+        muted(ui, "Dicte por pieza: «dieciséis, vestibular tres dos tres, palatino dos dos cuatro, sangrado mesial, movilidad uno». Lo dudoso se señala y no se aplica: corrija el texto y vuelva a interpretarlo.");
+        if ui.add(egui::TextEdit::multiline(&mut app.perio_dictation).desired_rows(3).desired_width(f32::INFINITY).hint_text("Dictado (con el dictado del teclado del móvil, escrito o transcrito de una grabación)")).changed() {
+            app.perio_parsed = None;
+        }
+        let stt = crate::evolucion::load_stt();
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Interpretar").clicked() {
+                app.perio_parsed = Some(crate::perio_voz::parse(&app.perio_dictation));
+            }
+            if stt.enabled() {
+                ui.add(egui::TextEdit::singleline(&mut app.perio_audio).hint_text("Ruta de la grabación").desired_width(280.0));
+                if app.perio_voice.is_none() && ui.button("Transcribir grabación").clicked() {
+                    let path = std::path::PathBuf::from(app.perio_audio.trim());
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    std::thread::spawn(move || {
+                        let out = std::fs::read(&path).map_err(|e| format!("No se puede leer la grabación: {e}")).and_then(|a| crate::evolucion::transcribe(&stt, &a, &path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()));
+                        let _ = tx.send(out);
+                    });
+                    app.perio_voice = Some(rx);
+                }
+                if app.perio_voice.is_some() {
+                    ui.spinner();
+                }
+            }
+        });
+        let Some(parsed) = app.perio_parsed.clone() else { return };
+        for i in &parsed.issues {
+            ui.label(RichText::new(format!("⚠ «{}»: {}", i.near, i.reason)).color(DANGER));
+        }
+        let (copy, changes) = crate::perio_voz::apply(&chart, &parsed.readings);
+        if changes.is_empty() {
+            muted(ui, "No hay cambios que aplicar.");
+            return;
+        }
+        ui.label(RichText::new(format!("{} cambio(s) para revisar:", changes.len())).font(sbf(13.5)));
+        for c in &changes {
+            ui.label(format!("Pieza {} · {}: {} → {}", c.tooth, c.label, c.before, c.after));
+        }
+        let label = if parsed.issues.is_empty() { "Confirmar y aplicar".to_string() } else { format!("Aplicar solo lo seguro ({} dudoso(s) sin aplicar)", parsed.issues.len()) };
+        if primary(ui, &label).clicked() {
+            if let Some(c) = app.db.perio.iter_mut().find(|c| c.id == sel) {
+                c.teeth = copy.teeth.clone();
+            }
+            let who = app.db.patient_name(chart.patient_id);
+            app.db.audit("Sondaje por voz", &format!("{who} · periodontograma del {} · {} cambio(s)", fmt_date(chart.date), changes.len()));
+            app.perio_parsed = None;
+            app.perio_dictation.clear();
+            app.changed();
+            app.notify(format!("Aplicados {} cambio(s) del dictado.", changes.len()));
+        }
+    });
 }

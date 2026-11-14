@@ -1249,3 +1249,30 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 475 pasan, 0 fallan, 10 ignoradas |
+
+## E-048 T-F5-05: periodontograma por voz con corrección y confirmación visibles
+- **Hecho:** `src/perio_voz.rs` y el recuadro «Sondaje por voz» del periodontograma.
+- **El dictado:** escrito, con el dictado del teclado del móvil o transcrito de una grabación con el servicio de transcripción de T-F5-04.
+- **Lo que se entiende:** pieza (FDI, en palabras o cifras), lado, sondaje de tres puntos, recesión, sangrado y placa por puntos, movilidad, furca y ausente. Las muletillas se ignoran.
+- **Lo dudoso se señala y no se aplica:**
+  - un sondaje de menos o de más de tres valores;
+  - una profundidad de más de 12 mm;
+  - una palabra que no se entiende en medio de las cifras;
+  - una pieza que no existe;
+  - datos sin pieza o sin lado;
+  - el mismo dato dictado dos veces con valores distintos.
+- **Cifras sueltas:** tras una pieza que no existe, nada se atribuye a la anterior. Unas cifras sueltas no pasan por una pieza: cifra a cifra solo vale tras «pieza».
+- **Revisión:** los cambios se ven uno a uno («Pieza 16 · Sondaje V mesial: 3 → 4»), sobre una copia. La ficha solo cambia al confirmar, y entonces se aplica solo lo seguro, con apunte en la auditoría.
+- **Pruebas:**
+  - `perio_voz::tests::a_clean_dictation_is_understood`;
+  - `perio_voz::tests::noise_and_transcription_errors_never_slip_in`: muletillas, «tres» mal transcrito como «tren», cifras de más, profundidad imposible, pieza inexistente, datos sin pieza o sin lado, contradicciones, y 500 dictados al azar en los que nunca entra un valor fuera de rango;
+  - `perio_voz::tests::changes_are_shown_before_and_only_the_copy_changes`;
+  - `ui_tests::a_dictated_probing_is_reviewed_and_only_the_safe_part_applied`.
+- **Pendiente (B-15):** la grabación desde el micrófono dentro del programa y el servicio de transcripción real.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 476 pasan, 0 fallan, 10 ignoradas |

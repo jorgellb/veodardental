@@ -2523,6 +2523,46 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Sondaje por voz: el dictado se interpreta, los cambios se ven antes de
+/// aplicarlos y lo dudoso (un sondaje mal transcrito) no se aplica.
+#[test]
+fn a_dictated_probing_is_reviewed_and_only_the_safe_part_applied() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 3000.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let sel;
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let pid = a.db.perio.first().map(|c| c.patient_id).expect("hay un periodontograma de ejemplo");
+        sel = a.db.patient_perio(pid).last().unwrap().id;
+        a.lists.perio_sel = Some(sel);
+        a.open_patient(pid, crate::app::PatTab::Periodontograma);
+        a.perio_dictation = "dieciséis, vestibular 4 5 6; veintiséis vestibular tres tren tres".into();
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Sondaje por voz");
+    h.get_by_label("Interpretar").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.query_all_by_label_contains("Pieza 16 · Sondaje V").next().expect("el cambio se ve antes de aplicarlo");
+    h.query_all_by_label_contains("tres valores").next().expect("lo dudoso se señala");
+    let before26 = h.state().db.perio.iter().find(|c| c.id == sel).unwrap().teeth.iter().find(|t| t.tooth == 26).map(|t| t.depth);
+    h.query_all_by_label_contains("Aplicar solo lo seguro").next().unwrap().click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let c = h.state().db.perio.iter().find(|c| c.id == sel).unwrap().clone();
+    assert_eq!(&c.teeth.iter().find(|t| t.tooth == 16).unwrap().depth[..3], &[4, 5, 6]);
+    assert_eq!(c.teeth.iter().find(|t| t.tooth == 26).map(|t| t.depth), before26, "lo dudoso no se aplica");
+    assert!(h.state().perio_dictation.is_empty());
+}
+
 /// Nota de evolución desde la ficha: plantilla, huecos completados y
 /// confirmación; solo entonces está en la historia, y ya no se cambia.
 #[test]
