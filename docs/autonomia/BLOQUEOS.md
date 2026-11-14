@@ -127,7 +127,7 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: revisión de la gestoría, del DPO y una auditoría de seguridad externa.
 - Por qué: una revisión propia no sustituye esas aprobaciones.
 - Parte afectada: cierre normativo de la fase 4 (T-F4-09X).
-- Preparación terminada: T-F4-09 (paquete de evidencias para cada revisor).
+- Preparación terminada: T-F4-09 (E-042). Paquete de evidencias para cada revisor en `docs/revision_externa`: `gestoria.md`, `dpo.md` y `auditoria_seguridad.md`.
 - Responsable: propietario del producto.
 - Paso para desbloquear: encargar las revisiones con el paquete de docs/revision_externa.
 - Prueba posterior: informes externos archivados.

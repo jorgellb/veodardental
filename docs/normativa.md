@@ -106,10 +106,16 @@ queda marcado como pendiente.
   - obliga a quien ejerce actividades económicas y está sujeto a la normativa foral del IRPF o del IS, según el Concierto Económico (no por tener el domicilio allí);
   - en Gipuzkoa es obligatorio por sectores desde el 1/7/2022.
 - **No confirmado:** si alcanza a los servicios sanitarios exentos de IVA, en la fuente foral concreta de cada territorio.
-- **Efecto en el código (T-F4-08):**
-  - arquitectura separada (`foral`), sin activar por defecto;
-  - solo aplica a clínicas que tributen en esos territorios;
-  - sin inventar un formato común con VERI*FACTU.
+- **Especificación técnica consultada el 14/11/2026:** «Especificaciones funcionales y técnicas del sistema TicketBAI 1.0», de 19/12/2019:
+  - 4.3.2: identificativo TBAI de 39 caracteres, «TBAI-NIF-DDMMAA-13 primeros caracteres de la firma-CRC»;
+  - 4.3.3: QR con nivel de corrección M y de 30 a 40 mm, con la dirección de cada hacienda y los parámetros id, s, nf, i y cr;
+  - anexo 3: CRC-8 de polinomio x⁸+x²+x+1, valor inicial 0 y sin reflejar.
+- **Efecto en el código (T-F4-08, E-041):**
+  - arquitectura separada (`src/foral.rs`), sin activar por defecto;
+  - el territorio solo cuenta con la confirmación de la gestoría; entonces VERI*FACTU deja de enviar;
+  - identificativo y QR comprobados con los ejemplos de la especificación;
+  - sin inventar un formato común con VERI*FACTU;
+  - el fichero TBAI firmado (XAdES), el envío y la homologación quedan pendientes.
 - **Navarra:** sin consultar a esta fecha; pendiente.
 - **Pendiente:** la homologación y activación (B-12).
 

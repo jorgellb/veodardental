@@ -1089,3 +1089,25 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 448 pasan, 0 fallan, 10 ignoradas |
+
+## E-042 T-F4-09: pruebas preparadas para la gestoría, el DPO y la auditoría de seguridad
+- **Hecho (`docs/revision_externa`):**
+  - `README.md`: qué es y qué no es (ni aprobación ni certificación), cómo comprobar lo citado y cómo devolver la revisión;
+  - `gestoria.md`: exención de IVA (B-01), VERI*FACTU (B-06), libros registro y exportación contable (B-11) y territorio foral (B-12). En cada punto, lo hecho, dónde está, sus pruebas y lo que decide la gestoría;
+  - `dpo.md`:
+    - qué datos se guardan y dónde, cifrado y copias;
+    - acceso a la historia y registro de accesos;
+    - derechos del paciente (supresión desactivada, B-10);
+    - lo que sale de la clínica a cada proveedor;
+    - minimización en los registros y registro de jornada;
+  - `auditoria_seguridad.md`: arquitectura, autenticación y permisos, inventario criptográfico, robustez, hallazgos propios ya corregidos (con su evidencia), límites conocidos y cómo reproducir.
+- **Comprobado:** `docs_tests::tests::the_review_package_only_cites_what_exists` exige que todo lo citado exista: cada fichero `src/…`, cada prueba (por su nombre), cada evidencia y cada bloqueo. En su primera ejecución encontró dos citas que no existían, y se corrigieron.
+- **`docs/normativa.md`:** la entrada de TicketBAI recoge la especificación técnica consultada y su efecto en el código.
+- **Pendiente:** las revisiones mismas (T-F4-09X, B-13). Ninguna se presenta como hecha.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 449 pasan, 0 fallan, 10 ignoradas |
