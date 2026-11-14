@@ -1232,3 +1232,20 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 472 pasan, 0 fallan, 10 ignoradas |
+
+## E-047 Revisión de seguridad de las notas de evolución y de la fusión de pacientes
+- **Hallazgo 1 (suplantación):** un puesto podía mandar una nota ya «confirmada» con cualquier nombre y hora de confirmación.
+  - **Corrección (`src/server.rs`, `evolucion::EvoNote::stamp`):** al recibir una nota que pasa a confirmada, el servidor la sella él: el usuario de la sesión (activo y con permiso clínico), su hora y la huella del texto.
+  - Sin ese permiso, la nota se queda en borrador.
+- **Hallazgo 2 (pérdida de datos al fusionar):** la fusión de pacientes en el servidor pasaba las notas de evolución y las peticiones de pago a la ficha que se conserva, pero esas listas no estaban entre las que la fusión guarda (`ChainOp::needs`), así que el cambio no llegaba al disco. Tampoco estaban las solicitudes de derechos, que faltaban desde T-F4-03.
+  - **Corrección:** `rights_requests`, `pay_requests` y `evo_notes` se añaden a la lista de la fusión.
+- **Pruebas:** `server::tests::a_confirmed_evolution_note_cannot_be_changed_by_a_station` comprueba ahora dos cosas más:
+  - el nombre que manda el puesto se sustituye por el de la sesión;
+  - tras la fusión hecha por Dirección, la nota y la petición de pago están en la ficha que se conserva. Se comprobó que esta parte falla sin la corrección.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 475 pasan, 0 fallan, 10 ignoradas |

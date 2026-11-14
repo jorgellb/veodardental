@@ -1291,6 +1291,9 @@ impl ChainOp {
             "slot_offers",
             "calls",
             "imports",
+            "rights_requests",
+            "pay_requests",
+            "evo_notes",
             "config",
             "audit_log",
         ];

@@ -80,6 +80,12 @@ pub struct EvoNote {
 }
 
 impl EvoNote {
+    /// La confirma `who` a las `at`, con la huella del texto.
+    pub fn stamp(&mut self, who: &str, at: NaiveDateTime) {
+        self.confirmed = Some((at, who.to_string()));
+        self.hash = sha(&self.text);
+    }
+
     pub fn is_confirmed(&self) -> bool {
         self.confirmed.is_some()
     }
@@ -303,8 +309,7 @@ impl Db {
         if (n.uses_ai() || n.provenance.iter().any(|p| p.origin == Origin::Dictado)) && !reviewed {
             return Err("Revise el texto del dictado o de la IA y marque que lo ha revisado.".into());
         }
-        n.confirmed = Some((now, who.to_string()));
-        n.hash = sha(&n.text);
+        n.stamp(who, now);
         let (pid, nid) = (n.patient_id, n.id);
         self.audit("Confirmar nota de evolución", &format!("{} · nota #{nid}", self.patient_name(pid)));
         Ok(())

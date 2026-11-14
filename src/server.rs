@@ -1007,6 +1007,20 @@ impl State {
                 c.after = Some(kept);
             }
         }
+        // notas de evolución: quien confirma es el usuario de la sesión, a la
+        // hora del servidor (un puesto no puede poner otro nombre)
+        let confirmer = self.user(user).filter(|u| u.active && u.profile.can(Perm::Clinico)).map(|u| u.name);
+        for c in changes.iter_mut().filter(|c| c.field == "evo_notes") {
+            let Some(mut after) = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::evolucion::EvoNote>(a).ok()) else { continue };
+            let was = c.key.as_deref().and_then(|k| self.snap.get("evo_notes", Some(k))).and_then(|j| serde_json::from_str::<crate::evolucion::EvoNote>(j).ok());
+            if after.is_confirmed() && !was.is_some_and(|w| w.is_confirmed()) {
+                match &confirmer {
+                    Some(name) => after.stamp(name, crate::model::now()),
+                    None => (after.confirmed, after.hash) = (None, String::new()),
+                }
+                c.after = serde_json::to_string(&after).ok();
+            }
+        }
         // recetas: la revisión de sus avisos solo la da quien puede recetar,
         // con su nombre; y el prescriptor tiene que poder recetar
         let reviewer = self.prescriber_name(user);
@@ -3186,6 +3200,14 @@ mod tests {
         let draft = a.evo_draft(101, 1, None, "Borrador", vec![p(crate::evolucion::Origin::Escrito)], now);
         rd.push(&mut a, &mut sa).unwrap();
         let orig = crate::sync::on_disk(&path).evo_notes.iter().find(|n| n.id == done).unwrap().clone();
+        // quien la confirma es el usuario de la sesión, no el nombre que mande el puesto
+        let me = a.users.iter().find(|u| u.id == 3).unwrap().name.clone();
+        assert_eq!(orig.confirmed.as_ref().map(|c| c.1.clone()), Some(me.clone()), "no «Dra. Ruiz»: lo pone el servidor");
+        assert_eq!(orig.hash, {
+            let mut x = orig.clone();
+            x.stamp(&me, now);
+            x.hash
+        });
         // el puesto cambia la confirmada, la borra… y cambia el borrador
         a.evo_notes.iter_mut().find(|n| n.id == done).unwrap().text = "Pieza 47".into();
         a.evo_notes.iter_mut().find(|n| n.id == draft).unwrap().text = "Borrador cambiado".into();
@@ -3199,6 +3221,36 @@ mod tests {
         let rr = signed_in(&addr, "CLAVE47", "Recepción", 2, "0000");
         let (r, _) = rr.load().unwrap();
         assert!(r.evo_notes.is_empty(), "las notas clínicas no van a Recepción");
+        // al fusionar dos fichas, las notas, los pagos por internet y las
+        // solicitudes de derechos pasan a la que se conserva (y se guardan)
+        let (mut b, mut sb) = rd.load().unwrap();
+        b.station = rd.station;
+        let n2 = b.evo_draft(105, 1, None, "Nota de la ficha duplicada", vec![p(crate::evolucion::Origin::Escrito)], now);
+        b.evo_confirm(n2, "x", &[], false, now).unwrap();
+        let rq = b.new_id();
+        b.pay_requests.push(crate::pago::PayRequest {
+            id: rq,
+            token: crate::portal::new_token(),
+            patient_id: 105,
+            what: crate::pago::PayFor::Budget(0),
+            concept: "Prueba".into(),
+            amount: 100,
+            created: now,
+            created_by: String::new(),
+            state: crate::pago::PayState::Pendiente,
+            attempts: vec![],
+            charges: vec![],
+            refund_due: false,
+            note: String::new(),
+        });
+        rd.push(&mut b, &mut sb).unwrap();
+        let dir = signed_in(&addr, "CLAVE47", "Despacho", 1, "0000");
+        let (mut c, mut sc) = dir.load().unwrap();
+        c.station = dir.station;
+        dir.chain_op(&mut c, &mut sc, &crate::app::ChainOp::MergePatients { keep: 104, remove: 105 }.json()).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.evo_notes.iter().find(|n| n.id == n2).unwrap().patient_id, 104, "la nota pasa a la ficha que se conserva");
+        assert_eq!(disk.pay_requests.iter().find(|r| r.id == rq).unwrap().patient_id, 104, "y la petición de pago también");
         rd.stop().unwrap();
         h.join().unwrap();
     }
