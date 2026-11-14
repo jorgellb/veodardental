@@ -113,7 +113,12 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: alta en el entorno de pruebas de la hacienda foral, certificado y, en su caso, homologación del software.
 - Por qué: TicketBAI exige entorno y certificados de cada diputación; la activación solo procede si la clínica tributa allí.
 - Parte afectada: homologación y activación foral (T-F4-08X).
-- Preparación terminada: T-F4-08 (arquitectura y adaptador probados localmente).
+- Preparación terminada: T-F4-08 (E-041). Territorio elegido y confirmado por la gestoría; VERI*FACTU deja de aplicar; identificativo TBAI y QR con CRC-8 comprobados con los ejemplos de la especificación 1.0.
+- Falta por hacer, además del alta:
+  - el fichero TBAI (XML con firma XAdES), según el XSD y la política de firma vigentes de cada diputación;
+  - el envío (Araba, Gipuzkoa) o el modelo 140/240 de Batuz (Bizkaia);
+  - el alta en el registro de software garante de cada hacienda (`foral::HOMOLOGATED` sigue en falso).
+- Navarra: tiene su propio sistema, que no se ha consultado, y queda fuera de TicketBAI.
 - Responsable: propietario del producto y clínica con domicilio fiscal foral.
 - Paso para desbloquear: solicitar el alta en el entorno de pruebas de la diputación correspondiente.
 - Prueba posterior: envío aceptado por el entorno de pruebas foral.
