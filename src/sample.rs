@@ -279,6 +279,7 @@ impl Db {
             rights_requests: vec![].into(),
             pay_requests: vec![].into(),
             evo_notes: vec![].into(),
+            alert_acks: vec![].into(),
             punches: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,

@@ -156,7 +156,7 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: revisión por un odontólogo de las reglas del vademécum y de las alertas clínicas ampliadas.
 - Por qué: el programa no debe inventar reglas clínicas; las fuentes y su aplicación necesitan revisión profesional.
 - Parte afectada: validación clínica (T-F1-A2-EXT, T-F5-07X).
-- Preparación terminada: T-F1-A2-FIX y T-F5-07 (avisos con su fuente citada y confirmación del profesional).
+- Preparación terminada: T-F1-A2-FIX y T-F5-07 (E-051). Cuatro alertas (endocarditis, antirresortivos, anticoagulantes y embarazo) con su fuente citada y el visto del profesional. Los textos están en `src/alertas.rs` y en `docs/normativa.md`; `alertas::REVIEWED` sigue en falso.
 - Responsable: dirección médica de la clínica.
 - Paso para desbloquear: revisar el listado de reglas y fuentes en docs/revision_externa.
 - Prueba posterior: reglas marcadas como revisadas con fecha y responsable.

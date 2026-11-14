@@ -2550,8 +2550,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Flujos con fuente citada y confirmación del profesional",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-051"
+   ]
   },
   {
    "id": "T-F5-07X",

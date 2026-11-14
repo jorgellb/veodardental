@@ -145,3 +145,16 @@ queda marcado como pendiente.
   - Solo cuenta la notificación con firma válida, del comercio y terminal configurados, en euros y por el importe pedido.
 - **Pendiente:** el contrato del TPV y la prueba en el entorno de pruebas del banco (B-14, T-F5-02X).
 
+## Alertas clínicas ampliadas (T-F5-07)
+- **Consultado:** 14/11/2026. Solo para citar la fuente de cada alerta. Las alertas dicen qué comprobar; no recomiendan tratamientos ni recetan.
+- **Profilaxis de endocarditis:** Wilson WR et al., «Prevention of Viridans Group Streptococcal Infective Endocarditis: A Scientific Statement From the American Heart Association», Circulation 2021;143:e963–e978 (PubMed 33853363).
+  - Mantiene las indicaciones de 2007: profilaxis solo en los pacientes de alto riesgo (válvula protésica o material de reparación, endocarditis previa, determinadas cardiopatías congénitas y trasplante cardíaco con valvulopatía).
+  - Solo en procedimientos que manipulan la encía o la región periapical o perforan la mucosa.
+- **Osteonecrosis por medicamentos:** Ruggiero SL et al., «AAOMS Position Paper on Medication-Related Osteonecrosis of the Jaws—2022 Update», J Oral Maxillofac Surg 2022;80(5):920-943 (PubMed 35300956).
+- **Anticoagulantes y antiagregantes:** SDCEP, «Management of Dental Patients Taking Anticoagulants or Antiplatelet Drugs», 2.ª edición, marzo de 2022 (sdcep.org.uk).
+- **Embarazo:**
+  - para las radiografías, se remite a los criterios de selección de pacientes de la ADA y la FDA (fda.gov), sin afirmar nada propio;
+  - para los medicamentos, a la sección 4.6 de la ficha técnica en CIMA (AEMPS).
+  - No se encontró en las fuentes consultadas una recomendación específica del embarazo que citar.
+- **Pendiente:** la revisión de los textos por un odontólogo de la clínica (B-16, T-F5-07X).
+

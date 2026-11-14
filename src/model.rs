@@ -863,6 +863,9 @@ pub struct Db {
     /// Notas de evolución (ver `evolucion`).
     #[serde(default)]
     pub evo_notes: Tracked<Vec<crate::evolucion::EvoNote>>,
+    /// Alertas clínicas revisadas por el profesional (ver `alertas`).
+    #[serde(default)]
+    pub alert_acks: Tracked<Vec<crate::alertas::AlertAck>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

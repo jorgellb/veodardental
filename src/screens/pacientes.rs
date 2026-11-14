@@ -98,7 +98,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     if let Some(y) = app.lists.scroll_to.take() {
         sa = sa.vertical_scroll_offset(y);
     }
-    sa.show(ui, |ui| match app.pat_tab {
+    sa.show(ui, |ui| {
+        crate::screens::alertas::card_for(app, ui, pid);
+        tab_body(app, ui, pid)
+    });
+}
+
+fn tab_body(app: &mut App, ui: &mut Ui, pid: u32) {
+    match app.pat_tab {
         PatTab::Resumen => resumen(app, ui, pid),
         PatTab::Filiacion => filiacion(app, ui, pid),
         PatTab::Salud => crate::screens::salud::patient_tab(app, ui, pid),
@@ -126,7 +133,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         PatTab::Presupuestos => crate::screens::presupuestos::patient_list(app, ui, pid),
         PatTab::Cuenta => cuenta(app, ui, pid),
         PatTab::Citas => citas(app, ui, pid),
-    });
+    }
 }
 
 /// Dirección: quién ha consultado o modificado esta historia (sin su contenido).
@@ -478,7 +485,9 @@ fn entries_table(app: &mut App, ui: &mut Ui, es: &[MedEntry], actions: bool) {
             }
         }
     }
-    if let Some(id) = realize {
+    if let Some((id, pid, kind)) = realize.and_then(|id| app.db.entries.iter().find(|e| e.id == id).map(|e| (e.id, e.patient_id, e.odg)))
+        && crate::screens::alertas::allow(app, pid, kind)
+    {
         app.db.realize_entry(id, app.today, 0);
         app.changed();
         app.notify("Tratamiento realizado: se ha cargado en la cuenta del paciente.");
@@ -656,7 +665,7 @@ fn add_entry_row(app: &mut App, ui: &mut Ui, pid: u32) {
                 app.warn("Elija un tratamiento de la lista.");
             } else if needs && teeth.is_empty() {
                 app.warn("Este tratamiento necesita al menos una pieza (p. ej. 16).");
-            } else {
+            } else if st.2 != TxState::Realizado || crate::screens::alertas::allow(app, pid, crate::screens::alertas::kind_of(app, &st.0)) {
                 app.db.add_entry(pid, &st.0, teeth, vec![], st.2, st.3, app.today);
                 app.changed();
                 st.1.clear();

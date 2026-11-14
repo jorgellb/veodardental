@@ -3,6 +3,7 @@
 mod accesos;
 mod actualizar;
 mod agenda_extra;
+mod alertas;
 mod app;
 mod bank;
 mod booking;

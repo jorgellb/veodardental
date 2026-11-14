@@ -1,4 +1,5 @@
 pub mod agenda;
+pub mod alertas;
 pub mod almacen;
 pub mod avisos;
 pub mod bancos;

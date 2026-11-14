@@ -1330,3 +1330,30 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 483 pasan, 0 fallan, 10 ignoradas |
+
+## E-051 T-F5-07: alertas clínicas ampliadas con fuente citada y revisión del profesional
+- **Hecho (`src/alertas.rs`, `src/screens/alertas.rs`):** cuatro alertas, cada una con lo que hay que comprobar y su fuente citada, con enlace:
+  - profilaxis de endocarditis (AHA 2021);
+  - osteonecrosis por antirresortivos (AAOMS 2022);
+  - anticoagulantes y antiagregantes (SDCEP 2022);
+  - embarazo (criterios de selección de radiografías de la ADA y la FDA, y ficha técnica en CIMA).
+  - Ninguna recomienda tratamientos ni receta: la prueba comprueba que no hay dosis ni pautas.
+- **Cuándo saltan:** por las alertas del paciente (las del cuestionario de salud) o sus antecedentes escritos, y solo para los tratamientos a los que afectan. Por ejemplo, la anticoagulación afecta a extracciones, implantes, apicectomías e higiene, pero no a una obturación.
+- **Revisión del profesional:**
+  - una línea por alerta en la ficha (todas las pestañas), con «La he revisado» (queda quién y cuándo, y vale ese día) y el detalle y la fuente al abrirla;
+  - hasta revisarla, un tratamiento afectado no se deja como hecho por ninguno de los cuatro caminos: pintar en el odontograma como realizado, ✔ en el odontograma, ✔ en el historial y «Añadir» como realizado.
+- **Las de antes siguen:** las alertas del cuestionario y los avisos de las recetas.
+- **Pendiente:** los textos los revisa un odontólogo (`alertas::REVIEWED` sigue en falso, B-16, T-F5-07X).
+- **Otras listas:** las revisiones son datos clínicos (Recepción no las recibe), están en el registro de accesos y pasan a la ficha que se conserva al fusionar pacientes.
+- **Ajuste:** el recuadro se hizo compacto (una línea por alerta) porque, a toda altura, dejaba fuera de la ventana botones que usan otras dos pruebas de pantalla. No se cambiaron esas pruebas.
+- **Pruebas:**
+  - `alertas::tests::each_rule_cites_its_source_and_triggers_with_its_risk`;
+  - `alertas::tests::the_professional_reviews_the_alert_and_it_counts_that_day`;
+  - `ui_tests::a_clinical_alert_is_reviewed_before_an_extraction_is_done`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 486 pasan, 0 fallan, 10 ignoradas |

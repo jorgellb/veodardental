@@ -1303,6 +1303,7 @@ impl ChainOp {
             "rights_requests",
             "pay_requests",
             "evo_notes",
+            "alert_acks",
             "config",
             "audit_log",
         ];

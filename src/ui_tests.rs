@@ -2523,6 +2523,52 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Alertas clínicas: el paciente anticoagulado tiene su alerta con la
+/// fuente; una extracción no se deja como hecha hasta que el profesional la
+/// revisa, y queda quién y cuándo.
+#[test]
+fn a_clinical_alert_is_reviewed_before_an_extraction_is_done() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.alert_acks.clear();
+        assert!(a.db.patient(101).unwrap().alerts.to_lowercase().contains("anticoag"), "el paciente de ejemplo está anticoagulado");
+        a.open_patient(101, crate::app::PatTab::Historial);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("⚠ Alertas clínicas");
+    h.get_by_label("Detalles y fuentes").click();
+    for _ in 0..2 {
+        h.step();
+    }
+    h.query_all_by_label_contains("SDCEP").next().expect("la fuente citada");
+    // sin revisar, la extracción no se deja como hecha
+    assert!(!crate::screens::alertas::allow(h.state_mut(), 101, crate::model::OdgKind::Extraccion));
+    assert!(h.state().toast.as_ref().is_some_and(|t| t.0.contains("alertas clínicas")));
+    assert!(crate::screens::alertas::allow(h.state_mut(), 101, crate::model::OdgKind::Obturacion), "a una obturación no le afecta");
+    // tiene también cardiopatía: las dos alertas afectan a la extracción
+    assert_eq!(h.state().db.alerts_blocking(101, crate::model::OdgKind::Extraccion, crate::model::now()).len(), 2);
+    for _ in 0..2 {
+        h.query_all_by_label("La he revisado").next().expect("una alerta sin revisar").click();
+        for _ in 0..2 {
+            h.step();
+        }
+    }
+    assert!(h.query_by_label("La he revisado").is_none());
+    let who = h.state().db.config.current_user.clone();
+    let ack = h.state().db.alert_acks.iter().find(|a| a.rule == "anticoagulantes").cloned().expect("queda anotado");
+    assert_eq!((ack.patient_id, ack.by), (101, who));
+    assert!(crate::screens::alertas::allow(h.state_mut(), 101, crate::model::OdgKind::Extraccion));
+    h.query_all_by_label_contains("revisada por").next().expect("se ve quién la revisó");
+}
+
 /// Visor dentro del programa: un estudio DICOM y un modelo STL sintéticos se
 /// cargan en segundo plano y se ven con sus medidas; un fichero dañado da un
 /// aviso; y dos radiografías del mismo paciente se comparan lado a lado.

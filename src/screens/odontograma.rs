@@ -353,6 +353,10 @@ pub(crate) fn apply_tool(app: &mut App, pid: u32, t: u8, face: Option<usize>, to
         return;
     }
     let state = app.odg.state;
+    // dejarlo como hecho: con las alertas clínicas revisadas
+    if state == TxState::Realizado && !crate::screens::alertas::allow(app, pid, tool) {
+        return;
+    }
     let doc = app.odg.doctor;
     let teeth: Vec<u8>;
     let mut faces: Vec<String> = vec![];
@@ -471,7 +475,9 @@ fn side_panel(app: &mut App, ui: &mut Ui, pid: u32, entries: &[MedEntry]) {
                         }
                     }
                 }
-                if let Some(id) = realize {
+                if let Some(id) = realize
+                    && crate::screens::alertas::allow(app, pid, app.db.entries.iter().find(|e| e.id == id).map(|e| e.odg).unwrap_or(OdgKind::Ninguno))
+                {
                     let doc = app.odg.doctor;
                     app.db.realize_entry(id, app.today, doc);
                     app.changed();
