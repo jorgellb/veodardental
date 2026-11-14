@@ -2194,3 +2194,31 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 573 pasan (571 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-085 T-PROC-02: el ciclo de cada tarea, anotado y comprobado
+- **El ciclo** (apartado 5 del objetivo): reproducir, prueba primero, flujo completo, batería entera, evidencia y commit. Cada tarea deja su evidencia `E-0NN` y su fila en `PROGRESO.md`, con el commit. Después va un commit de seguimiento que apunta el hash.
+- **En cifras**, a la fecha de esta evidencia:
+  - 85 filas hechas en `PROGRESO.md`, todas con su evidencia y, salvo la batería inicial (E-001), con su commit;
+  - 84 evidencias antes de esta, y 74 con la batería completa y su resultado;
+  - 74 anotan una prueba que falla antes de corregir o que falla al quitar la regla. En 14 se comprobó expresamente que la prueba falla si se quita la regla.
+- **Las 10 que no tienen la batería en tabla:**
+  - E-002 a E-004: el arranque (aislamiento, formato y seguimiento), cuando la batería se apuntaba en texto;
+  - E-031: registro de normativa, solo documentos;
+  - E-036, E-038, E-052, E-054, E-055 y E-058: revisiones que amplían una prueba ya citada, con la batería en la evidencia de su lote;
+  - E-076 y E-077: van en el mismo commit que E-075, cuya batería las cubre.
+- **Ejemplos de rojo antes de verde en este último tramo:**
+  - E-080: la primera prueba de las conexiones quietas no fallaba sin el tope, por cómo leía. Se rehízo hasta que fallara sin el tope y sin el tiempo de espera;
+  - E-081: la prueba del plazo de la cabecera, comprobado que falla sin el plazo;
+  - E-082: la prueba de los teléfonos por grupos falló antes de corregir el registro;
+  - E-083: la prueba de la fusión falla si se deja una lista sin pasar.
+- **Comprobación automática nueva:** `docs_tests::tests::every_task_row_cites_its_evidence_and_commit_and_the_battery_is_recorded`.
+  - Cada fila de `PROGRESO.md` cita evidencias que existen y commits que existen en el repositorio (en un clon parcial, solo su formato).
+  - Cada evidencia desde la E-078 lleva la batería entera con código 0 y su resultado.
+  - Comprobado que falla con un commit inventado en una fila.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 574 pasan (572 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

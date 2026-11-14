@@ -986,8 +986,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "EVIDENCIAS registra por lote las pruebas en rojo y en verde, la batería completa y el commit",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-085"]
   },
   {
    "id": "T-R7-1",
