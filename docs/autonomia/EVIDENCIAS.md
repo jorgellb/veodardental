@@ -2265,3 +2265,47 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 575 pasan (573 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas; igual en las tres pasadas |
 | `cargo build --workspace --release --locked` | 0 | — |
+
+## E-088 Instaladores: pruebas en los tres sistemas y paquetes de Linux para cada distribución
+- **Punto de partida:** la ejecución 43633552891 de `instaladores.yml` falló en las pruebas de los tres sistemas; no se creó ningún instalador.
+- **Ubuntu** (`the_cloud_server_rehearsal_runs_locally`, «No hay conexión con el servidor de la clínica» al parar):
+  - **Causa:** al pedir parar, el servidor terminaba el proceso nada más pasar la respuesta a la conexión, sin esperar a que estuviera escrita. En un equipo lento, quien pidió parar veía la conexión cortada.
+  - **Corrección** (`src/server.rs`, `run_jobs`): al parar espera, unos segundos como mucho, a que la conexión diga que la respuesta está escrita.
+  - **Prueba:** `server::tests::stopping_waits_until_the_answer_is_written`.
+- **macOS** (`the_provisioning_script_rehearses_without_touching_the_system`): el aprovisionamiento es para servidores Linux con systemd, y en macOS las carpetas del programa no siguen las variables de la unidad. Fuera de Linux la prueba queda ignorada, con el motivo.
+- **Windows** (los dos ensayos: «el servidor no arrancó», código 1, sin salida):
+  - **Causa probable:** la prueba vacía el entorno, y en Windows la red no se inicia sin `SystemRoot`, así que el servidor no puede abrir su puerto.
+  - **Corrección:** la prueba conserva las variables que un servicio de Windows siempre tiene, y si el servidor no arranca enseña lo que escribió en la salida de errores.
+  - **Sin comprobar** hasta la próxima ejecución en GitHub.
+- **Linux, un solo programa para todas las distribuciones:**
+  - `tools/compilar_linux.sh` compila en AlmaLinux 8. El programa solo enlaza libc, libm y libgcc_s y pide como mucho glibc 2.28 (comprobado con `objdump -T`). El compilado en este ordenador (Fedora 44) pedía glibc 2.43.
+  - `tools/paquetes_linux.sh` crea el `.deb`, el `.rpm` (cargo-generate-rpm), el `.pkg.tar.zst` (makepkg en un contenedor de Arch, con el nombre `veodardental`), la AppImage y el `.tar.gz` portable.
+  - El programa es el mismo en el `.deb`, el `.rpm`, el de Arch y el portable (misma suma SHA-256). En la AppImage, linuxdeploy solo añade la ruta `$ORIGIN/../lib` y no mete ninguna biblioteca.
+- **Instalado de verdad** (`tools/probar_paquetes_linux.sh`, contenedores limpios): instalar con el gestor de cada distribución, comprobar el programa, el lanzador, el icono y las bibliotecas que abre la ventana (`libxkbcommon.so.0`, `libEGL.so.1`, `libfontconfig.so.1`), `--comprobar`, desinstalar y comprobar que el programa ya no está.
+
+| Distribución | Paquete | Resultado |
+|---|---|---|
+| Rocky Linux 8 (glibc 2.28) | `.rpm` | bien |
+| Ubuntu 20.04 y 24.04 | `.deb` | bien |
+| Debian 12 y 13 | `.deb` | bien |
+| Fedora (la última) | `.rpm` | bien |
+| openSUSE Leap 15.6 | `.rpm` | bien |
+| Arch (la última) | `.pkg.tar.zst` | bien |
+| Debian 12, sin administrador | `.tar.gz` con `instalar.sh` | bien; al desinstalar, `~/.local/share/VeodarDental/clinica.json` sigue ahí |
+
+  - En todas, `--comprobar` dice «VeodarDental 0.1.0 · datos 2 · 18 pacientes».
+  - **Debian 11** no se pudo probar: dejó de tener soporte y sus réplicas de seguridad devuelven 404. Sale de la lista.
+  - **Sin probar:** abrir la ventana en cada distribución (solo se comprueba que están las bibliotecas) y la AppImage instalada (solo se crea y se inspecciona). Debian 10 y openSUSE Leap 15.4 se deducen por su glibc, sin probarse.
+- **Flujo** (`.github/workflows/instaladores.yml`):
+  - Windows y macOS compilan antes de empaquetar.
+  - Linux tiene su trabajo (compilar en AlmaLinux 8 y crear los paquetes) y otro que los instala en cada distribución.
+  - La versión solo se publica si todo eso pasa.
+  - El estado de la firma va en un `FIRMA-<sistema>.txt` por sistema. Antes todos se llamaban `FIRMA.txt` y, al juntarlos para publicar, se pisaban: la versión publicada solo decía el de uno.
+- **Guías:** `README.md` (Instaladores) y `docs/instalacion.md`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 576 pasan (574 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

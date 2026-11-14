@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=VeodarDental
+GenericName=Gestión de clínicas dentales
+GenericName[en]=Dental practice management
+Comment=Pacientes, agenda, odontograma, presupuestos, cobros y facturas
+Comment[en]=Patients, schedule, odontogram, treatment plans, payments and invoices
+Exec=veodardental
+Icon=veodardental
+Terminal=false
+Categories=Office;Science;MedicalSoftware;
+Keywords=dental;clínica;odontograma;agenda;facturas;
+StartupWMClass=veodardental

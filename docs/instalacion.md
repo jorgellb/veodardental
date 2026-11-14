@@ -3,11 +3,11 @@
 Para instalar VeodarDental en una clínica: un ordenador hace de servidor y los demás son puestos. Entre «» va lo que se ve en pantalla. Una prueba automática (`docs_tests`) comprueba que cada botón y cada opción que se cita aquí existe en el programa.
 
 ## Antes de empezar
-- [ ] **Sistema:** Windows 10 u 11, macOS 11 o posterior, o Linux (paquete `.deb` o AppImage).
+- [ ] **Sistema:** Windows 10 u 11, macOS 11 o posterior, o Linux: `.deb` (Debian, Ubuntu, Mint), `.rpm` (Fedora, Red Hat, Rocky, Alma, openSUSE), `.pkg.tar.zst` (Arch, Manjaro), AppImage o el `.tar.gz` portable (cualquier distribución; `./instalar.sh`). Desde Red Hat 8, Debian 10 o Ubuntu 20.04.
 - [ ] **Disco cifrado en todos los ordenadores:** BitLocker, FileVault o LUKS. Los datos de salud están en el disco, y el programa lo comprueba en «Puesta en marcha».
 - [ ] **Red local:** el servidor tiene una dirección fija o un nombre que los puestos encuentran.
 - [ ] **Instaladores sin firmar.** Los instaladores todavía no van firmados (B-25): Windows y macOS avisarán al abrirlos.
-  - Compruebe que vienen de la versión publicada del repositorio y que su `FIRMA.txt` dice lo que esperaba.
+  - Compruebe que vienen de la versión publicada del repositorio y que su `FIRMA-<sistema>.txt` dice lo que esperaba.
   - No desactive las protecciones del sistema para quitar el aviso.
 
 ## 1. El servidor

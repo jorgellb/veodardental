@@ -153,20 +153,36 @@ Se hacen con [cargo-packager](https://github.com/crabnebula-dev/cargo-packager)
 
 ```sh
 cargo install cargo-packager --locked
+cargo build --release
 cargo packager --release                 # los formatos del sistema actual, en dist/
-cargo packager --release --formats deb   # solo uno
+cargo packager --release --formats nsis  # solo uno
+```
+
+En Linux, con Docker y `cargo install cargo-packager cargo-generate-rpm --locked`:
+
+```sh
+tools/compilar_linux.sh          # compila con la glibc 2.28 (AlmaLinux 8)
+tools/paquetes_linux.sh          # todos los paquetes de Linux, en dist/
+tools/probar_paquetes_linux.sh   # los instala y arranca en cada distribución (contenedores)
 ```
 
 | Sistema | Instaladores |
 |---|---|
 | Windows | `.exe` (NSIS, sin permisos de administrador) y `.msi` (WiX) |
 | macOS | `.app` y `.dmg` (Apple Silicon e Intel) |
-| Linux | `.deb` y AppImage |
+| Linux | `.deb` (Debian, Ubuntu, Mint), `.rpm` (Fedora, Red Hat, Rocky, Alma, openSUSE), `.pkg.tar.zst` (Arch, Manjaro), AppImage y `.tar.gz` portable con `instalar.sh` (cualquier distribución) |
+
+El programa de Linux es el mismo en todos sus paquetes y se compila con una
+glibc antigua: funciona desde Red Hat, Rocky y Alma 8, Debian 10, Ubuntu 20.04
+y openSUSE Leap 15.4. Compilado en el propio ordenador con `cargo build`, solo
+funciona desde la glibc de ese ordenador.
 
 Cada instalador se crea en su propio sistema. El flujo
-`.github/workflows/instaladores.yml` lo hace solo en GitHub: pasa las pruebas y
-crea los de Windows, macOS (los dos procesadores) y Linux; al subir una
-etiqueta `v…` los publica en la versión. Sin firma digital, Windows
+`.github/workflows/instaladores.yml` lo hace solo en GitHub: pasa las pruebas,
+crea los de Windows, macOS (los dos procesadores) y Linux, e instala los de
+Linux en contenedores limpios de Rocky 8, Debian 12 y 13, Ubuntu 20.04 y 24.04,
+Fedora, openSUSE Leap y Arch. Al subir una etiqueta `v…` los publica en la
+versión, con un `FIRMA-<sistema>.txt` por sistema. Sin firma digital, Windows
 (SmartScreen) y macOS (Gatekeeper) avisarán al abrirlos la primera vez.
 
 El icono se genera con `veodardental --icono assets/iconos`.

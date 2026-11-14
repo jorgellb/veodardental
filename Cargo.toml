@@ -15,7 +15,8 @@ long-description = "Pacientes, agenda, odontograma y periodontograma, presupuest
 publisher = "VeodarDental"
 authors = ["VeodarDental"]
 category = "Business"
-before-packaging-command = "cargo build --release"
+# Sin compilación previa: el programa se compila antes (en CI, el de Linux con una
+# glibc antigua, para que funcione desde Red Hat 8 y Debian 10 en adelante).
 out-dir = "dist"
 icons = ["assets/iconos/icono-32.png", "assets/iconos/icono-128.png", "assets/iconos/icono-256.png", "assets/iconos/icono-512.png"]
 binaries = [{ path = "veodardental", main = true }]
@@ -26,7 +27,11 @@ display-language-selector = false
 
 [package.metadata.packager.deb]
 package-name = "veodardental"
-depends = ["libxkbcommon0", "libgl1"]
+# Lo que el programa abre al arrancar la ventana (teclado, gráficos y tipografías).
+depends = ["libxkbcommon0", "libgl1", "libegl1", "libfontconfig1"]
+
+[package.metadata.packager.pacman]
+depends = ["libxkbcommon", "libglvnd", "fontconfig"]
 
 [package.metadata.packager.macos]
 minimum-system-version = "11.0"
@@ -74,3 +79,24 @@ opt-level = 2
 
 [dev-dependencies]
 egui_kittest = { version = "0.37", features = ["eframe"] }
+
+# Paquete .rpm (Fedora, Red Hat, Rocky, Alma, openSUSE): cargo generate-rpm.
+# Las dependencias van por biblioteca, que se llama igual en todas esas distribuciones.
+[package.metadata.generate-rpm]
+name = "veodardental"
+summary = "Gestión de clínicas dentales"
+license = "LicenseRef-VeodarDental"
+url = "https://veodar.com/sectores/salud/veodardental/"
+assets = [
+  { source = "target/release/veodardental", dest = "/usr/bin/veodardental", mode = "755" },
+  { source = "packaging/linux/veodardental.desktop", dest = "/usr/share/applications/veodardental.desktop", mode = "644" },
+  { source = "assets/iconos/icono-32.png", dest = "/usr/share/icons/hicolor/32x32/apps/veodardental.png", mode = "644" },
+  { source = "assets/iconos/icono-128.png", dest = "/usr/share/icons/hicolor/128x128/apps/veodardental.png", mode = "644" },
+  { source = "assets/iconos/icono-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/veodardental.png", mode = "644" },
+  { source = "assets/iconos/icono-512.png", dest = "/usr/share/icons/hicolor/512x512/apps/veodardental.png", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+"libxkbcommon.so.0()(64bit)" = "*"
+"libEGL.so.1()(64bit)" = "*"
+"libfontconfig.so.1()(64bit)" = "*"

@@ -3,6 +3,11 @@
 # etiqueta de versión (git tag v0.2.0 && git push --tags); con etiqueta los
 # instaladores se publican también como «Release» del repositorio.
 #
+# Linux: un solo programa, compilado con la glibc de AlmaLinux 8 (2.28), en
+# todos los paquetes (.deb, .rpm, Arch, AppImage y portable), para que funcione
+# en las distribuciones antiguas y en las nuevas; después se instala de verdad
+# en contenedores limpios de cada distribución (tools/probar_paquetes_linux.sh).
+#
 # Firma (T-F3-03). Cada firma solo se hace si están sus secretos; si no,
 # los instaladores salen SIN FIRMAR y así lo dice FIRMA.txt en cada
 # artefacto. Nunca se rebajan controles del sistema para quitar avisos.
@@ -67,47 +72,26 @@ jobs:
           - os: macos-15-intel
             nombre: macos-intel
             formatos: app,dmg
-          - os: ubuntu-22.04
-            nombre: linux
-            formatos: deb,appimage
     runs-on: ${{ matrix.os }}
     env:
       FIRMA_WINDOWS: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.WINDOWS_CERT_PFX != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
       FIRMA_APPLE: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
       NOTARIZAR_APPLE: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
-      FIRMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - name: Bibliotecas de Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libfuse2
       - name: Herramienta de instaladores
         run: cargo install cargo-packager --locked
-      - name: Compilar y empaquetar
+      - name: Compilar
+        run: cargo build --release --locked
+      - name: Empaquetar
         run: cargo packager --release --formats ${{ matrix.formatos }}
-
-      # ── comprobación del empaquetado (en Linux, el .deb por dentro) ──
-      - name: Comprobar el paquete .deb
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          deb=$(ls dist/*.deb | head -1)
-          mkdir -p comprobar && cd comprobar
-          ar x "../$deb"
-          tar -xf data.tar.*
-          test -x usr/bin/veodardental
-          test -f usr/share/applications/*.desktop
-          ls usr/share/icons/hicolor/*/apps/ >/dev/null
-          VEODARDENTAL_RAIZ="$PWD/raiz" ./usr/bin/veodardental --comprobar
 
       # ── el programa compilado arranca en Windows y en macOS (sin ventana) ──
       - name: Comprobar el programa compilado
-        if: runner.os != 'Linux'
         shell: bash
         run: |
           set -euo pipefail
@@ -196,9 +180,65 @@ jobs:
           fi
           rm -f "$RUNNER_TEMP/firma.p12"
 
+      # ── qué se ha firmado (para no declarar firmado lo que no lo está); un
+      #    fichero por sistema, para que al publicar no se pisen ──
+      - name: Estado de la firma
+        shell: bash
+        run: |
+          {
+            echo "Sistema: ${{ matrix.nombre }}"
+            echo "Windows firmado: $([ "$FIRMA_WINDOWS" = "true" ] && [ "${{ runner.os }}" = "Windows" ] && echo sí || echo no)"
+            echo "macOS firmado: $([ "$FIRMA_APPLE" = "true" ] && [ "${{ runner.os }}" = "macOS" ] && echo sí || echo no)"
+            echo "macOS notarizado: $([ "$FIRMA_APPLE" = "true" ] && [ "$NOTARIZAR_APPLE" = "true" ] && [ "${{ runner.os }}" = "macOS" ] && echo sí || echo no)"
+          } > dist/FIRMA-${{ matrix.nombre }}.txt
+          cat dist/FIRMA-${{ matrix.nombre }}.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: VeodarDental-${{ matrix.nombre }}
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.dmg
+            dist/FIRMA-*.txt
+          if-no-files-found: error
+
+  linux:
+    needs: pruebas
+    runs-on: ubuntu-22.04
+    env:
+      FIRMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: Herramientas de paquetes
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libfuse2
+          cargo install cargo-packager cargo-generate-rpm --locked
+      - name: Compilar (glibc 2.28, en AlmaLinux 8)
+        run: tools/compilar_linux.sh
+      - name: Crear los paquetes
+        run: tools/paquetes_linux.sh
+
+      # ── el .deb por dentro ──
+      - name: Comprobar el paquete .deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb=$(ls dist/*.deb | head -1)
+          mkdir -p comprobar && cd comprobar
+          ar x "../$deb"
+          tar -xf data.tar.*
+          test -x usr/bin/veodardental
+          test -f usr/share/applications/*.desktop
+          ls usr/share/icons/hicolor/*/apps/ >/dev/null
+          VEODARDENTAL_RAIZ="$PWD/raiz" ./usr/bin/veodardental --comprobar
+
       # ── manifiesto firmado para --actualizar (solo con la clave de versiones) ──
       - name: Firmar el paquete de actualización
-        if: startsWith(github.ref, 'refs/tags/v') && env.FIRMA_VERSION == 'true' && runner.os == 'Linux'
+        if: startsWith(github.ref, 'refs/tags/v') && env.FIRMA_VERSION == 'true'
         shell: bash
         env:
           VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
@@ -208,34 +248,48 @@ jobs:
           cp target/release/veodardental dist/actualizacion/
           cargo run --release --locked --example firmar_version -- dist/actualizacion "${GITHUB_REF_NAME#v}"
 
-      # ── qué se ha firmado (para no declarar firmado lo que no lo está) ──
       - name: Estado de la firma
         shell: bash
         run: |
           {
-            echo "Sistema: ${{ matrix.nombre }}"
-            echo "Windows firmado: $([ "$FIRMA_WINDOWS" = "true" ] && [ "${{ runner.os }}" = "Windows" ] && echo sí || echo no)"
-            echo "macOS firmado: $([ "$FIRMA_APPLE" = "true" ] && [ "${{ runner.os }}" = "macOS" ] && echo sí || echo no)"
-            echo "macOS notarizado: $([ "$FIRMA_APPLE" = "true" ] && [ "$NOTARIZAR_APPLE" = "true" ] && [ "${{ runner.os }}" = "macOS" ] && echo sí || echo no)"
-            echo "Paquete de actualización firmado: $([ "$FIRMA_VERSION" = "true" ] && [ "${{ runner.os }}" = "Linux" ] && echo sí || echo no)"
-          } > dist/FIRMA.txt
-          cat dist/FIRMA.txt
+            echo "Sistema: linux"
+            echo "Paquete de actualización firmado: $([ "$FIRMA_VERSION" = "true" ] && echo sí || echo no)"
+          } > dist/FIRMA-linux.txt
+          cat dist/FIRMA-linux.txt
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: VeodarDental-${{ matrix.nombre }}
+          name: VeodarDental-linux
           path: |
-            dist/*.exe
-            dist/*.msi
-            dist/*.dmg
             dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
             dist/*.AppImage
-            dist/FIRMA.txt
+            dist/VeodarDental-*-linux-*.tar.gz
+            dist/FIRMA-linux.txt
             dist/actualizacion/
           if-no-files-found: error
 
+  # Instalar de verdad en cada distribución (contenedores limpios), arrancar lo
+  # instalado y desinstalarlo. Rocky 8 es la más antigua (glibc 2.28).
+  linux-distribuciones:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ["rockylinux:8", "ubuntu:20.04", "ubuntu:24.04", "debian:12", "debian:13", "fedora:latest", "opensuse/leap:15.6", "archlinux:latest", "portable"]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: VeodarDental-linux
+          path: dist
+      - name: Instalar y arrancar en ${{ matrix.distro }}
+        run: tools/probar_paquetes_linux.sh "${{ matrix.distro }}"
+
   publicar:
-    needs: instaladores
+    needs: [instaladores, linux, linux-distribuciones]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
@@ -253,5 +307,8 @@ jobs:
             dist/*.msi
             dist/*.dmg
             dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
             dist/*.AppImage
-            dist/FIRMA.txt
+            dist/VeodarDental-*-linux-*.tar.gz
+            dist/FIRMA-*.txt
