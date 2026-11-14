@@ -158,6 +158,18 @@ fn financing_change_ok(current: Option<&String>, after: Option<&String>) -> bool
     }
 }
 
+/// ¿Se acepta este cambio de un pedido de quien no es Dirección? Solo crear,
+/// cambiar o borrar un borrador sin nada recibido, aprobado ni enviado; lo
+/// demás va por `ChainOp::*Order*` (ver `compras`).
+fn order_change_ok(current: Option<&String>, after: Option<&String>) -> bool {
+    let draft = |j: &String| {
+        serde_json::from_str::<Value>(j).ok().is_some_and(|v| {
+            v["state"] == "Borrador" && v["approved"].is_null() && v["sent"].is_null() && v["receipts"].as_array().is_none_or(|r| r.is_empty()) && v["lines"].as_array().is_some_and(|ls| ls.iter().all(|l| l["received"].as_f64().unwrap_or(0.0) == 0.0))
+        })
+    };
+    current.is_none_or(draft) && after.is_none_or(draft) && (current.is_some() || after.is_some())
+}
+
 /// ¿Puede escribir en el servidor el puesto de esta petición?
 fn data_mismatch(req: &Request) -> Option<&'static str> {
     match req.header(DATA_HEADER).and_then(|v| v.trim().parse::<u32>().ok()) {
@@ -1015,6 +1027,8 @@ impl State {
                 // autorizaciones y liquidaciones: solo por sus operaciones en el
                 // servidor (`ChainOp::Auth*` y `Claim*`), que apuntan quién lo hizo
                 "auth_requests" | "claims" => false,
+                // un pedido: desde el puesto, solo el borrador; lo demás, por sus operaciones
+                "orders" => order_change_ok(c.key.as_deref().and_then(|k| snap.get("orders", Some(k))), c.after.as_ref()),
                 _ => true,
             });
         }
@@ -1706,7 +1720,7 @@ impl State {
                 match perm {
                     Some(Perm::Facturacion) => "Este usuario no puede facturar.",
                     Some(Perm::Economia) => "Este usuario no puede llevar los cobros.",
-                    Some(Perm::Gastos) => "Este usuario no puede llevar el banco.",
+                    Some(Perm::Gastos) => "Este usuario no puede llevar los gastos ni el banco (por ejemplo, aprobar pedidos o conciliar).",
                     Some(Perm::Caja) => "Este usuario no puede llevar la caja (anular cobros o devolver dinero).",
                     Some(Perm::Configuracion) => "Solo Dirección puede hacerlo (por ejemplo, fusionar pacientes).",
                     _ => "Este usuario no tiene permiso para hacerlo.",
@@ -3700,6 +3714,70 @@ mod tests {
         dir_b.stop().unwrap();
         ha.join().unwrap();
         hb.join().unwrap();
+    }
+
+    /// Pedidos (T-F6-05): dos puestos que proponen o reciben a la vez no
+    /// duplican; aprobar es de quien lleva los gastos; desde un puesto solo
+    /// se edita un borrador.
+    #[test]
+    fn orders_are_proposed_and_received_once_and_approved_by_expenses() {
+        use crate::app::ChainOp;
+        use crate::stock::OrderState;
+        let (addr, path, h) = start("CLAVE55");
+        let dir = signed_in(&addr, "CLAVE55", "Despacho", 1, "0000");
+        let r1 = signed_in(&addr, "CLAVE55", "Recepción 1", 2, "0000");
+        let r2 = signed_in(&addr, "CLAVE55", "Recepción 2", 2, "0000");
+        // Dirección: aprobación desde 1 €, sin pedidos abiertos
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.station = dir.station;
+        d.config.order_approval_from = Some(1.0);
+        for o in d.orders.iter_mut().filter(|o| o.state.open()) {
+            o.state = OrderState::Cancelado;
+        }
+        dir.push(&mut d, &mut sd).unwrap();
+        let (mut a, mut sa) = r1.load().unwrap();
+        let (mut b, mut sb) = r2.load().unwrap();
+        let first = r1.chain_op(&mut a, &mut sa, &ChainOp::ProposeOrders.json()).unwrap();
+        assert!(first > 0);
+        assert_eq!(r2.chain_op(&mut b, &mut sb, &ChainOp::ProposeOrders.json()).unwrap(), 0, "lo ya pedido no se vuelve a proponer");
+        let open = |p: &std::path::Path| crate::sync::on_disk(p).orders.iter().filter(|o| o.state.open()).count();
+        let n = open(&path);
+        // confirmar: por aprobar; recepción no aprueba, Dirección sí
+        r1.chain_op(&mut a, &mut sa, &ChainOp::SubmitOrder { order: first }.json()).unwrap();
+        assert!(r1.chain_op(&mut a, &mut sa, &ChainOp::ApproveOrder { order: first }.json()).unwrap_err().contains("gastos"));
+        let (mut d, mut sd) = dir.load().unwrap();
+        dir.chain_op(&mut d, &mut sd, &ChainOp::ApproveOrder { order: first }.json()).unwrap();
+        r1.chain_op(&mut a, &mut sa, &ChainOp::OrderSent { order: first, channel: "teléfono".into() }.json()).unwrap();
+        // a mano desde el puesto: ni aprobarlo ni recibirlo
+        let (mut a, mut sa) = r1.load().unwrap();
+        a.station = r1.station;
+        let forged = a.orders.iter().find(|o| o.state == OrderState::Borrador).map(|o| o.id);
+        if let Some(f) = forged {
+            a.orders.iter_mut().find(|o| o.id == f).unwrap().state = OrderState::Aprobado;
+        }
+        a.orders.iter_mut().find(|o| o.id == first).unwrap().lines[0].received = 1.0;
+        r1.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        if let Some(f) = forged {
+            assert_eq!(disk.orders.iter().find(|o| o.id == f).unwrap().state, OrderState::Borrador, "ni se aprueba a mano");
+        }
+        assert_eq!(disk.orders.iter().find(|o| o.id == first).unwrap().lines[0].received, 0.0, "ni se recibe a mano");
+        // dos puestos reciben lo mismo a la vez: entra una vez
+        let o = disk.orders.iter().find(|o| o.id == first).unwrap().clone();
+        let traced = o.lines.iter().any(|l| disk.product(l.product_id).is_some_and(|p| p.traced));
+        let all: Vec<(usize, f64, String, String)> = o.lines.iter().enumerate().map(|(i, l)| (i, l.qty, if traced { "L1".into() } else { String::new() }, String::new())).collect();
+        let stock_before: f64 = o.lines.iter().map(|l| disk.product(l.product_id).unwrap().stock).sum();
+        let (mut a, mut sa) = r1.load().unwrap();
+        let (mut b, mut sb) = r2.load().unwrap();
+        r1.chain_op(&mut a, &mut sa, &ChainOp::ReceiveOrder { order: first, lines: all.clone() }.json()).unwrap();
+        assert!(r2.chain_op(&mut b, &mut sb, &ChainOp::ReceiveOrder { order: first, lines: all }.json()).is_err(), "la segunda, no");
+        let disk = crate::sync::on_disk(&path);
+        let stock_after: f64 = o.lines.iter().map(|l| disk.product(l.product_id).unwrap().stock).sum();
+        assert!((stock_after - stock_before - o.lines.iter().map(|l| l.qty).sum::<f64>()).abs() < 1e-6, "entra una sola vez");
+        assert_eq!(disk.orders.iter().find(|x| x.id == first).unwrap().state, OrderState::Recibido);
+        assert_eq!(open(&path), n - 1);
+        dir.stop().unwrap();
+        h.join().unwrap();
     }
 
     /// Autorizaciones (T-F6-04): las crea el servidor, así que dos puestos que

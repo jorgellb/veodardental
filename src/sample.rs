@@ -190,6 +190,8 @@ impl Db {
                 receipt_series: format!("R{}", today.year()),
                 next_receipt: 1,
                 budget_valid_days: 90,
+                order_approval_from: None,
+                orders_auto_send: false,
                 users: vec!["Recepción".into(), "Dirección".into(), "Dra. Ruiz".into()],
                 current_user: "Recepción".into(),
                 current_center: 1,

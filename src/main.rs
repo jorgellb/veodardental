@@ -16,6 +16,7 @@ mod chat;
 mod cifrado;
 mod colegiado;
 mod comms;
+mod compras;
 mod cuadro;
 mod datafono;
 mod datos_cifrados;

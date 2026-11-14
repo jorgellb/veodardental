@@ -1867,3 +1867,44 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 536 pasan (534 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-071 T-F6-05: pedidos por stock mínimo con aprobación, unidades de compra, lotes y recepción
+- **Hecho (D-27):**
+  - **Propuesta** con lo que está bajo mínimo, en cajas enteras (`Product::pack`, «caja de 100»), sin repetir lo ya pedido. El texto del pedido va en cajas.
+  - **Estados nuevos:** «Por aprobar», «Aprobado» y «Recibido en parte». Por encima del importe configurado, lo aprueba quien lleva los gastos.
+  - **Recepción** en partes, con varias filas por línea (cada una con su lote y su caducidad) y nunca más de lo que falta. Lo que falta sigue pedido. «Cerrar con lo recibido», con el gasto por lo recibido.
+  - **Envío automático por correo**, solo con los dos interruptores activados (clínica y proveedor). Si no, a mano.
+  - **En el servidor:** todos los pasos son operaciones del servidor, y desde un puesto solo se edita un borrador.
+  - **Pantalla** (Almacén › Pedidos):
+    - los botones de cada estado;
+    - las filas de lo que llega;
+    - los ajustes para Dirección;
+    - el producto con su unidad de compra y el proveedor con su envío automático.
+- **Pruebas** (proveedor ficticio y servidor de correo de prueba en este ordenador):
+  - `compras::tests::the_proposal_is_in_whole_packs_and_counts_what_is_already_ordered`: dos cajas de 100 para llegar al doble del mínimo; no se repite.
+  - `compras::tests::approval_depends_on_the_amount_and_sending_needs_it`: por debajo, sin aprobación; por encima, por aprobar; sin aprobar no se envía ni se recibe; una sola aprobación.
+  - `compras::tests::receiving_in_parts_with_lots_never_exceeds_the_order`:
+    - 350 de 300, no;
+    - 200 en dos lotes: en parte, y quedan 100 pedidos;
+    - caducidad ilegible, no;
+    - cerrado con lo recibido, con el gasto por 200 × 0,07;
+    - con algo recibido no se cancela.
+  - `compras::tests::the_automatic_email_needs_both_switches_and_reaches_the_fake_supplier`: desactivado de entrada; hacen falta los dos interruptores; el correo llega al servidor de prueba con las líneas del pedido.
+  - `server::tests::orders_are_proposed_and_received_once_and_approved_by_expenses`:
+    - dos puestos proponen y la segunda propuesta no repite nada;
+    - recepción no aprueba y Dirección sí;
+    - aprobar o recibir a mano desde el puesto no se acepta;
+    - dos puestos reciben a la vez, y la mercancía entra una sola vez.
+
+    Comprobado que falla si se quita la regla de los pedidos («ni se aprueba a mano»).
+  - `ui_tests::an_order_above_the_amount_waits_for_approval`: Dirección confirma y aprueba; recepción confirma, no ve «Aprobar» y no ve los ajustes.
+  - `ui_tests::receive_implants_in_two_lots_from_the_orders_screen`, adaptada a las filas de lo que llega: 3 de un lote y 1 de otro.
+  - `stock::tests::proposal_and_reception`: un borrador ya no se recibe sin confirmarlo.
+- **Ajuste:** el aviso de permiso de gastos dice «gastos ni el banco (por ejemplo, aprobar pedidos o conciliar)».
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 542 pasan (540 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

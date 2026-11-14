@@ -335,7 +335,8 @@ impl Db {
             supplier: self.supplier_name(o.supplier_id),
             concept: format!("Pedido #{}", o.id),
             category: "Material".into(),
-            base: o.total(),
+            // lo recibido (un pedido cerrado con lo que llegó); los de antes, entero
+            base: if o.lines.iter().any(|l| l.received > 0.0) { round2(o.lines.iter().map(|l| l.received * l.cost).sum()) } else { o.total() },
             vat_pct: 21.0,
             invoice_no: String::new(),
             method: "Transferencia".into(),

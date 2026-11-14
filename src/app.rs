@@ -1216,6 +1216,30 @@ pub enum ChainOp {
         claim: u32,
         reason: String,
     },
+    /// Pedidos a proveedores (ver `compras`): proponer (devuelve el primero,
+    /// o 0), confirmar, aprobar, enviado, recibir (línea, cantidad, lote,
+    /// caducidad), cerrar con lo recibido y cancelar.
+    ProposeOrders,
+    SubmitOrder {
+        order: u32,
+    },
+    ApproveOrder {
+        order: u32,
+    },
+    OrderSent {
+        order: u32,
+        channel: String,
+    },
+    ReceiveOrder {
+        order: u32,
+        lines: Vec<(usize, f64, String, String)>,
+    },
+    CloseOrder {
+        order: u32,
+    },
+    CancelOrder {
+        order: u32,
+    },
     /// Conciliar el ingreso de la entidad con la financiación.
     FinMatchBank {
         fin: u32,
@@ -1279,6 +1303,13 @@ impl ChainOp {
                 Ok(*claim)
             }
             ChainOp::ClaimCancel { claim, reason } => db.cancel_claim(*claim, reason, crate::model::today()).map(|_| *claim),
+            ChainOp::ProposeOrders => Ok(db.propose_orders().first().copied().unwrap_or(0)),
+            ChainOp::SubmitOrder { order } => db.order_submit(*order, crate::model::now()).map(|_| *order),
+            ChainOp::ApproveOrder { order } => db.order_approve(*order, crate::model::now()).map(|_| *order),
+            ChainOp::OrderSent { order, channel } => db.order_sent(*order, channel, crate::model::now()).map(|_| *order),
+            ChainOp::ReceiveOrder { order, lines } => db.order_receive(*order, lines, crate::model::now()).map(|_| *order),
+            ChainOp::CloseOrder { order } => db.order_close(*order, crate::model::now()).map(|_| *order),
+            ChainOp::CancelOrder { order } => db.order_cancel(*order).map(|_| *order),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
@@ -1329,6 +1360,13 @@ impl ChainOp {
             ChainOp::ClaimAnswer { claim, rejected, raw } => json!({ "accion": "liquidacion_respuesta", "liquidacion": claim, "rechazos": rejected, "texto": raw }),
             ChainOp::ClaimPaid { claim, amount } => json!({ "accion": "liquidacion_cobrada", "liquidacion": claim, "importe": amount }),
             ChainOp::ClaimCancel { claim, reason } => json!({ "accion": "liquidacion_anulada", "liquidacion": claim, "motivo": reason }),
+            ChainOp::ProposeOrders => json!({ "accion": "pedidos_proponer" }),
+            ChainOp::SubmitOrder { order } => json!({ "accion": "pedido_confirmar", "pedido": order }),
+            ChainOp::ApproveOrder { order } => json!({ "accion": "pedido_aprobar", "pedido": order }),
+            ChainOp::OrderSent { order, channel } => json!({ "accion": "pedido_enviado", "pedido": order, "canal": channel }),
+            ChainOp::ReceiveOrder { order, lines } => json!({ "accion": "pedido_recibir", "pedido": order, "lineas": lines }),
+            ChainOp::CloseOrder { order } => json!({ "accion": "pedido_cerrar", "pedido": order }),
+            ChainOp::CancelOrder { order } => json!({ "accion": "pedido_cancelar", "pedido": order }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
@@ -1405,6 +1443,27 @@ impl ChainOp {
             }
             "liquidacion_cobrada" => ChainOp::ClaimPaid { claim: num("liquidacion")?, amount: v["importe"].as_i64().ok_or("Falta «importe».")? },
             "liquidacion_anulada" => ChainOp::ClaimCancel { claim: num("liquidacion")?, reason: text("motivo") },
+            "pedidos_proponer" => ChainOp::ProposeOrders,
+            "pedido_confirmar" => ChainOp::SubmitOrder { order: num("pedido")? },
+            "pedido_aprobar" => ChainOp::ApproveOrder { order: num("pedido")? },
+            "pedido_enviado" => ChainOp::OrderSent { order: num("pedido")?, channel: text("canal") },
+            "pedido_recibir" => {
+                let list = v["lineas"].as_array().ok_or("Faltan las líneas.")?;
+                if list.len() > 500 {
+                    return Err("Demasiadas líneas.".into());
+                }
+                let lines = list
+                    .iter()
+                    .map(|x| {
+                        let s = |i: usize| x[i].as_str().unwrap_or_default().chars().take(60).collect::<String>();
+                        Some((x[0].as_u64()? as usize, x[1].as_f64().filter(|q| q.is_finite())?, s(2), s(3)))
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or("Línea no válida.")?;
+                ChainOp::ReceiveOrder { order: num("pedido")?, lines }
+            }
+            "pedido_cerrar" => ChainOp::CloseOrder { order: num("pedido")? },
+            "pedido_cancelar" => ChainOp::CancelOrder { order: num("pedido")? },
             "autorizacion" => {
                 let list = v["actos"].as_array().ok_or("Faltan los actos.")?;
                 if list.len() > 200 {
@@ -1439,6 +1498,8 @@ impl ChainOp {
         const CAMPAIGNS: &[&str] = &["campaigns", "patients", "appointments", "messages", "collaborators", "config", "next_id"];
         // autorizaciones: los actos, la compañía y lo que ya está pedido o liquidado
         const AUTH: &[&str] = &["auth_requests", "entries", "patients", "tariffs", "claims", "auths", "config", "audit_log", "next_id"];
+        // pedidos: el almacén, los proveedores y el gasto
+        const ORDERS: &[&str] = &["orders", "products", "suppliers", "stock_moves", "expenses", "config", "audit_log", "next_id"];
         // financiación: el cobro, la comisión, la devolución y el banco
         const FIN: &[&str] = &["financings", "payments", "expenses", "bank_moves", "bank_accounts", "patients", "budgets", "cash", "config", "audit_log", "next_id"];
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
@@ -1504,6 +1565,9 @@ impl ChainOp {
             ChainOp::AuthRequest { .. } | ChainOp::AuthSent { .. } | ChainOp::AuthAnswer { .. } | ChainOp::AuthCancel { .. } | ChainOp::ClaimSent { .. } | ChainOp::ClaimAnswer { .. } | ChainOp::ClaimPaid { .. } | ChainOp::ClaimCancel { .. } => {
                 (Some(Facturacion), AUTH)
             }
+            // aprobar un pedido es gastar: quien lleva los gastos
+            ChainOp::ApproveOrder { .. } => (Some(Gastos), ORDERS),
+            ChainOp::ProposeOrders | ChainOp::SubmitOrder { .. } | ChainOp::OrderSent { .. } | ChainOp::ReceiveOrder { .. } | ChainOp::CloseOrder { .. } | ChainOp::CancelOrder { .. } => (Some(Almacen), ORDERS),
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
             ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),

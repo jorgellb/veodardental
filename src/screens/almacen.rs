@@ -28,6 +28,11 @@ pub struct StockState {
     pub lab_job: Option<crate::screens::laboratorio::LabJob>,
     /// Último resultado del envío digital: (trabajo, correcto, mensaje).
     pub lab_msg: Option<(u32, bool, String)>,
+    /// Lo que llega de un pedido (línea, cantidad, lote, caducidad) y de cuál.
+    pub receipt: Vec<(usize, f64, String, String)>,
+    pub receipt_for: Option<u32>,
+    /// Envío automático por correo de un pedido aprobado en curso.
+    pub mail_job: Option<(u32, std::sync::mpsc::Receiver<Result<(), String>>)>,
 }
 
 impl Default for StockState {
@@ -50,6 +55,9 @@ impl Default for StockState {
             lab_filter_open: true,
             lab_job: None,
             lab_msg: None,
+            receipt: vec![],
+            receipt_for: None,
+            mail_job: None,
         }
     }
 }
@@ -61,7 +69,7 @@ fn qty(v: f64) -> String {
 pub fn screen(app: &mut App, ui: &mut Ui) {
     title(ui, "Almacén", "Material, stock mínimo, pedidos a proveedores y consumo automático al realizar tratamientos");
     let low = app.db.low_stock().len();
-    let pend_orders = app.db.orders.iter().filter(|o| matches!(o.state, OrderState::Borrador | OrderState::Enviado)).count();
+    let pend_orders = app.db.orders.iter().filter(|o| o.state.open()).count();
     let w = kpi_w(ui, 4);
     ui.horizontal(|ui| {
         kpi(ui, w, "Productos", &app.db.products.iter().filter(|p| p.active).count().to_string(), &format!("{} proveedores", app.db.suppliers.iter().filter(|s| !s.is_lab).count()), INFO);
@@ -150,6 +158,8 @@ fn products(app: &mut App, ui: &mut Ui) {
                                 location: String::new(),
                                 active: true,
                                 traced: false,
+                                pack: 0.0,
+                                pack_name: String::new(),
                             });
                             app.stock.product = Some(id);
                             app.changed();
@@ -239,6 +249,13 @@ fn product_panel(app: &mut App, ui: &mut Ui) {
             ui.label("Coste");
             ui.add(egui::DragValue::new(&mut p.cost).range(0.0..=100000.0).speed(0.1).suffix(" €"));
             ui.checkbox(&mut p.active, "Activo");
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Se compra en");
+            ui.add(egui::TextEdit::singleline(&mut p.pack_name).desired_width(120.0).hint_text("caja de 100"));
+            ui.label("de");
+            ui.add(egui::DragValue::new(&mut p.pack).range(0.0..=100000.0)).on_hover_text("Unidades del almacén por unidad de compra (0 o 1: por unidades)");
+            ui.label("unidades");
         });
         ui.checkbox(&mut p.traced, "Lleva lote (implantes, pilares, injertos…)").on_hover_text("Se apunta el lote y la caducidad al recibirlo, y el lote que lleva cada paciente al colocárselo");
         ui.horizontal(|ui| {
@@ -376,6 +393,10 @@ fn lots_card(app: &mut App, ui: &mut Ui, id: u32) {
 }
 
 fn orders(app: &mut App, ui: &mut Ui) {
+    poll_auto_send(app);
+    if app.stock.mail_job.is_some() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+    }
     let avail = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 6.0);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
@@ -385,14 +406,15 @@ fn orders(app: &mut App, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     section(ui, "Pedidos a proveedores");
                     right_aligned(ui, |ui| {
-                        if primary(ui, "Proponer pedido").on_hover_text("Crea pedidos con lo que está bajo mínimo").clicked() {
-                            let ids = app.db.propose_orders();
-                            if ids.is_empty() {
-                                app.notify("No hace falta pedir nada: todo está por encima del mínimo o ya pedido.");
-                            } else {
-                                app.stock.order = ids.first().copied();
-                                app.changed();
-                                app.notify(format!("{} pedidos propuestos. Revíselos y envíelos.", ids.len()));
+                        if primary(ui, "Proponer pedido").on_hover_text("Crea pedidos con lo que está bajo mínimo (en cajas enteras)").clicked() {
+                            // en el servidor: dos puestos no proponen lo mismo
+                            match app.chain_op(crate::app::ChainOp::ProposeOrders) {
+                                Ok(0) => app.notify("No hace falta pedir nada: todo está por encima del mínimo o ya pedido."),
+                                Ok(first) => {
+                                    app.stock.order = Some(first);
+                                    app.notify("Pedidos propuestos. Revíselos y confírmelos.");
+                                }
+                                Err(e) => app.warn(e),
                             }
                         }
                     });
@@ -405,7 +427,8 @@ fn orders(app: &mut App, ui: &mut Ui) {
                 for (i, o) in list.iter().enumerate() {
                     let col = match o.state {
                         OrderState::Borrador => MUTED,
-                        OrderState::Enviado => WARN,
+                        OrderState::PorAprobar => WARN,
+                        OrderState::Aprobado | OrderState::Enviado | OrderState::Parcial => INFO,
                         OrderState::Recibido => OK,
                         OrderState::Cancelado => DANGER,
                     };
@@ -423,6 +446,7 @@ fn orders(app: &mut App, ui: &mut Ui) {
                     app.stock.order = pick;
                 }
             });
+            order_settings(app, ui);
         });
         ui.vertical(|ui| {
             card(ui, |ui| {
@@ -435,95 +459,148 @@ fn orders(app: &mut App, ui: &mut Ui) {
                 section(ui, &format!("Pedido #{} · {}", o.id, app.db.supplier_name(o.supplier_id)));
                 muted(ui, format!("{} · {}", fmt_date(o.date), o.state.label()));
                 let editable = o.state == OrderState::Borrador;
-                // al recibir se ajusta lo que llega de verdad, con su lote
-                let receiving = o.state == OrderState::Enviado;
-                let mut remove = None;
-                let mut split = None;
-                let mut touched = false;
-                let prods: Vec<(u32, String, bool)> = app.db.products.iter().map(|p| (p.id, p.name.clone(), p.traced)).collect();
-                if receiving && o.lines.iter().any(|l| prods.iter().any(|p| p.0 == l.product_id && p.2)) {
-                    muted(ui, "Al recibir, escriba el lote y la caducidad que vienen en la caja. Si llegan dos lotes del mismo producto, use «＋ otro lote».");
+                // lo que llega se apunta aquí (en este puesto) y se recibe de una vez en el servidor
+                let receiving = matches!(o.state, OrderState::Aprobado | OrderState::Enviado | OrderState::Parcial);
+                if receiving && app.stock.receipt_for != Some(id) {
+                    app.stock.receipt_for = Some(id);
+                    app.stock.receipt = o.lines.iter().enumerate().filter(|(_, l)| l.qty - l.received > 0.0).map(|(i, l)| (i, l.qty - l.received, l.lot.clone(), l.expiry.clone())).collect();
                 }
+                let mut remove = None;
+                let mut touched = false;
+                let prods: Vec<(u32, String, bool, f64, String)> = app.db.products.iter().map(|p| (p.id, p.name.clone(), p.traced, p.per_pack(), p.pack_name.clone())).collect();
+                let pinfo = |pid: u32| prods.iter().find(|p| p.0 == pid).cloned().unwrap_or((pid, String::new(), false, 1.0, String::new()));
                 if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
                     for (i, l) in om.lines.iter_mut().enumerate() {
-                        let traced = prods.iter().any(|p| p.0 == l.product_id && p.2);
+                        let (_, name, _, per, pack_name) = pinfo(l.product_id);
                         ui.horizontal(|ui| {
-                            lab(ui, 230.0, prods.iter().find(|p| p.0 == l.product_id).map(|p| p.1.clone()).unwrap_or_default());
-                            ui.add_enabled_ui(editable || receiving, |ui| {
-                                touched |= ui.add(egui::DragValue::new(&mut l.qty).range(0.0..=100000.0)).on_hover_text(if receiving { "Cantidad que llega" } else { "Cantidad" }).changed();
+                            lab(ui, 230.0, name);
+                            if editable {
+                                if per > 1.0 {
+                                    // en unidades de compra (cajas)
+                                    let mut packs = (l.qty / per).round();
+                                    if ui.add(egui::DragValue::new(&mut packs).range(0.0..=10000.0)).on_hover_text(if pack_name.is_empty() { format!("cajas de {per}") } else { pack_name.clone() }).changed() {
+                                        l.qty = packs * per;
+                                        touched = true;
+                                    }
+                                    ui.label(RichText::new(format!("× {per}")).color(MUTED));
+                                } else {
+                                    touched |= ui.add(egui::DragValue::new(&mut l.qty).range(0.0..=100000.0)).on_hover_text("Cantidad").changed();
+                                }
                                 touched |= ui.add(egui::DragValue::new(&mut l.cost).range(0.0..=100000.0).speed(0.1).suffix(" €")).changed();
-                            });
+                            } else {
+                                ui.label(format!("{} · llegado {}", qty(l.qty), qty(l.received)));
+                            }
                             lab(ui, 90.0, RichText::new(money(l.qty * l.cost)).family(sb()));
                             if editable && ui.small_button("✖").clicked() {
                                 remove = Some(i);
                             }
                         });
-                        if (receiving && traced) || !l.lot.is_empty() {
-                            ui.horizontal(|ui| {
-                                ui.add_space(12.0);
-                                ui.add_enabled_ui(receiving, |ui| {
-                                    touched |= ui.add_sized([130.0, 30.0], egui::TextEdit::singleline(&mut l.lot).hint_text("Lote")).changed();
-                                    touched |= ui.add_sized([90.0, 30.0], egui::TextEdit::singleline(&mut l.expiry).hint_text("Caduca")).on_hover_text("Como en la caja: 03/2029").changed();
-                                });
-                                if receiving && l.qty > 1.0 && ui.small_button("＋ otro lote").on_hover_text("Separa una unidad en otra línea con su lote").clicked() {
-                                    split = Some(i);
-                                }
-                            });
-                        }
                     }
                     if let Some(i) = remove {
                         om.lines.remove(i);
-                        touched = true;
-                    }
-                    if let Some(i) = split {
-                        om.lines[i].qty -= 1.0;
-                        let mut n = om.lines[i].clone();
-                        n.qty = 1.0;
-                        n.lot.clear();
-                        n.expiry.clear();
-                        om.lines.insert(i + 1, n);
                         touched = true;
                     }
                 }
                 if touched {
                     app.dirty = true;
                 }
+                if receiving {
+                    ui.add_space(6.0);
+                    muted(ui, "Lo que llega: cantidad, lote y caducidad, como en la caja. Si una línea llega en dos lotes, use «＋ otro lote».");
+                    let mut extra = None;
+                    let mut drop_row = None;
+                    for (k, row) in app.stock.receipt.iter_mut().enumerate() {
+                        let (_, name, traced, _, _) = pinfo(o.lines.get(row.0).map(|l| l.product_id).unwrap_or(0));
+                        ui.horizontal(|ui| {
+                            lab(ui, 200.0, name);
+                            ui.add(egui::DragValue::new(&mut row.1).range(0.0..=100000.0)).on_hover_text("Cantidad que llega");
+                            ui.add_sized([110.0, 30.0], egui::TextEdit::singleline(&mut row.2).hint_text(if traced { "Lote" } else { "Lote (opcional)" }));
+                            ui.add_sized([90.0, 30.0], egui::TextEdit::singleline(&mut row.3).hint_text("Caduca")).on_hover_text("Como en la caja: 03/2029");
+                            if ui.small_button("＋ otro lote").on_hover_text("Otra fila de esta línea, con su lote").clicked() {
+                                extra = Some(k);
+                            }
+                            if ui.small_button("✖").on_hover_text("No ha llegado").clicked() {
+                                drop_row = Some(k);
+                            }
+                        });
+                    }
+                    if let Some(k) = extra {
+                        let r = app.stock.receipt[k].clone();
+                        let one = if r.1 >= 2.0 { 1.0 } else { 0.0 };
+                        app.stock.receipt[k].1 -= one;
+                        app.stock.receipt.insert(k + 1, (r.0, one, String::new(), String::new()));
+                    }
+                    if let Some(k) = drop_row {
+                        app.stock.receipt.remove(k);
+                    }
+                }
                 ui.label(RichText::new(format!("Total {}", money(app.db.orders.iter().find(|x| x.id == id).map(|x| x.total()).unwrap_or(0.0)))).size(18.0).family(sb()).color(ACCENT));
+                if let Some((t, who)) = &o.approved {
+                    muted(ui, format!("Aprobado el {} · {who}", t.format("%d/%m/%Y %H:%M")));
+                }
+                if let Some((t, how)) = &o.sent {
+                    muted(ui, format!("Enviado el {} · {how}", t.format("%d/%m/%Y %H:%M")));
+                }
                 ui.add_space(6.0);
+                use crate::app::ChainOp;
                 ui.horizontal_wrapped(|ui| {
                     match o.state {
-                        OrderState::Borrador => {
+                        OrderState::Borrador if primary(ui, "Confirmar pedido").on_hover_text("Por encima del importe de aprobación queda «por aprobar»").clicked() => match app.chain_op(ChainOp::SubmitOrder { order: id }) {
+                            Ok(_) => start_auto_send(app, id),
+                            Err(e) => app.warn(e),
+                        },
+                        OrderState::PorAprobar => {
+                            if app.can(crate::users::Perm::Gastos) {
+                                if primary(ui, "Aprobar pedido").clicked() {
+                                    match app.chain_op(ChainOp::ApproveOrder { order: id }) {
+                                        Ok(_) => start_auto_send(app, id),
+                                        Err(e) => app.warn(e),
+                                    }
+                                }
+                            } else {
+                                muted(ui, "Lo aprueba quien lleva los gastos.");
+                            }
+                        }
+                        OrderState::Aprobado => {
                             if primary(ui, "✉ Enviar al proveedor").clicked() {
                                 let email = app.db.suppliers.iter().find(|s| s.id == o.supplier_id).map(|s| s.email.clone()).unwrap_or_default();
                                 let body = app.db.order_text(id);
                                 let url = format!("mailto:{}?subject={}&body={}", email, crate::screens::comunicaciones::enc_pub(&format!("Pedido {} - {}", id, app.db.config.name)), crate::screens::comunicaciones::enc_pub(&body));
                                 ui.ctx().open_url(egui::OpenUrl::new_tab(url));
-                                if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
-                                    om.state = OrderState::Enviado;
+                                if let Err(e) = app.chain_op(ChainOp::OrderSent { order: id, channel: "correo (a mano)".into() }) {
+                                    app.warn(e);
                                 }
-                                app.changed();
                             }
-                            if ui.button("Marcar enviado").clicked() {
-                                if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
-                                    om.state = OrderState::Enviado;
-                                }
-                                app.changed();
+                            if ui.button("Marcar enviado").clicked()
+                                && let Err(e) = app.chain_op(ChainOp::OrderSent { order: id, channel: "a mano".into() })
+                            {
+                                app.warn(e);
                             }
                         }
-                        OrderState::Enviado if primary(ui, "✔ Recibir mercancía").clicked() => match app.db.receive_order(id) {
-                            Ok(()) => {
-                                app.changed();
-                                app.notify("Pedido recibido: el material ha entrado en el almacén.");
-                            }
-                            Err(e) => app.warn(e),
-                        },
                         _ => {}
                     }
-                    if matches!(o.state, OrderState::Borrador | OrderState::Enviado) && ui.button("Cancelar pedido").clicked() {
-                        if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
-                            om.state = OrderState::Cancelado;
+                    if receiving && primary(ui, "✔ Recibir lo que ha llegado").clicked() {
+                        let lines: Vec<(usize, f64, String, String)> = app.stock.receipt.iter().filter(|r| r.1 > 0.0).cloned().collect();
+                        match app.chain_op(ChainOp::ReceiveOrder { order: id, lines }) {
+                            Ok(_) => {
+                                app.stock.receipt_for = None;
+                                let st = app.db.orders.iter().find(|x| x.id == id).map(|x| x.state);
+                                app.notify(if st == Some(OrderState::Parcial) { "Recibido en parte: lo que falta sigue pedido." } else { "Pedido recibido: el material ha entrado en el almacén." });
+                            }
+                            Err(e) => app.warn(e),
                         }
-                        app.changed();
+                    }
+                    if o.state == OrderState::Parcial
+                        && ui.button("Cerrar con lo recibido").on_hover_text("Lo que falta ya no se espera").clicked()
+                        && let Err(e) = app.chain_op(ChainOp::CloseOrder { order: id })
+                    {
+                        app.warn(e);
+                    }
+                    if matches!(o.state, OrderState::Borrador | OrderState::PorAprobar | OrderState::Aprobado | OrderState::Enviado)
+                        && ui.button("Cancelar pedido").clicked()
+                        && let Err(e) = app.chain_op(ChainOp::CancelOrder { order: id })
+                    {
+                        app.warn(e);
                     }
                     if ui.button("📋 Copiar texto").clicked() {
                         ui.ctx().copy_text(app.db.order_text(id));
@@ -537,14 +614,14 @@ fn orders(app: &mut App, ui: &mut Ui) {
                     ui.horizontal(|ui| {
                         let cur = prods.iter().find(|p| p.0 == sel).map(|p| p.1.clone()).unwrap_or_default();
                         crate::theme::combo("ord_add").width(240.0).selected_text(cur).show_ui(ui, |ui| {
-                            for (pid, n, _) in &prods {
+                            for (pid, n, ..) in &prods {
                                 ui.selectable_value(&mut sel, *pid, n);
                             }
                         });
                         if ui.button("＋ Añadir línea").clicked() {
                             let cost = app.db.product(sel).map(|p| p.cost).unwrap_or(0.0);
                             if let Some(om) = app.db.orders.iter_mut().find(|x| x.id == id) {
-                                om.lines.push(OrderLine { product_id: sel, qty: 1.0, cost, lot: String::new(), expiry: String::new() });
+                                om.lines.push(OrderLine { product_id: sel, qty: 1.0, cost, ..Default::default() });
                             }
                             app.changed();
                         }
@@ -568,7 +645,7 @@ fn suppliers(app: &mut App, ui: &mut Ui) {
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nuevo").clicked() {
                             let id = app.db.new_id();
-                            app.db.suppliers.push(Supplier { id, name: "Nuevo proveedor".into(), nif: String::new(), phone: String::new(), email: String::new(), contact: String::new(), is_lab: false, notes: String::new() });
+                            app.db.suppliers.push(Supplier { id, name: "Nuevo proveedor".into(), nif: String::new(), phone: String::new(), email: String::new(), contact: String::new(), is_lab: false, notes: String::new(), auto_send: false });
                             app.stock.supplier = Some(id);
                             app.changed();
                         }
@@ -602,6 +679,7 @@ fn suppliers(app: &mut App, ui: &mut Ui) {
                 field(ui, "Email (para enviar pedidos)", &mut s.email, 300.0);
                 field(ui, "Persona de contacto", &mut s.contact, 300.0);
                 ui.checkbox(&mut s.is_lab, "Es un laboratorio protésico");
+                ui.checkbox(&mut s.auto_send, "Mandarle por correo los pedidos aprobados, sin enviarlos a mano").on_hover_text("Solo si además está activado en «Pedidos» (Dirección) y el correo de la clínica está configurado");
                 ui.label(RichText::new("Notas").size(13.5).color(MUTED));
                 ui.add(egui::TextEdit::multiline(&mut s.notes).desired_rows(3).desired_width(f32::INFINITY));
                 if serde_json::to_string(s).unwrap_or_default() != before {
@@ -660,4 +738,70 @@ fn consumptions(app: &mut App, ui: &mut Ui) {
             app.changed();
         }
     });
+}
+
+/// Si el pedido aprobado se manda solo por correo (la clínica y el proveedor
+/// lo tienen activado), se envía en segundo plano.
+fn start_auto_send(app: &mut App, id: u32) {
+    if !app.db.order_auto_send(id) || app.stock.mail_job.is_some() {
+        return;
+    }
+    let Some((to, subject, text)) = app.db.order_email(id) else { return };
+    let cfg = app.db.mail.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::mail::send(&cfg, &to, &subject, &text, &[]));
+    });
+    app.stock.mail_job = Some((id, rx));
+}
+
+/// Cómo terminó el envío automático (si terminó).
+fn poll_auto_send(app: &mut App) {
+    let Some((id, rx)) = &app.stock.mail_job else { return };
+    let id = *id;
+    match rx.try_recv() {
+        Ok(Ok(())) => {
+            app.stock.mail_job = None;
+            match app.chain_op(crate::app::ChainOp::OrderSent { order: id, channel: "correo automático".into() }) {
+                Ok(_) => app.notify(format!("Pedido #{id} enviado por correo al proveedor.")),
+                Err(e) => app.warn(e),
+            }
+        }
+        Ok(Err(e)) => {
+            app.stock.mail_job = None;
+            app.warn(format!("No se pudo enviar el pedido #{id} por correo: {e}. Sigue aprobado: envíelo a mano."));
+        }
+        Err(_) => {}
+    }
+}
+
+/// Pedidos: desde qué importe hace falta aprobación y si se mandan solos por
+/// correo a los proveedores marcados (Dirección).
+fn order_settings(app: &mut App, ui: &mut Ui) {
+    if !app.can(crate::users::Perm::Configuracion) {
+        return;
+    }
+    ui.add_space(8.0);
+    let before = (app.db.config.order_approval_from, app.db.config.orders_auto_send);
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Ajustes de los pedidos");
+        let mut on = app.db.config.order_approval_from.is_some();
+        ui.horizontal_wrapped(|ui| {
+            if ui.checkbox(&mut on, "Necesitan aprobación desde").changed() {
+                app.db.config.order_approval_from = on.then_some(300.0);
+            }
+            if let Some(v) = app.db.config.order_approval_from.as_mut() {
+                ui.add(egui::DragValue::new(v).range(0.0..=100000.0).suffix(" €"));
+                muted(ui, "(0: todos). Los aprueba quien lleva los gastos.");
+            }
+        });
+        ui.checkbox(&mut app.db.config.orders_auto_send, "Mandar por correo los pedidos aprobados a los proveedores marcados, sin enviarlos a mano");
+        if app.db.config.orders_auto_send && !app.db.mail.ready() {
+            ui.label(RichText::new("Falta configurar el correo de la clínica (Configuración › Correo): mientras, se envían a mano.").color(WARN));
+        }
+    });
+    if (app.db.config.order_approval_from, app.db.config.orders_auto_send) != before {
+        app.changed();
+    }
 }

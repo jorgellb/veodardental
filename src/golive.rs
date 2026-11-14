@@ -704,7 +704,7 @@ mod tests {
         let mut db = Db::sample(day());
         let (treatments, users, doctors, templates) = (db.treatments.len(), db.users.len(), db.collaborators.len(), db.msg_templates.len());
         // un proveedor y un producto de la clínica, que se quedan
-        db.suppliers.push(crate::stock::Supplier { id: 90, name: "Mi depósito".into(), nif: String::new(), phone: String::new(), email: String::new(), contact: String::new(), is_lab: false, notes: String::new() });
+        db.suppliers.push(crate::stock::Supplier { id: 90, name: "Mi depósito".into(), nif: String::new(), phone: String::new(), email: String::new(), contact: String::new(), is_lab: false, notes: String::new(), auto_send: false });
         let mut mine = db.products[0].clone();
         mine.id = 90;
         mine.name = "Guantes de la clínica".into();

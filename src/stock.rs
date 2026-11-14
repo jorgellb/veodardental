@@ -15,6 +15,10 @@ pub struct Supplier {
     pub contact: String,
     pub is_lab: bool,
     pub notes: String,
+    /// Mandarle los pedidos aprobados por correo sin que nadie los envíe a
+    /// mano (además, la clínica tiene que activarlo: `ClinicConfig::orders_auto_send`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_send: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +38,24 @@ pub struct Product {
     /// recibirlo y el que lleva cada paciente al colocárselo.
     #[serde(default)]
     pub traced: bool,
+    /// Unidad de compra: cuántas unidades del almacén trae (una caja de 100
+    /// guantes: 100). 0 o 1: se compra por unidades.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pack: f64,
+    /// Nombre de la unidad de compra («caja de 100»).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub pack_name: String,
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
+}
+
+impl Product {
+    /// Unidades del almacén por unidad de compra (al menos 1).
+    pub fn per_pack(&self) -> f64 {
+        if self.pack > 1.0 { self.pack } else { 1.0 }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -122,12 +144,18 @@ pub struct Consumption {
     pub qty: f64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum OrderState {
+    #[default]
     Borrador,
     Enviado,
     Recibido,
     Cancelado,
+    /// Espera la aprobación (ver `compras`).
+    PorAprobar,
+    Aprobado,
+    /// Ha llegado una parte; lo demás sigue pedido.
+    Parcial,
 }
 
 impl OrderState {
@@ -137,15 +165,27 @@ impl OrderState {
             OrderState::Enviado => "Enviado",
             OrderState::Recibido => "Recibido",
             OrderState::Cancelado => "Cancelado",
+            OrderState::PorAprobar => "Por aprobar",
+            OrderState::Aprobado => "Aprobado",
+            OrderState::Parcial => "Recibido en parte",
         }
+    }
+
+    /// Sigue pedido (lo que falta por llegar cuenta como «en pedido»).
+    pub fn open(self) -> bool {
+        matches!(self, OrderState::Borrador | OrderState::PorAprobar | OrderState::Aprobado | OrderState::Enviado | OrderState::Parcial)
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct OrderLine {
     pub product_id: u32,
+    /// Cantidad en unidades del almacén (con unidades de compra, cajas × unidades por caja).
     pub qty: f64,
     pub cost: f64,
+    /// Lo que ha llegado ya (unidades del almacén).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub received: f64,
     /// Lote y caducidad que vienen en la caja (se escriben al recibir).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub lot: String,
@@ -153,7 +193,15 @@ pub struct OrderLine {
     pub expiry: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Lo que llegó de una vez: (línea, cantidad, lote, caducidad).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Receipt {
+    pub at: chrono::NaiveDateTime,
+    pub by: String,
+    pub lines: Vec<(usize, f64, String, String)>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PurchaseOrder {
     pub id: u32,
     pub supplier_id: u32,
@@ -162,6 +210,14 @@ pub struct PurchaseOrder {
     pub lines: Vec<OrderLine>,
     pub notes: String,
     pub received_on: Option<NaiveDate>,
+    /// Quién lo aprobó y cuándo (o «sin aprobación», por debajo del importe).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved: Option<(chrono::NaiveDateTime, String)>,
+    /// Cuándo se envió y cómo (a mano, por correo automático…).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent: Option<(chrono::NaiveDateTime, String)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub receipts: Vec<Receipt>,
 }
 
 impl PurchaseOrder {
@@ -557,7 +613,7 @@ impl Db {
 
     /// Cantidad ya pedida y aún no recibida de un producto.
     pub fn on_order(&self, product_id: u32) -> f64 {
-        self.orders.iter().filter(|o| matches!(o.state, OrderState::Borrador | OrderState::Enviado)).flat_map(|o| o.lines.iter()).filter(|l| l.product_id == product_id).map(|l| l.qty).sum()
+        self.orders.iter().filter(|o| o.state.open()).flat_map(|o| o.lines.iter()).filter(|l| l.product_id == product_id).map(|l| (l.qty - l.received).max(0.0)).sum()
     }
 
     /// Crea pedidos en borrador (uno por proveedor) con lo que está bajo
@@ -566,56 +622,29 @@ impl Db {
         let mut by_supplier: std::collections::BTreeMap<u32, Vec<OrderLine>> = Default::default();
         for p in self.products.iter().filter(|p| p.active && p.stock <= p.min_stock) {
             let pending = self.on_order(p.id);
-            let qty = (p.min_stock * 2.0 - p.stock - pending).ceil();
-            if qty > 0.0 {
-                by_supplier.entry(p.supplier_id).or_default().push(OrderLine { product_id: p.id, qty, cost: p.cost, lot: String::new(), expiry: String::new() });
+            let need = p.min_stock * 2.0 - p.stock - pending;
+            if need > 0.0 {
+                // en cajas enteras (unidades de compra)
+                let qty = (need / p.per_pack()).ceil() * p.per_pack();
+                by_supplier.entry(p.supplier_id).or_default().push(OrderLine { product_id: p.id, qty, cost: p.cost, ..Default::default() });
             }
         }
         let mut ids = vec![];
         for (sid, lines) in by_supplier {
             let id = self.new_id();
-            self.orders.push(PurchaseOrder { id, supplier_id: sid, date: today(), state: OrderState::Borrador, lines, notes: String::new(), received_on: None });
+            self.orders.push(PurchaseOrder { id, supplier_id: sid, date: today(), state: OrderState::Borrador, lines, ..Default::default() });
             ids.push(id);
         }
         ids
     }
 
-    /// Recibe un pedido: entra el material en el almacén y actualiza costes.
+    /// Recibe todo lo que falta de un pedido, con el lote y la caducidad de
+    /// cada línea (ver `compras::Db::order_receive` para recibir una parte).
+    #[cfg(test)]
     pub fn receive_order(&mut self, id: u32) -> Result<(), String> {
         let o = self.orders.iter().find(|o| o.id == id).cloned().ok_or("Pedido no encontrado")?;
-        if o.state == OrderState::Recibido {
-            return Err("El pedido ya está recibido.".into());
-        }
-        if o.state == OrderState::Cancelado {
-            return Err("El pedido está cancelado.".into());
-        }
-        // lo que lleva lote no entra sin él (es lo que se apunta luego en el paciente)
-        for l in &o.lines {
-            let Some(p) = self.product(l.product_id) else { continue };
-            if p.traced && l.qty > 0.0 && l.lot.trim().is_empty() {
-                return Err(format!("Falta el lote de «{}»: viene en la caja, junto a la caducidad.", p.name));
-            }
-            if !l.expiry.trim().is_empty() && parse_expiry(&l.expiry).is_none() {
-                return Err(format!("No se entiende la caducidad de «{}» ({}): escríbala como mes/año, p. ej. 03/2029.", p.name, l.expiry.trim()));
-            }
-        }
-        for l in &o.lines {
-            let id = self.stock_move(l.product_id, l.qty, MoveKind::Entrada, &format!("Pedido #{} · {}", o.id, self.supplier_name(o.supplier_id)), None, l.lot.trim());
-            if let Some(m) = id.and_then(|id| self.stock_moves.iter_mut().find(|m| m.id == id)) {
-                m.expiry = parse_expiry(&l.expiry);
-            }
-            if let Some(p) = self.products.iter_mut().find(|p| p.id == l.product_id)
-                && l.cost > 0.0
-            {
-                p.cost = l.cost;
-            }
-        }
-        if let Some(x) = self.orders.iter_mut().find(|x| x.id == id) {
-            x.state = OrderState::Recibido;
-            x.received_on = Some(today());
-        }
-        self.expense_from_order(id);
-        Ok(())
+        let lines: Vec<(usize, f64, String, String)> = o.lines.iter().enumerate().filter(|(_, l)| l.qty - l.received > 0.0).map(|(i, l)| (i, l.qty - l.received, l.lot.clone(), l.expiry.clone())).collect();
+        self.order_receive(id, &lines, now()).map(|_| ())
     }
 
     pub fn order_text(&self, id: u32) -> String {
@@ -623,7 +652,12 @@ impl Db {
         let mut s = format!("Pedido nº {} de {}\nFecha: {}\n\n", o.id, self.config.name, fmt_date(o.date));
         for l in &o.lines {
             if let Some(p) = self.product(l.product_id) {
-                s.push_str(&format!("- {} x {} ({}) ref. {}\n", l.qty, p.name, p.unit, p.code));
+                if p.per_pack() > 1.0 {
+                    let name = if p.pack_name.trim().is_empty() { format!("caja de {}", p.per_pack()) } else { p.pack_name.trim().to_string() };
+                    s.push_str(&format!("- {} x {} ({name}) ref. {}\n", l.qty / p.per_pack(), p.name, p.code));
+                } else {
+                    s.push_str(&format!("- {} x {} ({}) ref. {}\n", l.qty, p.name, p.unit, p.code));
+                }
             }
         }
         s.push_str(&format!("\nEntregar en: {}\nTeléfono: {}\nGracias.", self.config.address, self.config.phone));
@@ -686,8 +720,17 @@ impl Db {
 }
 
 pub fn sample_stock(db: &mut Db, today: NaiveDate) {
-    let s =
-        |id: u32, name: &str, nif: &str, phone: &str, email: &str, contact: &str, lab: bool| Supplier { id, name: name.into(), nif: nif.into(), phone: phone.into(), email: email.into(), contact: contact.into(), is_lab: lab, notes: String::new() };
+    let s = |id: u32, name: &str, nif: &str, phone: &str, email: &str, contact: &str, lab: bool| Supplier {
+        id,
+        name: name.into(),
+        nif: nif.into(),
+        phone: phone.into(),
+        email: email.into(),
+        contact: contact.into(),
+        is_lab: lab,
+        notes: String::new(),
+        auto_send: false,
+    };
     *db.suppliers = vec![
         s(1, "Depósito Dental Ejemplo", "B11111111", "900 100 100", "pedidos@deposito-ejemplo.es", "Marta", false),
         s(2, "Implantes Ejemplo S.L.", "B22222222", "900 200 200", "comercial@implantes-ejemplo.es", "Jorge", false),
@@ -707,6 +750,8 @@ pub fn sample_stock(db: &mut Db, today: NaiveDate) {
         location: loc.into(),
         active: true,
         traced: family == "Implantología",
+        pack: 0.0,
+        pack_name: String::new(),
     };
     *db.products = vec![
         p(1, "GUA-M", "Guantes nitrilo talla M", "Desechables", "caja 100", 6.0, 4.0, 6.5, 1, "Almacén A1"),
@@ -795,9 +840,11 @@ pub fn sample_stock(db: &mut Db, today: NaiveDate) {
         supplier_id: 2,
         date: today - Duration::days(3),
         state: OrderState::Enviado,
-        lines: vec![OrderLine { product_id: 9, qty: 4.0, cost: 145.0, lot: String::new(), expiry: String::new() }],
+        lines: vec![OrderLine { product_id: 9, qty: 4.0, cost: 145.0, ..Default::default() }],
         notes: "Urgente para cirugía".into(),
-        received_on: None,
+        approved: Some(((today - Duration::days(3)).and_hms_opt(9, 0, 0).unwrap_or_default(), "Dirección".into())),
+        sent: Some(((today - Duration::days(3)).and_hms_opt(9, 5, 0).unwrap_or_default(), "correo".into())),
+        ..Default::default()
     });
     let id = db.new_id();
     db.orders.push(PurchaseOrder {
@@ -805,9 +852,9 @@ pub fn sample_stock(db: &mut Db, today: NaiveDate) {
         supplier_id: 1,
         date: today - Duration::days(40),
         state: OrderState::Recibido,
-        lines: vec![OrderLine { product_id: 3, qty: 100.0, cost: 0.65, lot: String::new(), expiry: String::new() }, OrderLine { product_id: 1, qty: 10.0, cost: 6.5, lot: String::new(), expiry: String::new() }],
-        notes: String::new(),
+        lines: vec![OrderLine { product_id: 3, qty: 100.0, cost: 0.65, received: 100.0, ..Default::default() }, OrderLine { product_id: 1, qty: 10.0, cost: 6.5, received: 10.0, ..Default::default() }],
         received_on: Some(today - Duration::days(37)),
+        ..Default::default()
     });
 
     // trabajos de laboratorio
@@ -861,6 +908,9 @@ mod tests {
         let id = ids[0];
         let line = db.orders.iter().find(|o| o.id == id).unwrap().lines[0].clone();
         let before = db.product(line.product_id).unwrap().stock;
+        // un borrador no se recibe: primero se confirma (sin importe de aprobación, queda aprobado)
+        assert!(db.receive_order(id).is_err());
+        db.order_submit(id, now()).unwrap();
         db.receive_order(id).unwrap();
         assert!((db.product(line.product_id).unwrap().stock - before - line.qty).abs() < 1e-6);
         assert!(db.receive_order(id).is_err());

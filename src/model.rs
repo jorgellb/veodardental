@@ -662,6 +662,14 @@ pub struct ClinicConfig {
     pub receipt_series: String,
     pub next_receipt: u32,
     pub budget_valid_days: u32,
+    /// Pedidos a proveedores que necesitan aprobación: a partir de este total
+    /// (ninguno: sin aprobación; 0: todos). Ver `compras`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_approval_from: Option<f64>,
+    /// Mandar por correo, sin que nadie lo haga a mano, los pedidos aprobados
+    /// a los proveedores que lo tengan marcado. Desactivado salvo que se active.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub orders_auto_send: bool,
     pub users: Vec<String>,
     pub current_user: String,
     #[serde(default = "default_center")]

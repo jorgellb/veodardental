@@ -2770,8 +2770,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas con proveedor ficticio y sin duplicados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-071"]
   },
   {
    "id": "T-F6-06",

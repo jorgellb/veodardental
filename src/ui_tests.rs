@@ -2046,7 +2046,7 @@ fn receive_implants_in_two_lots_from_the_orders_screen() {
     let oid = h.state().stock.order.unwrap();
     let before = h.state().db.product(9).unwrap().stock;
     // sin lote no entra
-    h.get_by_label_contains("Recibir mercancía").click();
+    h.get_by_label_contains("Recibir lo que ha llegado").click();
     for _ in 0..3 {
         h.step();
     }
@@ -2057,15 +2057,13 @@ fn receive_implants_in_two_lots_from_the_orders_screen() {
         h.step();
     }
     {
-        let o = h.state_mut().db.orders.iter_mut().find(|o| o.id == oid).unwrap();
-        assert_eq!(o.lines.iter().map(|l| l.qty).collect::<Vec<_>>(), vec![3.0, 1.0]);
-        o.lines[0].lot = "A111".into();
-        o.lines[0].expiry = "05/2030".into();
-        o.lines[1].lot = "B222".into();
-        o.lines[1].expiry = "09/2031".into();
+        let r = &mut h.state_mut().stock.receipt;
+        assert_eq!(r.iter().map(|x| x.1).collect::<Vec<_>>(), vec![3.0, 1.0]);
+        (r[0].2, r[0].3) = ("A111".into(), "05/2030".into());
+        (r[1].2, r[1].3) = ("B222".into(), "09/2031".into());
     }
     h.step();
-    h.get_by_label_contains("Recibir mercancía").click();
+    h.get_by_label_contains("Recibir lo que ha llegado").click();
     for _ in 0..3 {
         h.step();
     }
@@ -3506,4 +3504,57 @@ fn an_authorization_is_asked_from_the_insured_patient_account() {
         h.step();
     }
     assert_eq!(h.state().db.auth_requests[0].state, crate::autorizaciones::AuthState::Enviada);
+}
+
+/// Pedido que necesita aprobación (T-F6-05): se confirma, queda por
+/// aprobar y lo aprueba Dirección desde la pantalla; recepción no ve el botón.
+#[test]
+fn an_order_above_the_amount_waits_for_approval() {
+    let build = |who: crate::users::Profile| {
+        let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+            let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+            a.screenshot = None;
+            a
+        });
+        let id = {
+            let a = h.state_mut();
+            a.user_id = a.db.users.iter().find(|u| u.profile == who).map(|u| u.id);
+            a.db.config.order_approval_from = Some(1.0);
+            let id = a.db.new_id();
+            let p = a.db.products[0].clone();
+            a.db.orders.push(crate::stock::PurchaseOrder { id, supplier_id: p.supplier_id, date: crate::model::today(), lines: vec![crate::stock::OrderLine { product_id: p.id, qty: 10.0, cost: 5.0, ..Default::default() }], ..Default::default() });
+            a.screen = crate::app::Screen::Almacen;
+            a.stock.tab = 1;
+            a.stock.order = Some(id);
+            id
+        };
+        for _ in 0..4 {
+            h.step();
+        }
+        (h, id)
+    };
+    let (mut h, id) = build(crate::users::Profile::Direccion);
+    h.get_by_label("Confirmar pedido").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.orders.iter().find(|o| o.id == id).unwrap().state, crate::stock::OrderState::PorAprobar);
+    h.get_by_label("Aprobar pedido").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let o = h.state().db.orders.iter().find(|o| o.id == id).unwrap().clone();
+    assert_eq!(o.state, crate::stock::OrderState::Aprobado);
+    assert!(o.approved.is_some());
+    h.get_by_label("Ajustes de los pedidos");
+    // recepción: confirma, pero no aprueba
+    let (mut h, id) = build(crate::users::Profile::Recepcion);
+    h.get_by_label("Confirmar pedido").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.orders.iter().find(|o| o.id == id).unwrap().state, crate::stock::OrderState::PorAprobar);
+    h.get_by_label("Lo aprueba quien lleva los gastos.");
+    assert!(h.query_by_label("Aprobar pedido").is_none());
+    assert!(h.query_by_label("Ajustes de los pedidos").is_none());
 }
