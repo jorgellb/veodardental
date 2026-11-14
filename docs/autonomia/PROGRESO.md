@@ -73,6 +73,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: la palabra de baja de cada idioma | E-060 | `67ccec1` |
 | T-F5-12: campañas a grupos de pacientes con consentimiento, límites, previsualización y atribución | E-061 | `bfe56e4` |
 | Revisión de seguridad: el servidor pasa a la cola los mensajes de las campañas | E-062 | `e51bbdd` |
+| T-F6-01: grupos de clínicas (sociedades, centros con permisos y vista del grupo) | E-063 | `6d277fb` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
