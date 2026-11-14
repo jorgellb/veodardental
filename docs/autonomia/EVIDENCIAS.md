@@ -1664,3 +1664,29 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 523 pasan (521 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
 | `systemd-analyze verify deploy/nube/veodardental-servidor.service` | 0 | solo avisa de que el programa no está instalado en este ordenador |
+
+## E-065 Revisión de seguridad del despliegue: carpeta del servicio y clave fuera de la orden
+- **Hallazgos:**
+  1. El aprovisionamiento, como administrador, hacía `chmod` en las subcarpetas y `chown -R` en la carpeta del servicio. Esa carpeta es del usuario del servicio: un enlace puesto ahí habría desviado esos cambios a otro sitio del sistema. La guía también decía `chown -R` al llevar los datos.
+  2. `--estado-servidor` recibía la clave de la clínica en la orden, que se ve en la lista de procesos y en el historial.
+- **Correcciones:**
+  - **Carpeta del servicio:**
+    - la crea systemd (`StateDirectory=veodardental`, `StateDirectoryMode=0700`);
+    - el script solo toca la carpeta base (`install -d -m 700 -o veodardental`), dentro de `/var/lib`, que es del sistema, y se para si es un enlace;
+    - nada recursivo; las subcarpetas las crea el programa;
+    - en la guía, los ficheros se ponen uno a uno con `install -o veodardental -m 600`.
+  - **La clave** de `--estado-servidor` va en `VEODARDENTAL_CLAVE` o por la entrada. Sin clave, dice que falta.
+- **Pruebas** (`tests/ensayo_nube.rs`):
+  - `the_cloud_server_rehearsal_runs_locally`: con la clave en la variable y por la entrada, sí; sin clave, «Falta la clave».
+  - `the_provisioning_script_rehearses_without_touching_the_system`:
+    - las órdenes incluyen `install -d … /var/lib/veodardental`, y ningún `chown -R` ni `chmod -R`;
+    - la unidad lleva `StateDirectory` y `StateDirectoryMode=0700`;
+    - con la carpeta del servicio como enlace, el script se para sin tocar nada.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 523 pasan, 0 fallan, 10 ignoradas |
+| `systemd-analyze verify deploy/nube/veodardental-servidor.service` | 0 | solo avisa de que el programa no está instalado aquí |

@@ -161,7 +161,17 @@ fn main() -> eframe::Result<()> {
     }
     // mantenimiento del servidor (en la nube o en la clínica), sin ventana
     if let Some(i) = args.iter().position(|a| a == "--estado-servidor") {
-        let (addr, key, pin) = (args.get(i + 1).cloned().unwrap_or_default(), args.get(i + 2).cloned().unwrap_or_default(), args.get(i + 3).cloned().unwrap_or_default());
+        // la clave de la clínica nunca en la orden (se vería en la lista de
+        // procesos y en el historial): de VEODARDENTAL_CLAVE o de la entrada
+        let (addr, pin) = (args.get(i + 1).cloned().unwrap_or_default(), args.get(i + 2).cloned().unwrap_or_default());
+        let key = std::env::var(server::KEY_VAR).ok().filter(|k| !k.trim().is_empty()).or_else(|| {
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).ok().map(|_| line.trim().to_string())
+        });
+        let Some(key) = key.filter(|k| !k.is_empty()) else {
+            eprintln!("Falta la clave de la clínica: en la variable {} o en la entrada.", server::KEY_VAR);
+            std::process::exit(1)
+        };
         match server::status_cli(&addr, &key, &pin) {
             Ok(m) => println!("{m}"),
             Err(e) => {

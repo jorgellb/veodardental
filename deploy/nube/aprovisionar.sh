@@ -51,12 +51,22 @@ if [ -n "$ENSAYO" ] || ! id veodardental >/dev/null 2>&1; then
     run useradd --system --home-dir /var/lib/veodardental --shell /usr/sbin/nologin --user-group veodardental
 fi
 
-# 2. carpetas solo para él
-for d in "" /ajustes /datos /cache /estado; do
-    mkdir -p "$R/var/lib/veodardental$d"
-    chmod 700 "$R/var/lib/veodardental$d"
-done
-run chown -R veodardental:veodardental /var/lib/veodardental
+# 2. su carpeta, solo para él. Como administrador solo se toca la carpeta base
+# (en /var/lib, que es del sistema), nunca lo de dentro: es del usuario del
+# servicio y podría tener enlaces. Las subcarpetas las crea el programa, y
+# systemd (StateDirectory) la deja igual al arrancar.
+BASE="$R/var/lib/veodardental"
+if [ -L "$BASE" ]; then
+    echo "$BASE es un enlace: no se toca. Revíselo a mano." >&2
+    exit 1
+fi
+if [ -n "$ENSAYO" ]; then
+    mkdir -p "$BASE"
+    chmod 700 "$BASE"
+    echo "[ensayo] install -d -m 700 -o veodardental -g veodardental /var/lib/veodardental" >> "$ENSAYO/ordenes.txt"
+else
+    install -d -m 700 -o veodardental -g veodardental "$BASE"
+fi
 
 # 3. el programa
 mkdir -p "$R/opt/veodardental"

@@ -18,7 +18,11 @@ Environment=XDG_DATA_HOME=/var/lib/veodardental/datos
 Environment=XDG_CACHE_HOME=/var/lib/veodardental/cache
 Environment=XDG_STATE_HOME=/var/lib/veodardental/estado
 ExecStart=/opt/veodardental/veodardental --servidor
-# los datos, el diario y las copias, solo para el usuario del servicio
+# su carpeta la crea systemd, del usuario del servicio y solo para él; las
+# subcarpetas las crea el programa. Los datos, el diario y las copias, solo
+# para el usuario del servicio
+StateDirectory=veodardental
+StateDirectoryMode=0700
 UMask=0077
 Restart=on-failure
 RestartSec=5

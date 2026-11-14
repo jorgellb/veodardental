@@ -51,7 +51,7 @@ sudo sh deploy/nube/aprovisionar.sh --binario ./veodardental --puerto 8899 --per
 
 Hace:
 - usuario de servicio `veodardental`, sin entrada;
-- carpetas en `/var/lib/veodardental`, solo para él;
+- su carpeta, `/var/lib/veodardental`, solo para él. La crea systemd (`StateDirectory`), y el script solo toca la carpeta base: si es un enlace, se para. Las subcarpetas las crea el programa;
 - el programa en `/opt/veodardental`;
 - la unidad de systemd (`deploy/nube/veodardental-servidor.service`), endurecida:
   - sin privilegios;
@@ -74,7 +74,10 @@ ejemplo por error.
    - `…/datos/VeodarDental/clinica.json` (y el diario `clinica.cambios`, si lo hay) a `/var/lib/veodardental/datos/VeodarDental/`;
    - `…/ajustes/VeodarDental/datos_claves.json` (la clave de los datos) a `/var/lib/veodardental/ajustes/VeodarDental/`;
    - `…/ajustes/VeodarDental/servidor.json` (clave de la clínica e identidad) a la misma carpeta. Así los puestos siguen reconociendo al servidor: solo cambia la dirección.
-3. `sudo chown -R veodardental:veodardental /var/lib/veodardental` y `sudo systemctl start veodardental-servidor`.
+3. Póngalos en su sitio con su dueño y solo para él, fichero a fichero (nunca `chown -R` sobre la carpeta del servicio):
+   - `sudo -u veodardental mkdir -p /var/lib/veodardental/datos/VeodarDental /var/lib/veodardental/ajustes/VeodarDental`;
+   - por cada fichero: `sudo install -o veodardental -g veodardental -m 600 clinica.json /var/lib/veodardental/datos/VeodarDental/` (y lo mismo con los demás, en su carpeta);
+   - después, `sudo systemctl start veodardental-servidor`.
 4. `journalctl -u veodardental-servidor` dice la dirección, la huella y la hora del servidor. La clave de la clínica no se escribe en el registro; se ve en el servidor con `sudo -u veodardental HOME=/var/lib/veodardental XDG_CONFIG_HOME=/var/lib/veodardental/ajustes /opt/veodardental/veodardental --clave-servidor`.
 5. En cada puesto, Configuración › Trabajo en red: la dirección nueva. La huella tiene que ser la misma de antes.
 
@@ -90,7 +93,8 @@ ejemplo por error.
 - En los dos casos el protocolo protege igual: los puestos fijan la huella del servidor y se piden la clave de la clínica y el usuario. Los intentos con claves o contraseñas incorrectas se frenan.
 
 ## 6. Vigilancia y actualizaciones
-- `veodardental --estado-servidor DIRECCIÓN CLAVE [HUELLA]` comprueba desde cualquier ordenador que el servidor responde, con su versión, la de los datos, su hora y su huella. Termina con código 0 o 1, para una alarma.
+- `VEODARDENTAL_CLAVE=… veodardental --estado-servidor DIRECCIÓN [HUELLA]` comprueba desde cualquier ordenador que el servidor responde, con su versión, la de los datos, su hora y su huella. Termina con código 0 o 1, para una alarma.
+  - La clave de la clínica va en esa variable o por la entrada, nunca en la orden: se vería en la lista de procesos y en el historial.
 - **Actualizar:** primero el servidor y después los puestos (D-22): `veodardental --actualizar paquete`, y luego `systemctl restart veodardental-servidor`.
 
 ## 7. Ensayado

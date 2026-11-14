@@ -82,8 +82,18 @@ impl Env {
         (child, lines)
     }
 
+    /// `--estado-servidor` con la clave en la variable (nunca en la orden).
     fn status(&self, port: u16, key: &str, pin: &str) -> (bool, String) {
-        let o = self.cmd().arg("--estado-servidor").arg(format!("127.0.0.1:{port}")).arg(key).arg(pin).output().unwrap();
+        let o = self.cmd().env("VEODARDENTAL_CLAVE", key).arg("--estado-servidor").arg(format!("127.0.0.1:{port}")).arg(pin).output().unwrap();
+        (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+    }
+
+    /// Lo mismo, con la clave por la entrada.
+    fn status_stdin(&self, port: u16, key: &str) -> (bool, String) {
+        use std::io::Write;
+        let mut c = self.cmd().arg("--estado-servidor").arg(format!("127.0.0.1:{port}")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        writeln!(c.stdin.take().unwrap(), "{key}").unwrap();
+        let o = c.wait_with_output().unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
     }
 
@@ -154,6 +164,11 @@ fn the_cloud_server_rehearsal_runs_locally() {
     assert!(!ok, "{out}");
     let (ok, out) = env.status(port, &key, &"ab".repeat(32));
     assert!(!ok, "con otra huella no conecta: {out}");
+    // la clave también por la entrada; sin clave, no
+    let (ok, out) = env.status_stdin(port, &key);
+    assert!(ok, "{out}");
+    let (ok, out) = env.status_stdin(port, "");
+    assert!(!ok && out.contains("Falta la clave"), "{out}");
 
     // 4. se para y vuelve a arrancar con sus datos y su identidad
     env.stop(port, &mut server);
@@ -197,22 +212,37 @@ fn the_provisioning_script_rehearses_without_touching_the_system() {
     assert!(o.status.success(), "{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     // las órdenes del sistema solo se apuntan; el servicio no se arranca sin los datos
     let orders = std::fs::read_to_string(dir.join("ordenes.txt")).unwrap();
-    for want in
-        ["useradd --system", "/usr/sbin/nologin", "chown -R veodardental:veodardental /var/lib/veodardental", "systemctl daemon-reload", "systemctl enable veodardental-servidor.service", "ufw allow from 203.0.113.10", &format!("ufw deny {port}/tcp")]
-    {
+    for want in [
+        "useradd --system",
+        "/usr/sbin/nologin",
+        "install -d -m 700 -o veodardental -g veodardental /var/lib/veodardental",
+        "systemctl daemon-reload",
+        "systemctl enable veodardental-servidor.service",
+        "ufw allow from 203.0.113.10",
+        &format!("ufw deny {port}/tcp"),
+    ] {
         assert!(orders.contains(want), "falta «{want}»: {orders}");
     }
     assert!(!orders.contains("systemctl start"), "no arranca antes de llevar los datos");
+    assert!(!orders.contains("chown -R") && !orders.contains("chmod -R"), "como administrador no recorre lo que es del servicio: {orders}");
     let unit = std::fs::read_to_string(dir.join("etc/systemd/system/veodardental-servidor.service")).unwrap();
-    for want in [&format!("--servidor --puerto {port}"), "User=veodardental", "Environment=TZ=Europe/Madrid", "UMask=0077", "NoNewPrivileges=yes", "ProtectSystem=strict", "ReadWritePaths=/var/lib/veodardental"] {
+    for want in [
+        &format!("--servidor --puerto {port}"),
+        "User=veodardental",
+        "Environment=TZ=Europe/Madrid",
+        "UMask=0077",
+        "NoNewPrivileges=yes",
+        "ProtectSystem=strict",
+        "ReadWritePaths=/var/lib/veodardental",
+        "StateDirectory=veodardental",
+        "StateDirectoryMode=0700",
+    ] {
         assert!(unit.contains(want), "falta «{want}» en la unidad");
     }
     assert!(!unit.contains("datos-de-ejemplo"), "el servicio nunca arranca con datos de ejemplo");
     #[cfg(unix)]
     {
-        for d in ["", "/ajustes", "/datos"] {
-            assert_eq!(mode(&dir.join(format!("var/lib/veodardental{d}"))), 0o700, "{d}");
-        }
+        assert_eq!(mode(&dir.join("var/lib/veodardental")), 0o700);
         assert_eq!(mode(&dir.join("opt/veodardental/veodardental")) & 0o111, 0o111);
     }
     // el programa instalado arranca con las variables de la unidad (las rutas, dentro del ensayo)
@@ -227,6 +257,18 @@ fn the_provisioning_script_rehearses_without_touching_the_system() {
     let (ok, out) = env.status(port, &env.key(), "");
     assert!(ok, "{out}");
     env.stop(port, &mut server);
+    // si la carpeta del servicio es un enlace, no se toca
+    #[cfg(unix)]
+    {
+        let trap = fresh("enlace");
+        let target = trap.join("otro_sitio");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(trap.join("var/lib")).unwrap();
+        std::os::unix::fs::symlink(&target, trap.join("var/lib/veodardental")).unwrap();
+        let o = Command::new("sh").arg(&script).arg("--ensayo").arg(&trap).arg("--binario").arg(EXE).output().unwrap();
+        assert!(!o.status.success() && String::from_utf8_lossy(&o.stderr).contains("es un enlace"), "{}", String::from_utf8_lossy(&o.stderr));
+        let _ = std::fs::remove_dir_all(&trap);
+    }
     // opciones que no valen
     for bad in [vec!["--ensayo", dir.to_str().unwrap(), "--binario", "/no/existe"], vec!["--ensayo", dir.to_str().unwrap(), "--binario", EXE, "--puerto", "ochenta"]] {
         let o = Command::new("sh").arg(&script).args(&bad).output().unwrap();

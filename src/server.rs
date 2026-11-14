@@ -1957,9 +1957,14 @@ pub fn run(opts: &RunOptions) -> Result<(), String> {
     Ok(())
 }
 
-/// `--estado-servidor DIRECCIÓN CLAVE [HUELLA]`: comprueba desde cualquier
-/// ordenador que el servidor responde, con la prueba de identidad (o la
-/// huella, si se da) y la clave de la clínica. Para vigilarlo en la nube.
+/// Variable con la clave de la clínica para `--estado-servidor` (la clave
+/// nunca va en la orden: se vería en la lista de procesos).
+pub const KEY_VAR: &str = "VEODARDENTAL_CLAVE";
+
+/// `--estado-servidor DIRECCIÓN [HUELLA]` (la clave, en [`KEY_VAR`] o por la
+/// entrada): comprueba desde cualquier ordenador que el servidor responde,
+/// con la prueba de identidad (o la huella, si se da) y la clave de la
+/// clínica. Para vigilarlo en la nube.
 pub fn status_cli(addr: &str, key: &str, pin: &str) -> Result<String, String> {
     let r = Remote::with_pin(addr, key, 0, pin);
     let info = r.access()?;
