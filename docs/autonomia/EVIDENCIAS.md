@@ -1394,3 +1394,24 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 490 pasan, 0 fallan, 10 ignoradas |
+
+## E-054 Revisión de seguridad de la esterilización en red
+- **Hallazgos (revisión automática del commit de T-F5-08):**
+  1. el servidor no comprobaba los cambios de estado de un ciclo (un puesto podía validarlo sin indicadores, o crearlo ya validado);
+  2. tampoco comprobaba el uso de un lote (ciclo, caducidad, retirada, paciente) ni los lotes nuevos;
+  3. los lotes, que llevan el paciente en su uso, llegaban a Recepción y no constaban en el registro de accesos.
+- **Correcciones (`src/server.rs`, `src/vista.rs`, `src/accesos.rs`):**
+  - **Ciclo nuevo:** en curso, sin indicadores y con quién lo creó, puesto por el servidor.
+  - **Validar:** solo con permiso clínico, indicador químico correcto y Bowie-Dick no fallido.
+  - **Fallido:** solo con motivo; es para siempre.
+  - **Inmutable:** autoclave, número, programa y hora; los indicadores ya puestos no cambian; nada se borra.
+  - **Uso de un lote:** se comprueba con lo que tiene el servidor (ciclo validado, sin caducar, sin retirar, paciente que existe y permiso clínico) y lo sella el servidor.
+  - **Lote nuevo:** solo en un ciclo en curso (del servidor o creado en la misma tanda), con etiqueta única, sin usar ni retirar.
+  - **Lote guardado:** no se borra; etiqueta, ciclo, contenido y caducidad no cambian.
+  - **Visibilidad:** `sterile_packs` es una lista clínica (Recepción no la recibe) y su uso entra en el registro de accesos del paciente, que se saca del uso del lote.
+- **Pruebas:**
+  - `server::tests::alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server` comprueba ahora además:
+    - un ciclo que llega ya «validado» queda en curso;
+    - no se usa un lote de un ciclo sin validar;
+    - no se acepta un lote nuevo en un ciclo validado.
+  - `vista::tests::reception_does_not_get_clinical_data` incluye las listas clínicas nuevas.

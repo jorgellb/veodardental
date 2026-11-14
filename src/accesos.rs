@@ -125,7 +125,7 @@ pub fn read(path: &Path, patient: Option<u32>) -> Vec<Entry> {
 }
 
 /// Listas que forman la historia de un paciente, y cómo se llaman.
-pub const HISTORY_LISTS: [(&str, &str); 12] = [
+pub const HISTORY_LISTS: [(&str, &str); 13] = [
     ("patients", "ficha"),
     ("entries", "tratamientos"),
     ("budgets", "presupuestos"),
@@ -138,6 +138,7 @@ pub const HISTORY_LISTS: [(&str, &str); 12] = [
     ("ia_reports", "análisis con IA"),
     ("evo_notes", "notas de evolución"),
     ("alert_acks", "alertas clínicas revisadas"),
+    ("sterile_packs", "instrumental esterilizado"),
 ];
 
 /// De unos cambios, a qué pacientes tocan y en qué partes de su historia.
@@ -147,6 +148,10 @@ pub fn patients_touched(changes: &[Change]) -> BTreeMap<u32, BTreeSet<String>> {
         let Some((_, label)) = HISTORY_LISTS.iter().find(|(f, _)| *f == c.field) else { continue };
         let pid = |j: &Option<String>| -> Option<u32> {
             let v: serde_json::Value = serde_json::from_str(j.as_deref()?).ok()?;
+            // el lote esterilizado lleva el paciente en su uso
+            if c.field == "sterile_packs" {
+                return v["used"]["patient_id"].as_u64().map(|n| n as u32);
+            }
             let key = if c.field == "patients" { "id" } else { "patient_id" };
             v[key].as_u64().map(|n| n as u32)
         };

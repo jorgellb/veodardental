@@ -1043,50 +1043,100 @@ impl State {
                 _ => drop.push(c.key.clone()),
             }
         }
-        // esterilización: el uso de un lote lo sella el servidor y no cambia
-        // una vez anotado; un lote retirado no vuelve; un ciclo fallido no
-        // vuelve atrás; y nada de eso se borra
-        let who = self.user(user).filter(|u| u.active).map(|u| u.name);
-        for c in changes.iter_mut().filter(|c| c.field == "sterile_packs") {
-            let cur = c.key.as_deref().and_then(|k| self.snap.get("sterile_packs", Some(k))).and_then(|j| serde_json::from_str::<crate::esterilizacion::Pack>(j).ok());
-            let after = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::esterilizacion::Pack>(a).ok());
-            let fixed = match (cur, after) {
-                (Some(cur), None) if cur.used.is_some() || cur.withdrawn.is_some() => Some(cur),
-                (Some(cur), Some(mut a)) => {
-                    (a.code, a.cycle_id) = (cur.code.clone(), cur.cycle_id);
-                    if cur.used.is_some() {
-                        a.used = cur.used.clone();
-                    } else if let Some(u) = a.used.as_mut() {
-                        match &who {
-                            Some(n) => (u.by, u.at) = (n.clone(), crate::model::now()),
-                            None => a.used = None,
+        // esterilización (ver `esterilizacion`): el servidor comprueba cada
+        // paso con lo que tiene él, no con lo que diga el puesto
+        {
+            use crate::esterilizacion::{Cycle, CycleState, Pack};
+            let who = self.user(user).filter(|u| u.active).map(|u| u.name);
+            let clinical = self.user(user).is_some_and(|u| u.active && u.profile.can(Perm::Clinico));
+            let today = crate::model::today();
+            let snap_cycle = |id: u32| self.snap.get("sterile_cycles", Some(&id.to_string())).and_then(|j| serde_json::from_str::<Cycle>(j).ok());
+            // ciclos: nuevo en curso, sin indicadores y con quién; validar con
+            // permiso clínico e indicadores correctos; fallido con su motivo;
+            // indicadores puestos y fallido, para siempre; nada se borra
+            for c in changes.iter_mut().filter(|c| c.field == "sterile_cycles") {
+                let cur = c.key.as_deref().and_then(|k| k.parse().ok()).and_then(snap_cycle);
+                let after = c.after.as_deref().and_then(|a| serde_json::from_str::<Cycle>(a).ok());
+                let fixed = match (cur, after) {
+                    (Some(cur), None) => Some(cur),
+                    (Some(cur), Some(_)) if cur.state == CycleState::Fallido => Some(cur),
+                    (Some(cur), Some(mut a)) => {
+                        (a.autoclave, a.number, a.program, a.started, a.by) = (cur.autoclave.clone(), cur.number, cur.program.clone(), cur.started, cur.by.clone());
+                        for (now_, was) in [(&mut a.chemical, cur.chemical), (&mut a.bowie_dick, cur.bowie_dick), (&mut a.biological, cur.biological)] {
+                            if was.is_some() {
+                                *now_ = was;
+                            }
+                        }
+                        let ok = match (cur.state, a.state) {
+                            (x, y) if x == y => true,
+                            (CycleState::EnCurso, CycleState::Validado) => clinical && a.chemical == Some(true) && a.bowie_dick != Some(false),
+                            (_, CycleState::Fallido) => !a.incident.trim().is_empty(),
+                            _ => false,
+                        };
+                        if !ok {
+                            (a.state, a.incident) = (cur.state, cur.incident.clone());
+                        }
+                        Some(a)
+                    }
+                    (None, Some(mut a)) => {
+                        (a.state, a.chemical, a.biological, a.bowie_dick) = (CycleState::EnCurso, None, None, None);
+                        a.incident.clear();
+                        a.by = who.clone().unwrap_or_default();
+                        Some(a)
+                    }
+                    (None, None) => None,
+                };
+                if let Some(f) = fixed {
+                    c.after = serde_json::to_string(&f).ok();
+                }
+            }
+            // los ciclos que esta tanda crea, para sus lotes nuevos
+            let new_cycles: Vec<u32> = changes.iter().filter(|c| c.field == "sterile_cycles" && c.key.as_deref().and_then(|k| self.snap.get("sterile_cycles", Some(k))).is_none()).filter_map(|c| c.key.as_deref()?.parse().ok()).collect();
+            let mut bad_packs: Vec<Option<String>> = vec![];
+            let mut new_codes: Vec<String> = vec![];
+            for c in changes.iter_mut().filter(|c| c.field == "sterile_packs") {
+                let cur = c.key.as_deref().and_then(|k| self.snap.get("sterile_packs", Some(k))).and_then(|j| serde_json::from_str::<Pack>(j).ok());
+                let after = c.after.as_deref().and_then(|a| serde_json::from_str::<Pack>(a).ok());
+                let fixed = match (cur, after) {
+                    // un lote no se borra
+                    (Some(cur), None) => Some(cur),
+                    (Some(cur), Some(mut a)) => {
+                        (a.code, a.cycle_id, a.contents, a.expires) = (cur.code.clone(), cur.cycle_id, cur.contents.clone(), cur.expires);
+                        if cur.used.is_some() {
+                            a.used = cur.used.clone();
+                        } else if let Some(u) = a.used.as_mut() {
+                            // el uso, con lo que sabe el servidor: ciclo validado, sin caducar, sin retirar, paciente que existe
+                            let usable = clinical && cur.withdrawn.is_none() && cur.expires >= today && snap_cycle(cur.cycle_id).is_some_and(|x| x.state == CycleState::Validado) && self.snap.get("patients", Some(&u.patient_id.to_string())).is_some();
+                            match (&who, usable) {
+                                (Some(n), true) => (u.by, u.at) = (n.clone(), crate::model::now()),
+                                _ => a.used = None,
+                            }
+                        }
+                        if cur.withdrawn.is_some() {
+                            a.withdrawn = cur.withdrawn.clone();
+                        }
+                        Some(a)
+                    }
+                    // lote nuevo: de un ciclo en curso, sin usar ni retirar, con etiqueta única
+                    (None, Some(mut a)) => {
+                        let cycle_ok = new_cycles.contains(&a.cycle_id) || snap_cycle(a.cycle_id).is_some_and(|x| x.state == CycleState::EnCurso);
+                        let unique = !new_codes.contains(&a.code) && !self.snap.records.get("sterile_packs").is_some_and(|r| r.iter().any(|(_, j)| serde_json::from_str::<Pack>(j).is_ok_and(|p| p.code.eq_ignore_ascii_case(&a.code))));
+                        if cycle_ok && unique {
+                            new_codes.push(a.code.clone());
+                            (a.used, a.withdrawn) = (None, None);
+                            Some(a)
+                        } else {
+                            bad_packs.push(c.key.clone());
+                            None
                         }
                     }
-                    if cur.withdrawn.is_some() {
-                        a.withdrawn = cur.withdrawn.clone();
-                    }
-                    Some(a)
+                    (None, None) => None,
+                };
+                if let Some(f) = fixed {
+                    c.after = serde_json::to_string(&f).ok();
                 }
-                (None, Some(mut a)) => {
-                    if let Some(u) = a.used.as_mut() {
-                        match &who {
-                            Some(n) => (u.by, u.at) = (n.clone(), crate::model::now()),
-                            None => a.used = None,
-                        }
-                    }
-                    Some(a)
-                }
-                _ => None,
-            };
-            if let Some(f) = fixed {
-                c.after = serde_json::to_string(&f).ok();
             }
-        }
-        for c in changes.iter_mut().filter(|c| c.field == "sterile_cycles") {
-            let cur = c.key.as_deref().and_then(|k| self.snap.get("sterile_cycles", Some(k))).and_then(|j| serde_json::from_str::<crate::esterilizacion::Cycle>(j).ok());
-            if let Some(cur) = cur.filter(|x| x.state == crate::esterilizacion::CycleState::Fallido || c.after.is_none()) {
-                c.after = serde_json::to_string(&cur).ok();
-            }
+            changes.retain(|c| !(c.field == "sterile_packs" && bad_packs.contains(&c.key)));
         }
         changes.retain(|c| !(c.field == "alert_acks" && drop.contains(&c.key)));
         // recetas: la revisión de sus avisos solo la da quien puede recetar,
@@ -3338,14 +3388,31 @@ mod tests {
         a.ack_alert(101, "anticoagulantes", "Dr. Falso", then).unwrap();
         let fake = a.new_id();
         a.alert_acks.push(crate::alertas::AlertAck { id: fake, patient_id: 101, rule: "inventada".into(), by: "x".into(), at: then });
-        // un ciclo validado con dos lotes: uno usado (con otro nombre y hora) y otro retirado
+        // un ciclo que llega ya «validado» y con un lote «usado»: el servidor
+        // lo deja en curso y sin uso (se valida y se usa después, con él)
         let c = a.new_cycle("Autoclave 1", "134 ºC", &["A".into(), "B".into()], 30, then).unwrap();
-        a.validate_cycle(c, true, None, then).unwrap();
         let codes: Vec<String> = a.sterile_packs.iter().filter(|p| p.cycle_id == c).map(|p| p.code.clone()).collect();
+        a.sterile_cycles.iter_mut().find(|x| x.id == c).unwrap().state = crate::esterilizacion::CycleState::Validado;
+        a.sterile_packs.iter_mut().find(|p| p.code == codes[0]).unwrap().used = Some(crate::esterilizacion::PackUse { patient_id: 101, at: then, entry_id: None, appt_id: None, by: "x".into() });
+        rd.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.cycle(c).unwrap().state, crate::esterilizacion::CycleState::EnCurso, "un ciclo nuevo empieza en curso");
+        assert!(disk.sterile_packs.iter().all(|p| p.used.is_none()), "ni se usa un lote de un ciclo sin validar");
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        a.validate_cycle(c, true, None, then).unwrap();
+        rd.push(&mut a, &mut sa).unwrap();
+        // ya validado: un lote nuevo en ese ciclo no se acepta
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        let extra = a.new_id();
+        a.sterile_packs.push(crate::esterilizacion::Pack { id: extra, code: "COLADO-1".into(), cycle_id: c, contents: "x".into(), expires: then.date() + chrono::Duration::days(30), used: None, withdrawn: None });
+        // un lote usado (con otro nombre y hora) y otro retirado
         a.use_pack(&codes[0], 101, None, None, then).unwrap();
         a.sterile_packs.iter_mut().find(|p| p.code == codes[0]).unwrap().used.as_mut().unwrap().by = "Dr. Falso".into();
         a.sterile_packs.iter_mut().find(|p| p.code == codes[1]).unwrap().withdrawn = Some("Envoltorio dañado".into());
         rd.push(&mut a, &mut sa).unwrap();
+        assert!(!crate::sync::on_disk(&path).sterile_packs.iter().any(|p| p.id == extra), "un lote nuevo solo en un ciclo en curso");
         let disk = crate::sync::on_disk(&path);
         let ack = disk.alert_acks.iter().find(|x| x.rule == "anticoagulantes").unwrap().clone();
         assert_eq!(ack.by, me, "lo pone el servidor");

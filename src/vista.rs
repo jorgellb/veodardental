@@ -21,7 +21,7 @@ use crate::users::{Perm, Profile};
 use serde_json::Value;
 
 /// Listas clínicas que no recibe quien no tiene el permiso clínico.
-const CLINICAL_LISTS: [&str; 7] = ["perio", "images", "ia_reports", "prescriptions", "ortho", "evo_notes", "alert_acks"];
+const CLINICAL_LISTS: [&str; 8] = ["perio", "images", "ia_reports", "prescriptions", "ortho", "evo_notes", "alert_acks", "sterile_packs"];
 
 /// Campos clínicos de otros registros (se mandan vacíos). De los cuestionarios
 /// de salud quedan la fecha, quién lo rellenó y si está firmado.
@@ -125,7 +125,7 @@ mod tests {
     fn reception_does_not_get_clinical_data() {
         let reception = View::of(Profile::Recepcion);
         assert!(!reception.is_full());
-        for list in ["perio", "images", "ia_reports", "prescriptions", "ortho"] {
+        for list in ["perio", "images", "ia_reports", "prescriptions", "ortho", "evo_notes", "alert_acks", "sterile_packs"] {
             assert!(reception.hides(list), "{list}");
             assert_eq!(reception.show(list, "{}"), None);
         }
