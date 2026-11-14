@@ -794,7 +794,8 @@ impl Db {
             alert_acks,
             surveys,
             card_txs,
-            financings
+            financings,
+            auth_requests
         );
         macro_rules! move_opt_pid {
             ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == Some(remove) { x.patient_id = Some(keep); } } )* };

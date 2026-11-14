@@ -1012,6 +1012,9 @@ impl State {
                 "cash" => caja,
                 "card_txs" => caja || ![c.key.as_deref().and_then(|k| snap.get("card_txs", Some(k))), c.after.as_ref()].iter().any(|j| j.is_some_and(|j| j.contains("\"Devolucion\""))),
                 "financings" => financing_change_ok(c.key.as_deref().and_then(|k| snap.get("financings", Some(k))), c.after.as_ref()),
+                // una solicitud de autorización la crea el servidor (sin duplicados); el
+                // puesto apunta el envío y las respuestas, y no la borra
+                "auth_requests" => c.key.as_deref().and_then(|k| snap.get("auth_requests", Some(k))).is_some() && c.after.is_some(),
                 _ => true,
             });
         }
@@ -3697,6 +3700,52 @@ mod tests {
         dir_b.stop().unwrap();
         ha.join().unwrap();
         hb.join().unwrap();
+    }
+
+    /// Autorizaciones (T-F6-04): las crea el servidor, así que dos puestos que
+    /// las piden a la vez para el mismo acto no hacen dos; un puesto no la
+    /// crea por su cuenta ni la borra, y sí apunta el envío y la respuesta.
+    #[test]
+    fn two_stations_cannot_ask_twice_for_the_same_authorization() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE54");
+        let a1 = signed_in(&addr, "CLAVE54", "Recepción 1", 2, "0000");
+        let a2 = signed_in(&addr, "CLAVE54", "Recepción 2", 2, "0000");
+        let (mut d1, mut s1) = a1.load().unwrap();
+        d1.station = a1.station;
+        let t = d1.tariffs.iter().find(|t| t.is_insurer).unwrap().clone();
+        let pid = d1.patients.iter().find(|p| p.tariff_id == t.id).map(|p| p.id).unwrap_or(d1.patients[0].id);
+        d1.patients.iter_mut().find(|p| p.id == pid).unwrap().tariff_id = t.id;
+        let code = t.prices.iter().find(|p| p.insurer_fee > 0.0).unwrap().code.clone();
+        let e = d1.add_entry(pid, &code, vec![46], vec![], crate::model::TxState::Previsto, 1, crate::model::today());
+        a1.push(&mut d1, &mut s1).unwrap();
+        let (mut d2, mut s2) = a2.load().unwrap();
+        d2.station = a2.station;
+        let op = ChainOp::AuthRequest { patient: pid, entries: vec![e] }.json();
+        let id = a1.chain_op(&mut d1, &mut s1, &op).unwrap();
+        assert!(a2.chain_op(&mut d2, &mut s2, &op).unwrap_err().contains("ya está en la solicitud"), "una sola");
+        // por su cuenta, no: ni crearla ni borrarla
+        let (mut d2, mut s2) = a2.load().unwrap();
+        d2.station = a2.station;
+        let mut forged = d2.auth_requests.iter().find(|r| r.id == id).unwrap().clone();
+        forged.id = d2.new_id();
+        d2.auth_requests.push(forged.clone());
+        rec_sent(&mut d2, id);
+        a2.push(&mut d2, &mut s2).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!(!disk.auth_requests.iter().any(|r| r.id == forged.id), "no se crea por otro camino");
+        assert_eq!(disk.auth_requests.iter().find(|r| r.id == id).unwrap().state, crate::autorizaciones::AuthState::Enviada, "el envío, sí");
+        let (mut d2, mut s2) = a2.load().unwrap();
+        d2.station = a2.station;
+        d2.auth_requests.retain(|r| r.id != id);
+        a2.push(&mut d2, &mut s2).unwrap();
+        assert!(crate::sync::on_disk(&path).auth_requests.iter().any(|r| r.id == id), "ni se borra");
+        a1.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    fn rec_sent(d: &mut Db, id: u32) {
+        d.auth_sent(id, "Portal", "W-1", crate::model::now()).unwrap();
     }
 
     /// Sacar dinero, con permiso de caja; el banco, con el suyo; y un cobro no

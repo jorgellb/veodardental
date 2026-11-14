@@ -3468,3 +3468,42 @@ fn the_card_terminal_and_a_financing_from_the_patient_account() {
     assert_eq!(h.state().db.financings[0].state, crate::financiacion::FinState::Aprobada);
     assert_eq!(h.state().db.financings[0].provider_ref, "FE-1");
 }
+
+/// Autorizaciones de la compañía desde la cuenta de un paciente asegurado
+/// (T-F6-04): se elige el tratamiento previsto, se pide y se apunta el envío.
+#[test]
+fn an_authorization_is_asked_from_the_insured_patient_account() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 3600.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let e = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.auth_requests.clear();
+        let t = a.db.tariffs.iter().find(|t| t.is_insurer).unwrap().clone();
+        a.db.patients.iter_mut().find(|p| p.id == 101).unwrap().tariff_id = t.id;
+        let code = t.prices.iter().find(|p| p.insurer_fee > 0.0).unwrap().code.clone();
+        let e = a.db.add_entry(101, &code, vec![46], vec![], crate::model::TxState::Previsto, 1, crate::model::today());
+        a.auth_ui.chosen.insert(e);
+        a.open_patient(101, crate::app::PatTab::Cuenta);
+        e
+    };
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Pedir autorización").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let r = h.state().db.auth_requests.first().cloned().expect("solicitud creada");
+    assert!(r.lines.iter().any(|l| l.entry_id == e));
+    h.state_mut().auth_ui.channel = "Portal".into();
+    h.step();
+    h.get_by_label("Enviada").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.auth_requests[0].state, crate::autorizaciones::AuthState::Enviada);
+}

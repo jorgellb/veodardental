@@ -907,6 +907,9 @@ pub struct Db {
     /// Financiaciones con una entidad financiera (ver `financiacion`).
     #[serde(default)]
     pub financings: Tracked<Vec<crate::financiacion::Financing>>,
+    /// Solicitudes de autorización a las aseguradoras (ver `autorizaciones`).
+    #[serde(default)]
+    pub auth_requests: Tracked<Vec<crate::autorizaciones::AuthRequest>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

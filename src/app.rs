@@ -225,6 +225,8 @@ pub struct App {
     pub grupo: screens::grupo::GroupUi,
     /// Datáfono y financiación en la cuenta del paciente.
     pub card: screens::datafono::CardUi,
+    /// Autorizaciones de la compañía y respuestas de las liquidaciones.
+    pub auth_ui: screens::autorizaciones::AuthUi,
 }
 
 impl App {
@@ -374,6 +376,7 @@ impl App {
             perio_voice: None,
             grupo: Default::default(),
             card: Default::default(),
+            auth_ui: Default::default(),
         };
         if let Some(w) = clock {
             app.toast = Some((w, 15.0, crate::theme::WARN));
@@ -1167,6 +1170,13 @@ pub enum ChainOp {
         fin: u32,
         reason: String,
     },
+    /// Solicitud de autorización a la compañía del paciente para estos actos
+    /// (ver `autorizaciones`): la hace el servidor, para que dos puestos no
+    /// pidan lo mismo a la vez.
+    AuthRequest {
+        patient: u32,
+        entries: Vec<u32>,
+    },
     /// Conciliar el ingreso de la entidad con la financiación.
     FinMatchBank {
         fin: u32,
@@ -1210,6 +1220,7 @@ impl ChainOp {
             ChainOp::FinPaid { fin, received } => db.fin_paid(*fin, crate::model::today(), crate::cents::Cents(*received), crate::model::now()),
             ChainOp::FinCancel { fin, reason } => db.fin_cancel(*fin, reason, crate::model::today(), crate::model::now()).map(|_| *fin),
             ChainOp::FinMatchBank { fin, bank_move } => db.fin_match_bank(*fin, *bank_move).map(|_| *fin),
+            ChainOp::AuthRequest { patient, entries } => db.auth_new(*patient, entries, crate::model::now()),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
@@ -1250,6 +1261,7 @@ impl ChainOp {
             ChainOp::FinPaid { fin, received } => json!({ "accion": "financiacion_pagada", "financiacion": fin, "recibido": received }),
             ChainOp::FinCancel { fin, reason } => json!({ "accion": "financiacion_cancelada", "financiacion": fin, "motivo": reason }),
             ChainOp::FinMatchBank { fin, bank_move } => json!({ "accion": "financiacion_banco", "financiacion": fin, "movimiento": bank_move }),
+            ChainOp::AuthRequest { patient, entries } => json!({ "accion": "autorizacion", "paciente": patient, "actos": entries }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
@@ -1304,6 +1316,13 @@ impl ChainOp {
             "financiacion_pagada" => ChainOp::FinPaid { fin: num("financiacion")?, received: v["recibido"].as_i64().ok_or("Falta «recibido».")? },
             "financiacion_cancelada" => ChainOp::FinCancel { fin: num("financiacion")?, reason: text("motivo") },
             "financiacion_banco" => ChainOp::FinMatchBank { fin: num("financiacion")?, bank_move: num("movimiento")? },
+            "autorizacion" => {
+                let list = v["actos"].as_array().ok_or("Faltan los actos.")?;
+                if list.len() > 200 {
+                    return Err("Demasiados actos en una solicitud.".into());
+                }
+                ChainOp::AuthRequest { patient: num("paciente")?, entries: list.iter().map(|x| x.as_u64().map(|n| n as u32).ok_or("Acto no válido.")).collect::<Result<_, _>>()? }
+            }
             _ => return Err("Acción no válida.".into()),
         })
     }
@@ -1329,6 +1348,8 @@ impl ChainOp {
         const MESSAGES: &[&str] = &["messages"];
         // lo que mira al pasar los mensajes a la cola y lo que lleva el texto
         const CAMPAIGNS: &[&str] = &["campaigns", "patients", "appointments", "messages", "collaborators", "config", "next_id"];
+        // autorizaciones: los actos, la compañía y lo que ya está pedido o liquidado
+        const AUTH: &[&str] = &["auth_requests", "entries", "patients", "tariffs", "claims", "auths", "config", "audit_log", "next_id"];
         // financiación: el cobro, la comisión, la devolución y el banco
         const FIN: &[&str] = &["financings", "payments", "expenses", "bank_moves", "bank_accounts", "patients", "budgets", "cash", "config", "audit_log", "next_id"];
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
@@ -1373,6 +1394,7 @@ impl ChainOp {
             "campaigns",
             "card_txs",
             "financings",
+            "auth_requests",
             "config",
             "audit_log",
         ];
@@ -1390,6 +1412,7 @@ impl ChainOp {
             ChainOp::FinStep { .. } | ChainOp::FinPaid { .. } => (Some(Economia), FIN),
             ChainOp::FinCancel { .. } => (Some(Caja), FIN),
             ChainOp::FinMatchBank { .. } => (Some(Gastos), FIN),
+            ChainOp::AuthRequest { .. } => (Some(Facturacion), AUTH),
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
             ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),

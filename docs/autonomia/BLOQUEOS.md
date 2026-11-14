@@ -200,7 +200,10 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: API documentada, acuerdo y entorno de pruebas de cada aseguradora.
 - Por qué: las autorizaciones y liquidaciones directas solo se pueden hacer por canales permitidos por la aseguradora.
 - Parte afectada: conexión real con aseguradoras (T-F6-04X).
-- Preparación terminada: T-F6-04 (flujo interno y contrato de integración).
+- Preparación terminada: T-F6-04 (flujo interno y contrato de integración, E-069, `docs/aseguradoras.md`).
+  - Autorizaciones con sus estados, sus respuestas guardadas y sin duplicados.
+  - Liquidaciones con su envío, su respuesta y los actos rechazados para liquidar de nuevo.
+- Conexión concreta pendiente: el canal directo (API) de cada compañía con la que trabaje la clínica. Ninguna está conectada; se usa su portal o su correo.
 - Responsable: clínica y aseguradoras.
 - Paso para desbloquear: solicitar a cada aseguradora su canal de integración.
 - Prueba posterior: autorización de prueba enviada y respuesta guardada.

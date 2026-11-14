@@ -1,6 +1,7 @@
 pub mod agenda;
 pub mod alertas;
 pub mod almacen;
+pub mod autorizaciones;
 pub mod avisos;
 pub mod bancos;
 pub mod caja;

@@ -5,6 +5,7 @@ mod actualizar;
 mod agenda_extra;
 mod alertas;
 mod app;
+mod autorizaciones;
 mod bank;
 mod booking;
 mod brand;

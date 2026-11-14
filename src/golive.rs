@@ -247,6 +247,7 @@ impl Db {
             group_keys: _,
             card_txs,
             financings,
+            auth_requests,
             punches,
             data_version: _,
             station: _,
@@ -305,6 +306,7 @@ impl Db {
         campaigns.clear();
         card_txs.clear();
         financings.clear();
+        auth_requests.clear();
         punches.clear();
         // lo de ejemplo que no es de ningún paciente
         suppliers.retain(|s| !is_demo(&d.suppliers, s.id, &s.name));

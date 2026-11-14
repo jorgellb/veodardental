@@ -146,6 +146,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         Err(e) => app.warn(format!("No se pudo abrir: {e}")),
                     }
                 }
+                crate::screens::autorizaciones::claim_controls(app, ui, c);
                 if ui.button("⬇ CSV").on_hover_text("Fichero para el portal de la compañía").clicked() {
                     match save_file(&format!("{}.csv", c.number), &app.db.claim_csv(c.id)) {
                         Ok(p) => app.notify(format!("Guardado en {}", p.display())),
@@ -172,4 +173,5 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+    crate::screens::autorizaciones::claim_answer_panel(app, ui);
 }

@@ -1799,3 +1799,46 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 531 pasan (529 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-069 T-F6-04: aseguradoras (autorizaciones y liquidaciones, flujo interno y contrato)
+- **Hecho (`docs/aseguradoras.md`):**
+  - **Autorizaciones** (`src/autorizaciones.rs`):
+    - una solicitud por los tratamientos previstos de un paciente asegurado, que crea el servidor (`ChainOp::AuthRequest`, con permiso de facturación). Un acto está en una sola solicitud viva, y nunca uno ya liquidado;
+    - envío por el canal de la compañía, con su referencia;
+    - respuestas: aprobada, en parte o denegada. Se guardan todas, con quién, cuándo y el texto de la compañía;
+    - el número de autorización pasa a los actos aprobados y se quita si se deniega o se anula;
+    - caducidad, y anulación con motivo;
+    - un puesto no las crea por su cuenta ni las borra.
+  - **Liquidaciones** (`src/insurer.rs`):
+    - envío (`claim_sent`) y respuesta de la compañía (`claim_answer`): actos rechazados con su motivo y el texto tal cual;
+    - los rechazados no cuentan en lo que debe pagar (`Claim::expected`) y se pueden liquidar de nuevo una sola vez;
+    - no se acepta un rechazo que deje lo cobrado por encima de lo que queda.
+  - **Pantalla:**
+    - Cuenta del paciente asegurado: pedir, enviar, apuntar la respuesta y anular;
+    - Mutuas: «Enviada» y «Respuesta…», con los actos rechazados.
+  - **Contrato** para una conexión directa (operaciones, referencias únicas, respuesta guardada tal cual, consultar sin reenviar).
+- **Pruebas:**
+  - `autorizaciones::tests::an_authorization_is_asked_once_and_its_answers_are_kept`:
+    - un acto, en una sola solicitud viva;
+    - en parte, con caducidad: el número solo en lo aprobado, y lo denegado se puede pedir otra vez;
+    - una corrección guarda las dos respuestas, y la primera, tal cual;
+    - caducada;
+    - denegada después: fuera los números;
+    - anulación con motivo, una vez.
+  - `autorizaciones::tests::only_insured_patients_and_their_own_treatments`;
+  - `insurer::tests::a_rejected_act_leaves_the_claim_and_can_be_claimed_again_once`:
+    - primero enviada, con motivo y de esta liquidación;
+    - lo esperado baja, y la respuesta se guarda tal cual;
+    - el acto se liquida de nuevo una sola vez;
+    - cobrada por lo esperado;
+    - no se rechaza por debajo de lo cobrado.
+  - `server::tests::two_stations_cannot_ask_twice_for_the_same_authorization`: dos puestos piden a la vez y solo hay una. Ni crearla por otro camino ni borrarla; el envío, sí.
+  - `ui_tests::an_authorization_is_asked_from_the_insured_patient_account`.
+- **Pendiente externo:** la API o el acuerdo de cada compañía (B-20, T-F6-04X).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 536 pasan (534 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

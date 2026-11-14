@@ -1080,6 +1080,7 @@ fn cuenta(app: &mut App, ui: &mut Ui, pid: u32) {
     }
     ui.add_space(10.0);
     crate::screens::datafono::patient_card(app, ui, pid);
+    crate::screens::autorizaciones::patient_card(app, ui, pid);
 }
 
 fn citas(app: &mut App, ui: &mut Ui, pid: u32) {

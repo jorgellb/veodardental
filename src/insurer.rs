@@ -19,6 +19,31 @@ pub struct ClaimLine {
     pub teeth: String,
     pub auth_no: String,
     pub fee: f64,
+    /// Rechazado por la compañía (motivo): no cuenta en lo que paga y el acto
+    /// se puede liquidar de nuevo (corregido) en otra liquidación.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected: Option<String>,
+}
+
+/// Envío de una liquidación a la compañía (por su portal, por correo…).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClaimSent {
+    pub at: chrono::NaiveDateTime,
+    pub channel: String,
+    #[serde(default)]
+    pub external_ref: String,
+    pub by: String,
+}
+
+/// Respuesta de la compañía a una liquidación: qué actos rechaza y por qué,
+/// y lo que mandó tal cual (acotado).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClaimAnswer {
+    pub at: chrono::NaiveDateTime,
+    pub rejected: Vec<(u32, String)>,
+    #[serde(default)]
+    pub raw: String,
+    pub by: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,13 +63,22 @@ pub struct Claim {
     /// pendientes de liquidar y no cuenta como pendiente de cobro.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancelled: Option<(NaiveDate, String)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sent: Vec<ClaimSent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answers: Vec<ClaimAnswer>,
 }
 
 impl Claim {
+    /// Lo que debe pagar la compañía: el total sin los actos rechazados.
+    pub fn expected(&self) -> f64 {
+        round2(self.total - self.lines.iter().filter(|l| l.rejected.is_some()).map(|l| l.fee).sum::<f64>())
+    }
+
     pub fn state(&self) -> &'static str {
         if self.cancelled.is_some() {
             "Anulada"
-        } else if self.paid + 0.005 >= self.total {
+        } else if self.paid + 0.005 >= self.expected() {
             "Cobrada"
         } else if self.paid > 0.005 {
             "Cobro parcial"
@@ -56,7 +90,7 @@ impl Claim {
         if self.cancelled.is_some() {
             return 0.0;
         }
-        round2((self.total - self.paid).max(0.0))
+        round2((self.expected() - self.paid).max(0.0))
     }
 }
 
@@ -82,7 +116,8 @@ impl Db {
     }
 
     pub(crate) fn claimed(&self, entry_id: u32) -> bool {
-        self.claims.iter().any(|c| c.cancelled.is_none() && c.lines.iter().any(|l| l.entry_id == entry_id))
+        // un acto rechazado por la compañía se puede liquidar de nuevo
+        self.claims.iter().any(|c| c.cancelled.is_none() && c.lines.iter().any(|l| l.entry_id == entry_id && l.rejected.is_none()))
     }
 
     /// Actos realizados en el periodo pendientes de liquidar a la compañía.
@@ -113,6 +148,7 @@ impl Db {
                     teeth: e.teeth.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("-"),
                     auth_no: self.auth_no(e.id),
                     fee,
+                    rejected: None,
                 })
             })
             .collect();
@@ -132,15 +168,64 @@ impl Db {
         let n = self.claims.iter().filter_map(|c| c.number.strip_prefix(&prefix)?.parse::<u32>().ok()).max().unwrap_or(0) + 1;
         let id = self.new_id();
         let total = round2(lines.iter().map(|l| l.fee).sum());
-        self.claims.push(Claim { id, number: format!("LIQ-{year}-{n:04}"), tariff_id, date: today, from, to, lines, total, paid: 0.0, paid_on: None, notes: String::new(), cancelled: None });
+        self.claims.push(Claim { id, number: format!("LIQ-{year}-{n:04}"), tariff_id, date: today, from, to, lines, total, paid: 0.0, paid_on: None, notes: String::new(), cancelled: None, sent: vec![], answers: vec![] });
         Some(id)
     }
 
     pub fn claim_paid(&mut self, id: u32, amount: f64, date: NaiveDate) {
         if let Some(c) = self.claims.iter_mut().find(|c| c.id == id) {
-            c.paid = round2((c.paid + amount).min(c.total));
+            c.paid = round2((c.paid + amount).min(c.expected()));
             c.paid_on = Some(date);
         }
+    }
+
+    /// Enviada a la compañía (por su portal, por correo…), con su referencia.
+    pub fn claim_sent(&mut self, id: u32, channel: &str, external_ref: &str, now: chrono::NaiveDateTime) -> Result<(), String> {
+        let by = self.config.current_user.clone();
+        let c = self.claims.iter_mut().find(|c| c.id == id).ok_or("La liquidación ya no existe.")?;
+        if c.cancelled.is_some() {
+            return Err("Esa liquidación está anulada.".into());
+        }
+        if channel.trim().is_empty() {
+            return Err("Diga por dónde se envió (portal, correo…).".into());
+        }
+        c.sent.push(ClaimSent { at: now, channel: channel.trim().chars().take(40).collect(), external_ref: external_ref.trim().chars().take(60).collect(), by });
+        Ok(())
+    }
+
+    /// Respuesta de la compañía: los actos que rechaza, con su motivo. Se
+    /// guarda con las anteriores; esos actos dejan de contar en lo que paga y
+    /// se pueden liquidar de nuevo.
+    pub fn claim_answer(&mut self, id: u32, rejected: &[(u32, String)], raw: &str, now: chrono::NaiveDateTime) -> Result<f64, String> {
+        let by = self.config.current_user.clone();
+        let c = self.claims.iter_mut().find(|c| c.id == id).ok_or("La liquidación ya no existe.")?;
+        if c.cancelled.is_some() {
+            return Err("Esa liquidación está anulada.".into());
+        }
+        if c.sent.is_empty() {
+            return Err("Primero apunte que se ha enviado.".into());
+        }
+        for (eid, why) in rejected {
+            if !c.lines.iter().any(|l| l.entry_id == *eid) {
+                return Err("Uno de los actos rechazados no está en esta liquidación.".into());
+            }
+            if why.trim().is_empty() {
+                return Err("Escriba el motivo de cada rechazo.".into());
+            }
+        }
+        let expected_after = round2(c.total - c.lines.iter().filter(|l| l.rejected.is_some() || rejected.iter().any(|(e, _)| *e == l.entry_id)).map(|l| l.fee).sum::<f64>());
+        if c.paid > expected_after + 0.005 {
+            return Err("Ya se ha cobrado más de lo que quedaría: revise los cobros de esta liquidación.".into());
+        }
+        for l in c.lines.iter_mut() {
+            if let Some((_, why)) = rejected.iter().find(|(e, _)| *e == l.entry_id) {
+                l.rejected = Some(why.trim().chars().take(200).collect());
+            }
+        }
+        c.answers.push(ClaimAnswer { at: now, rejected: rejected.iter().map(|(e, w)| (*e, w.trim().to_string())).collect(), raw: raw.chars().take(crate::autorizaciones::RAW_MAX).collect(), by });
+        let (number, expected) = (c.number.clone(), c.expected());
+        self.audit("Respuesta de liquidación", &format!("{number} · {} actos rechazados", rejected.len()));
+        Ok(expected)
     }
 
     /// Anula una liquidación: queda guardada como anulada, con fecha y
@@ -242,6 +327,42 @@ mod tests {
 
     fn d() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 5).unwrap()
+    }
+
+    /// La compañía rechaza un acto (T-F6-04): se guarda su respuesta, deja de
+    /// contar en lo que paga y el acto se puede liquidar de nuevo, una vez.
+    #[test]
+    fn a_rejected_act_leaves_the_claim_and_can_be_claimed_again_once() {
+        let mut db = Db::sample(d());
+        let from = d() - chrono::Duration::days(365);
+        let id = db.create_claim(2, from, d(), d()).unwrap();
+        let c = db.claims.iter().find(|c| c.id == id).unwrap().clone();
+        assert!(c.lines.len() >= 2, "hacen falta dos actos");
+        let (bad, fee) = (c.lines[0].entry_id, c.lines[0].fee);
+        let now = d().and_hms_opt(10, 0, 0).unwrap();
+        assert!(db.claim_answer(id, &[(bad, "Sin autorización".into())], "", now).is_err(), "primero, enviada");
+        assert!(db.claim_sent(id, " ", "", now).is_err());
+        db.claim_sent(id, "Portal de la compañía", "LOTE-7", now).unwrap();
+        assert!(db.claim_answer(id, &[(bad, " ".into())], "", now).is_err(), "con su motivo");
+        assert!(db.claim_answer(id, &[(99_999, "x".into())], "", now).is_err(), "de esta liquidación");
+        let expected = db.claim_answer(id, &[(bad, "Sin autorización".into())], "{\"rechazos\":1}", now).unwrap();
+        assert_eq!(expected, round2(c.total - fee));
+        let c2 = db.claims.iter().find(|x| x.id == id).unwrap().clone();
+        assert_eq!((c2.answers.len(), c2.answers[0].raw.as_str()), (1, "{\"rechazos\":1}"), "la respuesta, tal cual");
+        assert_eq!(c2.pending(), expected, "lo que debe la compañía, sin el rechazado");
+        // el rechazado se liquida de nuevo (corregido), una sola vez
+        let again = db.claimable(2, from, d());
+        assert_eq!(again.iter().map(|l| l.entry_id).collect::<Vec<_>>(), vec![bad]);
+        let id2 = db.create_claim(2, from, d(), d()).unwrap();
+        assert!(db.claimable(2, from, d()).is_empty(), "ya no queda pendiente");
+        assert!(db.claims.iter().find(|x| x.id == id2).unwrap().lines.iter().all(|l| l.entry_id == bad));
+        // pagada la primera por lo esperado: cobrada
+        db.claim_paid(id, expected, d());
+        assert_eq!(db.claims.iter().find(|x| x.id == id).unwrap().state(), "Cobrada");
+        // no se rechaza algo que deje lo cobrado por encima de lo que queda
+        let other = c.lines[1].entry_id;
+        db.claim_sent(id2, "Correo", "", now).unwrap();
+        assert!(db.claim_answer(id, &[(other, "x".into())], "", now).unwrap_err().contains("cobrado"));
     }
 
     #[test]

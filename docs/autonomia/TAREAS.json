@@ -2741,8 +2741,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Sin duplicados, con respuestas y estados guardados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-069"]
   },
   {
    "id": "T-F6-04X",
