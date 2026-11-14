@@ -53,6 +53,7 @@ mod perio_voz;
 mod phone;
 mod plan;
 mod portal;
+mod portal_paciente;
 mod record;
 mod registro;
 mod rgpd;

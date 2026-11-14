@@ -284,6 +284,7 @@ impl Db {
             sterile_cycles: vec![].into(),
             sterile_packs: vec![].into(),
             surveys: vec![].into(),
+            portal_access: vec![].into(),
             punches: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,

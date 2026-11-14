@@ -29,6 +29,7 @@ pub mod laboratorio;
 pub mod llamadas;
 pub mod login;
 pub mod marcha;
+pub mod mi_espacio;
 pub mod migrar;
 pub mod mutuas;
 pub mod odg_paint;

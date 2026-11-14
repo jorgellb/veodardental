@@ -2523,6 +2523,42 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// «Mi espacio» desde la ficha: se da el acceso al paciente (enlace copiado)
+/// y se revoca.
+#[test]
+fn the_patient_portal_access_is_granted_and_revoked_from_the_file() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.booking.enabled = true;
+        a.db.booking.public_url = "https://citas.clinica.es".into();
+        a.db.portal_access.clear();
+        let p = a.db.patients.iter_mut().find(|p| p.id == 101).unwrap();
+        (p.nif, p.birth, p.payer) = ("11111111H".into(), Some(chrono::NaiveDate::from_ymd_opt(1980, 5, 1).unwrap()), Default::default());
+        a.open_patient(101, crate::app::PatTab::Filiacion);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Mi espacio (portal del paciente)");
+    h.get_by_label("Dar acceso").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let a = h.state().db.portal_access.first().cloned().expect("acceso creado");
+    assert_eq!(a.holder, crate::portal_paciente::Holder::Patient(101));
+    h.get_by_label("Revocar").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().db.portal_access.iter().find(|x| x.id == a.id).unwrap().revoked.is_some());
+}
+
 /// Esterilización en Almacén: ciclo con sus etiquetas, validación, uso de un
 /// lote en un paciente y, con un biológico positivo, el paciente afectado.
 #[test]

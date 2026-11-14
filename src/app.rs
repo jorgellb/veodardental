@@ -1306,6 +1306,7 @@ impl ChainOp {
             "alert_acks",
             "sterile_packs",
             "surveys",
+            "portal_access",
             "config",
             "audit_log",
         ];

@@ -776,6 +776,9 @@ impl Db {
                 l.patient_id = keep;
             }
         }
+        for a in self.portal_access.iter_mut().filter(|a| a.holder == crate::portal_paciente::Holder::Patient(remove)) {
+            a.holder = crate::portal_paciente::Holder::Patient(keep);
+        }
         for p in self.sterile_packs.iter_mut() {
             if let Some(u) = p.used.as_mut().filter(|u| u.patient_id == remove) {
                 u.patient_id = keep;

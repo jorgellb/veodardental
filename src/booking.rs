@@ -270,6 +270,8 @@ pub struct Published {
     pub pays: HashMap<String, crate::pago::PubPay>,
     /// Encuestas de satisfacción (por código).
     pub surveys: HashMap<String, crate::encuestas::PubSurvey>,
+    /// «Mi espacio» de cada titular (por código).
+    pub portal: HashMap<String, crate::portal_paciente::PubPortal>,
     /// Dirección pública de la página (para que Redsys avise y devuelva al paciente).
     pub public_url: String,
 }
@@ -323,6 +325,7 @@ pub fn publish(db: &Db, today: NaiveDate) -> Published {
         rx: crate::rx_link::publish_rx(db, today),
         pays: crate::pago::publish_pays(db, today.and_time(chrono::Local::now().naive_local().time())),
         surveys: crate::encuestas::publish_surveys(db, today.and_time(chrono::Local::now().naive_local().time())),
+        portal: crate::portal_paciente::publish_portal(db, today),
         public_url: c.public_url.trim().trim_end_matches('/').to_string(),
     }
 }
@@ -630,6 +633,8 @@ pub struct Shared {
     hits: HashMap<String, Vec<Instant>>,
     /// TPV virtual de este ordenador (la clave no sale de aquí).
     pub tpv: Option<crate::pago::TpvSettings>,
+    /// Sesiones abiertas de «Mi espacio» (por su código, que va en la cookie).
+    pub portal_sessions: HashMap<String, crate::portal_paciente::Session>,
 }
 
 pub struct BookingServer {
@@ -1344,6 +1349,109 @@ fn rx_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEve
     }
 }
 
+/// Respuesta con cabeceras de más (cookie, redirección).
+fn respond_with(req: tiny_http::Request, code: u16, ctype: &str, body: String, extra: &[(&str, String)]) {
+    let mut r = tiny_http::Response::from_string(body).with_status_code(code);
+    let base = [
+        ("Content-Type", ctype.to_string()),
+        ("Cache-Control", "no-store".into()),
+        ("X-Content-Type-Options", "nosniff".into()),
+        ("Referrer-Policy", "no-referrer".into()),
+        ("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'".into()),
+    ];
+    for (k, v) in base.iter().map(|(k, v)| (*k, v.as_str())).chain(extra.iter().map(|(k, v)| (*k, v.as_str()))) {
+        if let Ok(h) = tiny_http::Header::from_bytes(k.as_bytes(), v.as_bytes()) {
+            r = r.with_header(h);
+        }
+    }
+    let _ = req.respond(r);
+}
+
+/// La cookie de sesión de «Mi espacio».
+const PORTAL_COOKIE: &str = "vd_mi_espacio";
+
+fn cookie(req: &tiny_http::Request, name: &str) -> Option<String> {
+    req.headers().iter().filter(|h| h.field.equiv("Cookie")).flat_map(|h| h.value.as_str().split(';').map(|x| x.trim().to_string()).collect::<Vec<_>>()).find_map(|kv| kv.strip_prefix(&format!("{name}=")).map(String::from))
+}
+
+/// «Mi espacio» (ver `portal_paciente`):
+/// - `GET /portal/{código}`: la entrada o, con sesión, el inicio;
+/// - `POST /api/portal/{código}/entrar` (`dni`, `nacimiento`) y `/salir`;
+/// - `GET /api/portal/{código}/factura/{id}` y `/documento/{id}`: solo de sus pacientes.
+fn patient_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, ip: &str, path: &str) {
+    use crate::portal_paciente::{Session, doc_page, home_page, invoice_page, login_ok, login_page};
+    let lock = || sh.lock().unwrap_or_else(|e| e.into_inner());
+    let now = chrono::Local::now().naive_local();
+    let rest = path.trim_start_matches("/api/portal/").trim_start_matches("/portal/");
+    let (token, action) = rest.split_once('/').unwrap_or((rest, ""));
+    let token = token.to_string();
+    let mut g = lock();
+    let found = if crate::portal::valid_token(&token) && g.published.accepting { g.published.portal.get(&token).cloned() } else { None };
+    let not_found = |req: tiny_http::Request| respond(req, 404, "text/plain; charset=utf-8", "Este enlace no es válido o ya no está activo. Llame a la clínica, por favor.".into());
+    let Some(p) = found else {
+        let blocked = too_many(&mut g, &format!("bad:{ip}"), 20, 3600);
+        g.refused += 1;
+        drop(g);
+        return if blocked { respond(req, 429, "text/plain; charset=utf-8", "Demasiados intentos.".into()) } else { not_found(req) };
+    };
+    let clinic = g.published.clinic.clone();
+    let secure = g.published.public_url.starts_with("https://");
+    // sesión válida: viva y de este mismo acceso (revocado, deja de valer)
+    g.portal_sessions.retain(|_, s| s.alive(now));
+    let sid = cookie(&req, PORTAL_COOKIE);
+    let session_ok = sid.as_ref().and_then(|s| g.portal_sessions.get_mut(s)).filter(|s| s.token == token && s.access_id == p.access_id).map(|s| {
+        s.last = now;
+    });
+    let logged = session_ok.is_some();
+    drop(g);
+    let html = |req: tiny_http::Request, code: u16, body: String| respond_with(req, code, "text/html; charset=utf-8", body, &[]);
+    match (req.method().clone(), path.starts_with("/portal/"), action) {
+        (tiny_http::Method::Get, true, "") => html(req, 200, if logged { home_page(&clinic, &token, &p) } else { login_page(&clinic, &token, None) }),
+        (tiny_http::Method::Post, false, "entrar") => {
+            let fails = format!("portalfail:{token}");
+            {
+                let mut g = lock();
+                if at_limit(&mut g, &fails, RX_MAX_FAILS, RX_LOCK_SECS) || too_many(&mut g, &format!("portalip:{ip}"), 60, 3600) {
+                    drop(g);
+                    return html(req, 429, login_page(&clinic, &token, Some("Por seguridad, este enlace está bloqueado media hora por demasiados intentos.")));
+                }
+            }
+            let Some(body) = read_body(&mut req) else { return respond(req, 413, "text/plain; charset=utf-8", "Demasiado grande.".into()) };
+            let f = crate::pago::parse_form(&String::from_utf8_lossy(&body));
+            if !login_ok(&token, &p, f.get("dni").map(String::as_str).unwrap_or(""), f.get("nacimiento").map(String::as_str).unwrap_or("")) {
+                let mut g = lock();
+                too_many(&mut g, &fails, RX_MAX_FAILS + 1, RX_LOCK_SECS);
+                g.refused += 1;
+                drop(g);
+                return html(req, 403, login_page(&clinic, &token, Some("Los datos no coinciden con los de la ficha.")));
+            }
+            let sid = crate::portal::new_token();
+            lock().portal_sessions.insert(sid.clone(), Session { token: token.clone(), access_id: p.access_id, started: now, last: now });
+            let cookie = format!("{PORTAL_COOKIE}={sid}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}{}", crate::portal_paciente::MAX_MINUTES * 60, if secure { "; Secure" } else { "" });
+            respond_with(req, 303, "text/plain; charset=utf-8", String::new(), &[("Set-Cookie", cookie), ("Location", format!("/portal/{token}"))])
+        }
+        (tiny_http::Method::Post, false, "salir") => {
+            if let Some(s) = &sid {
+                lock().portal_sessions.remove(s);
+            }
+            respond_with(req, 303, "text/plain; charset=utf-8", String::new(), &[("Set-Cookie", format!("{PORTAL_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")), ("Location", format!("/portal/{token}"))])
+        }
+        (tiny_http::Method::Get, false, a) if a.starts_with("factura/") || a.starts_with("documento/") => {
+            if !logged {
+                return respond(req, 401, "text/plain; charset=utf-8", "Entre primero en Mi espacio.".into());
+            }
+            // solo de los pacientes de este titular: otro número, «no existe»
+            let id = a.split('/').nth(1).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
+            let page = if a.starts_with("factura/") { p.invoice(id).map(|i| invoice_page(&clinic, i)) } else { p.doc(id).map(|d| doc_page(&clinic, d)) };
+            match page {
+                Some(b) => html(req, 200, b),
+                None => not_found(req),
+            }
+        }
+        _ => respond(req, 405, "text/plain; charset=utf-8", "Método no permitido.".into()),
+    }
+}
+
 /// Encuesta de satisfacción: `GET /encuesta/{código}` (la página) y `POST
 /// /api/encuesta/{código}` (`puntuacion` y `comentario`, o `baja`).
 fn survey_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEvent>, wake: &dyn Fn(), ip: &str, path: &str) {
@@ -1698,6 +1806,10 @@ pub fn listen(port: u16, lan: bool, published: Published, wake: impl Fn() + Send
                 (_, x) if x.starts_with("/presupuesto/") || x.starts_with("/api/presupuesto/") => {
                     drop(g);
                     budget_portal(req, &sh, &tx, &wake, &ip, now, &path);
+                }
+                (_, x) if x.starts_with("/portal/") || x.starts_with("/api/portal/") => {
+                    drop(g);
+                    patient_portal(req, &sh, &ip, &path);
                 }
                 (_, x) if x.starts_with("/encuesta/") || x.starts_with("/api/encuesta/") => {
                     drop(g);
@@ -2062,6 +2174,91 @@ mod tests {
         assert_eq!(call("POST", &format!("/api/pagar/{token}/iniciar"), Some("metodo=tarjeta")).0, 409);
         // y un código inventado no lleva a nada
         assert_eq!(call("GET", &format!("/pagar/{}", "a".repeat(32)), None).0, 404);
+    }
+
+    /// «Mi espacio»: con la sesión de un titular, cambiar el número de una
+    /// factura o un documento en la dirección nunca enseña los de otro
+    /// paciente; sin sesión, nada; revocado, nada; y bloqueo tras 5 fallos.
+    #[test]
+    fn the_patient_portal_never_shows_another_patient_by_changing_an_id() {
+        let today = today();
+        let now = chrono::Local::now().naive_local();
+        let mut db = Db::sample(today);
+        db.booking.enabled = true;
+        db.portal_access.clear();
+        let p = db.patients.iter_mut().find(|p| p.id == 101).unwrap();
+        (p.nif, p.birth) = ("11111111H".into(), Some(NaiveDate::from_ymd_opt(1980, 5, 1).unwrap()));
+        let q = db.patients.iter_mut().find(|p| p.id == 102).unwrap();
+        (q.nif, q.birth) = ("22222222J".into(), Some(NaiveDate::from_ymd_opt(1975, 3, 2).unwrap()));
+        // facturas y documentos firmados de los dos pacientes
+        for pid in [101u32, 102] {
+            let e = db.add_entry(pid, "0101", vec![], vec![], TxState::Realizado, 1, today);
+            db.entries.iter_mut().find(|x| x.id == e).unwrap().price = 50.0;
+            db.issue_invoice(pid, &[e], today).unwrap();
+            let d = db.new_document(pid, 2, &[38]).unwrap();
+            db.sign_document(d, "Paciente", vec![vec![[0.1, 0.1], [0.2, 0.2], [0.3, 0.3], [0.4, 0.4], [0.5, 0.5]]]).unwrap();
+        }
+        let acc = db.portal_grant(crate::portal_paciente::Holder::Patient(101), now).unwrap();
+        let other = db.portal_grant(crate::portal_paciente::Holder::Patient(102), now).unwrap();
+        let token = db.portal_access.iter().find(|a| a.id == acc).unwrap().token.clone();
+        let token2 = db.portal_access.iter().find(|a| a.id == other).unwrap().token.clone();
+        let srv = listen(0, false, publish(&db, today), || {}).unwrap();
+        let base = format!("http://127.0.0.1:{}", srv.port);
+        let agent = ureq::AgentBuilder::new().redirects(0).build();
+        let call = |m: &str, p: &str, body: Option<&str>, cookie: Option<&str>| {
+            let mut r = agent.request(m, &format!("{base}{p}")).set("Content-Type", "application/x-www-form-urlencoded");
+            if let Some(c) = cookie {
+                r = r.set("Cookie", c);
+            }
+            let res = match body {
+                Some(b) => r.send_string(b),
+                None => r.call(),
+            };
+            let (code, resp) = match res {
+                Ok(r) => (r.status(), r),
+                Err(ureq::Error::Status(c, r)) => (c, r),
+                Err(e) => panic!("{e}"),
+            };
+            let set = resp.header("Set-Cookie").map(|c| c.split(';').next().unwrap_or("").to_string());
+            (code, set, resp.into_string().unwrap_or_default())
+        };
+        let (code, _, page) = call("GET", &format!("/portal/{token}"), None, None);
+        assert!(code == 200 && page.contains("name=\"dni\""), "sin sesión, solo la entrada");
+        assert_eq!(call("GET", &format!("/api/portal/{token}/factura/1"), None, None).0, 401);
+        assert_eq!(call("POST", &format!("/api/portal/{token}/entrar"), Some("dni=11111111H&nacimiento=02/05/1980"), None).0, 403);
+        let (code, cookie, _) = call("POST", &format!("/api/portal/{token}/entrar"), Some("dni=11111111H&nacimiento=01%2F05%2F1980"), None);
+        assert_eq!(code, 303);
+        let cookie = cookie.expect("cookie de sesión");
+        let (_, _, home) = call("GET", &format!("/portal/{token}"), None, Some(&cookie));
+        let name102 = db.patient(102).unwrap().first_name.clone();
+        assert!(home.contains("Facturas") && !home.contains(&name102), "solo lo suyo");
+        // cada factura y cada documento de la base: solo los suyos responden
+        for i in db.invoices.iter() {
+            let (code, _, _) = call("GET", &format!("/api/portal/{token}/factura/{}", i.id), None, Some(&cookie));
+            assert_eq!(code, if i.patient_id == 101 { 200 } else { 404 }, "factura {} del paciente {}", i.id, i.patient_id);
+        }
+        for d in db.documents.iter() {
+            let (code, _, _) = call("GET", &format!("/api/portal/{token}/documento/{}", d.id), None, Some(&cookie));
+            let mine = d.patient_id == 101 && d.signed && d.revoked_at.is_none();
+            assert_eq!(code, if mine { 200 } else { 404 }, "documento {} del paciente {}", d.id, d.patient_id);
+        }
+        // la sesión es de su enlace: con el de otro paciente no sirve
+        assert_eq!(call("GET", &format!("/api/portal/{token2}/factura/1"), None, Some(&cookie)).0, 401);
+        let (_, _, other_home) = call("GET", &format!("/portal/{token2}"), None, Some(&cookie));
+        assert!(other_home.contains("name=\"dni\""));
+        // salir
+        assert_eq!(call("POST", &format!("/api/portal/{token}/salir"), Some(""), Some(&cookie)).0, 303);
+        assert_eq!(call("GET", &format!("/api/portal/{token}/factura/1"), None, Some(&cookie)).0, 401);
+        // revocado: ni el enlace ni la sesión valen
+        let (_, cookie2, _) = call("POST", &format!("/api/portal/{token}/entrar"), Some("dni=11111111H&nacimiento=01/05/1980"), None);
+        db.portal_revoke(acc, now);
+        srv.shared.lock().unwrap().published = publish(&db, today);
+        assert_eq!(call("GET", &format!("/portal/{token}"), None, cookie2.as_deref()).0, 404);
+        // bloqueo tras 5 fallos (en el otro enlace)
+        for _ in 0..5 {
+            call("POST", &format!("/api/portal/{token2}/entrar"), Some("dni=X&nacimiento=01/01/2000"), None);
+        }
+        assert_eq!(call("POST", &format!("/api/portal/{token2}/entrar"), Some("dni=22222222J&nacimiento=02/03/1975"), None).0, 429);
     }
 
     /// Encuesta por internet: la página (con el enlace a la reseña para

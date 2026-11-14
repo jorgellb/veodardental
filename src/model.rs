@@ -877,6 +877,9 @@ pub struct Db {
     /// Encuestas de satisfacción (ver `encuestas`).
     #[serde(default)]
     pub surveys: Tracked<Vec<crate::encuestas::Survey>>,
+    /// Accesos a «Mi espacio», el portal del paciente (ver `portal_paciente`).
+    #[serde(default)]
+    pub portal_access: Tracked<Vec<crate::portal_paciente::PortalAccess>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

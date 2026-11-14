@@ -242,6 +242,7 @@ impl Db {
             sterile_cycles,
             sterile_packs,
             surveys,
+            portal_access,
             punches,
             data_version: _,
             station: _,
@@ -296,6 +297,7 @@ impl Db {
         sterile_cycles.clear();
         sterile_packs.clear();
         surveys.clear();
+        portal_access.clear();
         punches.clear();
         // lo de ejemplo que no es de ningún paciente
         suppliers.retain(|s| !is_demo(&d.suppliers, s.id, &s.name));

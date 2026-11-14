@@ -693,6 +693,7 @@ fn filiacion(app: &mut App, ui: &mut Ui, pid: u32) {
         app.changed();
     }
     ui.add_space(10.0);
+    crate::screens::mi_espacio::card_for(app, ui, pid);
     crate::screens::derechos::panel(app, ui, pid);
 }
 

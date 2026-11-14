@@ -1444,3 +1444,24 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 495 pasan, 0 fallan, 10 ignoradas |
+
+## E-057 T-F5-10: «Mi espacio», portal del paciente con autorización por objeto y por responsable
+- **Hecho (`src/portal_paciente.rs`, la página `/portal/{código}`, ficha › Filiación › «Mi espacio»):** citas próximas (con su «Mi cita»), presupuestos (con su enlace para firmar), facturas, documentos firmados y «Mis recetas», en páginas sin código para el móvil.
+- **Por responsable:** el titular es el paciente (desde los 16 años) o su responsable, identificado por el NIF de «Factura a nombre de», que ve a todos sus pacientes. Lo que ve se calcula al publicar: si cambia el responsable en la ficha, cambia lo que ve. Los datos bloqueados no salen.
+- **Entrada:**
+  - con el DNI/NIE y la fecha de nacimiento (la huella va unida al enlace y solo se publica la huella);
+  - 5 fallos bloquean el enlace media hora, y hay límite por dirección IP.
+- **Sesión:** código aleatorio en una cookie `HttpOnly`, `SameSite=Strict` (y `Secure` con https), que caduca a los 20 minutos sin uso y a las 2 horas. Va unida a su enlace y a su acceso, y se cierra con «Salir».
+- **Por objeto:** cada factura y cada documento se busca solo entre los pacientes del titular. Otro número da «no existe», sin decir si es de otro paciente.
+- **Revocación:** un acceso nuevo revoca el anterior del mismo titular; revocado, el enlace y sus sesiones dejan de valer al publicar. Todo va a la auditoría y, al fusionar fichas, el acceso pasa a la que se conserva.
+- **Pruebas:**
+  - `portal_paciente::tests::a_holder_sees_only_their_patients_and_a_responsible_sees_their_dependents`;
+  - `booking::tests::the_patient_portal_never_shows_another_patient_by_changing_an_id`: por HTTP, con la sesión del paciente 101 se piden todas las facturas y documentos de la base por su número, y solo responden los suyos. Se prueban también: sin sesión (401), la sesión en el enlace de otro paciente, salir, revocar y el bloqueo tras 5 fallos;
+  - `ui_tests::the_patient_portal_access_is_granted_and_revoked_from_the_file`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 498 pasan, 0 fallan, 10 ignoradas |

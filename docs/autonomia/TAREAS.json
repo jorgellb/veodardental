@@ -2611,8 +2611,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de que no se accede a otro paciente cambiando un identificador",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-057"
+   ]
   },
   {
    "id": "T-F5-11",
