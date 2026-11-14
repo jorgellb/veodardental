@@ -4,8 +4,10 @@
 //!   mínimo, sin contar lo que ya está pedido y en cajas enteras (unidades
 //!   de compra, `Product::pack`). La hace el servidor
 //!   (`ChainOp::ProposeOrders`): dos puestos no proponen lo mismo.
-//! - **Aprobación configurable** (`ClinicConfig::order_approval_from`): por
-//!   encima de ese total, el pedido lo aprueba quien lleva los gastos.
+//! - **Aprobación configurable** (`ClinicConfig::order_approval_from`, que
+//!   solo cambia Dirección): por encima de ese total, el pedido lo aprueba
+//!   quien lleva los gastos. Cuentan juntos los pedidos al mismo proveedor que
+//!   no pasaron por aprobación en los 30 días anteriores.
 //! - **Envío:** a mano (correo o teléfono) o, solo si la clínica lo activa y
 //!   el proveedor lo tiene marcado, por correo sin intervención.
 //! - **Recepción:** de una vez o en partes, con el lote y la caducidad de
@@ -31,6 +33,21 @@ impl Db {
         self.config.order_approval_from.is_some_and(|from| total + 0.005 >= from)
     }
 
+    /// Lo que cuenta para la aprobación: el pedido y los que se confirmaron al
+    /// mismo proveedor sin pasar por aprobación en los 30 días anteriores (así
+    /// no se evita partiendo un pedido en varios pequeños).
+    fn approval_total(&self, id: u32, now: NaiveDateTime) -> f64 {
+        let Some(o) = self.orders.iter().find(|o| o.id == id) else { return 0.0 };
+        let recent: f64 = self
+            .orders
+            .iter()
+            .filter(|x| x.id != id && x.supplier_id == o.supplier_id && x.state != OrderState::Cancelado)
+            .filter(|x| x.approved.as_ref().is_some_and(|(t, how)| how.starts_with("sin aprobación") && (now - *t).num_days() < 30))
+            .map(|x| x.total())
+            .sum();
+        o.total() + recent
+    }
+
     /// Confirmar el borrador: a aprobar o, por debajo del importe, aprobado.
     pub fn order_submit(&mut self, id: u32, now: NaiveDateTime) -> Result<OrderState, String> {
         let o = self.order(id)?;
@@ -40,7 +57,7 @@ impl Db {
         if o.lines.is_empty() || o.lines.iter().any(|l| !(l.qty > 0.0 && l.qty.is_finite()) || !(l.cost >= 0.0 && l.cost.is_finite())) {
             return Err("Revise las líneas: cantidades mayores que cero y precios no negativos.".into());
         }
-        let needs = self.order_needs_approval(o.total());
+        let needs = self.order_needs_approval(self.approval_total(id, now));
         let user = self.config.current_user.clone();
         let x = self.orders.iter_mut().find(|x| x.id == id).ok_or("El pedido ya no existe.")?;
         if needs {
@@ -268,6 +285,13 @@ mod tests {
         assert!(db.orders.iter().find(|o| o.id == big).unwrap().approved.as_ref().is_some_and(|a| a.1 == db.config.current_user));
         let bad = mk(&mut db, 0.0, 1.0);
         assert!(db.order_submit(bad, at(2)).is_err(), "sin cantidades, no");
+        // partido en pedidos pequeños al mismo proveedor: al pasar del importe, a aprobar
+        let mut states = vec![];
+        for _ in 0..3 {
+            let piece = mk(&mut db, 500.0, 0.07);
+            states.push(db.order_submit(piece, at(4)).unwrap());
+        }
+        assert_eq!(states, vec![OrderState::Aprobado, OrderState::Aprobado, OrderState::PorAprobar], "7 + 35 + 35 = 77 €; con el tercero, 112 €: pasa de 100 €");
         assert!(db.audit_log.iter().any(|a| a.action == "Pedido aprobado"));
     }
 

@@ -158,6 +158,27 @@ fn financing_change_ok(current: Option<&String>, after: Option<&String>) -> bool
     }
 }
 
+/// Campos de la configuración que solo cambia Dirección: identidad de la
+/// clínica, IVA, cobros por internet, remesas, aprobación y envío de pedidos,
+/// encuestas y resúmenes con IA (datos que salen).
+const ADMIN_CONFIG: [&str; 12] = ["name", "nif", "address", "receipt_series", "vat_exemption", "creditor_id", "clinic_iban", "pay_online", "surveys", "evo_ai", "order_approval_from", "orders_auto_send"];
+
+/// ¿Se acepta este cambio de un proveedor de quien no es Dirección? Lo de
+/// siempre, sí; activar o quitar el envío automático de pedidos, o cambiar el
+/// correo de un proveedor que lo tiene, no (los pedidos irían a otro sitio).
+fn supplier_change_ok(current: Option<&String>, after: Option<&String>) -> bool {
+    let parse = |j: Option<&String>| j.and_then(|j| serde_json::from_str::<Value>(j).ok());
+    let (c, a) = (parse(current), parse(after));
+    let auto = |v: &Option<Value>| v.as_ref().is_some_and(|v| v["auto_send"].as_bool().unwrap_or(false));
+    if !auto(&c) && !auto(&a) {
+        return true;
+    }
+    match (c, a) {
+        (Some(c), Some(a)) => c["auto_send"] == a["auto_send"] && c["email"] == a["email"],
+        _ => false,
+    }
+}
+
 /// ¿Se acepta este cambio de un pedido de quien no es Dirección? Solo crear,
 /// cambiar o borrar un borrador sin nada recibido, aprobado ni enviado; lo
 /// demás va por `ChainOp::*Order*` (ver `compras`).
@@ -1029,8 +1050,30 @@ impl State {
                 "auth_requests" | "claims" => false,
                 // un pedido: desde el puesto, solo el borrador; lo demás, por sus operaciones
                 "orders" => order_change_ok(c.key.as_deref().and_then(|k| snap.get("orders", Some(k))), c.after.as_ref()),
+                // el envío automático de pedidos a un proveedor, y su correo mientras lo tenga, solo Dirección
+                "suppliers" => supplier_change_ok(c.key.as_deref().and_then(|k| snap.get("suppliers", Some(k))), c.after.as_ref()),
                 _ => true,
             });
+        }
+        // de la configuración, lo que decide dinero, aprobaciones, datos que salen
+        // o quién es la clínica solo lo cambia Dirección: de otro perfil se queda como está
+        if !admin {
+            let current = self.snap.get("config", None).and_then(|j| serde_json::from_str::<Value>(j).ok());
+            for c in changes.iter_mut().filter(|c| c.field == "config" && c.key.is_none() && c.after.is_some()) {
+                if let (Some(cur), Some(Ok(mut v))) = (current.as_ref(), c.after.as_deref().map(serde_json::from_str::<Value>)) {
+                    for f in ADMIN_CONFIG {
+                        match cur.get(f) {
+                            Some(x) => v[f] = x.clone(),
+                            None => {
+                                if let Some(o) = v.as_object_mut() {
+                                    o.remove(f);
+                                }
+                            }
+                        }
+                    }
+                    c.after = Some(sync::canonical("config", &v.to_string())?);
+                }
+            }
         }
         // un paciente con los datos bloqueados tampoco lo borra otro perfil
         if !admin {
@@ -3762,6 +3805,30 @@ mod tests {
             assert_eq!(disk.orders.iter().find(|o| o.id == f).unwrap().state, OrderState::Borrador, "ni se aprueba a mano");
         }
         assert_eq!(disk.orders.iter().find(|o| o.id == first).unwrap().lines[0].received, 0.0, "ni se recibe a mano");
+        // la configuración que decide (aprobación, envío automático) y el correo de un
+        // proveedor con envío automático, solo Dirección
+        let (mut a, mut sa) = r1.load().unwrap();
+        a.station = r1.station;
+        a.config.order_approval_from = None;
+        a.config.orders_auto_send = true;
+        let initials = !a.config.board_initials;
+        a.config.board_initials = initials;
+        let sid = a.suppliers[0].id;
+        a.suppliers.iter_mut().find(|s| s.id == sid).unwrap().auto_send = true;
+        r1.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!((disk.config.order_approval_from, disk.config.orders_auto_send), (Some(1.0), false), "ni se quita la aprobación ni se activa el envío");
+        assert_eq!(disk.config.board_initials, initials, "lo demás de la configuración, sí");
+        assert!(!disk.suppliers.iter().find(|s| s.id == sid).unwrap().auto_send, "ni se activa el envío a un proveedor");
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.station = dir.station;
+        d.suppliers.iter_mut().find(|s| s.id == sid).unwrap().auto_send = true;
+        dir.push(&mut d, &mut sd).unwrap();
+        let (mut a, mut sa) = r1.load().unwrap();
+        a.station = r1.station;
+        a.suppliers.iter_mut().find(|s| s.id == sid).unwrap().email = "otro@sitio.example".into();
+        r1.push(&mut a, &mut sa).unwrap();
+        assert_ne!(crate::sync::on_disk(&path).suppliers.iter().find(|s| s.id == sid).unwrap().email, "otro@sitio.example", "ni se cambia su correo mientras lo tiene");
         // dos puestos reciben lo mismo a la vez: entra una vez
         let o = disk.orders.iter().find(|o| o.id == first).unwrap().clone();
         let traced = o.lines.iter().any(|l| disk.product(l.product_id).is_some_and(|p| p.traced));

@@ -1908,3 +1908,27 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 542 pasan (540 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-072 Revisión de seguridad de los pedidos: configuración, pedidos partidos y correo del proveedor
+- **Hallazgos:**
+  1. El importe de aprobación y el envío automático están en la configuración, que cualquier puesto podía cambiar. Quitando el importe se saltaba la aprobación.
+  2. Partiendo un pedido en varios pequeños, cada uno quedaba por debajo del importe.
+  3. Cualquier puesto podía activar el envío automático a un proveedor, o cambiarle el correo, y desviar los pedidos a otra dirección.
+- **Correcciones:**
+  - **Configuración** (`ADMIN_CONFIG` en `State::save`): de quien no es Dirección, se dejan como estaban los campos que deciden dinero, aprobaciones, datos que salen o quién es la clínica. Lo demás, como las iniciales en la pizarra, sí lo cambia cualquiera.
+  - **Pedidos partidos** (`compras::approval_total`): para la aprobación cuentan también los pedidos al mismo proveedor confirmados sin aprobación en los 30 días anteriores.
+  - **Proveedores** (`supplier_change_ok`): el envío automático solo lo activa o lo quita Dirección, y el correo de un proveedor que lo tiene, también.
+- **Pruebas:**
+  - `compras::tests::approval_depends_on_the_amount_and_sending_needs_it`, además: tres pedidos de 35 € después de uno de 7 €; el tercero (112 € en total) queda por aprobar.
+  - `server::tests::orders_are_proposed_and_received_once_and_approved_by_expenses`, además:
+    - recepción no quita la aprobación ni activa el envío automático, y sí cambia otra cosa de la configuración;
+    - no activa el envío a un proveedor ni cambia el correo de uno que lo tiene.
+
+    Comprobado que falla si se quita la regla de la configuración («ni se quita la aprobación…») o la de los proveedores («ni se activa el envío a un proveedor»).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 542 pasan (540 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

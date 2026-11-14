@@ -222,7 +222,8 @@ Hasta ahora el pedido se editaba y se recibía en el puesto. Dos puestos podían
 - **En el servidor (`ChainOp`):** proponer, confirmar, aprobar, enviado, recibir, cerrar y cancelar. Desde el puesto solo se edita un borrador.
   - La recepción nunca admite más de lo que falta.
   - La propuesta descuenta lo que ya está pedido.
-- **Aprobación:** a partir del importe de `ClinicConfig::order_approval_from`, que nadie tiene puesto de entrada. La da quien tiene permiso de gastos, porque aprobar un pedido es gastar.
+- **Aprobación:** a partir del importe de `ClinicConfig::order_approval_from`, que nadie tiene puesto de entrada y solo cambia Dirección. La da quien tiene permiso de gastos, porque aprobar un pedido es gastar.
+  - Cuentan juntos los pedidos al mismo proveedor que no pasaron por aprobación en los 30 días anteriores: partir un pedido en varios no la evita.
 - **Unidades de compra:** el producto dice cuántas unidades trae su caja. La propuesta pide cajas enteras, y el almacén cuenta unidades.
 - **Recepción en partes:** cada parte con sus lotes y caducidades, y lo que falta sigue «en pedido». Se cierra con lo recibido, y el gasto es por lo recibido.
 - **Envío automático por correo:** solo con la clínica (`orders_auto_send`) y el proveedor (`Supplier::auto_send`) activados, que de entrada no lo están, y con el correo configurado. Si falla, el pedido sigue aprobado y se envía a mano.
