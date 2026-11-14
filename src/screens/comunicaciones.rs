@@ -603,6 +603,7 @@ fn msg_templates(app: &mut App, ui: &mut Ui) {
                                     MsgKind::RecordatorioCita => "Días antes de la cita",
                                     MsgKind::Recall => "Días de antelación",
                                     MsgKind::PresupuestoPendiente => "Días sin respuesta",
+                                    MsgKind::Encuesta => "Días después de la visita",
                                     _ => "Días",
                                 })
                                 .size(13.5)

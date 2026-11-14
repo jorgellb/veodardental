@@ -188,7 +188,7 @@ pub fn keep_issued_rx(current: &Prescription, proposed: Option<&Prescription>) -
 
 /// Las listas con registros que un puesto no puede cambiar ni borrar una vez
 /// firmados, emitidos o confirmados (ver [`protect_json`]).
-pub const PROTECTED_LISTS: [&str; 5] = ["documents", "health", "prescriptions", "evo_notes", "alert_acks"];
+pub const PROTECTED_LISTS: [&str; 6] = ["documents", "health", "prescriptions", "evo_notes", "alert_acks", "surveys"];
 
 /// Servidor: versión que se acepta de un registro firmado de `documents` o
 /// `health`, o de una receta emitida de `prescriptions` (`current`), cuando un
@@ -213,6 +213,8 @@ pub fn protect_json(field: &str, current: &str, after: Option<&str>) -> Option<S
         "prescriptions" => fix::<Prescription>(current, after, |r| r.issued(), keep_issued_rx),
         "evo_notes" => fix::<crate::evolucion::EvoNote>(current, after, |n| n.is_confirmed(), crate::evolucion::keep_confirmed),
         "alert_acks" => fix::<crate::alertas::AlertAck>(current, after, |_| true, |cur, _| cur.clone()),
+        // una encuesta respondida no se retoca (los resultados tienen que ser de verdad)
+        "surveys" => fix::<crate::encuestas::Survey>(current, after, |s| s.answered.is_some(), |cur, _| cur.clone()),
         _ => None,
     }
 }

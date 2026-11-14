@@ -241,6 +241,7 @@ impl Db {
             alert_acks,
             sterile_cycles,
             sterile_packs,
+            surveys,
             punches,
             data_version: _,
             station: _,
@@ -294,6 +295,7 @@ impl Db {
         alert_acks.clear();
         sterile_cycles.clear();
         sterile_packs.clear();
+        surveys.clear();
         punches.clear();
         // lo de ejemplo que no es de ningún paciente
         suppliers.retain(|s| !is_demo(&d.suppliers, s.id, &s.name));

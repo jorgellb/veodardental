@@ -199,6 +199,18 @@ pub fn tick(app: &mut App, ctx: &egui::Context, time: f64) {
                 }
             }
             WebEvent::PayNotice(n) => pay_notice(app, &n),
+            WebEvent::Survey { token, answer, unsubscribe } => {
+                let pid = app.db.surveys.iter().find(|s| s.token == token).map(|s| s.patient_id);
+                if let Some((score, comment)) = answer
+                    && app.db.survey_answer(&token, score, &comment, now()).is_ok()
+                {
+                    app.changed();
+                }
+                if unsubscribe && let Some(pid) = pid {
+                    app.db.survey_unsubscribe(pid);
+                    app.changed();
+                }
+            }
         }
     }
     if any || time - app.booking.last_publish >= 2.0 {

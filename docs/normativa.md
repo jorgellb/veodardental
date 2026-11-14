@@ -158,3 +158,12 @@ queda marcado como pendiente.
   - No se encontró en las fuentes consultadas una recomendación específica del embarazo que citar.
 - **Pendiente:** la revisión de los textos por un odontólogo de la clínica (B-16, T-F5-07X).
 
+## Reseñas públicas: no pedir solo las positivas (T-F5-09)
+- **Fuente:** Google, «Prohibited & restricted content» de las contribuciones de Maps (support.google.com/contributionpolicy/answer/7400114), consultada el 14/11/2026.
+  - Prohíbe a los negocios desanimar o impedir las reseñas negativas y pedir de forma selectiva las positivas.
+  - Permite pedir reseñas que reflejen una experiencia real, sin incentivos y sin intentar influir en la nota ni en el contenido.
+  - Una noticia de 2022 decía que esa línea se había quitado; la página oficial consultada la incluye.
+- **Efecto en el código (`src/encuestas.rs`):**
+  - el enlace a la reseña se ofrece igual a todos, antes y después de responder y con cualquier nota;
+  - la encuesta no condiciona nada y no hay incentivos.
+

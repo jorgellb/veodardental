@@ -268,6 +268,8 @@ pub struct Published {
     pub rx: HashMap<String, crate::rx_link::PubRx>,
     /// Peticiones de pago por internet (por código).
     pub pays: HashMap<String, crate::pago::PubPay>,
+    /// Encuestas de satisfacción (por código).
+    pub surveys: HashMap<String, crate::encuestas::PubSurvey>,
     /// Dirección pública de la página (para que Redsys avise y devuelva al paciente).
     pub public_url: String,
 }
@@ -320,6 +322,7 @@ pub fn publish(db: &Db, today: NaiveDate) -> Published {
         offers: crate::slot_offer::publish_offers(db, today),
         rx: crate::rx_link::publish_rx(db, today),
         pays: crate::pago::publish_pays(db, today.and_time(chrono::Local::now().naive_local().time())),
+        surveys: crate::encuestas::publish_surveys(db, today.and_time(chrono::Local::now().naive_local().time())),
         public_url: c.public_url.trim().trim_end_matches('/').to_string(),
     }
 }
@@ -609,6 +612,12 @@ pub enum WebEvent {
     },
     /// Notificación de Redsys con firma comprobada.
     PayNotice(crate::pago::Notice),
+    /// Respuesta a una encuesta (nota de 0 a 10 y comentario) o baja.
+    Survey {
+        token: String,
+        answer: Option<(u8, String)>,
+        unsubscribe: bool,
+    },
 }
 
 #[derive(Default)]
@@ -1335,6 +1344,43 @@ fn rx_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEve
     }
 }
 
+/// Encuesta de satisfacción: `GET /encuesta/{código}` (la página) y `POST
+/// /api/encuesta/{código}` (`puntuacion` y `comentario`, o `baja`).
+fn survey_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEvent>, wake: &dyn Fn(), ip: &str, path: &str) {
+    let lock = || sh.lock().unwrap_or_else(|e| e.into_inner());
+    let text = |req: tiny_http::Request, code: u16, t: &str| respond(req, code, "text/plain; charset=utf-8", t.to_string());
+    let token = path.trim_start_matches("/api/encuesta/").trim_start_matches("/encuesta/").trim_end_matches('/').to_string();
+    let mut g = lock();
+    let found = if crate::portal::valid_token(&token) && g.published.accepting { g.published.surveys.get(&token).cloned() } else { None };
+    let Some(s) = found else {
+        let blocked = too_many(&mut g, &format!("bad:{ip}"), 20, 3600);
+        g.refused += 1;
+        drop(g);
+        return text(req, if blocked { 429 } else { 404 }, "Este enlace no es válido o ya ha caducado.");
+    };
+    let clinic = g.published.clinic.clone();
+    drop(g);
+    match (req.method().clone(), path.starts_with("/encuesta/")) {
+        (tiny_http::Method::Get, true) => respond(req, 200, "text/html; charset=utf-8", crate::encuestas::survey_page(&clinic, &token, &s, false)),
+        (tiny_http::Method::Post, false) => {
+            let Some(body) = read_body(&mut req) else { return text(req, 413, "Demasiado grande.") };
+            let f = crate::pago::parse_form(&String::from_utf8_lossy(&body));
+            let unsubscribe = f.contains_key("baja");
+            let answer = f.get("puntuacion").and_then(|x| x.trim().parse::<u8>().ok()).filter(|x| *x <= 10).map(|x| (x, f.get("comentario").cloned().unwrap_or_default().chars().take(2000).collect::<String>()));
+            if !unsubscribe && (answer.is_none() || s.answered) {
+                return text(req, 400, if s.answered { "Esta encuesta ya está respondida." } else { "Elija una nota del 0 al 10." });
+            }
+            if tx.send(WebEvent::Survey { token: token.clone(), answer, unsubscribe }).is_err() {
+                return text(req, 503, "No se pudo guardar. Inténtelo más tarde.");
+            }
+            wake();
+            let page = if unsubscribe { "<!doctype html><meta charset=\"utf-8\"><p>No le enviaremos más encuestas.</p>".to_string() } else { crate::encuestas::survey_page(&clinic, &token, &s, true) };
+            respond(req, 200, "text/html; charset=utf-8", page)
+        }
+        _ => text(req, 405, "Método no permitido."),
+    }
+}
+
 /// Pago por internet (ver `pago`):
 /// - `GET /pagar/{código}`: la página, con lo que se paga y cómo va;
 /// - `POST /api/pagar/{código}/iniciar` (`metodo=tarjeta|bizum`): pedido nuevo y formulario firmado hacia Redsys;
@@ -1653,6 +1699,10 @@ pub fn listen(port: u16, lan: bool, published: Published, wake: impl Fn() + Send
                     drop(g);
                     budget_portal(req, &sh, &tx, &wake, &ip, now, &path);
                 }
+                (_, x) if x.starts_with("/encuesta/") || x.starts_with("/api/encuesta/") => {
+                    drop(g);
+                    survey_portal(req, &sh, &tx, &wake, &ip, &path);
+                }
                 (_, x) if x.starts_with("/pagar/") || x.starts_with("/api/pagar/") || x == "/api/tpv/notificacion" => {
                     drop(g);
                     pay_portal(req, &sh, &tx, &wake, &ip, &path, &url);
@@ -1929,6 +1979,7 @@ mod tests {
                 Ok(WebEvent::Rx { patient }) => println!("el paciente {patient} ha entrado en «Mis recetas»"),
                 Ok(WebEvent::PayStarted { order, .. }) => println!("pago iniciado: pedido {order}"),
                 Ok(WebEvent::PayNotice(n)) => println!("notificación del pedido {}", n.order),
+                Ok(WebEvent::Survey { token, .. }) => println!("encuesta {token}"),
                 Err(_) => {}
             }
         }
@@ -2011,6 +2062,52 @@ mod tests {
         assert_eq!(call("POST", &format!("/api/pagar/{token}/iniciar"), Some("metodo=tarjeta")).0, 409);
         // y un código inventado no lleva a nada
         assert_eq!(call("GET", &format!("/pagar/{}", "a".repeat(32)), None).0, 404);
+    }
+
+    /// Encuesta por internet: la página (con el enlace a la reseña para
+    /// todos), una respuesta una sola vez, nota fuera de rango y la baja.
+    #[test]
+    fn a_survey_is_answered_once_from_its_page() {
+        let today = today();
+        let now = chrono::Local::now().naive_local();
+        let mut db = Db::sample(today);
+        db.booking.enabled = true;
+        db.config.surveys.review_url = "https://g.page/r/clinica/review".into();
+        db.surveys.clear();
+        let mut a = db.appointments.iter().find(|a| a.patient_id.is_some()).unwrap().clone();
+        a.state = ApptState::Finalizada;
+        let (_, token) = db.new_survey(&a, now).unwrap();
+        let srv = listen(0, false, publish(&db, today), || {}).unwrap();
+        let base = format!("http://127.0.0.1:{}", srv.port);
+        let call = |m: &str, p: &str, body: Option<&str>| {
+            let r = ureq::request(m, &format!("{base}{p}")).set("Content-Type", "application/x-www-form-urlencoded");
+            let res = match body {
+                Some(b) => r.send_string(b),
+                None => r.call(),
+            };
+            match res {
+                Ok(r) => (r.status(), r.into_string().unwrap()),
+                Err(ureq::Error::Status(c, r)) => (c, r.into_string().unwrap()),
+                Err(e) => panic!("{e}"),
+            }
+        };
+        let (code, page) = call("GET", &format!("/encuesta/{token}"), None);
+        assert_eq!(code, 200);
+        assert!(page.contains("name=\"puntuacion\"") && page.contains("https://g.page/r/clinica/review"), "el enlace a la reseña, antes de responder y para todos");
+        assert_eq!(call("POST", &format!("/api/encuesta/{token}"), Some("puntuacion=11")).0, 400);
+        // una nota baja: también se le ofrece la reseña
+        let (code, thanks) = call("POST", &format!("/api/encuesta/{token}"), Some("puntuacion=2&comentario=Esper%C3%A9+mucho"));
+        assert_eq!(code, 200);
+        assert!(thanks.contains("Gracias") && thanks.contains("https://g.page/r/clinica/review"));
+        let WebEvent::Survey { token: t, answer, unsubscribe } = srv.rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap() else { panic!() };
+        assert_eq!((t.as_str(), answer, unsubscribe), (token.as_str(), Some((2, "Esperé mucho".to_string())), false));
+        db.survey_answer(&token, 2, "Esperé mucho", now).unwrap();
+        srv.shared.lock().unwrap().published = publish(&db, today);
+        assert_eq!(call("POST", &format!("/api/encuesta/{token}"), Some("puntuacion=10")).0, 400, "una sola vez");
+        // la baja
+        assert_eq!(call("POST", &format!("/api/encuesta/{token}"), Some("baja=1")).0, 200);
+        assert!(matches!(srv.rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), WebEvent::Survey { unsubscribe: true, .. }));
+        assert_eq!(call("GET", &format!("/encuesta/{}", "b".repeat(32)), None).0, 404);
     }
 
     #[test]

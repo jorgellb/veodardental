@@ -20,6 +20,7 @@ mod dicom;
 mod disco;
 mod doc_link;
 mod docs_tests;
+mod encuestas;
 mod erx;
 mod esterilizacion;
 mod evolucion;

@@ -238,6 +238,8 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
             ui.scope(|ui| {
                 ui.set_max_width(w);
                 crate::screens::pagos::settings(app, ui);
+                ui.add_space(10.0);
+                crate::screens::encuestas::settings(app, ui);
             });
         }
         CfgTab::Telefonia => crate::screens::llamadas::panel(app, ui),

@@ -683,6 +683,9 @@ pub struct ClinicConfig {
     /// Resumir los dictados con la IA (con los agentes de IA configurados).
     #[serde(default)]
     pub evo_ai: bool,
+    /// Encuestas: enlace de la reseña y días entre encuestas (ver `encuestas`).
+    #[serde(default, skip_serializing_if = "crate::encuestas::SurveyConfig::is_default")]
+    pub surveys: crate::encuestas::SurveyConfig,
     /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub support_email: String,
@@ -871,6 +874,9 @@ pub struct Db {
     pub sterile_cycles: Tracked<Vec<crate::esterilizacion::Cycle>>,
     #[serde(default)]
     pub sterile_packs: Tracked<Vec<crate::esterilizacion::Pack>>,
+    /// Encuestas de satisfacción (ver `encuestas`).
+    #[serde(default)]
+    pub surveys: Tracked<Vec<crate::encuestas::Survey>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,
@@ -1452,6 +1458,11 @@ impl Db {
                 let id = self.msg_templates.iter().map(|x| x.id).max().unwrap_or(0) + 1;
                 self.msg_templates.push(crate::comms::MsgTemplate { id, ..t });
             }
+        }
+        // versión 2: la plantilla de la encuesta de satisfacción (desactivada)
+        if !self.msg_templates.iter().any(|x| x.kind == crate::comms::MsgKind::Encuesta) {
+            let id = self.msg_templates.iter().map(|x| x.id).max().unwrap_or(0) + 1;
+            self.msg_templates.push(crate::comms::survey_template(id));
         }
         // versión 2: los consentimientos de siempre, con la clase de tratamiento que los pide (ver `plan`)
         for t in crate::comms::default_doc_templates() {

@@ -32,6 +32,8 @@ pub enum MsgKind {
     Libre,
     /// Aviso a la lista de espera de un hueco que ha quedado libre.
     HuecoLibre,
+    /// Encuesta de satisfacción tras una visita (ver `encuestas`).
+    Encuesta,
 }
 
 impl MsgKind {
@@ -43,6 +45,7 @@ impl MsgKind {
             MsgKind::PresupuestoPendiente => "Seguimiento de presupuesto",
             MsgKind::Libre => "Mensaje libre",
             MsgKind::HuecoLibre => "Hueco libre (lista de espera)",
+            MsgKind::Encuesta => "Encuesta de satisfacción",
         }
     }
 }
@@ -129,6 +132,7 @@ pub fn msg_placeholders(kind: MsgKind) -> Vec<&'static str> {
         MsgKind::RecordatorioCita => v.extend(["[HORA]", "[MOTIVO]", "[ENLACE]"]),
         MsgKind::Recall => v.extend(["[MOTIVO]", "[ENLACE_CITA]"]),
         MsgKind::PresupuestoPendiente => v.extend(["[MOTIVO]", "[IMPORTE]", "[ENLACE_PRESUPUESTO]"]),
+        MsgKind::Encuesta => v.extend(["[ENLACE_ENCUESTA]"]),
         _ => {}
     }
     v
@@ -188,7 +192,22 @@ pub fn default_msg_templates() -> Vec<MsgTemplate> {
             "Hola, [NOMBRE]:\n\nLe recordamos su cita en [CLINICA] el [FECHA] a las [HORA] con [DOCTOR].\n\nSi no puede venir, avísenos llamando al [TELCLINICA].\n\nUn saludo,\n[CLINICA]",
         ),
         t(7, "Aviso de revisión (correo)", MsgKind::Recall, Channel::Email, 7, "Le toca su [MOTIVO] en [CLINICA]", "Hola, [NOMBRE]:\n\nYa le toca su [MOTIVO]. Llámenos al [TELCLINICA] y le damos cita.\n\nUn saludo,\n[CLINICA]"),
+        survey_template(8),
     ]
+}
+
+/// Encuesta tras la visita: desactivada hasta que la clínica la active.
+pub fn survey_template(id: u32) -> MsgTemplate {
+    MsgTemplate {
+        id,
+        name: "Encuesta de satisfacción".into(),
+        kind: MsgKind::Encuesta,
+        channel: Channel::WhatsApp,
+        days: 1,
+        subject: "¿Qué tal su visita a [CLINICA]?".into(),
+        text: "Hola [NOMBRE], gracias por venir a [CLINICA]. ¿Nos cuenta en un minuto cómo fue su visita? [ENLACE_ENCUESTA]".into(),
+        active: false,
+    }
 }
 
 // ───────────────────────────── documentos ─────────────────────────────
@@ -414,7 +433,7 @@ impl Db {
             text = format!("{}\n\n{label}: {url}", text.trim_end());
         }
         // en lo que no es la atención de su cita o revisión, cómo darse de baja
-        if ch == Channel::Email && matches!(t.kind, MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente) {
+        if ch == Channel::Email && matches!(t.kind, MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente | MsgKind::Encuesta) {
             text = format!("{}\n\n—\nSi no quiere recibir estos mensajes, respóndanos con la palabra BAJA o llámenos al {}.", text.trim_end(), self.config.phone);
         }
         self.messages.push(Message {
@@ -640,6 +659,35 @@ impl Db {
                         if self.push_msg(&t, b.patient_id, Some(b.id), &extra, Some(("Revise su presupuesto y acéptelo con su firma desde el móvil", link))) {
                             created += 1;
                         } else {
+                            skipped += 1;
+                        }
+                    }
+                }
+                MsgKind::Encuesta => {
+                    // `days` días después de una visita finalizada (y hasta una
+                    // semana más, por si el ordenador estuvo apagado), con la
+                    // página publicada y sin duplicados (ver `encuestas`)
+                    let Some(base) = self.booking_page_url().map(|u| u.trim_end_matches('/').to_string()) else { continue };
+                    let from = day - Duration::days(t.days.max(0) as i64 + 7);
+                    let until = day - Duration::days(t.days.max(0) as i64);
+                    let appts: Vec<Appointment> = self.appointments.iter().filter(|a| a.date >= from && a.date <= until && a.state == ApptState::Finalizada).cloned().collect();
+                    let at = day.and_time(now().time());
+                    for a in appts {
+                        if !self.survey_due(&a, at) {
+                            continue;
+                        }
+                        let pid = a.patient_id.unwrap_or(0);
+                        if auto_mail && t.channel == Channel::Email && !self.reachable_by_email(pid) {
+                            continue;
+                        }
+                        let Some((sid, token)) = self.new_survey(&a, at) else { continue };
+                        let link = format!("{base}/encuesta/{token}");
+                        let extra = [("[DOCTOR]", self.doctor_alias(a.doctor_id)), ("[ENLACE_ENCUESTA]", link.clone())];
+                        if self.push_msg(&t, pid, Some(a.id), &extra, Some(("Cuéntenos cómo fue su visita", link))) {
+                            created += 1;
+                        } else {
+                            // sin consentimiento o dado de baja: no queda encuesta
+                            self.surveys.retain(|s| s.id != sid);
                             skipped += 1;
                         }
                     }

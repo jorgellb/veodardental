@@ -2596,8 +2596,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Consentimiento, bajas, sin duplicados, resultados medibles y sin condicionar la reseña",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-056"
+   ]
   },
   {
    "id": "T-F5-10",

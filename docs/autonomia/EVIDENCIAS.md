@@ -1420,3 +1420,27 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 - **Hallazgo:** al comprobar que la etiqueta de un lote nuevo es única, los lotes de la misma tanda se comparaban distinguiendo mayúsculas y los del servidor sin distinguirlas. Dos lotes «dup-1» y «DUP-1» de la misma tanda pasaban los dos.
 - **Corrección (`src/server.rs`):** las dos comprobaciones normalizan igual (sin espacios y en minúsculas), y una etiqueta vacía no vale.
 - **Prueba:** `server::tests::alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server` manda dos lotes nuevos con «dup-1» y « DUP-1 » en la misma tanda: entra uno.
+
+## E-056 T-F5-09: encuestas de satisfacción y solicitud de reseñas
+- **Hecho (`src/encuestas.rs`, la página `/encuesta/{código}`, Comunicaciones y Configuración › Cita online):**
+  - **Envío:** la plantilla «Encuesta de satisfacción» (desactivada hasta que la clínica la active) se manda unos días después de una cita finalizada, con el enlace personal (128 bits).
+  - **Consentimiento:** el de los demás avisos (protección de datos, canal aceptado, ni limitado ni bloqueado). Sin aviso enviado no queda encuesta.
+  - **Bajas:** desde la propia encuesta («No quiero recibir más encuestas») o por finalidad en la ficha. En los correos va cómo darse de baja.
+  - **Sin duplicados:** una por cita, ninguna si el paciente recibió otra en los últimos 90 días (configurable), y respuesta una sola vez.
+  - **Resultados medibles** en el cuadro de mando: enviadas, respondidas, tasa de respuesta, NPS con su fórmula y media, en total y por profesional.
+  - **Reseña sin condiciones:** el enlace a la reseña pública se ofrece a todos, con cualquier nota (política vigente de Google, en `docs/normativa.md`). Solo se admiten enlaces https.
+  - **Integridad:** una encuesta respondida no se retoca ni se borra desde un puesto (`surveys` en `firmado::PROTECTED_LISTS`).
+- **Pruebas:**
+  - `encuestas::tests::surveys_are_not_duplicated_and_results_are_measured` (NPS calculado a mano: (2 − 1) ÷ 4 = 25);
+  - `encuestas::tests::the_survey_message_respects_consent_unsubscribe_and_duplicates`;
+  - `encuestas::tests::the_review_link_is_offered_to_everyone_whatever_the_score`;
+  - `encuestas::tests::an_answered_survey_cannot_be_retouched_by_a_station`;
+  - `booking::tests::a_survey_is_answered_once_from_its_page`: nota baja con reseña ofrecida, una sola respuesta, nota fuera de rango y baja.
+- **Sin envíos reales.**
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 495 pasan, 0 fallan, 10 ignoradas |

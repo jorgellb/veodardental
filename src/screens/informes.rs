@@ -522,6 +522,8 @@ fn dashboard(app: &mut App, ui: &mut Ui) {
         });
     });
     ui.add_space(8.0);
+    crate::screens::encuestas::results(app, ui, f.from, f.to);
+    ui.add_space(8.0);
     goals_card(app, ui);
 }
 
