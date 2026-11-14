@@ -32,6 +32,7 @@ mod firmado;
 mod foral;
 mod gesden;
 mod golive;
+mod grupo;
 mod health;
 mod horario;
 mod i18n;

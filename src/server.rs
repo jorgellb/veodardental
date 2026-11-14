@@ -617,6 +617,9 @@ struct State {
     /// Registro de accesos a las historias (lo escribe el servidor) y su freno.
     history: PathBuf,
     history_throttle: crate::accesos::Throttle,
+    /// Revisión del último cambio de lo que ve algún usuario (sus centros o
+    /// su perfil): los puestos que vienen de antes recogen los datos enteros.
+    visibility_rev: u64,
 }
 
 /// Cuántas veces en la última ventana (y, si `add`, apunta una más).
@@ -759,6 +762,7 @@ impl State {
             proof: proof_key(key),
             history,
             history_throttle: Default::default(),
+            visibility_rev: 0,
         }
     }
 
@@ -888,14 +892,14 @@ impl State {
 
     /// Lo que ve el usuario de la sesión (según su perfil).
     fn view_of(&self, id: u32) -> View {
-        let v = self.user(id).map(|u| View::of(u.profile)).unwrap_or(View::of(crate::users::Profile::Recepcion));
+        let v = self.user(id).map(|u| View::of_user(&u)).unwrap_or(View::of(crate::users::Profile::Recepcion));
         // el registro de jornada de los demás, solo para Dirección
         if self.is_admin(id) { v } else { v.only_own(id) }
     }
 
     /// Un registro tal como se le manda a un puesto: sin contraseñas y sin lo
     /// que su perfil no ve.
-    fn outgoing(view: View, list: &str, json: &str) -> Option<String> {
+    fn outgoing(view: &View, list: &str, json: &str) -> Option<String> {
         if list == "users" {
             return Some(strip_user_json(json));
         }
@@ -911,9 +915,16 @@ impl State {
         // mira al usuario de verdad
         sync::check_keys(&changes)?;
         let sent: Vec<(String, Option<String>)> = changes.iter().map(|c| (c.field.clone(), c.key.clone())).collect();
-        // los puestos (y la revisión) los lleva el servidor; los usuarios solo los
-        // cambia Dirección, y nunca sus contraseñas ni los fallos de acceso
-        changes.retain(|c| c.field != "stations" && c.field != "rev" && (c.field != "users" || admin));
+        // los puestos (y la revisión) los lleva el servidor; los usuarios y las
+        // claves de grupo solo los cambia Dirección, y nunca las contraseñas ni
+        // los fallos de acceso
+        changes.retain(|c| c.field != "stations" && c.field != "rev" && ((c.field != "users" && c.field != "group_keys") || admin));
+        // ¿cambia lo que ve algún usuario (sus centros o su perfil)?
+        let field = |j: Option<&String>, f: &str| j.and_then(|j| serde_json::from_str::<Value>(j).ok()).map(|v| v[f].clone());
+        let visibility = changes.iter().filter(|c| c.field == "users").any(|c| {
+            let current = c.key.as_deref().and_then(|k| self.snap.get("users", Some(k)));
+            ["centers", "profile"].iter().any(|f| field(current, f) != field(c.after.as_ref(), f))
+        });
         for c in changes.iter_mut().filter(|c| c.field == "users") {
             let current = c.key.as_deref().and_then(|k| self.snap.get("users", Some(k))).cloned();
             c.before = c.before.as_deref().map(|b| protect_user_json(b, current.as_ref())).transpose()?;
@@ -923,6 +934,15 @@ impl State {
         // nada (ni añadir: una receta o una imagen las crea quien las ve), y en
         // los demás registros lo que no ve queda como está
         let view = self.view_of(user);
+        // de unos centros: en los demás no escribe (ni crea, ni cambia, ni mueve
+        // algo de un centro a otro, ni lo borra)
+        if view.centers().is_some() {
+            let snap = &self.snap;
+            changes.retain(|c| {
+                let current = c.key.as_deref().and_then(|k| snap.get(&c.field, Some(k)));
+                !current.is_some_and(|j| view.other_center(&c.field, j)) && !c.after.as_deref().is_some_and(|j| view.other_center(&c.field, j))
+            });
+        }
         if !view.is_full() {
             changes.retain(|c| !view.hides(&c.field));
             for c in changes.iter_mut().filter(|c| c.key.is_some()) {
@@ -1271,6 +1291,9 @@ impl State {
             sync::undo(&mut self.snap, previous);
             return Err(e);
         }
+        if visibility {
+            self.visibility_rev = self.rev();
+        }
         let station = self.session_station(user).unwrap_or(station);
         self.note_history(user, station, crate::accesos::Action::Modificacion, history);
         Ok(sent)
@@ -1488,7 +1511,8 @@ impl State {
     /// `since` es de hace mucho, que el puesto pida los datos enteros).
     fn since(&self, since: u64, also: &[(String, Option<String>)], view: View) -> Response {
         let rev = self.rev();
-        if since < rev && self.log.front().is_none_or(|(first, _)| *first > since + 1) {
+        // ha cambiado lo que ve algún usuario: los datos enteros, con lo que ve ahora
+        if since < rev && (since < self.visibility_rev || self.log.front().is_none_or(|(first, _)| *first > since + 1)) {
             return reply(200, json!({ "rev": rev, "completo": true, "copia": self.backup }));
         }
         let mut seen = std::collections::HashSet::new();
@@ -1502,7 +1526,7 @@ impl State {
                 continue;
             }
             let after = match (self.snap.get(field, key.as_deref()), key) {
-                (Some(rec), Some(_)) => Self::outgoing(view, field, rec),
+                (Some(rec), Some(_)) => Self::outgoing(&view, field, rec),
                 (other, _) => other.cloned(),
             };
             out.push(Change { field: field.clone(), key: key.clone(), before: None, after });
@@ -1639,6 +1663,18 @@ impl State {
             );
         };
         let center = v["centro"].as_u64().map(|c| c as u32);
+        // de unos centros: solo en los suyos, y no con lo de otro centro
+        let view = self.view_of(me);
+        if view.centers().is_some() {
+            if !center.is_some_and(|c| view.center_ok(c)) {
+                return error(403, "Este usuario no trabaja en ese centro.");
+            }
+            if let Some((list, id)) = op.center_record()
+                && self.snap.get(list, Some(&id.to_string())).is_some_and(|j| view.other_center(list, j))
+            {
+                return error(403, "Es de un centro en el que este usuario no trabaja.");
+            }
+        }
         let r = self.modify(fields, |db| {
             db.station = SERVER_STATION;
             // lo que se crea lleva el usuario de la sesión y el centro del puesto,
@@ -1656,6 +1692,25 @@ impl State {
             Err(e) => error(500, &e),
             Ok(Err(msg)) => error(403, &msg),
             Ok(Ok(id)) => reply(200, json!({ "id": id, "rev": self.rev() })),
+        }
+    }
+
+    /// Resumen de esta clínica para el grupo (solo cifras; ver `grupo`), con
+    /// una clave de grupo en uso.
+    fn group_summary(&self, req: &Request) -> Response {
+        let token = req.header("X-Grupo").unwrap_or_default();
+        let keys: Vec<crate::grupo::GroupKey> = self.snap.records.get("group_keys").into_iter().flat_map(|r| r.iter()).filter_map(|(_, j)| serde_json::from_str(j).ok()).collect();
+        if crate::grupo::valid_key(&keys, token).is_none() {
+            return error(401, "La clave de grupo no es válida o se ha retirado.");
+        }
+        let date = |k: &str| req.param(k).and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+        let (Some(from), Some(to)) = (date("desde"), date("hasta")) else { return error(400, "Faltan las fechas (desde y hasta, AAAA-MM-DD).") };
+        if let Err(e) = crate::grupo::check_period(from, to) {
+            return error(400, &e);
+        }
+        match self.snap.to_db() {
+            Ok(db) => reply(200, json!(db.group_summary(from, to))),
+            Err(e) => error(500, &e),
         }
     }
 
@@ -1725,6 +1780,18 @@ impl State {
         if hits(&mut self.key_fails, req.peer, window, false) >= 20 {
             return (error(429, "Demasiados intentos con una clave incorrecta desde este ordenador: espere unos minutos."), false);
         }
+        // el resumen para el grupo de clínicas va con su propia clave (ver `grupo`),
+        // no con la de la clínica, y no abre nada más
+        if req.path == "/grupo/resumen" {
+            if req.method != "GET" {
+                return (error(405, "Solo se puede pedir el resumen."), false);
+            }
+            let r = self.group_summary(req);
+            if r.code == 401 {
+                hits(&mut self.key_fails, req.peer, window, true);
+            }
+            return (r, false);
+        }
         if !has_key(req, key) {
             hits(&mut self.key_fails, req.peer, window, true);
             return (error(401, WRONG_KEY), false);
@@ -1751,7 +1818,7 @@ impl State {
                     ("GET", "/estado") => reply(200, json!({ "rev": self.rev() })),
                     ("GET", "/datos") => {
                         let view = self.view_of(me);
-                        Response { code: 200, body: self.snap.to_json_with(&|list, rec| Self::outgoing(view, list, rec)) }
+                        Response { code: 200, body: self.snap.to_json_with(&|list, rec| Self::outgoing(&view, list, rec)) }
                     }
                     ("GET", "/cambios") => self.since(param("desde"), &[], self.view_of(me)),
                     ("POST", "/cambios" | "/cadena") if data_mismatch(req).is_some() => error(426, data_mismatch(req).unwrap_or(UPDATE_STATION)),
@@ -2326,6 +2393,20 @@ impl Remote {
     pub fn stop(&self) -> Result<(), String> {
         self.post("/parar", "{}").map(|_| ())
     }
+}
+
+/// Pide a una clínica del grupo su resumen (ver `grupo`): solo con su huella
+/// ya conocida (si no coincide, no conecta) y con la clave de grupo, sin la
+/// clave de la clínica.
+pub fn group_summary(link: &crate::grupo::Link, from: chrono::NaiveDate, to: chrono::NaiveDate) -> Result<crate::grupo::Summary, String> {
+    if unhex(&link.pin).is_none_or(|p| p.len() != 32) {
+        return Err("Falta la huella del servidor de esa clínica.".into());
+    }
+    crate::grupo::check_period(from, to)?;
+    let r = Remote::with_pin(&link.address, "", 0, &link.pin);
+    let url = format!("{}/grupo/resumen?desde={}&hasta={}", r.base, from.format("%Y-%m-%d"), to.format("%Y-%m-%d"));
+    let text = read_all(r.agent.get(&url).set("X-Grupo", link.token.trim()).call().map_err(err_text)?)?;
+    serde_json::from_str(&text).map_err(|e| format!("Respuesta no válida de la clínica: {e}"))
 }
 
 /// Deja los datos del servidor listos en un puesto (conservando lo propio del puesto).
@@ -3098,7 +3179,7 @@ mod tests {
         drop(db);
         for (who, view) in [("doctor", View::FULL), ("recepción", View::of(crate::users::Profile::Recepcion))] {
             let t = Instant::now();
-            let body = st.snap.to_json_with(&|list, rec| State::outgoing(view, list, rec));
+            let body = st.snap.to_json_with(&|list, rec| State::outgoing(&view, list, rec));
             println!("{who} · servidor prepara los datos: {:?} · {} MB", t.elapsed(), body.len() / 1_000_000);
             let t = Instant::now();
             let z = gzip(body.as_bytes());
@@ -3395,6 +3476,195 @@ mod tests {
     /// Alertas revisadas y esterilización en red: el servidor sella quién y
     /// cuándo; un visto o un uso anotado no se cambia ni se borra desde un
     /// puesto; un lote retirado no vuelve y un ciclo fallido no vuelve atrás.
+    /// La clave de grupo (T-F6-01) solo abre el resumen, que no lleva datos de
+    /// pacientes; la clave de la clínica no abre el resumen; y probar claves
+    /// se frena como con la de la clínica.
+    #[test]
+    fn the_group_key_opens_only_the_summary() {
+        let dir = std::env::temp_dir().join(format!("ds_grupo_{}", std::process::id()));
+        let db = Db::sample(NaiveDate::from_ymd_opt(2026, 11, 6).unwrap());
+        let mut st = State::new(&db, dir.join("clinica.json"), "CLAVEG", vec![7; 32]);
+        let token = st.modify(&["group_keys", "audit_log", "config", "next_id"], |d| d.group_key_new("Grupo Norte")).unwrap().unwrap().1;
+        let peer = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let req = |method: &str, path: &str, query: &str, headers: &[(&str, &str)]| Request {
+            method: method.into(),
+            path: path.into(),
+            query: query.into(),
+            headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            body: vec![],
+            peer,
+        };
+        let year = "desde=2026-01-01&hasta=2026-12-31";
+        let (r, _) = st.handle(&req("GET", "/grupo/resumen", year, &[("X-Grupo", &token)]), "CLAVEG");
+        assert_eq!(r.code, 200, "{}", r.body);
+        let s: crate::grupo::Summary = serde_json::from_str(&r.body).unwrap();
+        assert_eq!(s, db.group_summary(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(), NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()));
+        // en la respuesta tal cual, nada de los pacientes
+        for p in &db.patients {
+            for v in [p.full_name(), p.nif.clone(), p.mobile.clone(), p.email.clone()] {
+                assert!(v.trim().len() < 4 || !r.body.contains(v.trim()), "«{v}» en el resumen");
+            }
+        }
+        crate::grupo::only_known_fields(&r.body).unwrap();
+        // con la clave de grupo no se entra en nada más
+        for path in ["/datos", "/cambios", "/acceso", "/estado", "/historia"] {
+            let (r, _) = st.handle(&req("GET", path, "", &[("X-Grupo", &token)]), "CLAVEG");
+            assert_eq!(r.code, 401, "{path}");
+        }
+        let (r, _) = st.handle(&req("POST", "/grupo/resumen", year, &[("X-Grupo", &token)]), "CLAVEG");
+        assert_eq!(r.code, 405);
+        // la clave de la clínica no sirve para el resumen
+        let (r, _) = st.handle(&req("GET", "/grupo/resumen", year, &[("X-Clave", "CLAVEG")]), "CLAVEG");
+        assert_eq!(r.code, 401);
+        // fechas que faltan o un periodo demasiado largo
+        for q in ["", "desde=2026-01-01", "desde=2026-12-31&hasta=2026-01-01", "desde=2020-01-01&hasta=2026-12-31", "desde=ayer&hasta=hoy"] {
+            let (r, _) = st.handle(&req("GET", "/grupo/resumen", q, &[("X-Grupo", &token)]), "CLAVEG");
+            assert_eq!(r.code, 400, "{q}");
+        }
+        // probar claves se frena (y luego tampoco entra la buena desde ahí)
+        let bad = "0".repeat(64);
+        let mut last = 0;
+        for _ in 0..25 {
+            last = st.handle(&req("GET", "/grupo/resumen", year, &[("X-Grupo", &bad)]), "CLAVEG").0.code;
+        }
+        assert_eq!(last, 429);
+        assert_eq!(st.handle(&req("GET", "/grupo/resumen", year, &[("X-Grupo", &token)]), "CLAVEG").0.code, 429);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Dos sociedades, cada una con su servidor (T-F6-01, D-25): el grupo junta
+    /// sus resúmenes con la clave de cada una. Una clave no vale en la otra
+    /// clínica, ni con otra huella, ni retirada; y recepción no crea claves.
+    #[test]
+    fn a_group_of_two_clinics_adds_up_their_summaries() {
+        use crate::grupo::{Link, consolidate};
+        let (addr_a, path_a, ha) = start("CLAVE51");
+        let (addr_b, path_b, hb) = start("CLAVE52");
+        let dir_a = signed_in(&addr_a, "CLAVE51", "Despacho", 1, "0000");
+        let dir_b = signed_in(&addr_b, "CLAVE52", "Despacho", 1, "0000");
+        let (pin_a, pin_b) = (dir_a.pinned(), dir_b.pinned());
+        assert!(!pin_a.is_empty() && pin_a != pin_b, "cada servidor, su identidad");
+        let key = |r: &Remote, extra: f64| {
+            let (mut d, mut s) = r.load().unwrap();
+            d.station = r.station;
+            let (id, token) = d.group_key_new("Grupo").unwrap();
+            if extra > 0.0 {
+                d.add_payment(101, extra, "Tarjeta", "Implante");
+            }
+            r.push(&mut d, &mut s).unwrap();
+            (id, token)
+        };
+        let (ka_id, ka) = key(&dir_a, 0.0);
+        let (_, kb) = key(&dir_b, 250.0);
+        let (from, to) = (NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(), NaiveDate::from_ymd_opt(2026, 12, 31).unwrap());
+        let link = |addr: &str, pin: &str, token: &str| Link { name: addr.into(), address: addr.into(), pin: pin.into(), token: token.into() };
+        let sa = group_summary(&link(&addr_a, &pin_a, &ka), from, to).unwrap();
+        let sb = group_summary(&link(&addr_b, &pin_b, &kb), from, to).unwrap();
+        assert_eq!(sa, crate::sync::on_disk(&path_a).group_summary(from, to));
+        assert_eq!(sb, crate::sync::on_disk(&path_b).group_summary(from, to));
+        assert_eq!(sb.totals().collected - sa.totals().collected, 25_000, "lo que cobró de más la segunda");
+        let (t, invoiced, new_patients) = consolidate(&[sa.clone(), sb.clone()]);
+        assert_eq!((t.collected, t.production, invoiced, new_patients), (sa.totals().collected + sb.totals().collected, sa.totals().production + sb.totals().production, sa.invoiced + sb.invoiced, sa.new_patients + sb.new_patients));
+        // la clave de una clínica no vale en la otra; ni con la huella de otro servidor
+        assert!(group_summary(&link(&addr_b, &pin_b, &ka), from, to).unwrap_err().contains("no es válida"));
+        assert!(group_summary(&link(&addr_a, &pin_b, &ka), from, to).is_err(), "con otra huella no conecta");
+        assert!(group_summary(&link(&addr_a, "", &ka), from, to).unwrap_err().contains("huella"));
+        // recepción no crea claves de grupo
+        let rec = signed_in(&addr_a, "CLAVE51", "Recepción", 2, "0000");
+        let (mut r, mut s) = rec.load().unwrap();
+        r.station = rec.station;
+        let (_, sneaky) = r.group_key_new("Mía").unwrap();
+        rec.push(&mut r, &mut s).unwrap();
+        assert!(group_summary(&link(&addr_a, &pin_a, &sneaky), from, to).is_err(), "la de recepción no vale");
+        // retirada, ya no vale
+        let (mut d, mut s) = dir_a.load().unwrap();
+        d.station = dir_a.station;
+        d.group_key_revoke(ka_id).unwrap();
+        dir_a.push(&mut d, &mut s).unwrap();
+        assert!(group_summary(&link(&addr_a, &pin_a, &ka), from, to).is_err());
+        dir_a.stop().unwrap();
+        dir_b.stop().unwrap();
+        ha.join().unwrap();
+        hb.join().unwrap();
+    }
+
+    /// Un usuario de un centro (T-F6-01, D-25): no recibe las cajas de los
+    /// demás centros, y en ellos no da citas, no cobra ni lleva la caja (ni
+    /// moviendo algo de un centro a otro). Si Dirección le cambia los
+    /// centros, su puesto recoge los datos enteros con lo que ve ahora.
+    #[test]
+    fn a_user_of_one_center_cannot_act_in_another() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE50");
+        let dir = signed_in(&addr, "CLAVE50", "Despacho", 1, "0000");
+        // Dirección: dos centros, una caja abierta en cada uno, un cobro en el
+        // primero y recepción solo en el segundo
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.station = dir.station;
+        if !d.centers.iter().any(|c| c.id == 2) {
+            d.centers.push(crate::model::Center { id: 2, name: "Centro Norte".into(), address: String::new(), phone: String::new(), color: [1, 2, 3], active: true });
+        }
+        d.cash.clear();
+        d.config.current_center = 1;
+        let cash1 = d.open_cash_session(50.0);
+        let pay1 = d.add_payment(101, 30.0, "Efectivo", "Revisión");
+        d.config.current_center = 2;
+        let cash2 = d.open_cash_session(80.0);
+        d.users.iter_mut().find(|u| u.id == 2).unwrap().centers = vec![2];
+        dir.push(&mut d, &mut sd).unwrap();
+        let rec = signed_in(&addr, "CLAVE50", "Recepción", 2, "0000");
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        assert!(a.cash.iter().any(|c| c.id == cash2) && !a.cash.iter().any(|c| c.id == cash1), "solo la caja de su centro");
+        assert!(a.payments.iter().any(|p| p.id == pay1), "los cobros, sí: el saldo del paciente es de toda la clínica");
+        // citas: nueva en el centro 1 (no), en el 2 (sí) y cambiar una del 1 (no)
+        let base = a.appointments.iter().find(|x| crate::model::cid(x.center_id) == 1).unwrap().clone();
+        let (n1, n2) = (a.new_id(), a.new_id());
+        let mut x1 = base.clone();
+        (x1.id, x1.center_id) = (n1, 1);
+        let mut x2 = base.clone();
+        (x2.id, x2.center_id) = (n2, 2);
+        a.appointments.push(x1);
+        a.appointments.push(x2);
+        a.appointments.iter_mut().find(|x| x.id == base.id).unwrap().reason = "Cambiada desde otro centro".into();
+        rec.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert!(!disk.appointments.iter().any(|x| x.id == n1), "ni da citas en otro centro");
+        assert!(disk.appointments.iter().any(|x| x.id == n2), "en el suyo, sí");
+        assert_eq!(disk.appointments.iter().find(|x| x.id == base.id).unwrap().reason, base.reason, "ni cambia las de otro centro");
+        // mover la suya al otro centro, cerrar la caja del otro centro o borrar su cobro: no
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        a.appointments.iter_mut().find(|x| x.id == n2).unwrap().center_id = 1;
+        a.payments.retain(|p| p.id != pay1);
+        rec.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(crate::model::cid(disk.appointments.iter().find(|x| x.id == n2).unwrap().center_id), 2, "ni la mueve a otro centro");
+        assert!(disk.payments.iter().any(|p| p.id == pay1), "ni borra un cobro de otro centro");
+        // operaciones del servidor: en otro centro, o con un cobro de otro centro, no
+        let (mut a, mut sa) = rec.load().unwrap();
+        a.station = rec.station;
+        let mut op = ChainOp::Refund { patient: 101, amount: 1.0, method: "Efectivo".into(), reason: "x".into() }.json();
+        op["centro"] = 1.into();
+        assert!(rec.chain_op(&mut a, &mut sa, &op).unwrap_err().contains("no trabaja en ese centro"));
+        op["centro"] = serde_json::Value::Null;
+        assert!(rec.chain_op(&mut a, &mut sa, &op).unwrap_err().contains("no trabaja en ese centro"), "sin decir el centro, tampoco");
+        let mut cancel = ChainOp::CancelPayment { payment: pay1, reason: "x".into() }.json();
+        cancel["centro"] = 2.into();
+        assert!(rec.chain_op(&mut a, &mut sa, &cancel).unwrap_err().contains("centro en el que este usuario no trabaja"));
+        assert!(crate::sync::on_disk(&path).payments.iter().all(|p| p.cancels != Some(pay1)));
+        // Dirección le da los dos centros: su puesto recoge los datos enteros
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.station = dir.station;
+        d.users.iter_mut().find(|u| u.id == 2).unwrap().centers = vec![1, 2];
+        dir.push(&mut d, &mut sd).unwrap();
+        assert!(rec.pull(a.rev).unwrap().full, "lo que ve ha cambiado: los datos enteros");
+        let (a, _) = rec.load().unwrap();
+        assert!(a.cash.iter().any(|c| c.id == cash1), "y ya recibe la caja del otro centro");
+        dir.stop().unwrap();
+        h.join().unwrap();
+    }
+
     /// Campañas: recepción hace borradores, pero programarlas, cambiarlas,
     /// borrarlas o marcar destinatarios no. Los mensajes los pasa a la cola el
     /// servidor (`ChainOp::QueueCampaigns`, que cualquiera puede pedir), con

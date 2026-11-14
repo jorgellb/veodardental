@@ -3334,3 +3334,73 @@ fn a_campaign_is_previewed_and_scheduled_by_direction_only() {
     }
     h.get_by_label(&format!("desde el {}", crate::model::today().format("%d/%m/%Y")));
 }
+
+/// Grupo de clínicas y centros (T-F6-01): Dirección limita un usuario a un
+/// centro en Usuarios; en Informes › Grupo de clínicas se añade una clínica
+/// con sus datos de conexión y, si no responde, se dice; sin servidor, la
+/// clínica no puede dar claves de grupo.
+#[test]
+fn a_user_is_limited_to_a_center_and_a_clinic_joins_the_group_view() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let rec = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        assert!(a.db.multi_center(), "la muestra tiene dos centros");
+        let rec = a.db.users.iter().find(|u| u.profile == crate::users::Profile::Recepcion).unwrap().id;
+        a.login.edit_user = Some(rec);
+        crate::screens::config::open(a, crate::screens::config::CfgTab::Usuarios);
+        rec
+    };
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Todos").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.user(rec).unwrap().centers.len(), 1, "limitado a un centro");
+    h.get_by_label("Clínica Norte (Alcobendas)").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.user(rec).unwrap().centers.len(), 2, "y se le añade otro");
+    // sin servidor, la clínica no da claves de grupo
+    crate::screens::config::open(h.state_mut(), crate::screens::config::CfgTab::Red);
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Hace falta el servidor de la clínica (arriba) para que el grupo pueda pedir el resumen.");
+    // la vista del grupo: se añade una clínica (que no responde) y se dice
+    {
+        let a = h.state_mut();
+        a.screen = crate::app::Screen::Informes;
+        a.lists.report_tab = 9;
+        a.grupo.links = Some(vec![]);
+        a.grupo.new_name = "Clínica Sur".into();
+        a.grupo.new_text = crate::grupo::connection_text("127.0.0.1:1", &"ab".repeat(32), &"cd".repeat(32));
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Añadir clínica").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().grupo.links.as_ref().map(|l| l.len()), Some(1));
+    h.get_by_label("Clínica Sur");
+    h.get_by_label("Actualizar el resumen del grupo").click();
+    for _ in 0..200 {
+        h.step();
+        if !h.state().grupo.results.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.step();
+    assert!(h.state().grupo.results.first().is_some_and(|(_, r)| r.is_err()), "no responde: se dice");
+    assert!(!h.query_all_by_label_contains("Clínica Sur: ").collect::<Vec<_>>().is_empty());
+}

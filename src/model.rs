@@ -898,6 +898,9 @@ pub struct Db {
     /// Campañas a grupos de pacientes (ver `campanas`).
     #[serde(default)]
     pub campaigns: Tracked<Vec<crate::campanas::Campaign>>,
+    /// Claves con las que el grupo de clínicas pide el resumen (ver `grupo`).
+    #[serde(default)]
+    pub group_keys: Tracked<Vec<crate::grupo::GroupKey>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

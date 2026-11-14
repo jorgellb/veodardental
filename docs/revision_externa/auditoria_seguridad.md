@@ -15,7 +15,13 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
   - el servidor aplica los permisos: el puesto no elige el usuario ni el
     puesto que se apuntan;
   - sincronización registro a registro, con revisión y comprobación de cómo
-    estaba cada cosa (`src/sync.rs`).
+    estaba cada cosa (`src/sync.rs`);
+  - una sola ruta sin la clave de la clínica, además de la prueba de identidad: `GET /grupo/resumen` (D-25).
+    - Va con una clave de grupo propia (`X-Grupo`), guardada solo como huella, que crea y retira Dirección.
+    - Devuelve cifras por centro, sin datos de pacientes, y no abre nada más.
+    - Los intentos con claves incorrectas se frenan como los de la clave de la clínica.
+    - El ordenador del grupo solo conecta con la huella del servidor ya conocida.
+    - Pruebas: `server::tests::the_group_key_opens_only_the_summary` y `server::tests::a_group_of_two_clinics_adds_up_their_summaries`.
 - **Modo de un solo ordenador:** fichero de datos local bloqueado para una
   ventana, con diario de cambios (`src/local.rs`).
 - **Carpeta compartida (modo antiguo):** retirada para instalaciones nuevas,
@@ -36,6 +42,7 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
   (`src/totp.rs`).
 - **Perfiles:** Dirección, Doctor, Higienista y Recepción. La vista de
   Recepción no incluye lo clínico (`src/vista.rs`).
+- **Centros:** un usuario puede trabajar solo en unos centros (D-25). El servidor no acepta de él citas, cajas, cobros, citas pedidas por internet ni huecos de otro centro, ni operaciones en otro centro, y no le manda las cajas de los demás (`server::tests::a_user_of_one_center_cannot_act_in_another`). Los pacientes, su historia y su saldo son de toda la clínica.
 - **Comprobado en el servidor:**
   - `server::tests::only_direction_changes_users_and_secrets_stay_on_the_server`;
   - `server::tests::signed_documents_and_forms_cannot_be_changed_by_a_station`;

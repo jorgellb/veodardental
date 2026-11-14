@@ -1575,3 +1575,49 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 514 pasan, 0 fallan, 10 ignoradas |
+
+## E-063 T-F6-01: grupos de clínicas (sociedades, centros con permisos y vista del grupo)
+- **Hecho (D-25):**
+  - **Centros con permisos** (`User::centers`, `src/vista.rs`, `server::State::save` y `chain_op`):
+    - el servidor no acepta de un usuario de unos centros citas, cajas, cobros, citas pedidas por internet ni huecos de otro centro (crear, cambiar, mover o borrar);
+    - tampoco operaciones con el centro de otro, sin centro, o sobre un cobro o una cita pedida de otro centro;
+    - no le manda las cajas de los demás centros;
+    - al cambiarle los centros o el perfil, su puesto recoge los datos enteros.
+
+    En la pantalla: los centros de cada usuario en Configuración › Usuarios, y el selector de centro y los informes con solo sus centros.
+  - **Sociedades:** cada una, su instalación (su numeración, su cadena VERI*FACTU, sus cajas y sus pacientes).
+  - **Vista del grupo** (`src/grupo.rs`, `src/screens/grupo.rs`):
+    - el resumen de cada clínica, por centro: producción, cobrado, citas, a las que acudió y a las que no; además, lo facturado y las altas. Se calcula con los informes y no lleva datos de pacientes;
+    - las claves de grupo se guardan como huella y las crea y retira Dirección (Configuración › Trabajo en red);
+    - la ruta `GET /grupo/resumen` solo responde con una clave de grupo en uso, y los intentos fallidos se frenan;
+    - Informes › Grupo de clínicas junta las clínicas, con los totales del grupo.
+- **Pruebas:**
+  - `server::tests::a_user_of_one_center_cannot_act_in_another`:
+    - solo recibe su caja, y los cobros de todos (para el saldo);
+    - no da, ni cambia, ni mueve citas de otro centro, ni borra un cobro de otro centro;
+    - no hace operaciones en otro centro, sin centro o con un cobro de otro centro;
+    - con los centros cambiados, recibe los datos enteros.
+
+    Comprobado que falla si se quita cualquiera de las cuatro reglas: escritura, operaciones, datos enteros y cajas.
+  - `server::tests::the_group_key_opens_only_the_summary`:
+    - el resumen tal cual sale, sin nombres, documentos, teléfonos ni correos de pacientes, y solo con los campos de la lista cerrada;
+    - con la clave de grupo no se entra en `/datos`, `/cambios`, `/acceso`, `/estado` ni `/historia`;
+    - la clave de la clínica no abre el resumen;
+    - fechas que faltan o un periodo de más de 400 días: no;
+    - probar claves acaba en 429, también para la buena.
+  - `server::tests::a_group_of_two_clinics_adds_up_their_summaries`: dos servidores con su identidad.
+    - El resumen de cada uno coincide con sus datos y los totales del grupo suman los dos.
+    - La clave de una no vale en la otra, ni con otra huella, ni sin huella, ni retirada.
+    - Una clave creada desde recepción no llega al servidor.
+  - `grupo::tests::the_summary_matches_the_reports_and_carries_no_patient_data`: con dos centros, cada centro coincide con los informes y los centros suman el total.
+  - `grupo::tests::group_keys_are_stored_as_hashes_and_can_be_revoked`;
+  - `grupo::tests::the_connection_text_round_trips_and_needs_the_server_fingerprint`;
+  - `ui_tests::a_user_is_limited_to_a_center_and_a_clinic_joins_the_group_view`.
+- **Pendiente externo:** un grupo real con datos conjuntos (T-F6-09X).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 521 pasan, 0 fallan, 10 ignoradas |

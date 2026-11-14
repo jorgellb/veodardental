@@ -2670,8 +2670,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de que nada cruza los límites de acceso",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-063"]
   },
   {
    "id": "T-F6-02",

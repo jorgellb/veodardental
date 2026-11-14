@@ -19,6 +19,7 @@ pub mod evolucion;
 pub mod facturas;
 pub mod fichas;
 pub mod gastos;
+pub mod grupo;
 pub mod herramientas;
 pub mod ia;
 pub mod imagenes;

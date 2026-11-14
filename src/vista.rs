@@ -16,9 +16,22 @@
 //! puede escribir nada (tampoco añadir: una receta o una imagen las crea quien
 //! las ve). Los cuestionarios que rellenan los pacientes en la página de la
 //! clínica sí los guarda, porque esa lista la ve (sin las respuestas).
+//!
+//! Un usuario de unos centros (ver `User::centers` y D-25) no recibe las
+//! cajas de los demás, y lo que manda de los demás centros (citas, cajas,
+//! cobros, citas pedidas por internet y huecos ofrecidos) no se acepta. Los
+//! pacientes, su historia y su saldo son de toda la clínica.
 
-use crate::users::{Perm, Profile};
+use crate::users::{Perm, Profile, User};
 use serde_json::Value;
+use std::sync::Arc;
+
+/// Listas de un centro: en las de los demás centros, un usuario de unos
+/// centros no escribe.
+pub const CENTER_LISTS: [&str; 5] = ["appointments", "cash", "payments", "booking_requests", "slot_offers"];
+
+/// Listas de un centro que un usuario de otros centros no recibe.
+const CENTER_HIDDEN: [&str; 1] = ["cash"];
 
 /// Listas clínicas que no recibe quien no tiene el permiso clínico.
 const CLINICAL_LISTS: [&str; 8] = ["perio", "images", "ia_reports", "prescriptions", "ortho", "evo_notes", "alert_acks", "sterile_packs"];
@@ -26,6 +39,11 @@ const CLINICAL_LISTS: [&str; 8] = ["perio", "images", "ia_reports", "prescriptio
 /// Campos clínicos de otros registros (se mandan vacíos). De los cuestionarios
 /// de salud quedan la fecha, quién lo rellenó y si está firmado.
 const CLINICAL_FIELDS: [(&str, &[&str]); 3] = [("patients", &["background", "notes"]), ("entries", &["notes"]), ("health", &["reason", "yes", "details", "cigarettes", "brushings", "last_visit", "aids", "notes"])];
+
+/// Centro de un registro (sin centro, el principal).
+pub fn center_of(json: &str) -> u32 {
+    serde_json::from_str::<Value>(json).ok().and_then(|v| v["center_id"].as_u64()).map(|c| crate::model::cid(c as u32)).unwrap_or(1)
+}
 
 /// Un dato vacío del mismo tipo (texto vacío, cero, lista o mapa vacíos).
 fn empty_like(v: &Value) -> Value {
@@ -40,19 +58,33 @@ fn empty_like(v: &Value) -> Value {
 }
 
 /// Qué ve un perfil.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct View {
     clinical: bool,
     /// Registro de jornada: solo el de este usuario (quien no es Dirección).
     own: Option<u32>,
+    /// Centros en los que trabaja (ninguno: todos).
+    centers: Option<Arc<Vec<u32>>>,
 }
 
 impl View {
     /// Todo (Dirección, doctores, higienistas; y sin servidor, todos).
-    pub const FULL: View = View { clinical: true, own: None };
+    pub const FULL: View = View { clinical: true, own: None, centers: None };
 
     pub fn of(p: Profile) -> View {
-        View { clinical: p.can(Perm::Clinico), own: None }
+        View { clinical: p.can(Perm::Clinico), own: None, centers: None }
+    }
+
+    /// Lo de su perfil y, si trabaja solo en unos centros, de esos centros.
+    pub fn of_user(u: &User) -> View {
+        let mut v = View::of(u.profile);
+        if !u.centers.is_empty() {
+            let mut c: Vec<u32> = u.centers.iter().map(|c| crate::model::cid(*c)).collect();
+            c.sort_unstable();
+            c.dedup();
+            v.centers = Some(Arc::new(c));
+        }
+        v
     }
 
     /// Del registro de jornada, solo lo de `user`.
@@ -60,16 +92,31 @@ impl View {
         View { own: Some(user), ..self }
     }
 
-    pub fn is_full(self) -> bool {
-        self.clinical
+    pub fn is_full(&self) -> bool {
+        self.clinical && self.centers.is_none()
+    }
+
+    /// Centros a los que se limita (ninguno: todos).
+    pub fn centers(&self) -> Option<&[u32]> {
+        self.centers.as_deref().map(|c| c.as_slice())
+    }
+
+    /// ¿Trabaja en este centro? (0 es el principal)
+    pub fn center_ok(&self, center: u32) -> bool {
+        self.centers().is_none_or(|c| c.contains(&crate::model::cid(center)))
+    }
+
+    /// ¿Es un registro de un centro en el que no trabaja?
+    pub fn other_center(&self, list: &str, json: &str) -> bool {
+        self.centers.is_some() && CENTER_LISTS.contains(&list) && !self.center_ok(center_of(json))
     }
 
     /// ¿No recibe esta lista entera?
-    pub fn hides(self, list: &str) -> bool {
+    pub fn hides(&self, list: &str) -> bool {
         !self.clinical && CLINICAL_LISTS.contains(&list)
     }
 
-    fn hidden_fields(self, list: &str) -> &'static [&'static str] {
+    fn hidden_fields(&self, list: &str) -> &'static [&'static str] {
         if self.clinical {
             return &[];
         }
@@ -78,8 +125,11 @@ impl View {
 
     /// Un registro para este perfil: `None` si no lo recibe; los campos que no
     /// ve, vacíos.
-    pub fn show(self, list: &str, json: &str) -> Option<String> {
+    pub fn show(&self, list: &str, json: &str) -> Option<String> {
         if self.hides(list) {
+            return None;
+        }
+        if CENTER_HIDDEN.contains(&list) && self.other_center(list, json) {
             return None;
         }
         if list == "punches"
@@ -103,7 +153,7 @@ impl View {
 
     /// Un registro que manda este perfil: lo que no ve, tal como está en el
     /// servidor (`current`), para que no lo borre ni lo cambie sin verlo.
-    pub fn restore(self, list: &str, json: &str, current: Option<&String>) -> Result<String, String> {
+    pub fn restore(&self, list: &str, json: &str, current: Option<&String>) -> Result<String, String> {
         let fields = self.hidden_fields(list);
         let Some(cur) = current.filter(|_| !fields.is_empty()) else { return Ok(json.to_string()) };
         let mut v: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;

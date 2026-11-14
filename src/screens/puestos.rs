@@ -205,6 +205,8 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
             muted(ui, crate::shared::NO_NEW_SHARED);
         }
     });
+    ui.add_space(8.0);
+    crate::screens::grupo::keys_card(app, ui);
 }
 
 /// Pantalla cuando el puesto no puede conectar con el servidor.

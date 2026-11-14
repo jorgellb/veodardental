@@ -129,6 +129,13 @@ contratado en este trabajo.
   - si se puede elegir a quién va una promoción por los tratamientos hechos (son datos de salud) y con qué consentimiento;
   - cuánto se guarda la lista de a quién se le envió cada campaña.
 
+## 5 quater. Grupos de clínicas
+- Cada sociedad tiene su propia instalación: sus pacientes no pasan a otra (D-25).
+- El grupo solo recibe cifras por centro (producción, cobros, facturación, citas y altas), sin ningún dato de pacientes. Lo comprueba `grupo::tests::the_summary_matches_the_reports_and_carries_no_patient_data`, con una lista cerrada de campos.
+- Lo da cada clínica con una clave que crea y retira su Dirección.
+- Dentro de una sociedad, los centros comparten pacientes e historia. Un usuario puede limitarse a unos centros para lo que hace (citas, cobros, caja).
+- **Decide:** si compartir pacientes entre los centros de una misma sociedad necesita informar al paciente de algo más.
+
 ## 6. Minimización en los registros
 - **Registro de errores:** antes de escribir se quitan correos, teléfonos,
   documentos, IBAN, rutas y nombres. Tiene un tamaño acotado y no sale solo

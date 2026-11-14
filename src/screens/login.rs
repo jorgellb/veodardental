@@ -408,6 +408,7 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                 }
             });
         }
+        let centers: Vec<(u32, String)> = if app.db.multi_center() { app.db.centers.iter().filter(|c| c.active).map(|c| (c.id, c.name.clone())).collect() } else { vec![] };
         if let Some(id) = app.login.edit_user {
             ui.separator();
             let mut reset = false;
@@ -446,6 +447,32 @@ pub fn users_admin(app: &mut App, ui: &mut Ui) {
                         reset = true;
                     }
                 });
+                // centros en los que trabaja: en los demás no da citas, no cobra
+                // ni lleva la caja (lo comprueba el servidor)
+                if !centers.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("Centros").family(sb()));
+                        let mut all = u.centers.is_empty();
+                        if ui.checkbox(&mut all, "Todos").changed() {
+                            u.centers = if all { vec![] } else { vec![centers[0].0] };
+                        }
+                        if !all {
+                            for (cid, name) in &centers {
+                                let mut on = u.centers.contains(cid);
+                                if ui.checkbox(&mut on, name).changed() {
+                                    if on {
+                                        u.centers.push(*cid);
+                                    } else if u.centers.len() > 1 {
+                                        u.centers.retain(|x| x != cid);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    if !u.centers.is_empty() {
+                        muted(ui, "En los demás centros no da citas, no cobra ni lleva la caja, y no ve sus cajas. Los pacientes y su historia son de toda la clínica.");
+                    }
+                }
                 // segundo factor: el código de 6 cifras de una app del móvil
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Código del móvil al entrar").family(sb()));

@@ -11,7 +11,7 @@ use crate::theme::*;
 use chrono::Datelike;
 use egui::{Align2, CornerRadius, FontId, RichText, Sense, Ui, pos2, vec2};
 
-const TABS: [&str; 9] = ["Pendientes de cobro", "Libro diario", "Producción", "Ingresos", "Presupuestos", "Captación", "Consultas", "Resumen económico", "Cuadro de mando"];
+const TABS: [&str; 10] = ["Pendientes de cobro", "Libro diario", "Producción", "Ingresos", "Presupuestos", "Captación", "Consultas", "Resumen económico", "Cuadro de mando", "Grupo de clínicas"];
 
 /// El filtro de los informes con lo elegido en la pantalla.
 fn filter(app: &App) -> Filter {
@@ -29,7 +29,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     });
     let tab = app.lists.report_tab;
     ui.horizontal_wrapped(|ui| {
-        if matches!(tab, 1 | 2 | 5 | 7 | 8) {
+        if matches!(tab, 1 | 2 | 5 | 7 | 8 | 9) {
             ui.label("Desde");
             crate::screens::date_picker(ui, "rep_from", &mut app.lists.report_from);
             ui.label("hasta");
@@ -42,10 +42,17 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if matches!(tab, 1 | 2 | 3 | 7 | 8) && app.db.multi_center() {
             ui.add_space(8.0);
             ui.label("Centro");
-            let centers: Vec<(u32, String)> = app.db.centers.iter().filter(|c| c.active).map(|c| (c.id, c.name.clone())).collect();
+            // quien trabaja solo en unos centros, ve los suyos (sin «Todos»)
+            let mine = app.user_id.and_then(|id| app.db.user(id)).map(|u| u.centers.iter().map(|c| crate::model::cid(*c)).collect::<Vec<u32>>()).unwrap_or_default();
+            let centers: Vec<(u32, String)> = app.db.centers.iter().filter(|c| c.active && (mine.is_empty() || mine.contains(&c.id))).map(|c| (c.id, c.name.clone())).collect();
+            if !mine.is_empty() && app.lists.report_center.is_none_or(|c| !mine.contains(&crate::model::cid(c))) {
+                app.lists.report_center = centers.first().map(|x| x.0);
+            }
             let cur = app.lists.report_center.and_then(|c| centers.iter().find(|x| x.0 == c)).map(|x| x.1.clone()).unwrap_or_else(|| "Todos".into());
             crate::theme::combo("rep_center").width(200.0).selected_text(cur).show_ui(ui, |ui| {
-                ui.selectable_value(&mut app.lists.report_center, None, "Todos");
+                if mine.is_empty() {
+                    ui.selectable_value(&mut app.lists.report_center, None, "Todos");
+                }
                 for (id, n) in &centers {
                     ui.selectable_value(&mut app.lists.report_center, Some(*id), n);
                 }
@@ -74,6 +81,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         5 => crate::screens::salud::captacion(app, ui),
         6 => crate::screens::herramientas::consultas(app, ui),
         7 => summary(app, ui),
+        9 => crate::screens::grupo::view(app, ui),
         _ => dashboard(app, ui),
     });
 }

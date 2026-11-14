@@ -71,6 +71,11 @@ pub struct User {
     pub failed_logins: u32,
     #[serde(default)]
     pub last_failed: Option<NaiveDateTime>,
+    /// Centros en los que trabaja (vacío: todos). En los demás no da citas,
+    /// no cobra ni lleva la caja, y no recibe sus cajas (lo comprueba el
+    /// servidor; ver `vista` y D-25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub centers: Vec<u32>,
 }
 
 /// Cómo ha ido la contraseña.
@@ -168,7 +173,7 @@ pub fn check_new_pin(pin: &str) -> Result<(), String> {
 
 pub fn new_user(id: u32, name: &str, profile: Profile, doctor_id: Option<u32>, pin: &str) -> User {
     let salt = make_salt(id);
-    User { id, name: name.into(), profile, doctor_id, pin_hash: hash_pin(&salt, pin), salt, must_change: true, active: true, totp_secret: String::new(), totp_last: 0, failed_logins: 0, last_failed: None }
+    User { id, name: name.into(), profile, doctor_id, pin_hash: hash_pin(&salt, pin), salt, must_change: true, active: true, totp_secret: String::new(), totp_last: 0, failed_logins: 0, last_failed: None, centers: vec![] }
 }
 
 /// Usuarios de una clínica nueva, todos con la contraseña inicial 0000 (que

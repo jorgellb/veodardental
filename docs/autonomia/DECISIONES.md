@@ -167,3 +167,24 @@ Hasta ahora solo había consentimiento de protección de datos y de cada canal. 
   - su fecha cae en el plazo de la campaña.
 
   Se dice también si acudió. La pantalla avisa de que es una asociación, no una prueba de que la cita se deba a la campaña.
+
+## D-25 Grupos de clínicas: cada sociedad, su instalación; centros con permisos; el grupo, solo cifras
+**Contexto.** La fase 6 pide grupos de clínicas: separación de pacientes, centros, sociedades, cajas, series y datos, y vistas consolidadas solo para usuarios autorizados. Hasta ahora una instalación tenía varios centros que compartían pacientes, historia y saldo, y cualquier usuario actuaba en todos. Las facturas llevan una sola cadena VERI*FACTU con el NIF de la clínica.
+
+**Decisión:**
+- **La sociedad es la frontera.** Cada sociedad (cada NIF) tiene su propia instalación: sus datos, su servidor, sus copias, su numeración y su cadena VERI*FACTU, y sus cajas.
+  - Cada sociedad es responsable de los datos de sus pacientes, que no pasan a otra.
+  - La cadena y la numeración de facturas van por obligado tributario: mezclar dos NIF en una instalación pondría en riesgo las dos cosas.
+- **Dentro de una sociedad, centros con permisos.**
+  - Los centros comparten pacientes, historia y saldo, como hasta ahora: el saldo necesita los cobros de todos los centros, y la historia, los tratamientos de todos.
+  - Un usuario puede trabajar solo en unos centros (`User::centers`). El servidor no acepta de él citas, cajas, cobros, citas pedidas por internet ni huecos ofrecidos de otro centro (crearlos, cambiarlos, moverlos de un centro a otro o borrarlos), ni operaciones en otro centro. Tampoco le manda las cajas de los demás centros.
+  - Si Dirección le cambia los centros o el perfil, su puesto recoge los datos enteros con lo que ve ahora.
+  - En la pantalla, el selector de centro y los informes solo ofrecen sus centros, sin «Todos». Como los cobros y los tratamientos de toda la sociedad están en su puesto, esto es presentación, no una frontera de confidencialidad. Para separar datos de verdad, sociedades distintas.
+- **La vista del grupo** junta el resumen de cada clínica (`grupo::Summary`): solo cifras por centro, con los cálculos de los informes.
+  - Cada clínica lo da con una clave de grupo que crean y retiran Dirección. Se guarda solo su huella, y desde un puesto de otro perfil no se puede crear.
+  - Va por la misma conexión TLS 1.3 de los puestos, solo con la huella del servidor ya conocida. La clave de grupo no abre nada más, y la de la clínica no abre el resumen.
+  - El ordenador del grupo guarda los datos de conexión de cada clínica solo en ese ordenador, y la pestaña es para quien tiene permiso de informes.
+
+**Alternativa descartada:** varias sociedades en una instalación, con un filtro de pacientes por sociedad en el servidor. Habría que separar en cada lista y en cada cálculo lo de cada NIF (cadena, numeración, cajas, remesas, copias). Un error en cualquiera de ellos mezclaría datos de dos responsables. Con instalaciones separadas no hay nada que mezclar.
+
+**Pendiente:** un grupo real trabajando con datos conjuntos (T-F6-09X). Si el grupo necesita más cifras, se añaden al resumen y a la lista cerrada de campos de su prueba.

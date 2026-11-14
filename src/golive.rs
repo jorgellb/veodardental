@@ -244,6 +244,7 @@ impl Db {
             surveys,
             portal_access,
             campaigns,
+            group_keys: _,
             punches,
             data_version: _,
             station: _,

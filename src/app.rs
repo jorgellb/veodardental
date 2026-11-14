@@ -221,6 +221,8 @@ pub struct App {
     pub perio_parsed: Option<crate::perio_voz::Parsed>,
     pub perio_audio: String,
     pub perio_voice: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Grupo de clínicas (claves de esta clínica y vista del grupo).
+    pub grupo: screens::grupo::GroupUi,
 }
 
 impl App {
@@ -368,6 +370,7 @@ impl App {
             perio_parsed: None,
             perio_audio: String::new(),
             perio_voice: None,
+            grupo: Default::default(),
         };
         if let Some(w) = clock {
             app.toast = Some((w, 15.0, crate::theme::WARN));
@@ -710,14 +713,14 @@ impl App {
         let Some(r) = self.remote.as_mut() else { return Err("Sin servidor".into()) };
         r.session = session;
         let r = r.clone();
-        let view = self.db.user(id).map(|u| crate::vista::View::of(u.profile)).unwrap_or(crate::vista::View::FULL);
+        let view = self.db.user(id).map(crate::vista::View::of_user).unwrap_or(crate::vista::View::FULL);
         // entra otro usuario: lo que el anterior dejó sin enviar está en su bandeja y
         // no se envía con esta sesión; se recogen los datos de nuevo
         if self.dirty && self.unsent_owner.is_some_and(|o| o != id) {
             self.dirty = false;
             self.loaded_view = None;
         }
-        if self.awaiting_data || self.loaded_view != Some(view) {
+        if self.awaiting_data || self.loaded_view.as_ref() != Some(&view) {
             // primera vez, o entra un perfil que ve otras cosas: los datos que le tocan
             if !self.awaiting_data && self.dirty {
                 r.push(&mut self.db, &mut self.synced)?;
@@ -1265,6 +1268,16 @@ impl ChainOp {
         })
     }
 
+    /// Registro de un centro sobre el que actúa (para un usuario de unos
+    /// centros, tiene que ser de uno de ellos).
+    pub(crate) fn center_record(&self) -> Option<(&'static str, u32)> {
+        match self {
+            ChainOp::Confirm { request } | ChainOp::Reject { request, .. } => Some(("booking_requests", *request)),
+            ChainOp::CancelPayment { payment, .. } => Some(("payments", *payment)),
+            _ => None,
+        }
+    }
+
     /// Quién puede hacerla (con qué permiso; ninguno = todos), y qué datos usa
     /// (los que el servidor le prepara).
     pub(crate) fn needs(&self) -> (Option<crate::users::Perm>, &'static [&'static str]) {
@@ -1537,8 +1550,16 @@ impl App {
         ui.horizontal_centered(|ui| {
             ui.add_space(4.0);
             if self.db.multi_center() {
+                // solo los centros en los que trabaja el usuario
+                let mine = self.user_id.and_then(|id| self.db.user(id)).map(|u| u.centers.iter().map(|c| crate::model::cid(*c)).collect::<Vec<u32>>()).unwrap_or_default();
+                let list: Vec<(u32, String)> = self.db.centers.iter().filter(|c| c.active && (mine.is_empty() || mine.contains(&c.id))).map(|c| (c.id, c.name.clone())).collect();
+                if !mine.is_empty()
+                    && !mine.contains(&crate::model::cid(self.db.config.current_center))
+                    && let Some((first, _)) = list.first()
+                {
+                    self.db.config.current_center = *first;
+                }
                 let cur = self.db.config.current_center;
-                let list: Vec<(u32, String)> = self.db.centers.iter().filter(|c| c.active).map(|c| (c.id, c.name.clone())).collect();
                 let mut sel = crate::model::cid(cur);
                 crate::theme::combo("center_sel").width(if tier == 2 { 130.0 } else { 160.0 }).selected_text(RichText::new(self.db.center_name(sel)).family(crate::theme::sb())).show_ui(ui, |ui| {
                     for (id, n) in &list {
