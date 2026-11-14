@@ -1367,6 +1367,15 @@ fn respond_with(req: tiny_http::Request, code: u16, ctype: &str, body: String, e
     let _ = req.respond(r);
 }
 
+/// El idioma de una página: el del paciente o, si no lo tiene (castellano
+/// por defecto), el del navegador si es uno de los del programa.
+fn page_lang(req: &tiny_http::Request, patient: crate::i18n::Lang) -> crate::i18n::Lang {
+    if patient != crate::i18n::Lang::Es {
+        return patient;
+    }
+    req.headers().iter().find(|h| h.field.equiv("Accept-Language")).and_then(|h| crate::i18n::Lang::from_accept(h.value.as_str())).unwrap_or(patient)
+}
+
 /// La cookie de sesión de «Mi espacio».
 const PORTAL_COOKIE: &str = "vd_mi_espacio";
 
@@ -1388,12 +1397,13 @@ fn patient_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, ip: &str, pat
     let mut g = lock();
     let found = if crate::portal::valid_token(&token) && g.published.accepting { g.published.portal.get(&token).cloned() } else { None };
     let not_found = |req: tiny_http::Request| respond(req, 404, "text/plain; charset=utf-8", "Este enlace no es válido o ya no está activo. Llame a la clínica, por favor.".into());
-    let Some(p) = found else {
+    let Some(mut p) = found else {
         let blocked = too_many(&mut g, &format!("bad:{ip}"), 20, 3600);
         g.refused += 1;
         drop(g);
         return if blocked { respond(req, 429, "text/plain; charset=utf-8", "Demasiados intentos.".into()) } else { not_found(req) };
     };
+    p.lang = page_lang(&req, p.lang);
     let clinic = g.published.clinic.clone();
     let secure = g.published.public_url.starts_with("https://");
     // sesión válida: viva y de este mismo acceso (revocado, deja de valer)
@@ -1406,14 +1416,14 @@ fn patient_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, ip: &str, pat
     drop(g);
     let html = |req: tiny_http::Request, code: u16, body: String| respond_with(req, code, "text/html; charset=utf-8", body, &[]);
     match (req.method().clone(), path.starts_with("/portal/"), action) {
-        (tiny_http::Method::Get, true, "") => html(req, 200, if logged { home_page(&clinic, &token, &p) } else { login_page(&clinic, &token, None) }),
+        (tiny_http::Method::Get, true, "") => html(req, 200, if logged { home_page(&clinic, &token, &p) } else { login_page(p.lang, &clinic, &token, None) }),
         (tiny_http::Method::Post, false, "entrar") => {
             let fails = format!("portalfail:{token}");
             {
                 let mut g = lock();
                 if at_limit(&mut g, &fails, RX_MAX_FAILS, RX_LOCK_SECS) || too_many(&mut g, &format!("portalip:{ip}"), 60, 3600) {
                     drop(g);
-                    return html(req, 429, login_page(&clinic, &token, Some("Por seguridad, este enlace está bloqueado media hora por demasiados intentos.")));
+                    return html(req, 429, login_page(p.lang, &clinic, &token, Some("Por seguridad, este enlace está bloqueado media hora por demasiados intentos.")));
                 }
             }
             let Some(body) = read_body(&mut req) else { return respond(req, 413, "text/plain; charset=utf-8", "Demasiado grande.".into()) };
@@ -1423,7 +1433,7 @@ fn patient_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, ip: &str, pat
                 too_many(&mut g, &fails, RX_MAX_FAILS + 1, RX_LOCK_SECS);
                 g.refused += 1;
                 drop(g);
-                return html(req, 403, login_page(&clinic, &token, Some("Los datos no coinciden con los de la ficha.")));
+                return html(req, 403, login_page(p.lang, &clinic, &token, Some("Los datos no coinciden con los de la ficha.")));
             }
             let sid = crate::portal::new_token();
             lock().portal_sessions.insert(sid.clone(), Session { token: token.clone(), access_id: p.access_id, started: now, last: now });
@@ -1442,7 +1452,7 @@ fn patient_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, ip: &str, pat
             }
             // solo de los pacientes de este titular: otro número, «no existe»
             let id = a.split('/').nth(1).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
-            let page = if a.starts_with("factura/") { p.invoice(id).map(|i| invoice_page(&clinic, i)) } else { p.doc(id).map(|d| doc_page(&clinic, d)) };
+            let page = if a.starts_with("factura/") { p.invoice(id).map(|i| invoice_page(p.lang, &clinic, i)) } else { p.doc(id).map(|d| doc_page(p.lang, &clinic, d)) };
             match page {
                 Some(b) => html(req, 200, b),
                 None => not_found(req),
@@ -1460,12 +1470,13 @@ fn survey_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<We
     let token = path.trim_start_matches("/api/encuesta/").trim_start_matches("/encuesta/").trim_end_matches('/').to_string();
     let mut g = lock();
     let found = if crate::portal::valid_token(&token) && g.published.accepting { g.published.surveys.get(&token).cloned() } else { None };
-    let Some(s) = found else {
+    let Some(mut s) = found else {
         let blocked = too_many(&mut g, &format!("bad:{ip}"), 20, 3600);
         g.refused += 1;
         drop(g);
         return text(req, if blocked { 429 } else { 404 }, "Este enlace no es válido o ya ha caducado.");
     };
+    s.lang = page_lang(&req, s.lang);
     let clinic = g.published.clinic.clone();
     drop(g);
     match (req.method().clone(), path.starts_with("/encuesta/")) {

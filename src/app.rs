@@ -1424,7 +1424,7 @@ impl App {
                 ui.add_space(1.0);
                 ui.label(RichText::new("VeodarDental").color(Color32::WHITE).font(theme::bf(18.5)));
                 ui.add_space(-1.0);
-                ui.label(RichText::new("Gestión de clínica dental").color(Color32::from_rgb(110, 214, 198)).font(theme::mdf(12.0)));
+                ui.label(RichText::new(crate::i18n::t(self.db.config.ui_lang, "Gestión de clínica dental")).color(Color32::from_rgb(110, 214, 198)).font(theme::mdf(12.0)));
             });
         });
         ui.add_space(16.0);
@@ -1437,12 +1437,12 @@ impl App {
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
-                    ui.label(RichText::new(group.to_uppercase()).font(theme::sbf(10.8)).color(Color32::from_rgb(98, 118, 146)));
+                    ui.label(RichText::new(crate::i18n::t(self.db.config.ui_lang, group).to_uppercase()).font(theme::sbf(10.8)).color(Color32::from_rgb(98, 118, 146)));
                 });
                 ui.add_space(2.0);
             }
             for scr in visible {
-                let name = Screen::NAV.iter().find(|n| n.0 == scr).map(|n| n.2).unwrap_or("");
+                let name = crate::i18n::t(self.db.config.ui_lang, Screen::NAV.iter().find(|n| n.0 == scr).map(|n| n.2).unwrap_or(""));
                 let sel = self.screen == scr;
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));

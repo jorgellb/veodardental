@@ -1478,3 +1478,27 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - un adulto con el mismo responsable no sale, ni un menor añadido después;
   - a los 16 años deja de salir;
   - sin DNI en la ficha el acceso no se publica, y un DNI vacío nunca vale.
+
+## E-059 T-F5-11: idiomas (castellano, catalán, euskera, gallego e inglés)
+- **Hecho (`src/i18n.rs`):** catálogo cuya clave es el texto en castellano; lo que falta en un idioma sale en castellano (alternativa predeterminada).
+  - **Interfaz:** idioma elegido en Configuración › Datos de la clínica. El menú, los grupos y las pestañas de la ficha salen traducidos; el resto, en castellano.
+  - **Paciente:** su idioma en la ficha › Filiación.
+    - Sus avisos de las plantillas de siempre (recordatorio, revisión, cumpleaños, presupuesto, encuesta), con las etiquetas de los enlaces y el texto de la baja, salen en su idioma con la fecha en su idioma. Una plantilla cambiada por la clínica sale tal cual.
+    - «Mi espacio» y la encuesta salen en su idioma o, si no lo tiene, en el del navegador (`Accept-Language`), con fechas e importes en su formato.
+  - **Documentos:** un consentimiento traducido solo se usa si está validado, con fecha y quién; si no, el original en castellano. Lo ya firmado se conserva tal cual.
+  - **Revisión pendiente:** las traducciones las revisa un traductor nativo (`i18n::REVIEWED` es falso, `docs/revision_externa/traducciones.md`, B-17, T-F5-11X). En euskera, las frases se han hecho sin sufijos sobre los comodines.
+- **Pruebas de cobertura:**
+  - `i18n::tests::the_catalog_is_complete_with_the_same_placeholders`: los cinco idiomas completos, sin claves repetidas y con los mismos comodines. Cubre la navegación y todas las plantillas de aviso;
+  - `i18n::tests::every_text_used_with_t_is_in_the_catalog`;
+  - `i18n::tests::missing_text_falls_back_to_spanish_and_formats_follow_the_language`: fechas largas en los cinco idiomas, incluidos «d'octubre» en catalán y el genitivo en euskera, importes e `Accept-Language`;
+  - `i18n::tests::messages_and_documents_follow_the_patient_language`;
+  - `ui_tests::the_interface_in_each_language_is_translated_and_fits`: menú y ficha en cada idioma a 1280 de ancho.
+- **Fallo encontrado por las pruebas y corregido:** el genitivo de los meses en euskera («azaroaren»).
+- **Ajuste:** la nota del idioma de la interfaz, en su propia línea; en la misma fila no se partía y desbordaba a 1280.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 503 pasan, 0 fallan, 10 ignoradas |

@@ -207,6 +207,7 @@ impl Db {
                 evo_templates: crate::evolucion::default_templates(),
                 evo_ai: false,
                 surveys: Default::default(),
+                ui_lang: Default::default(),
             },
             treatments,
             tariffs: tariffs.into(),

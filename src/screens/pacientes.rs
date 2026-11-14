@@ -77,7 +77,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // si las pestañas no caben (ventana estrecha) se aprietan: letra y márgenes algo menores
         let natural: f32 = tabs.iter().map(|(_, n)| ui.fonts_mut(|f| f.layout_no_wrap(n.to_string(), FontId::proportional(14.5), TEXT).size().x) + 24.0).sum();
         let (fs, pad) = if natural <= ui.available_width() { (14.5, 22.0) } else { (13.2, 12.0) };
+        let lang = app.db.config.ui_lang;
         for (tab, name) in tabs {
+            let name = crate::i18n::t(lang, name);
             let sel = app.pat_tab == tab;
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.fonts_mut(|f| f.layout_no_wrap(name.into(), FontId::proportional(fs), TEXT).size().x) + pad, 42.0), Sense::click());
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Tab, true, name));
@@ -840,12 +842,22 @@ pub fn patient_form(ui: &mut Ui, p: &mut Patient, tariffs: &[(u32, String)], doc
                 ui.checkbox(&mut p.accepts_sms, "SMS");
                 ui.checkbox(&mut p.accepts_email, "Email");
                 ui.checkbox(&mut p.accepts_whatsapp, "WhatsApp");
+                ui.add_space(12.0);
+                ui.label("Idioma");
+                let cur = p.lang.unwrap_or_default();
+                crate::theme::combo("pat_lang").width(130.0).selected_text(cur.name()).show_ui(ui, |ui| {
+                    for l in crate::i18n::Lang::ALL {
+                        if ui.selectable_label(cur == l, l.name()).clicked() {
+                            p.lang = (l != crate::i18n::Lang::Es).then_some(l);
+                        }
+                    }
+                });
             });
             // baja por finalidad: estos avisos no le llegan por ningún canal
             ui.label(RichText::new("Avisos que quiere recibir").size(12.5).color(MUTED));
             ui.horizontal_wrapped(|ui| {
                 use crate::comms::MsgKind;
-                for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::PresupuestoPendiente, MsgKind::Cumpleanos] {
+                for k in [MsgKind::RecordatorioCita, MsgKind::Recall, MsgKind::PresupuestoPendiente, MsgKind::Cumpleanos, MsgKind::Encuesta] {
                     let mut on = !p.no_messages.contains(&k);
                     if ui.checkbox(&mut on, k.label()).changed() {
                         if on {

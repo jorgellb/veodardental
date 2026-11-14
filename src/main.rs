@@ -33,6 +33,7 @@ mod gesden;
 mod golive;
 mod health;
 mod horario;
+mod i18n;
 mod ia;
 mod icons;
 mod informes;

@@ -102,6 +102,8 @@ impl Stats {
 /// Lo que se publica de una encuesta (sin datos de salud).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PubSurvey {
+    /// Idioma del paciente (castellano si no tiene).
+    pub lang: crate::i18n::Lang,
     pub first_name: String,
     pub answered: bool,
     pub review_url: String,
@@ -177,34 +179,45 @@ pub fn publish_surveys(db: &Db, now: NaiveDateTime) -> std::collections::HashMap
         .filter(|s| (now - s.sent).num_days() <= 60)
         .map(|s| {
             let first = db.patient(s.patient_id).map(|p| p.first_name.clone()).unwrap_or_default();
-            (s.token.clone(), PubSurvey { first_name: first, answered: s.answered.is_some(), review_url: db.config.surveys.review_url.trim().to_string() })
+            let lang = db.patient(s.patient_id).and_then(|p| p.lang).unwrap_or_default();
+            (s.token.clone(), PubSurvey { lang, first_name: first, answered: s.answered.is_some(), review_url: db.config.surveys.review_url.trim().to_string() })
         })
         .collect()
 }
 
-/// La página de la encuesta. El enlace a la reseña sale igual para todos,
-/// antes y después de responder, sea cual sea la nota.
+/// La página de la encuesta, en el idioma del paciente. El enlace a la
+/// reseña sale igual para todos, antes y después de responder, sea cual sea
+/// la nota.
 pub fn survey_page(clinic: &str, token: &str, s: &PubSurvey, done: bool) -> String {
+    use crate::i18n::t;
     let e = crate::booking::esc_html;
+    let lang = s.lang;
     let review = if s.review_url.starts_with("https://") {
-        format!("<p class=\"review\">Si quiere, también puede contar su experiencia en una reseña pública: <a href=\"{}\" rel=\"noopener noreferrer\" target=\"_blank\">dejar una reseña</a>.</p>", e(&s.review_url))
+        format!("<p class=\"review\">{} <a href=\"{}\" rel=\"noopener noreferrer\" target=\"_blank\">{}</a>.</p>", e(t(lang, "Si quiere, también puede contar su experiencia en una reseña pública:")), e(&s.review_url), e(t(lang, "dejar una reseña")))
     } else {
         String::new()
     };
     let body = if done || s.answered {
-        format!("<p class=\"ok\">Gracias por responder.</p>{review}")
+        format!("<p class=\"ok\">{}</p>{review}", e(t(lang, "Gracias por responder.")))
     } else {
         let radios: String = (0..=10).map(|n| format!("<label class=\"n\"><input type=\"radio\" name=\"puntuacion\" value=\"{n}\" required>{n}</label>")).collect();
+        let question = t(lang, "Del 0 al 10, ¿con qué probabilidad recomendaría [CLINICA] a un familiar o amigo?").replace("[CLINICA]", clinic);
         format!(
-            "<form method=\"post\" action=\"/api/encuesta/{t}\"><p>Del 0 al 10, ¿con qué probabilidad recomendaría {c} a un familiar o amigo?</p><div class=\"scale\">{radios}</div><p><textarea name=\"comentario\" maxlength=\"2000\" placeholder=\"¿Algo que quiera contarnos? (opcional)\"></textarea></p><button class=\"main\">Enviar</button></form>{review}<form method=\"post\" action=\"/api/encuesta/{t}\"><input type=\"hidden\" name=\"baja\" value=\"1\"><button class=\"link\">No quiero recibir más encuestas</button></form>",
-            t = e(token),
-            c = e(clinic)
+            "<form method=\"post\" action=\"/api/encuesta/{tk}\"><p>{q}</p><div class=\"scale\">{radios}</div><p><textarea name=\"comentario\" maxlength=\"2000\" placeholder=\"{ph}\"></textarea></p><button class=\"main\">{send}</button></form>{review}<form method=\"post\" action=\"/api/encuesta/{tk}\"><input type=\"hidden\" name=\"baja\" value=\"1\"><button class=\"link\">{off}</button></form>",
+            tk = e(token),
+            q = e(&question),
+            ph = e(t(lang, "¿Algo que quiera contarnos? (opcional)")),
+            send = e(t(lang, "Enviar")),
+            off = e(t(lang, "No quiero recibir más encuestas"))
         )
     };
     format!(
-        "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><meta name=\"referrer\" content=\"no-referrer\"><title>Encuesta · {c}</title><style>body{{margin:0;font-family:system-ui,Arial,sans-serif;color:#1e293b;background:#f4f7fb}}.wrap{{max-width:560px;margin:0 auto;padding:28px 18px}}.card{{background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:22px}}.scale{{display:flex;flex-wrap:wrap;gap:6px}}.n{{border:1px solid #cbd5e1;border-radius:10px;padding:8px 10px}}textarea{{width:100%;min-height:80px;border-radius:12px;border:1px solid #cbd5e1;padding:10px;font:inherit}}.main{{width:100%;background:#0d9488;border:0;color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600}}.link{{background:none;border:0;color:#64748b;text-decoration:underline;margin-top:14px}}.ok{{color:#16a34a;font-weight:600}}</style></head><body><div class=\"wrap\"><div class=\"card\"><h1>{c}</h1><p>Hola{n}. Nos ayuda mucho saber cómo fue su visita.</p>{body}</div></div></body></html>",
+        "<!doctype html><html lang=\"{l}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><meta name=\"referrer\" content=\"no-referrer\"><title>{c}</title><style>body{{margin:0;font-family:system-ui,Arial,sans-serif;color:#1e293b;background:#f4f7fb}}.wrap{{max-width:560px;margin:0 auto;padding:28px 18px}}.card{{background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:22px}}.scale{{display:flex;flex-wrap:wrap;gap:6px}}.n{{border:1px solid #cbd5e1;border-radius:10px;padding:8px 10px}}textarea{{width:100%;min-height:80px;border-radius:12px;border:1px solid #cbd5e1;padding:10px;font:inherit}}.main{{width:100%;background:#0d9488;border:0;color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600}}.link{{background:none;border:0;color:#64748b;text-decoration:underline;margin-top:14px}}.ok{{color:#16a34a;font-weight:600}}</style></head><body><div class=\"wrap\"><div class=\"card\"><h1>{c}</h1><p>{hi}{n}. {intro}</p>{body}</div></div></body></html>",
         c = e(clinic),
-        n = if s.first_name.is_empty() { String::new() } else { format!(", {}", e(&s.first_name)) }
+        l = lang.code(),
+        hi = e(t(lang, "Hola")),
+        n = if s.first_name.is_empty() { String::new() } else { format!(", {}", e(&s.first_name)) },
+        intro = e(t(lang, "Nos ayuda mucho saber cómo fue su visita."))
     )
 }
 
@@ -321,7 +334,7 @@ mod tests {
     /// cualquier nota: no se pide solo a quien está contento.
     #[test]
     fn the_review_link_is_offered_to_everyone_whatever_the_score() {
-        let s = PubSurvey { first_name: "Ana".into(), answered: false, review_url: "https://g.page/r/clinica/review".into() };
+        let s = PubSurvey { lang: crate::i18n::Lang::Es, first_name: "Ana".into(), answered: false, review_url: "https://g.page/r/clinica/review".into() };
         let before = survey_page("Clínica", &"a".repeat(32), &s, false);
         let after_low = survey_page("Clínica", &"a".repeat(32), &PubSurvey { answered: true, ..s.clone() }, true);
         for page in [&before, &after_low] {

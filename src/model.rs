@@ -200,6 +200,9 @@ pub struct Patient {
     /// Datos bloqueados (se conservan por obligación legal): fuera de las listas.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked: Option<crate::rgpd::Mark>,
+    /// Idioma de sus avisos, sus páginas y sus documentos (ninguno: castellano).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<crate::i18n::Lang>,
 }
 
 /// Persona responsable de un paciente: paga, recibe las facturas y, si el
@@ -355,6 +358,10 @@ pub struct BudgetLine {
     /// Fase del plan de tratamiento (0: la primera).
     #[serde(default, skip_serializing_if = "is_zero_u8")]
     pub phase: u8,
+}
+
+fn is_default_lang(l: &crate::i18n::Lang) -> bool {
+    *l == crate::i18n::Lang::Es
 }
 
 fn is_zero_u8(n: &u8) -> bool {
@@ -683,6 +690,9 @@ pub struct ClinicConfig {
     /// Resumir los dictados con la IA (con los agentes de IA configurados).
     #[serde(default)]
     pub evo_ai: bool,
+    /// Idioma de la interfaz (lo que no está traducido sale en castellano).
+    #[serde(default, skip_serializing_if = "is_default_lang")]
+    pub ui_lang: crate::i18n::Lang,
     /// Encuestas: enlace de la reseña y días entre encuestas (ver `encuestas`).
     #[serde(default, skip_serializing_if = "crate::encuestas::SurveyConfig::is_default")]
     pub surveys: crate::encuestas::SurveyConfig,

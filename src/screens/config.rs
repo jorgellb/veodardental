@@ -293,6 +293,15 @@ fn clinic_tab(app: &mut App, ui: &mut Ui) {
             ui.set_width(ui.available_width());
             let c = &mut app.db.config;
             section(ui, "Datos del centro");
+            ui.horizontal(|ui| {
+                ui.label("Idioma de la interfaz");
+                crate::theme::combo("ui_lang").width(140.0).selected_text(c.ui_lang.name()).show_ui(ui, |ui| {
+                    for l in crate::i18n::Lang::ALL {
+                        ui.selectable_value(&mut c.ui_lang, l, l.name());
+                    }
+                });
+            });
+            muted(ui, if crate::i18n::REVIEWED { "Lo que aún no está traducido sale en castellano." } else { "Lo que aún no está traducido sale en castellano. Traducciones pendientes de revisión por traductores nativos." });
             let w = (ui.available_width() / 1.1 - 4.0).min(420.0);
             field(ui, "Nombre comercial", &mut c.name, w);
             ui.horizontal(|ui| {

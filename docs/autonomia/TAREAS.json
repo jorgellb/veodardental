@@ -2626,8 +2626,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Interfaz, mensajes y documentos con selección y alternativa; pruebas de cobertura de textos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-059"
+   ]
   },
   {
    "id": "T-F5-11X",

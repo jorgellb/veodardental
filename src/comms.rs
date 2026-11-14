@@ -224,6 +224,12 @@ pub struct DocTemplate {
     /// Clases de tratamiento que piden este consentimiento al aceptar un presupuesto (ver `plan`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub for_kinds: Vec<crate::model::OdgKind>,
+    /// Traducción de otra plantilla, a este idioma (ver `i18n`). Solo se usa
+    /// con un paciente de ese idioma si está validada (texto clínico o legal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_of: Option<(u32, crate::i18n::Lang)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validated: Option<(chrono::NaiveDate, String)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -266,7 +272,7 @@ pub fn default_doc_templates() -> Vec<DocTemplate> {
         4 => vec![OdgKind::Endodoncia],
         _ => vec![],
     };
-    let d = |id, name: &str, cat: &str, body: &str, gdpr| DocTemplate { id, name: name.into(), category: cat.into(), body: body.into(), marks_gdpr: gdpr, for_kinds: kinds(id) };
+    let d = |id, name: &str, cat: &str, body: &str, gdpr| DocTemplate { id, name: name.into(), category: cat.into(), body: body.into(), marks_gdpr: gdpr, for_kinds: kinds(id), translation_of: None, validated: None };
     vec![
         d(
             1,
@@ -419,8 +425,10 @@ impl Db {
             to = p.mobile.clone();
         }
         let id = self.new_id();
-        let mut text = self.fill_message(&t.text, pid, extra);
-        let mut subject = self.fill_message(&t.subject, pid, extra);
+        // en su idioma, si la plantilla es la de siempre (un texto propio de la clínica no se traduce)
+        let lang = p.lang.unwrap_or_default();
+        let mut text = self.fill_message(&crate::i18n::tr(lang, &t.text), pid, extra);
+        let mut subject = self.fill_message(&crate::i18n::tr(lang, &t.subject), pid, extra);
         if ch == Channel::Email && subject.trim().is_empty() {
             subject = format!("Mensaje de {}", self.config.name);
         }
@@ -430,11 +438,11 @@ impl Db {
             && !url.is_empty()
             && !text.contains(&url)
         {
-            text = format!("{}\n\n{label}: {url}", text.trim_end());
+            text = format!("{}\n\n{}: {url}", text.trim_end(), crate::i18n::tr(lang, label));
         }
         // en lo que no es la atención de su cita o revisión, cómo darse de baja
         if ch == Channel::Email && matches!(t.kind, MsgKind::Cumpleanos | MsgKind::PresupuestoPendiente | MsgKind::Encuesta) {
-            text = format!("{}\n\n—\nSi no quiere recibir estos mensajes, respóndanos con la palabra BAJA o llámenos al {}.", text.trim_end(), self.config.phone);
+            text = format!("{}\n\n—\n{}", text.trim_end(), crate::i18n::tr(lang, "Si no quiere recibir estos mensajes, respóndanos con la palabra BAJA o llámenos al [TELCLINICA].").replace("[TELCLINICA]", &self.config.phone));
         }
         self.messages.push(Message {
             id,
@@ -588,13 +596,8 @@ impl Db {
                         // enlace personal de la cita (si se usa en el texto o se añade al final, y la página está publicada)
                         let wants = t.text.contains("[ENLACE]") || (self.booking.links_in_messages && t.channel != Channel::Sms);
                         let link = if wants { self.appt_link_url(a.id).unwrap_or_default() } else { String::new() };
-                        let extra = [
-                            ("[FECHA]", format!("{} {}", weekday_es(a.date), a.date.format("%d/%m"))),
-                            ("[HORA]", a.start.format("%H:%M").to_string()),
-                            ("[DOCTOR]", self.doctor_alias(a.doctor_id)),
-                            ("[MOTIVO]", a.reason.clone()),
-                            ("[ENLACE]", link.clone()),
-                        ];
+                        let lang = self.patient(pid).and_then(|p| p.lang).unwrap_or_default();
+                        let extra = [("[FECHA]", crate::i18n::short_date(lang, a.date)), ("[HORA]", a.start.format("%H:%M").to_string()), ("[DOCTOR]", self.doctor_alias(a.doctor_id)), ("[MOTIVO]", a.reason.clone()), ("[ENLACE]", link.clone())];
                         if self.push_msg(&t, pid, Some(a.id), &extra, Some(("Confirme, cambie o anule su cita aquí", link))) {
                             created += 1;
                             done_appt_kind.push((t.kind, a.id));
@@ -721,6 +724,9 @@ impl Db {
     /// Crea un documento del paciente a partir de una plantilla.
     pub fn new_document(&mut self, pid: u32, template_id: u32, teeth: &[u8]) -> Option<u32> {
         let t = self.doc_templates.iter().find(|t| t.id == template_id)?.clone();
+        // en el idioma del paciente, solo con una traducción validada (si no, la original)
+        let lang = self.patient(pid).and_then(|p| p.lang).unwrap_or_default();
+        let t = self.doc_templates.iter().find(|x| x.translation_of == Some((template_id, lang)) && x.validated.is_some()).cloned().map(|x| DocTemplate { id: template_id, ..x }).unwrap_or(t);
         let doctor = self.patient(pid).map(|p| p.doctor_id).unwrap_or(1);
         let extra = [("[PIEZAS]", if teeth.is_empty() { "indicada".to_string() } else { fmt_teeth(teeth) })];
         let body = self.fill(&t.body, pid, &extra);

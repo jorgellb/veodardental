@@ -8,6 +8,7 @@ Esta carpeta prepara las revisiones que una revisión propia no sustituye
 | Gestoría o asesoría fiscal | [gestoria.md](gestoria.md) | Exención de IVA, VERI*FACTU, libros registro, territorio foral y exportación contable |
 | Responsable o delegado de protección de datos (DPO) | [dpo.md](dpo.md) | Plazos de conservación, supresión, derechos, encargados del tratamiento y medidas de seguridad |
 | Auditoría de seguridad externa | [auditoria_seguridad.md](auditoria_seguridad.md) | Alcance, pruebas de intrusión y revisión de la criptografía y de los permisos |
+| Traductores nativos (catalán, euskera, gallego e inglés) | [traducciones.md](traducciones.md) | Las traducciones del catálogo y cuándo un consentimiento traducido se puede usar |
 
 ## Qué es y qué no es
 - **Es** una relación, para cada revisor, de lo hecho, dónde está en el

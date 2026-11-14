@@ -165,7 +165,10 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: revisión de las traducciones al catalán, euskera, gallego e inglés de documentos clínicos y legales.
 - Por qué: un consentimiento o documento legal mal traducido no es válido.
 - Parte afectada: uso de documentos traducidos con pacientes (T-F5-11X).
-- Preparación terminada: T-F5-11 (idiomas en interfaz, mensajes y documentos, con las traducciones marcadas como pendientes de validar).
+- Preparación terminada: T-F5-11 (E-059).
+  - Catálogo en los cinco idiomas: navegación, avisos a pacientes y páginas del paciente.
+  - Consentimientos traducidos solo con validación (`DocTemplate::validated`).
+  - `i18n::REVIEWED` sigue en falso.
 - Responsable: clínica (traductores o profesionales nativos).
 - Paso para desbloquear: revisar los textos marcados en docs/revision_externa/traducciones.
 - Prueba posterior: documentos marcados como validados.

@@ -2523,6 +2523,39 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// La interfaz en cada idioma: el menú y las pestañas de la ficha salen
+/// traducidos y caben a 1280 de ancho (los textos largos también).
+#[test]
+fn the_interface_in_each_language_is_translated_and_fits() {
+    use crate::i18n::Lang;
+    for lang in Lang::ALL {
+        let mut h = Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+            let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+            a.screenshot = None;
+            a
+        });
+        {
+            let a = h.state_mut();
+            a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+            a.db.config.ui_lang = lang;
+            a.open_patient(101, crate::app::PatTab::Resumen);
+        }
+        for _ in 0..3 {
+            h.step();
+        }
+        h.get_by_label(crate::i18n::t(lang, "Pacientes"));
+        h.get_by_label(crate::i18n::t(lang, "Filiación"));
+        let off = offscreen(&h, 1280.0);
+        assert!(off.is_empty(), "{lang:?}: {off:?}");
+        h.state_mut().screen = crate::app::Screen::Inicio;
+        for _ in 0..3 {
+            h.step();
+        }
+        let off = offscreen(&h, 1280.0);
+        assert!(off.is_empty(), "{lang:?} Inicio: {off:?}");
+    }
+}
+
 /// «Mi espacio» desde la ficha: se da el acceso al paciente (enlace copiado)
 /// y se revoca.
 #[test]

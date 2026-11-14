@@ -64,7 +64,7 @@ mod tests {
         let word = |c: char| c.is_alphanumeric() || c == '_' || c == ':' || c == '/' || c == '.' || c == '-';
         let mut missing = vec![];
         let (mut files, mut tests, mut refs) = (0, 0, 0);
-        let docs = ["README.md", "gestoria.md", "dpo.md", "auditoria_seguridad.md"];
+        let docs = ["README.md", "gestoria.md", "dpo.md", "auditoria_seguridad.md", "traducciones.md"];
         for doc in docs {
             let text = std::fs::read_to_string(root.join("docs/revision_externa").join(doc)).unwrap();
             for part in text.split('`').skip(1).step_by(2) {

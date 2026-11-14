@@ -22,6 +22,7 @@
 //! - **Revocación:** la clínica revoca el acceso y, al publicar, el enlace y
 //!   sus sesiones dejan de valer.
 
+use crate::i18n::{Lang, t};
 use crate::model::*;
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
@@ -139,6 +140,8 @@ pub struct PubPatient {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PubPortal {
     pub access_id: u32,
+    /// Idioma de las páginas (el del primer paciente).
+    pub lang: crate::i18n::Lang,
     /// Huellas válidas para entrar (DNI/NIE y fecha de nacimiento).
     pub checks: Vec<String>,
     pub patients: Vec<PubPatient>,
@@ -198,7 +201,8 @@ pub fn publish_portal(db: &Db, today: NaiveDate) -> HashMap<String, PubPortal> {
                 Some(PubPatient { id: *pid, first_name: p.first_name.clone(), appts, budgets, invoices, docs, rx })
             })
             .collect();
-        out.insert(a.token.clone(), PubPortal { access_id: a.id, checks, patients });
+        let lang = pats.first().and_then(|p| db.patient(*p)).and_then(|p| p.lang).unwrap_or_default();
+        out.insert(a.token.clone(), PubPortal { access_id: a.id, lang, checks, patients });
     }
     out
 }
@@ -233,70 +237,81 @@ impl Session {
 
 const STYLE: &str = "body{margin:0;font-family:system-ui,Arial,sans-serif;color:#1e293b;background:#f4f7fb}.wrap{max-width:640px;margin:0 auto;padding:24px 16px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:18px;margin-bottom:12px}h1{font-size:21px}h2{font-size:17px;margin:0 0 8px}input{width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:11px;font-size:16px;margin:4px 0 10px}button{width:100%;background:#0d9488;border:0;color:#fff;border-radius:14px;padding:13px;font-size:16px;font-weight:600}.mu{color:#64748b}.err{color:#dc2626}a{color:#0d9488}li{margin:4px 0}";
 
-fn page(clinic: &str, body: &str) -> String {
+fn page(lang: Lang, clinic: &str, body: &str) -> String {
     let e = crate::booking::esc_html;
+    let me = t(lang, "Mi espacio");
     format!(
-        "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><meta name=\"referrer\" content=\"no-referrer\"><title>Mi espacio · {c}</title><style>{STYLE}</style></head><body><div class=\"wrap\"><h1>{c} · Mi espacio</h1>{body}</div></body></html>",
-        c = e(clinic)
+        "<!doctype html><html lang=\"{l}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><meta name=\"referrer\" content=\"no-referrer\"><title>{me} · {c}</title><style>{STYLE}</style></head><body><div class=\"wrap\"><h1>{c} · {me}</h1>{body}</div></body></html>",
+        c = e(clinic),
+        l = lang.code()
     )
 }
 
-pub fn login_page(clinic: &str, token: &str, error: Option<&str>) -> String {
+pub fn login_page(lang: Lang, clinic: &str, token: &str, error: Option<&'static str>) -> String {
     let e = crate::booking::esc_html;
-    let err = error.map(|x| format!("<p class=\"err\">{}</p>", e(x))).unwrap_or_default();
+    let err = error.map(|x| format!("<p class=\"err\">{}</p>", e(t(lang, x)))).unwrap_or_default();
     page(
+        lang,
         clinic,
         &format!(
-            "<div class=\"card\"><p>Para entrar, escriba su DNI/NIE y su fecha de nacimiento (si entra por un menor a su cargo, su DNI/NIE y la fecha de nacimiento del menor).</p>{err}<form method=\"post\" action=\"/api/portal/{t}/entrar\"><input name=\"dni\" autocomplete=\"off\" placeholder=\"DNI/NIE\" required><input name=\"nacimiento\" placeholder=\"Fecha de nacimiento (dd/mm/aaaa)\" required><button>Entrar</button></form></div>",
-            t = e(token)
+            "<div class=\"card\"><p>{intro}</p>{err}<form method=\"post\" action=\"/api/portal/{tk}/entrar\"><input name=\"dni\" autocomplete=\"off\" placeholder=\"{dni}\" required><input name=\"nacimiento\" placeholder=\"{birth}\" required><button>{go}</button></form></div>",
+            intro = e(t(lang, "Para entrar, escriba su DNI/NIE y su fecha de nacimiento (si entra por un menor a su cargo, su DNI/NIE y la fecha de nacimiento del menor).")),
+            tk = e(token),
+            dni = e(t(lang, "DNI/NIE")),
+            birth = e(t(lang, "Fecha de nacimiento (dd/mm/aaaa)")),
+            go = e(t(lang, "Entrar"))
         ),
     )
 }
 
 pub fn home_page(clinic: &str, token: &str, p: &PubPortal) -> String {
     let e = crate::booking::esc_html;
+    let lang = p.lang;
+    let money = |x: f64| crate::i18n::money(lang, crate::cents::Cents::from_eur(x).0);
     let mut b = String::new();
     for x in &p.patients {
         b.push_str(&format!("<div class=\"card\"><h2>{}</h2>", e(&x.first_name)));
-        let link = |l: &Option<String>, t: &str| l.as_ref().map(|u| format!(" · <a href=\"{}\">{t}</a>", e(u))).unwrap_or_default();
-        b.push_str("<p class=\"mu\">Próximas citas</p><ul>");
+        let link = |l: &Option<String>, label: &'static str| l.as_ref().map(|u| format!(" · <a href=\"{}\">{}</a>", e(u), e(t(lang, label)))).unwrap_or_default();
+        b.push_str(&format!("<p class=\"mu\">{}</p><ul>", e(t(lang, "Próximas citas"))));
         if x.appts.is_empty() {
-            b.push_str("<li class=\"mu\">Ninguna</li>");
+            b.push_str(&format!("<li class=\"mu\">{}</li>", e(t(lang, "Ninguna"))));
         }
         for (d, h, doc, l) in &x.appts {
-            b.push_str(&format!("<li>{} a las {} con {}{}</li>", fmt_date(*d), e(h), e(doc), link(l, "confirmar o cambiar")));
+            b.push_str(&format!("<li>{} · {} · {}{}</li>", crate::i18n::long_date(lang, *d), e(h), e(doc), link(l, "confirmar o cambiar")));
         }
-        b.push_str("</ul><p class=\"mu\">Presupuestos</p><ul>");
-        for (t, total, st, l) in &x.budgets {
-            b.push_str(&format!("<li>{} · {} · {}{}</li>", e(t), money(*total), e(st), link(l, "ver y firmar")));
+        b.push_str(&format!("</ul><p class=\"mu\">{}</p><ul>", e(t(lang, "Presupuestos"))));
+        for (title, total, st, l) in &x.budgets {
+            b.push_str(&format!("<li>{} · {} · {}{}</li>", e(title), money(*total), e(st), link(l, "ver y firmar")));
         }
-        b.push_str("</ul><p class=\"mu\">Facturas</p><ul>");
+        b.push_str(&format!("</ul><p class=\"mu\">{}</p><ul>", e(t(lang, "Facturas"))));
         for i in &x.invoices {
-            b.push_str(&format!("<li><a href=\"/api/portal/{t}/factura/{}\">{} del {}</a> · {}</li>", i.id, e(&i.code), fmt_date(i.date), money(i.total), t = e(token)));
+            b.push_str(&format!("<li><a href=\"/api/portal/{tk}/factura/{}\">{} · {}</a> · {}</li>", i.id, e(&i.code), fmt_date(i.date), money(i.total), tk = e(token)));
         }
-        b.push_str("</ul><p class=\"mu\">Documentos firmados</p><ul>");
+        b.push_str(&format!("</ul><p class=\"mu\">{}</p><ul>", e(t(lang, "Documentos firmados"))));
         for d in &x.docs {
-            b.push_str(&format!("<li><a href=\"/api/portal/{t}/documento/{}\">{}</a> · {}</li>", d.id, e(&d.title), fmt_date(d.date), t = e(token)));
+            b.push_str(&format!("<li><a href=\"/api/portal/{tk}/documento/{}\">{}</a> · {}</li>", d.id, e(&d.title), fmt_date(d.date), tk = e(token)));
         }
         b.push_str("</ul>");
         if let Some(r) = &x.rx {
-            b.push_str(&format!("<p><a href=\"{}\">Mis recetas</a></p>", e(r)));
+            b.push_str(&format!("<p><a href=\"{}\">{}</a></p>", e(r), e(t(lang, "Mis recetas"))));
         }
         b.push_str("</div>");
     }
-    b.push_str(&format!("<form method=\"post\" action=\"/api/portal/{}/salir\"><button>Salir</button></form>", e(token)));
-    page(clinic, &b)
+    b.push_str(&format!("<form method=\"post\" action=\"/api/portal/{}/salir\"><button>{}</button></form>", e(token), e(t(lang, "Salir"))));
+    page(lang, clinic, &b)
 }
 
-pub fn invoice_page(clinic: &str, i: &PubInvoice) -> String {
+pub fn invoice_page(lang: Lang, clinic: &str, i: &PubInvoice) -> String {
     let e = crate::booking::esc_html;
+    let money = |x: f64| crate::i18n::money(lang, crate::cents::Cents::from_eur(x).0);
     let lines: String = i.lines.iter().map(|(d, a)| format!("<li>{} · {}</li>", e(d), money(*a))).collect();
-    page(clinic, &format!("<div class=\"card\"><h2>Factura {}</h2><p class=\"mu\">{}</p><ul>{lines}</ul><p><b>Total {}</b></p></div>", e(&i.code), fmt_date(i.date), money(i.total)))
+    page(lang, clinic, &format!("<div class=\"card\"><h2>{} {}</h2><p class=\"mu\">{}</p><ul>{lines}</ul><p><b>{} {}</b></p></div>", e(t(lang, "Factura")), e(&i.code), fmt_date(i.date), e(t(lang, "Total")), money(i.total)))
 }
 
-pub fn doc_page(clinic: &str, d: &PubDoc) -> String {
+/// Un documento firmado: tal como se firmó (en su idioma original).
+pub fn doc_page(lang: Lang, clinic: &str, d: &PubDoc) -> String {
     let e = crate::booking::esc_html;
-    page(clinic, &format!("<div class=\"card\"><h2>{}</h2><p class=\"mu\">Firmado · {}</p><p style=\"white-space:pre-wrap\">{}</p></div>", e(&d.title), fmt_date(d.date), e(&d.body)))
+    page(lang, clinic, &format!("<div class=\"card\"><h2>{}</h2><p class=\"mu\">{} · {}</p><p style=\"white-space:pre-wrap\">{}</p></div>", e(&d.title), e(t(lang, "Firmado")), fmt_date(d.date), e(&d.body)))
 }
 
 #[cfg(test)]

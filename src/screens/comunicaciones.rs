@@ -678,6 +678,8 @@ fn doc_templates(app: &mut App, ui: &mut Ui) {
                                 body: "D./Dña. [NOMBRE] [APELLIDOS] …\n\nEn [CIUDAD], a [FECHA].".into(),
                                 marks_gdpr: false,
                                 for_kinds: vec![],
+                                translation_of: None,
+                                validated: None,
                             });
                             app.comms.doc_tpl_sel = Some(id);
                             app.changed();
