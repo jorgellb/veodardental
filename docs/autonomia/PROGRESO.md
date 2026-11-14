@@ -64,6 +64,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F5-07: alertas clínicas ampliadas con fuente citada y revisión del profesional | E-051 | `a65de92` |
 | Revisión de seguridad: vistos de alertas sellados por el servidor | E-052 | `c5e63d5` |
 | T-F5-08: esterilización (ciclos, lotes, pacientes, incidencias y afectados) | E-053 | `c5e63d5` |
+| Revisión de seguridad: esterilización comprobada por el servidor | E-054 | `7e9b2cb` |
 
 ## Siguiente acción
 Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
