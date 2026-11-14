@@ -40,6 +40,14 @@ impl Env {
     fn cmd(&self) -> Command {
         let mut c = Command::new(&self.exe);
         c.env_clear().env("PATH", std::env::var_os("PATH").unwrap_or_default()).env("TZ", "Europe/Madrid");
+        // En Windows, sin estas variables (que un servicio siempre tiene) la red
+        // no se inicia y el servidor no puede abrir su puerto.
+        #[cfg(windows)]
+        for k in ["SystemRoot", "SystemDrive", "windir", "TEMP", "TMP"] {
+            if let Some(v) = std::env::var_os(k) {
+                c.env(k, v);
+            }
+        }
         for (k, v) in &self.vars {
             c.env(k, v);
         }
@@ -77,7 +85,11 @@ impl Env {
             // si no arrancó, no queda un proceso suelto
             let _ = child.kill();
             let st = child.wait();
-            panic!("el servidor no arrancó ({st:?}): {lines:?}");
+            let mut err = String::new();
+            if let Some(mut e) = child.stderr.take() {
+                let _ = std::io::Read::read_to_string(&mut e, &mut err);
+            }
+            panic!("el servidor no arrancó ({st:?}): {lines:?} · {err}");
         }
         (child, lines)
     }
@@ -204,6 +216,7 @@ fn the_cloud_server_rehearsal_runs_locally() {
 /// las carpetas solo para el servicio, y el programa arranca con el entorno
 /// de esa unidad.
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "el aprovisionamiento es para servidores Linux (systemd): en otros sistemas las carpetas del programa no siguen las variables de la unidad")]
 fn the_provisioning_script_rehearses_without_touching_the_system() {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("deploy/nube/aprovisionar.sh");
     let dir = fresh("aprovisionar");

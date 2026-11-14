@@ -652,6 +652,9 @@ pub(crate) fn gzip(data: &[u8]) -> Vec<u8> {
 struct Job {
     req: Request,
     reply: mpsc::Sender<Response>,
+    /// Llega cuando la respuesta ya está escrita (o se cierra si la conexión
+    /// se pierde antes): al parar, el servidor lo espera antes de terminar.
+    written: mpsc::Receiver<()>,
 }
 
 /// Atiende una conexión: cifrado, lectura de la petición y respuesta del servidor.
@@ -689,12 +692,13 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
         }
     };
     let gzip_ok = matches!(&read, Ok(Some(req)) if req.header("Accept-Encoding").is_some_and(|v| v.contains("gzip")));
+    let (written_tx, written_rx) = mpsc::channel();
     let resp = match read {
         Ok(None) => return,
         Err(r) => r,
         Ok(Some(req)) => {
             let (tx, rx) = mpsc::channel();
-            if jobs.send(Job { req, reply: tx }).is_err() {
+            if jobs.send(Job { req, reply: tx, written: written_rx }).is_err() {
                 return;
             }
             match rx.recv() {
@@ -706,6 +710,7 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
     let _ = write_response(&mut s, &resp, gzip_ok);
     s.conn.send_close_notify();
     let _ = s.flush();
+    let _ = written_tx.send(());
 }
 
 // ───────────────────────────── servidor ─────────────────────────────
@@ -2089,23 +2094,31 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
         eprintln!("No se pueden guardar los datos: {e}");
         return;
     }
+    run_jobs(&mut st, jobs, &key);
+    stop.store(true, Ordering::SeqCst);
+    // despierta la espera de conexiones para que termine
+    if let Some(port) = port {
+        let _ = TcpStream::connect_timeout(&SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), Duration::from_secs(1));
+    }
+}
+
+/// Atiende las peticiones, una tras otra, hasta que piden parar. Al parar, el
+/// fichero de datos queda completo y se espera a que la respuesta esté escrita
+/// (unos segundos como mucho): si el proceso terminara antes, quien pidió parar
+/// se quedaría sin ella y vería «No hay conexión».
+fn run_jobs(st: &mut State, jobs: mpsc::Receiver<Job>, key: &str) {
     for job in jobs {
-        let (resp, stop_now) = st.handle(&job.req, &key);
+        let (resp, stop_now) = st.handle(&job.req, key);
         if stop_now {
-            // al parar, el fichero de datos queda completo
             let resp = match st.rewrite() {
                 Ok(()) => resp,
                 Err(e) => error(500, &format!("No se pudieron guardar los datos al parar: {e}")),
             };
             let _ = job.reply.send(resp);
+            let _ = job.written.recv_timeout(Duration::from_secs(5));
             break;
         }
         let _ = job.reply.send(resp);
-    }
-    stop.store(true, Ordering::SeqCst);
-    // despierta la espera de conexiones para que termine
-    if let Some(port) = port {
-        let _ = TcpStream::connect_timeout(&SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), Duration::from_secs(1));
     }
 }
 
@@ -3492,6 +3505,35 @@ mod tests {
         drop(idle);
         dir.stop().unwrap();
         h.join().unwrap();
+    }
+
+    /// Al parar, el servidor no termina hasta que la respuesta está escrita: si
+    /// no, quien pidió parar podía quedarse sin ella (el ensayo en la nube falló
+    /// así en la integración continua, en un equipo más lento).
+    #[test]
+    fn stopping_waits_until_the_answer_is_written() {
+        let dir = std::env::temp_dir().join(format!("vd_parar_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut st = State::new(&Db::sample(crate::model::today()), dir.join("clinica.json"), "CLAVE", vec![1; 32]);
+        let (jobs_tx, jobs_rx) = mpsc::channel();
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let (written_tx, written_rx) = mpsc::channel();
+        let req = Request { method: "POST".into(), path: "/parar".into(), query: String::new(), headers: vec![("X-Clave".into(), "CLAVE".into())], body: b"{}".to_vec(), peer: IpAddr::V4(Ipv4Addr::LOCALHOST) };
+        jobs_tx.send(Job { req, reply: reply_tx, written: written_rx }).unwrap();
+        drop(jobs_tx);
+        // la conexión tarda en escribir la respuesta
+        let writer = std::thread::spawn(move || {
+            let resp = reply_rx.recv().unwrap();
+            std::thread::sleep(Duration::from_millis(400));
+            let _ = written_tx.send(());
+            resp.code
+        });
+        let t = Instant::now();
+        run_jobs(&mut st, jobs_rx, "CLAVE");
+        assert!(t.elapsed() >= Duration::from_millis(350), "esperó a la respuesta escrita: {:?}", t.elapsed());
+        assert_eq!(writer.join().unwrap(), 200);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Hallazgo de la revisión automática de E-080: quien manda un byte de vez
