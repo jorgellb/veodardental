@@ -4794,7 +4794,9 @@ dependencies = [
 name = "veodardental"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "calamine",
+ "cbc",
  "chrono",
  "datamatrix",
  "dirs",

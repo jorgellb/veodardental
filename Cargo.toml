@@ -61,6 +61,10 @@ webpki-roots = "0.26"
 rcgen = "0.14"
 # envío de correo (SMTP) con adjuntos: órdenes al laboratorio y comunicaciones
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "rustls", "ring", "webpki-roots"] }
+# pago por internet (Redsys): la clave de cada operación con AES-CBC, como pide
+# su firma HMAC_SHA512_V2 (el HMAC, con ring); ya los usaba p12-keystore
+aes = "0.9"
+cbc = "0.2"
 
 [profile.dev]
 opt-level = 1

@@ -302,6 +302,13 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
             ui.add_space(6.0);
             crate::screens::cita_online::budget_link_row(app, ui, b.id);
         }
+        // pago por internet del presupuesto y de la próxima cuota sin pagar
+        if !matches!(b.state, BudgetState::Rechazado | BudgetState::Cerrado) {
+            crate::screens::pagos::pay_row(app, ui, crate::pago::PayFor::Budget(b.id), "Pago por internet");
+            if let Some(i) = b.plan.as_ref().and_then(|pl| (0..pl.installments).find(|i| !pl.paid.get(*i as usize).copied().unwrap_or(false))) {
+                crate::screens::pagos::pay_row(app, ui, crate::pago::PayFor::Installment(b.id, i), &format!("Cuota {} por internet", i + 1));
+            }
+        }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if b.state == BudgetState::Pendiente && primary(ui, "✔ Aceptar presupuesto").on_hover_text("Pasa los tratamientos al historial del paciente como previstos").clicked() {

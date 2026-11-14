@@ -136,7 +136,8 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: contrato de comercio con un banco (TPV virtual) y sus credenciales del entorno de pruebas.
 - Por qué: las firmas y notificaciones reales usan la clave secreta del comercio; el encargo prohíbe contratar.
 - Parte afectada: prueba con el entorno de pruebas del banco y activación (T-F5-02X).
-- Preparación terminada: T-F5-02 (flujo completo con firmas y notificaciones simuladas).
+- Preparación terminada: T-F5-02 (E-044). Flujo completo con Redsys por redirección (HMAC_SHA512_V2, comprobado con los ejemplos de su documentación), notificaciones y devoluciones simuladas, sin cargos ni datos de tarjeta.
+- Para la prueba con el banco: el número de comercio, el terminal y la clave de pruebas van en Configuración › Cita online › TPV virtual de este ordenador, con la página de citas publicada en internet (la notificación tiene que poder llegar).
 - Responsable: clínica.
 - Paso para desbloquear: solicitar al banco el TPV virtual y copiar sus datos de pruebas en Configuración › Pago por internet.
 - Prueba posterior: pago de prueba con tarjeta de pruebas del banco y notificación conciliada.

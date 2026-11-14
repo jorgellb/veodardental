@@ -2440,8 +2440,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas sin cargos con firmas y notificaciones simuladas; sin datos de tarjeta",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-044"
+   ]
   },
   {
    "id": "T-F5-02X",

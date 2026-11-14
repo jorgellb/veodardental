@@ -230,7 +230,16 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
             books_card(app, ui);
         }
         CfgTab::Correo => crate::screens::correo::panel(app, ui),
-        CfgTab::CitaOnline => crate::screens::cita_online::panel(app, ui),
+        CfgTab::CitaOnline => {
+            crate::screens::cita_online::panel(app, ui);
+            ui.add_space(10.0);
+            // las dos columnas de arriba pueden dejar el área más ancha que lo que se ve
+            let w = (ui.clip_rect().right() - ui.cursor().left() - 8.0).max(320.0);
+            ui.scope(|ui| {
+                ui.set_max_width(w);
+                crate::screens::pagos::settings(app, ui);
+            });
+        }
         CfgTab::Telefonia => crate::screens::llamadas::panel(app, ui),
         CfgTab::Whatsapp => {
             crate::screens::whatsapp::panel(app, ui);

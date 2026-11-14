@@ -20,7 +20,7 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
   ventana, con diario de cambios (`src/local.rs`).
 - **Carpeta compartida (modo antiguo):** retirada para instalaciones nuevas,
   con paso comprobado al servidor (`src/shared.rs`).
-- **Páginas públicas** (cita online, «Mi cita», presupuestos para firmar):
+- **Páginas públicas** (cita online, «Mi cita», presupuestos para firmar, pago por internet):
   - salen por Cloudflare Tunnel, sin abrir puertos (`src/tunnel.rs`);
   - cada enlace es un código aleatorio de 128 bits (`src/portal.rs`).
 
@@ -53,6 +53,7 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
 | Red | TLS 1.3 e identidad Ed25519 del servidor | `src/server.rs` |
 | Paquetes de actualización | Firma Ed25519 del manifiesto y SHA-256 de cada fichero | `src/actualizar.rs` |
 | Registro de accesos | Cadena SHA-256 línea a línea | `src/accesos.rs` |
+| Pago por internet (Redsys) | HMAC-SHA512 con clave por pedido (AES-CBC del pedido), comprobado con los ejemplos de Redsys; comparación en tiempo constante | `src/pago.rs` |
 | Segundo factor | TOTP (HMAC-SHA1, por compatibilidad con las apps) | `src/totp.rs` |
 
 - **Claves de los datos:**
@@ -116,5 +117,5 @@ Cada uno tiene su corrección y su prueba en la evidencia indicada:
 - Se recomienda incluir en el alcance:
   - el servidor y su protocolo, con un cliente propio;
   - la carpeta de datos con un usuario local distinto;
-  - el túnel y las páginas públicas;
+  - el túnel y las páginas públicas, incluida la notificación de pago (`/api/tpv/notificacion`, `booking::tests::online_payment_from_the_page_to_the_signed_notice`);
   - la actualización con paquetes manipulados.

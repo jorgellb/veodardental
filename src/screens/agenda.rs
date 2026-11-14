@@ -989,6 +989,9 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                     }
                 });
             }
+            if !d.is_new && d.a.patient_id.is_some() && app.db.config.pay_online.deposit.amount > 0 && !d.a.state.is_cancelled() {
+                crate::screens::pagos::pay_row(app, ui, crate::pago::PayFor::Deposit(d.a.id), "Señal por internet");
+            }
             if let Some(f) = d.from_id {
                 muted(ui, format!("Reprogramación de la cita del {}", app.db.appointments.iter().find(|a| a.id == f).map(|a| format!("{} {}", fmt_date(a.date), hm(a.start))).unwrap_or_default()));
             }
@@ -1064,6 +1067,13 @@ pub fn appt_dialog(app: &mut App, ctx: &egui::Context, mut d: ApptDraft) -> Dial
                 set_state(&mut app.db, d.a.id, st);
             }
             app.notify("Cita actualizada.");
+            // señal pagada: anulada en la agenda, se devuelve; si no acude, se conserva
+            if prev != st
+                && st.is_cancelled()
+                && let Some(m) = app.db.deposit_on_cancel(d.a.id, st == ApptState::NoAcude, crate::model::now())
+            {
+                app.notify(m);
+            }
         }
         // el recall pendiente del paciente queda citado con esta cita (y, si se
         // anula o se aplaza, vuelve a pendiente)

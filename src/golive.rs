@@ -236,6 +236,7 @@ impl Db {
             imports,
             measures,
             rights_requests,
+            pay_requests,
             punches,
             data_version: _,
             station: _,
@@ -284,6 +285,7 @@ impl Db {
         imports.clear();
         measures.clear();
         rights_requests.clear();
+        pay_requests.clear();
         punches.clear();
         // lo de ejemplo que no es de ningún paciente
         suppliers.retain(|s| !is_demo(&d.suppliers, s.id, &s.name));

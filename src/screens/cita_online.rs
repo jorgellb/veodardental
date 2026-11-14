@@ -11,6 +11,12 @@ use std::sync::mpsc::Receiver;
 #[derive(Default)]
 pub struct BookingUi {
     pub server: Option<BookingServer>,
+    /// TPV virtual de este ordenador (de `tpv.json`; se lee al publicar).
+    pub tpv: Option<crate::pago::TpvSettings>,
+    /// Pagos por internet: el elegido, la devolución que se va a pedir y la que está en curso.
+    pub pay_sel: Option<u32>,
+    pub refund_ask: Option<(u32, String, f64)>,
+    pub refund_job: Option<crate::screens::pagos::RefundJob>,
     /// Puerto y red con los que se abrió la página.
     bound: Option<(u16, bool)>,
     pub error: Option<String>,
@@ -187,6 +193,12 @@ pub fn tick(app: &mut App, ctx: &egui::Context, time: f64) {
                     app.changed();
                 }
             }
+            WebEvent::PayStarted { token, order, method } => {
+                if app.db.pay_started(&token, &order, method, now()) {
+                    app.changed();
+                }
+            }
+            WebEvent::PayNotice(n) => pay_notice(app, &n),
         }
     }
     if any || time - app.booking.last_publish >= 2.0 {
@@ -195,12 +207,28 @@ pub fn tick(app: &mut App, ctx: &egui::Context, time: f64) {
             app.changed();
         }
         let p = publish(&app.db, app.today);
+        // el TPV de este ordenador (su clave no va en los datos de la clínica)
+        let tpv = app.db.config.pay_online.enabled.then(|| app.booking.tpv.get_or_insert_with(crate::pago::load_settings).clone());
         let mut g = shared.lock().unwrap_or_else(|e| e.into_inner());
         g.published = p;
+        g.tpv = tpv;
         g.held.retain(|h| !holds.contains(h));
         app.booking.last_publish = time;
     }
     ctx.request_repaint_after(std::time::Duration::from_secs(2));
+}
+
+/// Notificación de Redsys ya comprobada: se apunta una vez y se avisa.
+fn pay_notice(app: &mut App, n: &crate::pago::Notice) {
+    use crate::pago::Applied;
+    match app.db.apply_notice(n, now()) {
+        Ok(Applied::Paid { .. }) => app.notify(format!("Pago por internet recibido: {} (pedido {}).", crate::cents::Cents(n.amount), n.order)),
+        Ok(Applied::PaidTwice { .. }) => app.warn(format!("Se ha pagado dos veces por internet (pedido {}): devuelva el segundo cobro en Cobros › Pagos por internet.", n.order)),
+        Ok(Applied::Review(why)) => app.warn(format!("Pago por internet para revisar (pedido {}): {why}", n.order)),
+        Ok(Applied::Denied(_) | Applied::Duplicate) => {}
+        Err(e) => app.warn(format!("Notificación de pago por internet no apuntada: {e}")),
+    }
+    app.changed();
 }
 
 fn cloudflared(app: &mut App) -> Option<std::path::PathBuf> {
@@ -1062,7 +1090,9 @@ fn link_action(app: &mut App, appt: u32, action: ApptAction, holds: &mut Vec<Bus
                     None if waiting > 0 => format!(" Hay {waiting} paciente(s) en lista de espera con ese profesional."),
                     None => String::new(),
                 };
-                app.notify(format!("{who} ha anulado por internet su cita del {when}.{tail}"));
+                // la señal pagada: se devuelve o se retiene según la política
+                let deposit = app.db.deposit_on_cancel(appt, true, now()).map(|m| format!(" {m}")).unwrap_or_default();
+                app.notify(format!("{who} ha anulado por internet su cita del {when}.{tail}{deposit}"));
             }
         }
         ApptAction::Change(inc) => {

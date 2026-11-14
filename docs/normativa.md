@@ -130,3 +130,18 @@ queda marcado como pendiente.
   - las farmacias validan las recetas a través de Nodofarma contra los repositorios de los Consejos de prescriptores.
 - **No encontrado:** nada fechado en 2026 sobre cambios.
 - **Efecto en el código (T-F4-01):** la trazabilidad, la hoja del paciente y las pruebas con una farmacia simulada ya existen (repositorio `srep`). La certificación es del CGCOE: B-09.
+
+## Pago por internet: TPV virtual de Redsys y Bizum
+- **Fuente:** documentación de desarrolladores de Redsys (pagosonline.redsys.es), consultada el 14/11/2026:
+  - «Realizar un pago»: redirección a `realizarPago`; parámetros en Base64URL y firma `HMAC_SHA512_V2`; Bizum con `Ds_Merchant_PayMethods` = «z»; el resultado solo vale por la notificación HTTP POST, nunca por la vuelta del navegador;
+  - «Firmar una operación»: clave de la operación con AES-CBC (vector de ceros) del número de pedido con los 16 primeros caracteres de la clave, y HMAC-SHA512;
+  - «Devolver o anular un pago»: petición REST a `trataPeticionREST` con tipo 3; «0900» si se hace;
+  - «Parámetros de entrada y salida»: 0000 a 0099, autorizada; 9915, cancelada por el usuario; `Ds_ProcessedPayMethod` 68, Bizum; el pedido tiene hasta 12 caracteres y se recomienda que los 4 primeros sean cifras;
+  - «Manual de integración REST», versión 4.0.1 de 17/10/2025: firma `HMAC_SHA512_V1` y la anterior `HMAC_SHA256_V1`, que no se usan.
+- **Comprobado:** la firma del programa da exactamente las de los dos ejemplos de la documentación, con la clave pública de pruebas (`pago::tests::the_signature_matches_the_redsys_examples`).
+- **Efecto en el código (T-F5-02):** `src/pago.rs`, la página `/pagar/{código}` y la notificación `/api/tpv/notificacion`.
+  - Ningún dato de tarjeta pasa por el programa.
+  - El importe lo pone el programa.
+  - Solo cuenta la notificación con firma válida, del comercio y terminal configurados, en euros y por el importe pedido.
+- **Pendiente:** el contrato del TPV y la prueba en el entorno de pruebas del banco (B-14, T-F5-02X).
+

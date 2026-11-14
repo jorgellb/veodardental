@@ -179,8 +179,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if ui.selectable_label(app.cobros_tab == 1, "Remesas SEPA (cuotas domiciliadas)").clicked() {
             app.cobros_tab = 1;
         }
+        if ui.selectable_label(app.cobros_tab == 2, "Pagos por internet").clicked() {
+            app.cobros_tab = 2;
+        }
     });
     ui.add_space(6.0);
+    if app.cobros_tab == 2 {
+        egui::ScrollArea::vertical().id_salt("pagos_web_scroll").auto_shrink([false, false]).show(ui, |ui| crate::screens::pagos::panel(app, ui));
+        return;
+    }
     if app.cobros_tab == 1 {
         egui::ScrollArea::vertical().id_salt("rem_scroll").auto_shrink([false, false]).show(ui, |ui| crate::screens::remesas::view(app, ui));
         return;

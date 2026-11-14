@@ -2523,6 +2523,61 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Pago por internet desde las pantallas: se pide desde el presupuesto (y
+/// el enlace queda copiado), sale en Cobros › Pagos por internet y un intento
+/// sin respuesta del banco se resuelve a mano tras comprobarlo en el portal.
+#[test]
+fn an_online_payment_is_requested_from_the_budget_and_settled_in_payments() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1600.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let bid;
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.config.pay_online = crate::pago::PayConfig { enabled: true, bizum: false, deposit: Default::default() };
+        a.db.booking.public_url = "https://citas.clinica.es".into();
+        a.db.pay_requests.clear();
+        bid = a.db.budgets.iter().find(|b| b.state == crate::model::BudgetState::Pendiente && b.total() > 0.0).map(|b| b.id).unwrap();
+        a.dialog = crate::app::Dialog::Budget(bid);
+    }
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("Pago por internet");
+    // la del presupuesto (la otra es la de la próxima cuota)
+    h.query_all_by_label("Pedir pago por internet").next().unwrap().click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let r = h.state().db.pay_requests.first().cloned().expect("petición creada");
+    assert_eq!(r.what, crate::pago::PayFor::Budget(bid));
+    assert_eq!(r.state, crate::pago::PayState::Pendiente);
+    // un intento de hace 40 minutos sin respuesta del banco
+    {
+        let a = h.state_mut();
+        a.dialog = crate::app::Dialog::None;
+        let at = crate::model::now() - chrono::Duration::minutes(40);
+        a.db.pay_started(&r.token, "0001pruebaui1", crate::pago::Method::Tarjeta, at);
+        a.screen = crate::app::Screen::Cobros;
+        a.cobros_tab = 2;
+        a.booking.pay_sel = Some(r.id);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Intentos de pago");
+    let pays = h.state().db.payments.len();
+    h.get_by_label("Se cobró").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.payments.len(), pays + 1, "comprobado a mano: se apunta el cobro");
+    assert_eq!(h.state().db.pay_request(r.id).unwrap().state, crate::pago::PayState::Pagado);
+}
+
 /// El cuadro de mando enseña cada indicador con su fórmula y los valores de
 /// `cuadro` (los mismos que comprueban sus pruebas), y guarda un objetivo.
 #[test]

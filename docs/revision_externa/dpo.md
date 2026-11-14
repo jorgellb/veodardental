@@ -99,6 +99,7 @@ contratado en este trabajo.
 | IA de imágenes (proveedor que elija la clínica, o uno local) | Solo la imagen y, si se quiere, la edad; nunca el nombre | `src/ia.rs` |
 | Cloudflare Tunnel (si se publica la página de citas) | Las páginas de cita online y «Mi cita»: datos de esa cita y nombre de pila | `src/tunnel.rs`, `src/portal.rs` |
 | AEAT (VERI*FACTU) | Registros de facturación | `src/verifactu.rs` |
+| TPV virtual del banco (Redsys) | El pedido, el importe y el concepto del pago; la tarjeta la pide la página del banco, no el programa | `src/pago.rs` |
 | Soporte | El informe de errores, minimizado; solo a mano, visto entero antes y con consentimiento | `src/registro.rs` |
 
 - Quien da de baja la recepción de mensajes («BAJA») deja de recibirlos

@@ -1138,3 +1138,36 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 453 pasan, 0 fallan, 10 ignoradas |
+
+## E-044 T-F5-02: pago por internet (TPV virtual de Redsys y Bizum), sin cargos
+- **Fuente:** documentación de desarrolladores de Redsys, consultada el 14/11/2026. Recogida en `docs/normativa.md`.
+- **Firma `HMAC_SHA512_V2` (`src/pago.rs`):** da exactamente la de los dos ejemplos oficiales, comprobada antes con openssl y Python y después en Rust. El AES-CBC es de los crates `aes` y `cbc` (RustCrypto), que ya estaban en `Cargo.lock` por `p12-keystore`; el HMAC, de `ring`. No hay criptografía propia.
+- **Flujo:**
+  1. La clínica pide el pago desde el presupuesto, la próxima cuota o la cita (señal), y el enlace queda copiado.
+  2. El paciente abre `/pagar/{código}`, elige tarjeta o Bizum y va a la página del banco con un formulario firmado. El importe es el de la petición, no el del navegador.
+  3. Redsys avisa en `/api/tpv/notificacion`. Solo cuenta con la firma bien, del comercio y terminal configurados, en euros y por el importe pedido.
+- **Una sola vez:** una notificación repetida no cobra dos veces. Un segundo pago real (otro pedido) se apunta y queda para devolver. Un importe distinto no se apunta solo.
+- **Incierto:** un intento sin notificación pasados 30 minutos se resuelve a mano («Se cobró» / «No se cobró») tras comprobarlo en el portal del TPV.
+- **Devoluciones:** petición REST firmada (tipo 3). Si Redsys corta tras enviarla, queda incierta y no se repite sin comprobarla.
+- **Señal de reserva:** política configurable que ve el paciente antes de pagar.
+  - Si el paciente anula con la antelación fijada, se le devuelve; con menos, o si no acude, se conserva.
+  - Si la anula la clínica, siempre se devuelve.
+  - Se aplica al anular desde «Mi cita» y desde la agenda.
+- **Clave del terminal:** solo en el ordenador que publica la página (`tpv.json`, 0600), nunca en los datos de la clínica.
+- **Pruebas** (sin cargos y sin datos de tarjeta, con la clave pública de pruebas de Redsys y un Redsys simulado):
+  - `pago::tests::the_signature_matches_the_redsys_examples`;
+  - `pago::tests::the_pay_form_and_notices_are_signed_and_checked`: otra clave, otro comercio, otra moneda y la versión antigua se rechazan;
+  - `pago::tests::a_notice_is_charged_once_and_a_second_payment_is_flagged`;
+  - `pago::tests::an_attempt_without_notice_becomes_uncertain_and_is_settled_by_hand`;
+  - `pago::tests::installments_and_deposits_follow_their_rules`;
+  - `pago::tests::refunds_are_signed_recorded_once_and_uncertain_ones_are_not_repeated`: hecha, rechazada, cortada y sin conexión;
+  - `booking::tests::online_payment_from_the_page_to_the_signed_notice`: de la página a la notificación por HTTP, con una notificación falsificada;
+  - `ui_tests::an_online_payment_is_requested_from_the_budget_and_settled_in_payments`.
+- **Pendiente (B-14, T-F5-02X):** el contrato del TPV y la prueba en el entorno de pruebas del banco.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 461 pasan, 0 fallan, 10 ignoradas |

@@ -266,6 +266,10 @@ pub struct Published {
     pub offers: HashMap<String, crate::slot_offer::PubOffer>,
     /// «Mis recetas» de cada paciente con enlace (por código).
     pub rx: HashMap<String, crate::rx_link::PubRx>,
+    /// Peticiones de pago por internet (por código).
+    pub pays: HashMap<String, crate::pago::PubPay>,
+    /// Dirección pública de la página (para que Redsys avise y devuelva al paciente).
+    pub public_url: String,
 }
 
 /// Profesionales que se ofrecen en la página.
@@ -315,6 +319,8 @@ pub fn publish(db: &Db, today: NaiveDate) -> Published {
         docs: crate::doc_link::publish_docs(db, today),
         offers: crate::slot_offer::publish_offers(db, today),
         rx: crate::rx_link::publish_rx(db, today),
+        pays: crate::pago::publish_pays(db, today.and_time(chrono::Local::now().naive_local().time())),
+        public_url: c.public_url.trim().trim_end_matches('/').to_string(),
     }
 }
 
@@ -595,6 +601,14 @@ pub enum WebEvent {
     Rx {
         patient: u32,
     },
+    /// El paciente va a pagar (pedido nuevo en Redsys).
+    PayStarted {
+        token: String,
+        order: String,
+        method: crate::pago::Method,
+    },
+    /// Notificación de Redsys con firma comprobada.
+    PayNotice(crate::pago::Notice),
 }
 
 #[derive(Default)]
@@ -605,6 +619,8 @@ pub struct Shared {
     pub received: u64,
     pub refused: u64,
     hits: HashMap<String, Vec<Instant>>,
+    /// TPV virtual de este ordenador (la clave no sale de aquí).
+    pub tpv: Option<crate::pago::TpvSettings>,
 }
 
 pub struct BookingServer {
@@ -695,7 +711,7 @@ fn too_many(sh: &mut Shared, key: &str, max: usize, secs: u64) -> bool {
     false
 }
 
-fn esc_html(s: &str) -> String {
+pub fn esc_html(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
@@ -1319,6 +1335,96 @@ fn rx_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEve
     }
 }
 
+/// Pago por internet (ver `pago`):
+/// - `GET /pagar/{código}`: la página, con lo que se paga y cómo va;
+/// - `POST /api/pagar/{código}/iniciar` (`metodo=tarjeta|bizum`): pedido nuevo y formulario firmado hacia Redsys;
+/// - `POST /api/tpv/notificacion`: la notificación de Redsys, que solo cuenta con la firma bien.
+fn pay_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEvent>, wake: &dyn Fn(), ip: &str, path: &str, url: &str) {
+    use crate::pago::{Method, PayState, parse_form, pay_form, pay_page, read_notice};
+    let lock = || sh.lock().unwrap_or_else(|e| e.into_inner());
+    let text = |req: tiny_http::Request, code: u16, t: &str| respond(req, code, "text/plain; charset=utf-8", t.to_string());
+    if path == "/api/tpv/notificacion" {
+        if *req.method() != tiny_http::Method::Post {
+            return text(req, 405, "Método no permitido.");
+        }
+        let Some(body) = read_body(&mut req) else { return text(req, 413, "Demasiado grande.") };
+        let f = parse_form(&String::from_utf8_lossy(&body));
+        let s = lock().tpv.clone();
+        let got = s
+            .ok_or_else(|| "Sin TPV configurado.".to_string())
+            .and_then(|s| read_notice(&s, f.get("Ds_SignatureVersion").map(String::as_str).unwrap_or(""), f.get("Ds_MerchantParameters").map(String::as_str).unwrap_or(""), f.get("Ds_Signature").map(String::as_str).unwrap_or("")));
+        return match got {
+            Ok(n) => {
+                if tx.send(WebEvent::PayNotice(n)).is_err() {
+                    return text(req, 503, "No se pudo guardar.");
+                }
+                wake();
+                text(req, 200, "OK")
+            }
+            Err(e) => {
+                let mut g = lock();
+                g.refused += 1;
+                too_many(&mut g, &format!("bad:{ip}"), 20, 3600);
+                drop(g);
+                text(req, 400, &e)
+            }
+        };
+    }
+    let rest = path.trim_start_matches("/api/pagar/").trim_start_matches("/pagar/");
+    let (token, action) = rest.split_once('/').unwrap_or((rest, ""));
+    let mut g = lock();
+    let found = if crate::portal::valid_token(token) && g.published.accepting { g.published.pays.get(token).cloned() } else { None };
+    let Some(p) = found else {
+        let blocked = too_many(&mut g, &format!("bad:{ip}"), 20, 3600);
+        g.refused += 1;
+        drop(g);
+        return text(req, if blocked { 429 } else { 404 }, "Este enlace no es válido o ya ha caducado. Llame a la clínica, por favor.");
+    };
+    let public = g.published.public_url.clone();
+    let tpv = g.tpv.clone().filter(|s| s.problem().is_none() && public.starts_with("http"));
+    let clinic = g.published.clinic.clone();
+    drop(g);
+    match (req.method().clone(), path.starts_with("/pagar/"), action) {
+        (tiny_http::Method::Get, true, "") => {
+            let html = pay_page(&clinic, token, &p, query(url, "resultado").as_deref(), tpv.is_some());
+            respond(req, 200, "text/html; charset=utf-8", html);
+        }
+        (tiny_http::Method::Post, false, "iniciar") => {
+            let Some(s) = tpv else { return text(req, 503, "El pago por internet no está disponible ahora. Llame a la clínica, por favor.") };
+            if p.state != PayState::Pendiente {
+                return text(req, 409, "Este pago ya no está pendiente.");
+            }
+            let Some(body) = read_body(&mut req) else { return text(req, 413, "Demasiado grande.") };
+            let method = match parse_form(&String::from_utf8_lossy(&body)).get("metodo").map(String::as_str) {
+                Some("bizum") if p.bizum => Method::Bizum,
+                Some("tarjeta") => Method::Tarjeta,
+                _ => return text(req, 400, "Forma de pago no válida."),
+            };
+            {
+                let mut g = lock();
+                if too_many(&mut g, &format!("pay:{token}"), 10, 3600) {
+                    g.refused += 1;
+                    drop(g);
+                    return text(req, 429, "Demasiados intentos de pago. Llame a la clínica, por favor.");
+                }
+            }
+            let order = crate::pago::new_order(p.id);
+            // el importe es el de la petición, nunca uno que mande el navegador
+            match pay_form(&s, &order, p.amount, method, &format!("{public}/api/tpv/notificacion"), &format!("{public}/pagar/{token}"), &p.concept) {
+                Ok(form) => {
+                    if tx.send(WebEvent::PayStarted { token: token.to_string(), order, method }).is_err() {
+                        return text(req, 503, "No se pudo preparar el pago. Llame a la clínica, por favor.");
+                    }
+                    wake();
+                    respond(req, 200, "text/html; charset=utf-8", form.html());
+                }
+                Err(e) => text(req, 503, &e),
+            }
+        }
+        _ => text(req, 405, "Método no permitido."),
+    }
+}
+
 /// Presupuesto para firmar: `/presupuesto/{código}` (la página) y `/api/presupuesto/{código}[/acción]`.
 #[allow(clippy::too_many_arguments)]
 fn budget_portal(mut req: tiny_http::Request, sh: &Mutex<Shared>, tx: &Sender<WebEvent>, wake: &dyn Fn(), ip: &str, now: NaiveDateTime, path: &str) {
@@ -1546,6 +1652,10 @@ pub fn listen(port: u16, lan: bool, published: Published, wake: impl Fn() + Send
                 (_, x) if x.starts_with("/presupuesto/") || x.starts_with("/api/presupuesto/") => {
                     drop(g);
                     budget_portal(req, &sh, &tx, &wake, &ip, now, &path);
+                }
+                (_, x) if x.starts_with("/pagar/") || x.starts_with("/api/pagar/") || x == "/api/tpv/notificacion" => {
+                    drop(g);
+                    pay_portal(req, &sh, &tx, &wake, &ip, &path, &url);
                 }
                 (_, "/api/reservar" | "/api/datos" | "/api/huecos") => {
                     drop(g);
@@ -1817,9 +1927,90 @@ mod tests {
                 Ok(WebEvent::Doc { doc, .. }) => println!("acción en el documento {doc}"),
                 Ok(WebEvent::Offer { token, .. }) => println!("acción en el hueco {token}"),
                 Ok(WebEvent::Rx { patient }) => println!("el paciente {patient} ha entrado en «Mis recetas»"),
+                Ok(WebEvent::PayStarted { order, .. }) => println!("pago iniciado: pedido {order}"),
+                Ok(WebEvent::PayNotice(n)) => println!("notificación del pedido {}", n.order),
                 Err(_) => {}
             }
         }
+    }
+
+    /// Pago por internet de principio a fin con un Redsys simulado: el
+    /// importe lo pone el programa, una notificación sin firma válida no
+    /// cuenta y una repetida no cobra dos veces.
+    #[test]
+    fn online_payment_from_the_page_to_the_signed_notice() {
+        use crate::pago::{Applied, Method, PayFor, PayState, SIGNATURE_VERSION};
+        let today = today();
+        let now = chrono::Local::now().naive_local();
+        let mut db = Db::sample(today);
+        db.booking.enabled = true;
+        db.booking.public_url = "https://citas.clinica.es/".into();
+        db.config.pay_online = crate::pago::PayConfig { enabled: true, bizum: true, deposit: Default::default() };
+        db.pay_requests.clear();
+        let bid = db.budgets.iter().find(|b| b.state == BudgetState::Pendiente && b.total() > 0.0).map(|b| b.id).unwrap();
+        let id = db.create_pay_request(PayFor::Budget(bid), Some(4250), now).unwrap();
+        let token = db.pay_request(id).unwrap().token.clone();
+        let srv = listen(0, false, publish(&db, today), || {}).unwrap();
+        let base = format!("http://127.0.0.1:{}", srv.port);
+        let call = |m: &str, p: &str, body: Option<&str>| {
+            let r = ureq::request(m, &format!("{base}{p}")).set("Content-Type", "application/x-www-form-urlencoded");
+            let res = match body {
+                Some(b) => r.send_string(b),
+                None => r.call(),
+            };
+            match res {
+                Ok(r) => (r.status(), r.into_string().unwrap()),
+                Err(ureq::Error::Status(c, r)) => (c, r.into_string().unwrap()),
+                Err(e) => panic!("{e}"),
+            }
+        };
+        // sin TPV en este ordenador, la página lo dice y no deja pagar
+        let (code, page) = call("GET", &format!("/pagar/{token}"), None);
+        assert_eq!(code, 200);
+        assert!(page.contains("42,50") && page.contains("no está disponible"), "{page}");
+        assert_eq!(call("POST", &format!("/api/pagar/{token}/iniciar"), Some("metodo=tarjeta")).0, 503);
+        let s = crate::pago::tests::settings();
+        srv.shared.lock().unwrap().tpv = Some(s.clone());
+        let (_, page) = call("GET", &format!("/pagar/{token}"), None);
+        assert!(page.contains("Pagar con tarjeta") && page.contains("Pagar con Bizum"));
+        // el pedido: formulario firmado hacia Redsys con el importe de la petición
+        let (code, form) = call("POST", &format!("/api/pagar/{token}/iniciar"), Some("metodo=bizum&importe=1"));
+        assert_eq!(code, 200, "{form}");
+        assert!(form.contains("https://sis-t.redsys.es:25443/sis/realizarPago") && form.contains(SIGNATURE_VERSION));
+        let field = |name: &str| form.split(&format!("name=\"{name}\" value=\"")).nth(1).unwrap().split('"').next().unwrap().to_string();
+        let m = crate::pago::verify(&s.key, &field("Ds_MerchantParameters"), &field("Ds_Signature")).unwrap();
+        assert_eq!(m["DS_MERCHANT_AMOUNT"], "4250", "el importe es el de la petición, no el que mande el navegador");
+        assert_eq!(m["DS_MERCHANT_MERCHANTURL"], "https://citas.clinica.es/api/tpv/notificacion");
+        let order = m["DS_MERCHANT_ORDER"].as_str().unwrap().to_string();
+        let started = srv.rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        let WebEvent::PayStarted { token: t, order: o, method } = started else { panic!() };
+        assert!(t == token && o == order && method == Method::Bizum);
+        assert!(db.pay_started(&t, &o, method, now));
+        // notificación falsificada (otra clave): no cuenta
+        let other = crate::pago::TpvSettings { key: "otraClaveDeOtroComercio00000000".into(), ..s.clone() };
+        let (p, sig) = crate::pago::tests::redsys_says(&other, &order, 4250, "0000", &[]);
+        let post = |p: &str, sig: &str| call("POST", "/api/tpv/notificacion", Some(&format!("Ds_SignatureVersion={SIGNATURE_VERSION}&Ds_MerchantParameters={p}&Ds_Signature={sig}")));
+        assert_eq!(post(&p, &sig).0, 400);
+        assert!(srv.rx.recv_timeout(std::time::Duration::from_millis(300)).is_err());
+        // la buena, dos veces
+        let (p, sig) = crate::pago::tests::redsys_says(&s, &order, 4250, "0000", &[("Ds_ProcessedPayMethod", "68")]);
+        assert_eq!(post(&p, &sig), (200, "OK".into()));
+        assert_eq!(post(&p, &sig).0, 200);
+        let pays = db.payments.len();
+        for _ in 0..2 {
+            let WebEvent::PayNotice(n) = srv.rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap() else { panic!() };
+            db.apply_notice(&n, now).unwrap();
+        }
+        assert_eq!(db.payments.len(), pays + 1, "una notificación repetida no cobra dos veces");
+        assert_eq!(db.pay_request(id).unwrap().state, PayState::Pagado);
+        assert!(matches!(db.apply_notice(&crate::pago::Notice { order: order.clone(), amount: 4250, response: 0, auth: String::new(), bizum: true }, now).unwrap(), Applied::Duplicate));
+        // ya pagado: la página lo dice y no deja pagar otra vez
+        srv.shared.lock().unwrap().published = publish(&db, today);
+        let (_, page) = call("GET", &format!("/pagar/{token}?resultado=ok"), None);
+        assert!(page.contains("Pago recibido") && !page.contains("Pagar con"));
+        assert_eq!(call("POST", &format!("/api/pagar/{token}/iniciar"), Some("metodo=tarjeta")).0, 409);
+        // y un código inventado no lleva a nada
+        assert_eq!(call("GET", &format!("/pagar/{}", "a".repeat(32)), None).0, 404);
     }
 
     #[test]

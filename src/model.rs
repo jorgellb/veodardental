@@ -664,6 +664,9 @@ pub struct ClinicConfig {
     /// Objetivos del cuadro de mando (ver `cuadro`).
     #[serde(default, skip_serializing_if = "crate::cuadro::Goals::is_empty")]
     pub kpi_goals: crate::cuadro::Goals,
+    /// Pago por internet: activado, Bizum y señal (la clave del TPV va aparte, ver `pago`).
+    #[serde(default, skip_serializing_if = "crate::pago::PayConfig::is_default")]
+    pub pay_online: crate::pago::PayConfig,
     /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub support_email: String,
@@ -838,6 +841,9 @@ pub struct Db {
     /// Solicitudes de derechos de protección de datos (`rgpd`).
     #[serde(default)]
     pub rights_requests: Tracked<Vec<crate::rgpd::RightsRequest>>,
+    /// Peticiones de pago por internet (ver `pago`).
+    #[serde(default)]
+    pub pay_requests: Tracked<Vec<crate::pago::PayRequest>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

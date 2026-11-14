@@ -31,6 +31,7 @@ pub mod odg_paint;
 pub mod odontograma;
 pub mod ortodoncia;
 pub mod pacientes;
+pub mod pagos;
 pub mod perio;
 pub mod presupuestos;
 pub mod puestos;

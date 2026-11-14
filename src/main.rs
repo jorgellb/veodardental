@@ -42,6 +42,7 @@ mod migracion;
 mod model;
 mod mssql;
 mod nomenclator;
+mod pago;
 mod paths;
 mod phone;
 mod portal;
