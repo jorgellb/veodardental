@@ -80,6 +80,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: sacar dinero y el banco con su permiso en el servidor | E-067 | `c4e49e5` |
 | Revisión de seguridad: financiación, caja y devoluciones con datáfono por su camino | E-068 | `6ac5e61` |
 | T-F6-04: aseguradoras (autorizaciones y liquidaciones, flujo interno y contrato) | E-069 | `c9518d1` |
+| Revisión de seguridad: autorizaciones y liquidaciones solo por el servidor | E-070 | `ab124fe` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
