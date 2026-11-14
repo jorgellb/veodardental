@@ -275,6 +275,8 @@ jobs:
       FIRMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -285,18 +287,29 @@ jobs:
       - name: Compilar el firmador (sin la clave)
         if: env.FIRMA_VERSION == 'true'
         run: cargo build --release --locked --example firmar_version
-      - name: Firmar el paquete de actualización
+      # El portable viene de un trabajo que ejecutó contenedores de fuera: se
+      # desempaqueta sin la clave y solo pasa un fichero normal (un enlace podría
+      # apuntar a cualquier sitio), de dentro de lo desempaquetado.
+      - name: Preparar el programa (sin la clave)
         if: env.FIRMA_VERSION == 'true'
         shell: bash
-        env:
-          VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
         run: |
           set -euo pipefail
           mkdir -p programa dist/actualizacion
-          tar -xzf paquetes/VeodarDental-*-linux-*.tar.gz -C programa
-          cp programa/VeodarDental-*/veodardental dist/actualizacion/
-          datos=$(sed -n 's/^pub const DATA_VERSION: u32 = \([0-9]*\);.*/\1/p' src/model.rs)
-          target/release/examples/firmar_version dist/actualizacion "${GITHUB_REF_NAME#v}" "$datos"
+          tar -xzf paquetes/VeodarDental-*-linux-*.tar.gz -C programa --no-same-owner --no-same-permissions
+          f=$(echo programa/VeodarDental-*/veodardental)
+          test -f "$f" && ! test -L "$f"
+          case "$(realpath "$f")" in "$PWD/programa/"*) ;; *) echo "El programa no está dentro del portable" >&2; exit 1 ;; esac
+          cp --no-dereference "$f" dist/actualizacion/veodardental
+          test "$(find dist/actualizacion -mindepth 1 | wc -l)" = 1
+          test -z "$(find dist/actualizacion -mindepth 1 ! -type f)"
+          echo "DATOS=$(sed -n 's/^pub const DATA_VERSION: u32 = \([0-9]*\);.*/\1/p' src/model.rs)" >> "$GITHUB_ENV"
+      # en este paso solo se ejecuta el firmador
+      - name: Firmar el paquete de actualización
+        if: env.FIRMA_VERSION == 'true'
+        env:
+          VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
+        run: target/release/examples/firmar_version dist/actualizacion "${GITHUB_REF_NAME#v}" "$DATOS"
       - name: Estado de la firma
         shell: bash
         run: |

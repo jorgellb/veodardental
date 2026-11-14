@@ -2309,6 +2309,12 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - **Contenedores:** el de AlmaLinux tiene el proyecto de solo lectura y solo escribe en `target/glibc-2.28`. Las imágenes que producen lo publicado (AlmaLinux 8.10 y Arch) van fijadas por su huella `sha256`, como las acciones por su commit. Las de las pruebas por distribución no van fijadas, porque se trata de probar las versiones de ahora, y no ven nada secreto.
   - **El manifiesto firmado** lleva la versión de datos del programa (`DATA_VERSION`, ahora 2). Antes el flujo no la pasaba y quedaba 1. Al actualizar no se usa, pero lo firmado no debe decir algo falso.
   - **Ensayado aquí** con una clave de prueba de un solo uso: «Firmado: 1 ficheros», con versión 0.1.0 y datos 2.
+  - **Segundo hallazgo de la revisión:** el portable viene del trabajo que ejecutó contenedores de fuera. Si dentro el programa fuera un enlace (por ejemplo a `/proc/self/environ`), copiarlo con la clave en el entorno la habría metido en el paquete.
+    - **Ahora** se desempaqueta y se copia en un paso sin la clave.
+    - **Solo pasa** un fichero normal (no un enlace) que esté dentro de lo desempaquetado, y la carpeta del firmador no tiene nada más.
+    - **El paso con la clave** solo ejecuta el firmador.
+    - **El checkout** de ese trabajo no guarda el token de GitHub.
+    - **Ensayado** con el paso tal cual está en el flujo: el portable de verdad pasa; uno con el programa como enlace a `/etc/hostname` y otro con la carpeta como enlace fuera del portable se rechazan.
 - **Fallo propio encontrado y corregido:** `tools/paquetes_linux.sh` fallaba la segunda vez, porque no podía vaciar la carpeta que deja makepkg. Ahora usa una carpeta nueva en cada ejecución y la borra al terminar. Dos pasadas seguidas, bien.
 - **Guías:** `README.md` (Instaladores) y `docs/instalacion.md`.
 - **Batería:**
