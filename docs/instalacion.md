@@ -14,7 +14,7 @@ Para instalar VeodarDental en una clínica: un ordenador hace de servidor y los 
 - [ ] Instale el programa con su instalador.
 - [ ] Abra el programa y entre con el usuario de Dirección.
 - [ ] Configuración › «Trabajo en red» › «Hacer de este ordenador el servidor».
-  - También se puede arrancar solo el servidor: `veodardental --servidor`.
+  - También se puede arrancar solo el servidor: `veodardental --servidor`. En un servidor Linux propio o alquilado (en la nube), ver `despliegue_nube.md`.
   - Apunte la **clave de la clínica** y la **huella** que enseña (la verán los puestos).
 - [ ] Compruebe que abre los datos: `veodardental --comprobar` debe decir la versión, la versión de los datos y cuántos pacientes hay, y terminar con código 0.
 

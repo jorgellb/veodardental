@@ -178,6 +178,9 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Por qué: alojar datos de salud requiere contrato y garantías; el encargo prohíbe contratar.
 - Parte afectada: servidor en la nube real (T-F6-02X).
 - Preparación terminada: T-F6-02 (despliegue documentado y ensayado en local).
+  - Están la unidad de systemd endurecida y el aprovisionamiento con modo de ensayo (`deploy/nube/`).
+  - La guía con las condiciones del alojamiento está en `docs/despliegue_nube.md`, pendiente de confirmar por el DPO.
+  - El ensayo con el programa real como proceso aparte está en `tests/ensayo_nube.rs` (E-064).
 - Responsable: propietario del producto o clínica.
 - Paso para desbloquear: elegir proveedor en la UE y firmar el encargo de tratamiento.
 - Prueba posterior: despliegue en el proveedor con copias y acceso remoto comprobados.

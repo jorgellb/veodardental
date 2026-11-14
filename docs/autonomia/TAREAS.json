@@ -2683,8 +2683,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Aprovisionamiento documentado y ensayado en local; condiciones de alojamiento estudiadas",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-064"]
   },
   {
    "id": "T-F6-02X",

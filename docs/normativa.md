@@ -181,3 +181,15 @@ queda marcado como pendiente.
   - la forma de darse de baja va en cada mensaje;
   - el texto no lleva datos de salud;
   - elegir por tratamiento queda a decisión del DPO.
+
+## Alojamiento del servidor en la nube (T-F6-02)
+- **Fuentes, citadas de memoria y sin consultar en esta sesión; las confirma el DPO:**
+  - RGPD, artículo 28: contrato de encargado del tratamiento;
+  - RGPD, artículo 32: seguridad;
+  - RGPD, artículo 33: notificación de brechas en 72 horas;
+  - RGPD, artículos 44 a 49: transferencias fuera del EEE;
+  - RGPD, artículo 9: categorías especiales (salud).
+- **Efecto:**
+  - el despliegue (`deploy/nube/`, `docs/despliegue_nube.md`) pide una región del EEE, el contrato de encargo, copias fuera del servidor y acceso solo por VPN o desde las direcciones de la clínica;
+  - el servidor no escribe la clave de la clínica en el registro del sistema y arranca con la zona horaria de la clínica;
+  - la contratación sigue pendiente (B-18).

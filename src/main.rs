@@ -142,10 +142,49 @@ fn main() -> eframe::Result<()> {
         }
         return Ok(());
     }
+    let value = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     if args.iter().any(|a| a == "--servidor") {
-        if let Err(e) = server::run() {
+        let port = match value("--puerto").map(|p| p.parse::<u16>()) {
+            Some(Ok(p)) => Some(p),
+            Some(Err(_)) => {
+                eprintln!("El puerto tiene que ser un número entre 1 y 65535.");
+                std::process::exit(2)
+            }
+            None => None,
+        };
+        let opts = server::RunOptions { port, sample_ok: args.iter().any(|a| a == "--datos-de-ejemplo") };
+        if let Err(e) = server::run(&opts) {
             eprintln!("{e}");
+            std::process::exit(1)
         }
+        return Ok(());
+    }
+    // mantenimiento del servidor (en la nube o en la clínica), sin ventana
+    if let Some(i) = args.iter().position(|a| a == "--estado-servidor") {
+        let (addr, key, pin) = (args.get(i + 1).cloned().unwrap_or_default(), args.get(i + 2).cloned().unwrap_or_default(), args.get(i + 3).cloned().unwrap_or_default());
+        match server::status_cli(&addr, &key, &pin) {
+            Ok(m) => println!("{m}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1)
+            }
+        }
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--parar-servidor") {
+        if let Err(e) = server::stop_cli(value("--parar-servidor").as_deref()) {
+            eprintln!("{e}");
+            std::process::exit(1)
+        }
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--clave-servidor") {
+        let cfg = server::server_config();
+        if cfg.key.is_empty() {
+            eprintln!("En este ordenador no hay servidor configurado.");
+            std::process::exit(1)
+        }
+        println!("{}", cfg.key);
         return Ok(());
     }
     if args.iter().any(|a| a == "--repositorio-recetas") {

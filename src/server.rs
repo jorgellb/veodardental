@@ -1903,9 +1903,30 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
 }
 
 /// Arranca el servidor en este ordenador (modo `--servidor`).
-pub fn run() -> Result<(), String> {
-    let cfg = ensure_server_config()?;
+/// Cómo arranca el servidor sin ventana (`--servidor`).
+#[derive(Clone, Debug, Default)]
+pub struct RunOptions {
+    /// Otro puerto que el de `servidor.json` (`--puerto`).
+    pub port: Option<u16>,
+    /// Sin datos de la clínica, empezar con los de ejemplo (solo para ensayos:
+    /// `--datos-de-ejemplo`). Si no, sin datos no arranca.
+    pub sample_ok: bool,
+}
+
+/// Sin datos de la clínica en este ordenador, el servidor no arranca: en un
+/// servidor nuevo (en la nube) hay que llevar antes los datos.
+pub const NO_DATA: &str = "No hay datos de la clínica en este ordenador. Lleve antes los datos de la clínica (ver docs/despliegue_nube.md) o, para un ensayo, arranque con --datos-de-ejemplo.";
+
+pub fn run(opts: &RunOptions) -> Result<(), String> {
+    use std::io::IsTerminal;
+    let mut cfg = ensure_server_config()?;
+    if let Some(p) = opts.port {
+        cfg.port = p;
+    }
     let identity = cfg.identity().ok_or("La identidad del servidor está dañada: borre servidor.json y vuelva a conectar los puestos.")?;
+    if !Db::path().exists() && !opts.sample_ok {
+        return Err(NO_DATA.into());
+    }
     // solo el servidor guarda en estos datos mientras funciona
     let _lock = crate::local::lock(&Db::path()).map_err(|e| if e == crate::local::IN_USE { "Los datos de este ordenador están abiertos en VeodarDental: ciérrelo antes de arrancar el servidor de datos.".to_string() } else { e })?;
     let (db, err) = Db::load_or_sample();
@@ -1917,8 +1938,16 @@ pub fn run() -> Result<(), String> {
     println!("VeodarDental · servidor de datos (conexiones cifradas)");
     println!("  Datos: {}", path.display());
     println!("  Dirección para los puestos: {}:{}", local_ip().unwrap_or_else(|| "IP-de-este-ordenador".into()), cfg.port);
-    println!("  Clave de la clínica: {}", cfg.key);
+    // la clave solo en una terminal: como servicio, la salida va al registro del sistema
+    if std::io::stdout().is_terminal() {
+        println!("  Clave de la clínica: {}", cfg.key);
+    } else {
+        println!("  Clave de la clínica: no se escribe aquí (véala en este ordenador con «veodardental --clave-servidor»)");
+    }
     println!("  Huella del servidor: {} (la misma que ven los puestos)", fingerprint(&cfg.pin()));
+    // las fechas de cobros, facturas e informes son las de la hora local del servidor
+    let offset = chrono::Local::now().offset().local_minus_utc();
+    println!("  Hora del servidor: UTC{:+}:{:02} (TZ={}); tiene que ser la de la clínica", offset / 3600, (offset.abs() % 3600) / 60, std::env::var("TZ").unwrap_or_else(|_| "la del sistema".into()));
     match crate::disco::check_now() {
         crate::disco::Disk::Plain(why) => println!("  ⚠ {why} Los datos de salud de los pacientes están en este disco."),
         crate::disco::Disk::Unknown(why) => println!("  ⚠ Cifrado del disco: {why}"),
@@ -1926,6 +1955,35 @@ pub fn run() -> Result<(), String> {
     }
     serve(listener, path, cfg.key, identity, db);
     Ok(())
+}
+
+/// `--estado-servidor DIRECCIÓN CLAVE [HUELLA]`: comprueba desde cualquier
+/// ordenador que el servidor responde, con la prueba de identidad (o la
+/// huella, si se da) y la clave de la clínica. Para vigilarlo en la nube.
+pub fn status_cli(addr: &str, key: &str, pin: &str) -> Result<String, String> {
+    let r = Remote::with_pin(addr, key, 0, pin);
+    let info = r.access()?;
+    let seen = r.pinned();
+    let offset = info.utc_offset.map(|o| format!("UTC{:+}:{:02}", o / 3600, (o.abs() % 3600) / 60)).unwrap_or_else(|| "—".into());
+    Ok(format!(
+        "Servidor de {} · versión {} · datos {} · hora {} · huella {}",
+        info.clinic,
+        info.version.as_deref().unwrap_or("—"),
+        info.data_version.map(|v| v.to_string()).unwrap_or_else(|| "—".into()),
+        offset,
+        fingerprint(if seen.is_empty() { pin } else { &seen })
+    ))
+}
+
+/// `--parar-servidor [DIRECCIÓN]`: para el servidor de este ordenador (solo
+/// desde el propio ordenador; con la clave de su `servidor.json`).
+pub fn stop_cli(addr: Option<&str>) -> Result<(), String> {
+    let cfg = server_config();
+    if cfg.key.is_empty() {
+        return Err("En este ordenador no hay servidor configurado.".into());
+    }
+    let addr = addr.map(|a| a.to_string()).unwrap_or_else(|| format!("127.0.0.1:{}", cfg.port));
+    Remote::with_pin(&addr, &cfg.key, 0, &cfg.pin()).stop()
 }
 
 /// ¿Hay un servidor funcionando en este ordenador?

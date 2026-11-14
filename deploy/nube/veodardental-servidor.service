@@ -1,0 +1,45 @@
+# Servidor de datos de VeodarDental en un servidor propio o en la nube (T-F6-02).
+# Lo instala deploy/nube/aprovisionar.sh; ver docs/despliegue_nube.md.
+[Unit]
+Description=VeodarDental: servidor de datos de la clínica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veodardental
+Group=veodardental
+# las fechas de cobros, facturas e informes son las de la hora local del
+# servidor: la de la clínica (Atlantic/Canary en Canarias)
+Environment=TZ=Europe/Madrid
+Environment=HOME=/var/lib/veodardental
+Environment=XDG_CONFIG_HOME=/var/lib/veodardental/ajustes
+Environment=XDG_DATA_HOME=/var/lib/veodardental/datos
+Environment=XDG_CACHE_HOME=/var/lib/veodardental/cache
+Environment=XDG_STATE_HOME=/var/lib/veodardental/estado
+ExecStart=/opt/veodardental/veodardental --servidor
+# los datos, el diario y las copias, solo para el usuario del servicio
+UMask=0077
+Restart=on-failure
+RestartSec=5
+# endurecimiento: sin privilegios, con el sistema de solo lectura salvo sus datos
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/veodardental
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

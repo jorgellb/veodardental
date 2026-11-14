@@ -1621,3 +1621,46 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 521 pasan, 0 fallan, 10 ignoradas |
+
+## E-064 T-F6-02: servidor en la nube opcional, desplegado y ensayado en local
+- **Hecho:**
+  - **Servidor sin ventana** (`server::run`, `RunOptions`):
+    - sin datos de la clínica no arranca, salvo `--datos-de-ejemplo` para ensayos; así un servidor nuevo nunca sirve datos de ejemplo por error;
+    - con la salida redirigida, como servicio, no escribe la clave de la clínica en el registro;
+    - dice su hora y su zona;
+    - admite `--puerto`;
+    - si falla, termina con código 1.
+  - **Mantenimiento sin ventana:**
+    - `--estado-servidor DIRECCIÓN CLAVE [HUELLA]`: comprueba desde fuera, con la prueba de identidad o la huella, y termina con 0 o 1 para una alarma;
+    - `--parar-servidor [DIRECCIÓN]`: solo desde el propio ordenador;
+    - `--clave-servidor`: en el propio ordenador.
+  - **Despliegue** (`deploy/nube/`):
+    - unidad de systemd endurecida: usuario propio, sistema de solo lectura salvo sus datos, `UMask=0077`, sin privilegios y con la zona horaria de la clínica. Pasa `systemd-analyze verify`;
+    - aprovisionamiento con modo de ensayo, que no toca el sistema: usuario, carpetas, programa, unidad y cortafuegos con las direcciones de la clínica. No arranca sin los datos.
+  - **Guía** (`docs/despliegue_nube.md`):
+    - condiciones del alojamiento (encargo, región del EEE, seguridad, brechas, copias fuera, acceso por VPN), pendientes de confirmar por el DPO;
+    - cómo llevar los datos, copias y recuperación, vigilancia y actualizaciones.
+- **Pruebas** (`tests/ensayo_nube.rs`, con el programa de verdad como proceso aparte y carpetas aisladas; todo por 127.0.0.1):
+  - `the_cloud_server_rehearsal_runs_locally`:
+    - sin datos no arranca;
+    - la clave no va a la salida;
+    - dice `TZ=Europe/Madrid`;
+    - `--estado-servidor` funciona con la clave buena, y no con otra clave ni con otra huella;
+    - se para y vuelve a arrancar con la misma identidad;
+    - datos, configuración y claves quedan en 0600.
+  - `the_provisioning_script_rehearses_without_touching_the_system`:
+    - las órdenes del sistema solo se apuntan, sin `systemctl start`;
+    - la unidad lleva el puerto, el usuario, la zona horaria y el endurecimiento, y nunca datos de ejemplo;
+    - carpetas en 0700;
+    - el programa instalado arranca con el entorno de la unidad;
+    - opciones no válidas terminan con código 2.
+- **Comprobado a mano:** el servidor aislado escribió su clave solo con `--clave-servidor`. `--parar-servidor` sin dirección usa el puerto de `servidor.json`: con `--puerto` hay que darle la dirección, y la guía y la prueba lo hacen.
+- **Pendiente externo:** contratar el alojamiento y validar las transferencias (B-18, T-F6-02X).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 523 pasan (521 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+| `systemd-analyze verify deploy/nube/veodardental-servidor.service` | 0 | solo avisa de que el programa no está instalado en este ordenador |
