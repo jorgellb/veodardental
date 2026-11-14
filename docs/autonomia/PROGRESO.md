@@ -71,13 +71,28 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: Mi espacio (responsable y entrada sin DNI) | E-058 | `0d4df76` |
 | T-F5-11: idiomas (castellano, catalán, euskera, gallego e inglés) | E-059 | `750f1df` |
 | Revisión de seguridad: la palabra de baja de cada idioma | E-060 | `67ccec1` |
+| T-F5-12: campañas a grupos de pacientes con consentimiento, límites, previsualización y atribución | E-061 | `bfe56e4` |
 
 ## Siguiente acción
-Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
-1. T-F5-01 a T-F5-12, en orden (ver `TAREAS.json` y la fase 5 de `VEODARDENTAL_GOAL.md`).
-   - Aprovechar lo que ya hay (informes, presupuestos, odontograma, portal, comunicaciones) después de comprobarlo.
-   - Las integraciones reales (TPV, transcripción, revisión clínica, traducciones) quedan en sus tareas X bloqueadas.
-2. Después, la fase 6 y las transversales pendientes (T-R7-1 propiedades de `Cents`, T-R7-5 a T-R7-7, T-PROC-01/02, T-INI-06 a T-INI-08) y el cierre (T-CIERRE-01/02).
+Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
+- piloto;
+- AEAT con certificado;
+- Meta;
+- firma de código y clave de versiones;
+- esquemas de los programas de origen;
+- homologación foral;
+- revisiones externas (B-13, con el paquete de `docs/revision_externa`, que ya incluye el DPO para campañas);
+- contrato de TPV, transcripción, revisión clínica de las alertas y traducciones (T-F5-02X, T-F5-04X, T-F5-07X y T-F5-11X).
+
+Toca la fase 6.
+1. T-F6-01 a T-F6-09, en orden (ver `TAREAS.json` y la fase 6 de `VEODARDENTAL_GOAL.md`).
+   - Grupos de clínicas, servidor en la nube probado en local, datáfono y financiación, aseguradoras, pedidos por stock mínimo, modo tableta, calidad continua, almacenamiento y escenario de varias clínicas.
+   - Lo que necesita contrato o proveedor queda en sus tareas X bloqueadas.
+2. Después, las transversales pendientes:
+   - T-R7-1 (propiedades de `Cents`) y T-R7-5 a T-R7-7;
+   - T-PROC-01/02;
+   - T-INI-06 a T-INI-08.
+3. Por último, el cierre (T-CIERRE-01/02).
 
 ## Notas para seguir
 - La anchura a 1280 px la vigila `ui_tests::every_screen_fits_1280_wide`. Una pantalla nueva o cambiada debe pasarla. Para los campos, `field`; para las tablas, `Table`; en filas de campos, `horizontal_wrapped`.
