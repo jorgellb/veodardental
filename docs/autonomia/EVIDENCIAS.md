@@ -1066,3 +1066,26 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 446 pasan, 0 fallan, 10 ignoradas |
+
+## E-041 T-F4-08: facturación foral (arquitectura y TicketBAI), sin activar
+- **Fuente:** «Especificaciones funcionales y técnicas del sistema TicketBAI 1.0» (19/12/2019), apartados 4.3.2 y 4.3.3 y anexo 3. Se consultó el 14/11/2026.
+- **Hecho (`src/foral.rs`):**
+  - se elige el territorio: común, Araba, Bizkaia, Gipuzkoa o Navarra (Navarra, pendiente: su sistema no se ha consultado);
+  - sin confirmación de la gestoría (fecha y quién) no cambia nada;
+  - con un territorio foral confirmado, VERI*FACTU no aplica: `VfConfig::active`, que comprueba también `send_pending`, y el QR VERI*FACTU deja de imprimirse;
+  - `tbai`: identificativo TBAI con CRC-8 y URL del QR de cada hacienda, comprobados con los ejemplos de la especificación (CRC «237», QR `cr=007`).
+- **Por separado, y pendiente (B-12):**
+  - el fichero TBAI (XML firmado con XAdES) y su envío;
+  - la homologación en el registro de software de cada hacienda (`HOMOLOGATED = false`);
+  - la activación real. La puesta en marcha lo muestra como pendiente.
+- **Interfaz:** Configuración › Facturación › Territorio fiscal.
+- **Pruebas:**
+  - `foral::tbai::tests::the_examples_of_the_specification_come_out_exactly`;
+  - `foral::tests::nothing_is_activated_without_confirmation_and_homologation`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 448 pasan, 0 fallan, 10 ignoradas |

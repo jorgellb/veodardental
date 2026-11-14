@@ -14,7 +14,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if ui.selectable_label(app.lists.fact_tab == 1, "Liquidaciones a mutuas").clicked() {
             app.lists.fact_tab = 1;
         }
-        let pend = if app.db.verifactu.enabled { crate::verifactu::pending(&app.db, &app.db.verifactu).len() } else { 0 };
+        let pend = if app.db.verifactu.active() { crate::verifactu::pending(&app.db, &app.db.verifactu).len() } else { 0 };
         let label = if pend > 0 { format!("VERI*FACTU · {pend} por enviar") } else { "VERI*FACTU (AEAT)".to_string() };
         if ui.selectable_label(app.lists.fact_tab == 2, label).clicked() {
             app.lists.fact_tab = 2;

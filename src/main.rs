@@ -22,6 +22,7 @@ mod extra;
 mod finance;
 mod firma;
 mod firmado;
+mod foral;
 mod gesden;
 mod golive;
 mod health;

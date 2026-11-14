@@ -2361,8 +2361,10 @@
     "T-F4-00"
    ],
    "criterio": "Implementación separada de homologación y activación, con pruebas",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-041"
+   ]
   },
   {
    "id": "T-F4-08X",

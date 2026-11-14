@@ -65,9 +65,19 @@ pub struct VfConfig {
     /// enviaran dos, mandarían los mismos registros a la vez.
     #[serde(default)]
     pub sender: String,
+    /// Territorio foral (TicketBAI…), si lo confirma la gestoría: entonces
+    /// VERI*FACTU no aplica (ver `foral`).
+    #[serde(default)]
+    pub foral: crate::foral::ForalConfig,
 }
 
 impl VfConfig {
+    /// ¿Se envía a la AEAT? Activado y en territorio común: en un territorio
+    /// foral confirmado, VERI*FACTU no aplica.
+    pub fn active(&self) -> bool {
+        self.enabled && crate::foral::verifactu_applies(&self.foral)
+    }
+
     /// ¿Envía este ordenador (`me`) los registros? El que está elegido o, si
     /// aún no hay ninguno, el que vaya a enviar (y queda elegido).
     pub fn may_send(&self, me: &str) -> bool {
@@ -904,6 +914,10 @@ pub struct SendSummary {
 pub fn send_pending(db: &mut Db, id: Option<&Identity>) -> SendSummary {
     let cfg = db.verifactu.clone();
     let mut sum = SendSummary { wait_secs: 60, ..Default::default() };
+    if !crate::foral::verifactu_applies(&cfg.foral) {
+        sum.error = "La clínica tributa en un territorio foral (confirmado por su gestoría): VERI*FACTU no aplica y no se envía nada a la AEAT.".into();
+        return sum;
+    }
     let all = pending(db, &cfg);
     for batch in all.chunks(1000) {
         let body = envelope(db, &cfg, batch);

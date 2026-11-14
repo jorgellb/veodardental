@@ -513,7 +513,9 @@ pub fn checks(db: &Db, f: &Facts) -> Vec<Check> {
     // VERI*FACTU
     {
         let vf = &db.verifactu;
-        let st = if !vf.enabled {
+        let st = if let Some(t) = crate::foral::foral_territory(&vf.foral) {
+            (Pendiente, crate::foral::pending_text(t).to_string())
+        } else if !vf.enabled {
             (Pendiente, "Sin activar. La ley obliga a que el programa de facturación registre cada factura y la envíe a la AEAT: pregunte a su asesor desde qué fecha le toca y actívelo con el certificado de la clínica.".to_string())
         } else if vf.env == crate::verifactu::Env::Pruebas {
             (Pendiente, "Activado en el entorno de pruebas de la AEAT, que no tiene efectos fiscales. Cuando las pruebas vayan bien, cambie al envío real.".to_string())

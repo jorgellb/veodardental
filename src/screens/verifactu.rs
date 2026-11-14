@@ -107,7 +107,7 @@ fn start_send(app: &mut App, ctx: &egui::Context) {
 }
 
 fn pending_count(app: &App) -> usize {
-    if !app.db.verifactu.enabled {
+    if !app.db.verifactu.active() {
         return 0;
     }
     verifactu::pending(&app.db, &app.db.verifactu).len()
@@ -138,7 +138,7 @@ pub fn tick(app: &mut App, ctx: &egui::Context) {
         app.vf.last = Some(s);
     }
     let cfg = &app.db.verifactu;
-    if !cfg.enabled || !cfg.auto_send || app.vf.job.is_some() || app.user_id.is_none() || app.screenshot.is_some() {
+    if !cfg.active() || !cfg.auto_send || app.vf.job.is_some() || app.user_id.is_none() || app.screenshot.is_some() {
         return;
     }
     if app.vf.next_allowed.map(|t| Instant::now() < t).unwrap_or(false) {
@@ -201,7 +201,7 @@ fn state_color(st: &AeatStatus) -> Color32 {
 
 /// Recuadro VERI*FACTU del diálogo de una factura: QR, leyenda y estado del envío.
 pub fn invoice_box(app: &mut App, ui: &mut Ui, f: &Invoice) {
-    let enabled = app.db.verifactu.enabled;
+    let enabled = app.db.verifactu.active();
     egui::Frame::new().fill(ROW_ALT).stroke(Stroke::new(1.0, HAIRLINE)).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(18, 14)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_top(|ui| {
@@ -359,7 +359,7 @@ fn record_actions(app: &mut App, ui: &mut Ui, f: &Invoice) {
 
 /// Bloque HTML con el QR y la leyenda para la factura impresa (vacío si VERI*FACTU no está activo).
 pub fn print_block(db: &Db, f: &Invoice) -> String {
-    if !db.verifactu.enabled {
+    if !db.verifactu.active() {
         return String::new();
     }
     let url = verifactu::qr_url(&db.verifactu, f, &db.config.nif);
@@ -376,7 +376,7 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
     let pend = pending_count(app);
     let w = kpi_w(ui, 4);
     ui.horizontal(|ui| {
-        kpi(ui, w, "Pendientes de enviar", &pend.to_string(), if cfg.enabled { "se envían en orden" } else { "VERI*FACTU desactivado" }, INFO);
+        kpi(ui, w, "Pendientes de enviar", &pend.to_string(), if cfg.active() { "se envían en orden" } else { "VERI*FACTU desactivado" }, INFO);
         ui.add_space(4.0);
         kpi(ui, w, "Registradas en la AEAT", &count("Correcto").to_string(), "con su CSV", OK);
         ui.add_space(4.0);
@@ -390,9 +390,58 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
     queue_card(app, ui, &ctx);
 }
 
+/// Territorio fiscal: común (VERI*FACTU) o foral. Solo cambia algo con la
+/// confirmación de la gestoría (ver `foral`).
+pub fn foral_card(app: &mut App, ui: &mut Ui) {
+    let before = app.db.verifactu.foral.clone();
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Territorio fiscal");
+        let f = &mut app.db.verifactu.foral;
+        let label = f.territory.map(|t| t.label()).unwrap_or("Territorio común (VERI*FACTU)");
+        crate::theme::combo("foral_territory").width(320.0).selected_text(label).show_ui(ui, |ui| {
+            if ui.selectable_label(f.territory.is_none(), "Territorio común (VERI*FACTU)").clicked() {
+                *f = Default::default();
+            }
+            for t in crate::foral::Territory::ALL {
+                if ui.selectable_label(f.territory == Some(t), t.label()).clicked() && f.territory != Some(t) {
+                    f.territory = Some(t);
+                    f.confirmed = None;
+                }
+            }
+        });
+        match (f.territory, &f.confirmed) {
+            (None, _) => muted(ui, "Si la clínica tributa en Álava, Bizkaia, Gipuzkoa o Navarra, su gestoría lo confirma y se elige aquí: allí no aplica VERI*FACTU, sino el sistema de cada hacienda foral."),
+            (Some(_), None) => {
+                ui.label(RichText::new("Sin confirmar, no cambia nada: VERI*FACTU sigue como está.").color(WARN));
+                ui.horizontal(|ui| {
+                    let key = ui.scope_id().with("foral_who");
+                    let mut who: String = ui.data_mut(|d| d.get_temp(key)).unwrap_or_default();
+                    ui.add(egui::TextEdit::singleline(&mut who).hint_text("Gestoría que lo confirma").desired_width(240.0));
+                    if ui.add_enabled(!who.trim().is_empty(), egui::Button::new("Lo confirma la gestoría")).clicked() {
+                        f.confirmed = Some((crate::model::today(), who.trim().to_string()));
+                        who.clear();
+                    }
+                    ui.data_mut(|d| d.insert_temp(key, who));
+                });
+            }
+            (Some(t), Some((when, who))) => {
+                ui.label(RichText::new(format!("{}: confirmado por {who} el {}.", t.label(), crate::model::fmt_date(*when))).font(sbf(14.0)));
+                ui.label(RichText::new(crate::foral::pending_text(t)).color(DANGER));
+            }
+        }
+    });
+    if app.db.verifactu.foral != before {
+        app.db.audit("Territorio fiscal", &format!("{:?} → {:?}", before.territory, app.db.verifactu.foral.territory));
+        app.changed();
+    }
+}
+
 /// Configuración de VERI*FACTU y del certificado (también en Configuración › Facturación).
 pub fn settings(app: &mut App, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
+    foral_card(app, ui);
+    ui.add_space(8.0);
     settings_card(app, ui, &ctx);
 }
 
@@ -526,7 +575,7 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 let waiting = app.vf.next_allowed.map(|t| t.saturating_duration_since(Instant::now()).as_secs()).filter(|s| *s > 0);
                 let busy = app.vf.job.is_some();
                 let mine = app.db.verifactu.may_send(&crate::shared::machine_name());
-                let enabled = app.db.verifactu.enabled && pend > 0 && !busy && waiting.is_none() && mine;
+                let enabled = app.db.verifactu.active() && pend > 0 && !busy && waiting.is_none() && mine;
                 let why = if mine { "No hay nada pendiente de enviar ahora.".to_string() } else { format!("Envía a la AEAT el ordenador «{}» (se cambia en la configuración de VERI*FACTU).", app.db.verifactu.sender) };
                 if ui.add_enabled(enabled, egui::Button::new(RichText::new(format!("Enviar ahora ({pend})")).color(Color32::WHITE)).fill(ACCENT)).on_disabled_hover_text(why).clicked() {
                     let c = app.vf.cert().clone();
@@ -564,14 +613,16 @@ fn queue_card(app: &mut App, ui: &mut Ui, ctx: &egui::Context) {
                 );
             }
         }
-        if !app.db.verifactu.enabled {
+        if let Some(t) = crate::foral::foral_territory(&app.db.verifactu.foral) {
+            muted(ui, format!("Territorio foral confirmado ({}): VERI*FACTU no aplica y no se envía nada a la AEAT.", t.label()));
+        } else if !app.db.verifactu.enabled {
             muted(ui, "VERI*FACTU está desactivado: las facturas se encadenan con su huella pero no se envían.");
         }
         ui.add_space(4.0);
         let tbl = Table::new("vf", vec![("Factura", 120.0), ("Fecha", 90.0), ("Registro", 110.0), ("Cliente", 200.0), ("Total", 90.0), ("Estado", 170.0), ("CSV / aviso", 300.0)]);
         tbl.header(ui);
         let since = app.db.verifactu.since;
-        let enabled = app.db.verifactu.enabled;
+        let enabled = app.db.verifactu.active();
         // toda la cadena: altas de facturas, subsanaciones y anulaciones (lo último arriba)
         let rows: Vec<(u32, [(String, Color32); 7])> = verifactu::chain(&app.db)
             .into_iter()
