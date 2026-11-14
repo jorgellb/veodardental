@@ -1465,3 +1465,16 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 498 pasan, 0 fallan, 10 ignoradas |
+
+## E-058 Revisión de seguridad de «Mi espacio»: quién ve a quién y entrada sin DNI
+- **Hallazgos:**
+  1. un responsable veía a todos los pacientes que lo tenían en «Factura a nombre de», también adultos (un hijo mayor al que se le siguen pagando las facturas), y los que se añadían después;
+  2. si a un paciente se le borraba el DNI de la ficha después de darle el acceso, se podía entrar con el DNI vacío.
+- **Correcciones (`src/portal_paciente.rs`):**
+  - un responsable solo ve a menores de 16 años (deja de verlos al cumplirlos) que además estaban autorizados al darle el acceso; la lista se guarda en el acceso;
+  - no se publica un acceso sin DNI/NIE y fecha de nacimiento válidos;
+  - la entrada rechaza un DNI/NIE de menos de 5 caracteres.
+- **Prueba:** `portal_paciente::tests::a_holder_sees_only_their_patients_and_a_responsible_sees_their_dependents` comprueba ahora además:
+  - un adulto con el mismo responsable no sale, ni un menor añadido después;
+  - a los 16 años deja de salir;
+  - sin DNI en la ficha el acceso no se publica, y un DNI vacío nunca vale.

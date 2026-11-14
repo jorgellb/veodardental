@@ -42,6 +42,10 @@ pub struct PortalAccess {
     pub id: u32,
     pub token: String,
     pub holder: Holder,
+    /// Los pacientes autorizados al darlo (un responsable no gana pacientes
+    /// después sin que se le dé otro acceso).
+    #[serde(default)]
+    pub patients: Vec<u32>,
     pub created: NaiveDateTime,
     #[serde(default)]
     pub revoked: Option<NaiveDateTime>,
@@ -52,12 +56,14 @@ fn norm(id: &str) -> String {
 }
 
 impl Db {
-    /// Los pacientes que ve un titular (calculado cada vez: si cambia el
-    /// responsable en la ficha, cambia lo que ve).
+    /// Los pacientes que puede ver un titular hoy: el propio paciente desde
+    /// los 16 años; un responsable, los menores de 16 que le tienen como
+    /// responsable (al cumplirlos, dejan de salir). Se vuelve a comprobar al
+    /// publicar: si cambia la ficha, cambia lo que ve.
     pub fn portal_patients(&self, h: &Holder, today: NaiveDate) -> Vec<u32> {
         match h {
             Holder::Patient(pid) => self.patient(*pid).filter(|p| p.age(today).is_none_or(|a| a >= 16) && p.blocked.is_none()).map(|p| vec![p.id]).unwrap_or_default(),
-            Holder::Responsible(nif) => self.patients.iter().filter(|p| !nif.is_empty() && norm(&p.payer.nif) == *nif && p.blocked.is_none()).map(|p| p.id).collect(),
+            Holder::Responsible(nif) => self.patients.iter().filter(|p| nif.len() >= 5 && norm(&p.payer.nif) == *nif && p.blocked.is_none() && p.age(today).is_some_and(|a| a < 16)).map(|p| p.id).collect(),
         }
     }
 
@@ -68,7 +74,7 @@ impl Db {
         if pats.is_empty() {
             return Err(match h {
                 Holder::Patient(_) => "El paciente tiene menos de 16 años (entra su responsable) o sus datos están bloqueados.".into(),
-                Holder::Responsible(_) => "Ningún paciente tiene a ese responsable (NIF en «Factura a nombre de»).".into(),
+                Holder::Responsible(_) => "Ningún menor de 16 años tiene a ese responsable (NIF en «Factura a nombre de»).".into(),
             });
         }
         let can = match &h {
@@ -83,7 +89,7 @@ impl Db {
             a.revoked = Some(now);
         }
         let id = self.new_id();
-        self.portal_access.push(PortalAccess { id, token: crate::portal::new_token(), holder: h.clone(), created: now, revoked: None });
+        self.portal_access.push(PortalAccess { id, token: crate::portal::new_token(), holder: h.clone(), patients: pats.clone(), created: now, revoked: None });
         self.audit("Dar acceso a «Mi espacio»", &format!("{h:?} · pacientes {pats:?}"));
         Ok(id)
     }
@@ -151,14 +157,20 @@ impl PubPortal {
 pub fn publish_portal(db: &Db, today: NaiveDate) -> HashMap<String, PubPortal> {
     let mut out = HashMap::new();
     for a in db.portal_access.iter().filter(|a| a.revoked.is_none()) {
-        let pats = db.portal_patients(&a.holder, today);
+        // los de hoy y, además, de los que se autorizaron al darlo
+        let pats: Vec<u32> = db.portal_patients(&a.holder, today).into_iter().filter(|p| a.patients.contains(p)).collect();
         if pats.is_empty() {
             continue;
         }
+        // sin un DNI/NIE y una fecha de nacimiento válidos no se puede entrar
         let checks: Vec<String> = match &a.holder {
-            Holder::Patient(pid) => db.patient(*pid).and_then(|p| Some(crate::rx_link::verifier(&a.token, &p.nif, p.birth?))).into_iter().collect(),
-            Holder::Responsible(nif) => pats.iter().filter_map(|pid| db.patient(*pid)?.birth).map(|b| crate::rx_link::verifier(&a.token, nif, b)).collect(),
+            Holder::Patient(pid) => db.patient(*pid).filter(|p| crate::rx_link::can_verify(p)).and_then(|p| Some(crate::rx_link::verifier(&a.token, &p.nif, p.birth?))).into_iter().collect(),
+            Holder::Responsible(nif) if nif.len() >= 5 => pats.iter().filter_map(|pid| db.patient(*pid)?.birth).map(|b| crate::rx_link::verifier(&a.token, nif, b)).collect(),
+            Holder::Responsible(_) => vec![],
         };
+        if checks.is_empty() {
+            continue;
+        }
         let patients = pats
             .iter()
             .filter_map(|pid| {
@@ -193,6 +205,9 @@ pub fn publish_portal(db: &Db, today: NaiveDate) -> HashMap<String, PubPortal> {
 
 /// ¿Coinciden los datos escritos con los de la ficha? (el NIF y la fecha de nacimiento)
 pub fn login_ok(token: &str, p: &PubPortal, nif: &str, birth: &str) -> bool {
+    if norm(nif).len() < 5 {
+        return false;
+    }
     crate::rx_link::parse_birth(birth).is_some_and(|b| {
         let v = crate::rx_link::verifier(token, &norm(nif), b);
         p.checks.iter().any(|c| crate::users::ct_eq(c.as_bytes(), v.as_bytes()))
@@ -319,7 +334,23 @@ mod tests {
         let b105 = db.patient(105).unwrap().birth.unwrap().format("%d/%m/%Y").to_string();
         assert!(login_ok(&mtok, get(mom), "12345678Z", &b105));
         assert!(!login_ok(&token, get(mom), "12345678Z", &b105), "la huella va unida al enlace");
+        // un adulto con el mismo responsable no entra (aunque el responsable pague sus facturas)
+        let adult = db.patients.iter_mut().find(|p| p.id == 102).unwrap();
+        (adult.payer, adult.birth) = (Payer { nif: "12345678Z".into(), ..Default::default() }, Some(chrono::NaiveDate::from_ymd_opt(1990, 1, 1).unwrap()));
+        assert_eq!(publish_portal(&db, now().date()).values().find(|p| p.access_id == mom).unwrap().patients.len(), 2, "el adulto no sale");
+        // un menor que se añade después tampoco, sin otro acceso
+        let late = db.patients.iter_mut().find(|p| p.id == 107).unwrap();
+        (late.payer, late.birth) = (Payer { nif: "12345678Z".into(), ..Default::default() }, Some(now().date() - chrono::Duration::days(365 * 5)));
+        assert_eq!(publish_portal(&db, now().date()).values().find(|p| p.access_id == mom).unwrap().patients.len(), 2, "ni el que no estaba al darlo");
+        // al cumplir 16, el responsable deja de verlo
+        let later = now().date() + chrono::Duration::days(365 * 7);
+        assert_eq!(publish_portal(&db, later).values().find(|p| p.access_id == mom).map(|p| p.patients.len()).unwrap_or(0), 0);
+        // sin DNI en la ficha (borrado después), el acceso no se publica: no se entra con el DNI vacío
+        db.patients.iter_mut().find(|p| p.id == 101).unwrap().nif.clear();
+        assert!(!publish_portal(&db, now().date()).values().any(|p| p.access_id == own));
+        assert!(!login_ok(&token, get(own), "", "01/05/1980"), "un DNI vacío nunca vale");
         // un acceso nuevo revoca el anterior del mismo titular; revocado, no se publica
+        db.patients.iter_mut().find(|p| p.id == 101).unwrap().nif = "11111111H".into();
         let own2 = db.portal_grant(Holder::Patient(101), now()).unwrap();
         assert!(db.portal_access.iter().find(|a| a.id == own).unwrap().revoked.is_some());
         db.portal_revoke(own2, now());
