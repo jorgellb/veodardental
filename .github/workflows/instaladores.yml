@@ -203,11 +203,11 @@ jobs:
             dist/FIRMA-*.txt
           if-no-files-found: error
 
+  # Linux: aquí se ejecutan contenedores y herramientas de fuera, así que este
+  # trabajo nunca ve la clave de firma (se firma en «firmar-actualizacion»).
   linux:
     needs: pruebas
     runs-on: ubuntu-22.04
-    env:
-      FIRMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -236,27 +236,6 @@ jobs:
           ls usr/share/icons/hicolor/*/apps/ >/dev/null
           VEODARDENTAL_RAIZ="$PWD/raiz" ./usr/bin/veodardental --comprobar
 
-      # ── manifiesto firmado para --actualizar (solo con la clave de versiones) ──
-      - name: Firmar el paquete de actualización
-        if: startsWith(github.ref, 'refs/tags/v') && env.FIRMA_VERSION == 'true'
-        shell: bash
-        env:
-          VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist/actualizacion
-          cp target/release/veodardental dist/actualizacion/
-          cargo run --release --locked --example firmar_version -- dist/actualizacion "${GITHUB_REF_NAME#v}"
-
-      - name: Estado de la firma
-        shell: bash
-        run: |
-          {
-            echo "Sistema: linux"
-            echo "Paquete de actualización firmado: $([ "$FIRMA_VERSION" = "true" ] && echo sí || echo no)"
-          } > dist/FIRMA-linux.txt
-          cat dist/FIRMA-linux.txt
-
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: VeodarDental-linux
@@ -266,8 +245,6 @@ jobs:
             dist/*.pkg.tar.zst
             dist/*.AppImage
             dist/VeodarDental-*-linux-*.tar.gz
-            dist/FIRMA-linux.txt
-            dist/actualizacion/
           if-no-files-found: error
 
   # Instalar de verdad en cada distribución (contenedores limpios), arrancar lo
@@ -288,8 +265,57 @@ jobs:
       - name: Instalar y arrancar en ${{ matrix.distro }}
         run: tools/probar_paquetes_linux.sh "${{ matrix.distro }}"
 
+  # Manifiesto firmado para --actualizar, con el programa de Linux ya probado.
+  # La clave solo la ve el firmador, compilado antes y sin ella desde una copia
+  # limpia del repositorio; nada de lo que corrió en contenedores la ve.
+  firmar-actualizacion:
+    needs: linux-distribuciones
+    runs-on: ubuntu-22.04
+    env:
+      FIRMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.VEODARDENTAL_CLAVE_FIRMA != '' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: VeodarDental-linux
+          path: paquetes
+      - name: Compilar el firmador (sin la clave)
+        if: env.FIRMA_VERSION == 'true'
+        run: cargo build --release --locked --example firmar_version
+      - name: Firmar el paquete de actualización
+        if: env.FIRMA_VERSION == 'true'
+        shell: bash
+        env:
+          VEODARDENTAL_CLAVE_FIRMA: ${{ secrets.VEODARDENTAL_CLAVE_FIRMA }}
+        run: |
+          set -euo pipefail
+          mkdir -p programa dist/actualizacion
+          tar -xzf paquetes/VeodarDental-*-linux-*.tar.gz -C programa
+          cp programa/VeodarDental-*/veodardental dist/actualizacion/
+          datos=$(sed -n 's/^pub const DATA_VERSION: u32 = \([0-9]*\);.*/\1/p' src/model.rs)
+          target/release/examples/firmar_version dist/actualizacion "${GITHUB_REF_NAME#v}" "$datos"
+      - name: Estado de la firma
+        shell: bash
+        run: |
+          mkdir -p dist
+          {
+            echo "Sistema: linux"
+            echo "Paquete de actualización firmado: $([ "$FIRMA_VERSION" = "true" ] && echo sí || echo no)"
+          } > dist/FIRMA-linux.txt
+          cat dist/FIRMA-linux.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: VeodarDental-actualizacion
+          path: |
+            dist/FIRMA-linux.txt
+            dist/actualizacion/
+          if-no-files-found: error
+
   publicar:
-    needs: [instaladores, linux, linux-distribuciones]
+    needs: [instaladores, linux, linux-distribuciones, firmar-actualizacion]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:

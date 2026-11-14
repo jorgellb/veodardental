@@ -9,12 +9,16 @@
 # vez siguiente. Termina con error si el programa pide una glibc más nueva.
 set -eu
 cd "$(dirname "$0")/.."
-image=almalinux:8.10
+# Fijada por su huella (como las acciones del flujo, por su commit): lo que
+# sale de aquí se publica. Para actualizarla: docker pull almalinux:8.10 y
+# docker inspect --format '{{index .RepoDigests 0}}' almalinux:8.10
+image=almalinux:8.10@sha256:2d0f2eb2a83cc09dbc2eb92fade4dbe8f709628149e81aa00aec70630406603b
 max=2.28
 dir=target/glibc-2.28
 mkdir -p "$dir" target/release
+# El proyecto, de solo lectura: el contenedor solo escribe en su carpeta.
 # label=disable: en sistemas con SELinux, sin cambiar las etiquetas del proyecto.
-docker run --rm --security-opt label=disable -v "$PWD:/src" -w /src \
+docker run --rm --security-opt label=disable -v "$PWD:/src:ro" -v "$PWD/$dir:/src/$dir" -w /src \
   -e CARGO_HOME="/src/$dir/cargo" -e RUSTUP_HOME="/src/$dir/rustup" -e CARGO_TARGET_DIR="/src/$dir/target" \
   -e DUENO="$(id -u):$(id -g)" -e DIR="/src/$dir" "$image" bash -euc '
     # lo creado dentro del contenedor vuelve a ser de quien lo lanzó, también si falla

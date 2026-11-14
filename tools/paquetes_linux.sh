@@ -29,14 +29,16 @@ tools/paquete_portable.sh dist
 # nombre que en los demás sistemas, y el programa tal cual (sin quitarle los
 # símbolos), como en los otros paquetes.
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-arch=target/arch
-mkdir -p "$arch"
-rm -f "$arch"/*
+# una carpeta nueva cada vez (makepkg deja la suya de trabajo), que se borra al terminar
+arch=$(mktemp -d "$PWD/target/arch.XXXXXX")
+trap 'rm -rf "$arch"' EXIT
 cp dist/PKGBUILD "dist/veodardental_${version}_x86_64.tar.gz" "$arch/"
 sed -i -e 's/^pkgname=.*/pkgname=veodardental/' -e 's/^options=(!lto)$/options=(!lto !strip !debug)/' "$arch/PKGBUILD"
 grep -q '^pkgname=veodardental$' "$arch/PKGBUILD"
 grep -q '^options=(!lto !strip !debug)$' "$arch/PKGBUILD"
-docker run --rm --security-opt label=disable -v "$PWD/$arch:/pkg" -e DUENO="$(id -u):$(id -g)" archlinux:latest bash -euc '
+# Fijada por su huella, como la de tools/compilar_linux.sh: el paquete se publica.
+arch_image=archlinux:latest@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899
+docker run --rm --security-opt label=disable -v "$arch:/pkg" -e DUENO="$(id -u):$(id -g)" "$arch_image" bash -euc '
   trap "chown -R \"\$DUENO\" /pkg" EXIT
   pacman -Sy --noconfirm --needed base-devel >/dev/null
   # makepkg no se ejecuta como administrador

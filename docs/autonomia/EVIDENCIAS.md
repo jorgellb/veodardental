@@ -2301,6 +2301,15 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - Linux tiene su trabajo (compilar en AlmaLinux 8 y crear los paquetes) y otro que los instala en cada distribución.
   - La versión solo se publica si todo eso pasa.
   - El estado de la firma va en un `FIRMA-<sistema>.txt` por sistema. Antes todos se llamaban `FIRMA.txt` y, al juntarlos para publicar, se pisaban: la versión publicada solo decía el de uno.
+- **Clave de firma, aparte** (hallazgo de la revisión automática de seguridad):
+  - **Antes,** el paso de firma compilaba el firmador con `cargo run` teniendo la clave en el entorno. Lo que se ejecuta al compilar cada dependencia podía leerla.
+  - **Y con este cambio** iba a empeorar: en el mismo trabajo corren contenedores de fuera, y el de AlmaLinux podía escribir en el código del proyecto.
+  - **Ahora** se firma en un trabajo propio, `firmar-actualizacion`, después de las pruebas por distribución. Parte de una copia limpia del repositorio, compila el firmador sin la clave y solo entonces lo ejecuta con ella, sobre el programa ya probado (sacado del portable).
+  - **El trabajo de Linux** ya no ve la clave.
+  - **Contenedores:** el de AlmaLinux tiene el proyecto de solo lectura y solo escribe en `target/glibc-2.28`. Las imágenes que producen lo publicado (AlmaLinux 8.10 y Arch) van fijadas por su huella `sha256`, como las acciones por su commit. Las de las pruebas por distribución no van fijadas, porque se trata de probar las versiones de ahora, y no ven nada secreto.
+  - **El manifiesto firmado** lleva la versión de datos del programa (`DATA_VERSION`, ahora 2). Antes el flujo no la pasaba y quedaba 1. Al actualizar no se usa, pero lo firmado no debe decir algo falso.
+  - **Ensayado aquí** con una clave de prueba de un solo uso: «Firmado: 1 ficheros», con versión 0.1.0 y datos 2.
+- **Fallo propio encontrado y corregido:** `tools/paquetes_linux.sh` fallaba la segunda vez, porque no podía vaciar la carpeta que deja makepkg. Ahora usa una carpeta nueva en cada ejecución y la borra al terminar. Dos pasadas seguidas, bien.
 - **Guías:** `README.md` (Instaladores) y `docs/instalacion.md`.
 - **Batería:**
 
