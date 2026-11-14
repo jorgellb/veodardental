@@ -2089,3 +2089,28 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 555 pasan (553 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-080 T-R7-6: límites de entradas de red, ficheros, imágenes, descompresión, colas y tareas
+- **Auditoría:** `docs/revision_externa/auditoria_seguridad.md`, apartado 4 bis. Recoge cada límite del programa, dónde está y su prueba. Las tareas largas van en segundo plano.
+- **Hallazgo corregido (conexiones quietas):** una conexión que no enviaba nada ocupaba su sitio 60 s. Bastaban 64 conexiones así desde un solo ordenador para dejar a los puestos sin servidor durante ese tiempo.
+  - **Corrección** (`src/server.rs`): una conexión quieta se cierra a los 15 s (2 s en las pruebas). Un mismo ordenador no puede tener más de 16 a la vez; una clínica tiene como mucho 15 puestos.
+  - **Prueba:** `server::tests::idle_connections_cannot_take_the_server`. Se abren 24 conexiones quietas desde el mismo ordenador:
+    - las 8 de más se cierran al momento;
+    - las otras 16, al pasar el tiempo de espera;
+    - después, el servidor atiende con normalidad.
+  - **Comprobado que la prueba falla** si se quita el tope por ordenador, o si se vuelve a los 60 s. La primera versión de la prueba no fallaba sin el tope: leía cada conexión esperando 200 ms, y para las últimas ya había pasado el tiempo de espera. Ahora las lee sin esperar.
+- **Pruebas nuevas de límites que no tenían una:**
+  - `stl::tests::a_file_over_the_limit_is_refused_before_reading_it`: un fichero «hueco» de más del límite se rechaza sin leerlo.
+  - `booking::tests::public_pages_refuse_oversized_requests`: más de 16 KB a una página pública, 413.
+  - `whatsapp::tests::the_gateway_hook_refuses_oversized_bodies`: más de 1 MB al aviso de la pasarela, 413.
+  - `portal_paciente::tests::a_portal_session_expires_when_idle_and_after_its_maximum`: 20 min sin uso, o 2 h aunque se use.
+  - `autorizaciones::tests::a_huge_answer_is_kept_trimmed`: de la respuesta de la compañía se guardan 8 000 caracteres, y de la nota, 300.
+  - `app::tests::a_bank_statement_from_a_station_is_bounded` y `app::tests::lists_in_station_operations_are_bounded`: las listas de las operaciones de un puesto, con su tope y justo en él.
+  - `screens::visor3d::tests::a_stuck_load_neither_blocks_nor_replaces_the_next_model`: el fichero es una tubería que no acaba de llegar. La pantalla sigue, se abre otro modelo y, cuando la carga atascada termina, se descarta.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 564 pasan (562 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

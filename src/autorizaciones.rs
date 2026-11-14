@@ -281,6 +281,18 @@ mod tests {
         (db, pid, ids)
     }
 
+    /// T-R7-6. De la respuesta de la compañía se guarda como mucho `RAW_MAX`
+    /// caracteres (y de la nota, 300).
+    #[test]
+    fn a_huge_answer_is_kept_trimmed() {
+        let (mut db, pid, e) = insured();
+        let id = db.auth_new(pid, &e[..1], at(2)).unwrap();
+        db.auth_sent(id, "Portal de la compañía", "", at(2)).unwrap();
+        db.auth_answer(id, true, "AUT-1", &[], None, &"n".repeat(5_000), &"r".repeat(RAW_MAX * 10), at(3)).unwrap();
+        let a = db.auth_requests.iter().find(|x| x.id == id).unwrap().answers.last().unwrap().clone();
+        assert_eq!((a.raw.chars().count(), a.note.chars().count()), (RAW_MAX, 300));
+    }
+
     #[test]
     fn an_authorization_is_asked_once_and_its_answers_are_kept() {
         let (mut db, pid, e) = insured();

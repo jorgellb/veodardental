@@ -20,6 +20,7 @@ tools/aislado.sh cargo test --workspace --all-targets --locked
   - `ui_tests::every_screen_fits_1280_wide`: cada pantalla, cada pestaña de la ficha, de Informes y de Configuración cabe a 1280×720 y 1280×800;
   - `ui_tests::tablet_mode_has_touch_sized_controls_and_fits_1280`: lo mismo en modo tableta, con controles del tamaño del dedo;
   - `theme::tests::the_secondary_colours_meet_the_contrast_levels`: contraste de WCAG 2.1.
+- **Límites:** cada límite de entradas, ficheros y tareas tiene su prueba (tabla en el apartado 4 bis de `docs/revision_externa/auditoria_seguridad.md`).
 - **Permisos en el servidor:** cada regla tiene su prueba con el servidor de verdad. Cuando se añadió, se comprobó que la prueba falla si se quita la regla (anotado en `docs/autonomia/EVIDENCIAS.md`).
 
 ## Mediciones por versión

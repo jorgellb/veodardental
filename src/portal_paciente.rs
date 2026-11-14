@@ -322,6 +322,19 @@ mod tests {
         chrono::NaiveDate::from_ymd_opt(2026, 11, 14).unwrap().and_hms_opt(10, 0, 0).unwrap()
     }
 
+    /// T-R7-6. Una sesión del portal caduca a los `IDLE_MINUTES` sin uso y,
+    /// aunque se use, a las `MAX_MINUTES`.
+    #[test]
+    fn a_portal_session_expires_when_idle_and_after_its_maximum() {
+        let m = chrono::Duration::minutes;
+        let s = Session { token: "t".into(), access_id: 1, started: now(), last: now() };
+        assert!(s.alive(now() + m(IDLE_MINUTES - 1)));
+        assert!(!s.alive(now() + m(IDLE_MINUTES)), "sin uso, caduca");
+        let busy = Session { last: now() + m(MAX_MINUTES - 1), ..s.clone() };
+        assert!(busy.alive(now() + m(MAX_MINUTES - 1)));
+        assert!(!busy.alive(now() + m(MAX_MINUTES)), "aunque se use, caduca a las dos horas");
+    }
+
     #[test]
     fn a_holder_sees_only_their_patients_and_a_responsible_sees_their_dependents() {
         let mut db = Db::sample(now().date());

@@ -123,6 +123,41 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
 - **Ficheros privados:** datos, diario, registros y claves se crean con
   permisos 0600 (`src/paths.rs`).
 
+## 4 bis. Límites de entradas, ficheros y tareas (T-R7-6)
+Cada límite, dónde está y la prueba que lo comprueba. Lo que pasa del límite
+se rechaza antes de leerlo entero o se recorta, con un mensaje que explica qué
+hacer.
+
+| Entrada | Límite | Prueba |
+|---|---|---|
+| Petición al servidor de la clínica | cabecera acotada, cuerpo de 512 MB como mucho, sin envío por partes | `server::tests::requests_are_limited` |
+| Conexiones al servidor | 64 a la vez; 16 desde un mismo ordenador; una conexión quieta se cierra a los 15 s | `server::tests::idle_connections_cannot_take_the_server` (corregido en E-080) |
+| Respuestas que lee un puesto | 1 GB de datos; 64 KB de prueba de identidad, también comprimida (bomba gzip) | `server::tests::answers_are_read_with_a_limit`, `server::tests::big_answers_travel_compressed` |
+| Números de historia | hasta 999 999 999 (con ellos se nombran carpetas) | `server::tests::two_new_patients_never_share_a_history_number` |
+| Operaciones que manda un puesto | extracto del banco: 50 000 movimientos y 500 caracteres por texto; 10 000 mensajes por reserva de correo; 500 líneas por recepción de pedido; 200 actos por autorización | `app::tests::a_bank_statement_from_a_station_is_bounded`, `app::tests::lists_in_station_operations_are_bounded` |
+| Páginas públicas (citas, portal, recetas, pagos) | 16 KB por petición; intentos por enlace y por dirección | `booking::tests::public_pages_refuse_oversized_requests`, `booking::tests::the_patient_portal_never_shows_another_patient_by_changing_an_id`, `booking::tests::my_prescriptions_link_needs_id_and_birth_date` |
+| Sesión del portal del paciente | 20 min sin uso y 2 h en total | `portal_paciente::tests::a_portal_session_expires_when_idle_and_after_its_maximum` |
+| Avisos de la pasarela de WhatsApp | 1 MB por aviso | `whatsapp::tests::the_gateway_hook_refuses_oversized_bodies` |
+| Llamadas de la centralita | 30 por minuto | `phone::tests::web_pages_cannot_fake_calls_and_floods_are_cut` |
+| Inicios de sesión | bloqueo tras 5 fallos | `users::tests::lockout_after_failures_and_pin_change` |
+| DICOM | 512 MB de píxeles por estudio (también la serie entera de una carpeta); número de imágenes que no cuadra con el tamaño | `dicom::tests::invalid_compressed_huge_or_random_files_are_refused_without_panicking` |
+| STL | 5 millones de triángulos; el fichero, como mucho lo que ocupan en binario, comprobado antes de leerlo | `stl::tests::a_file_over_the_limit_is_refused_before_reading_it`, `stl::tests::invalid_cut_or_huge_models_are_refused_without_panicking` |
+| Paquete del laboratorio por correo | 18 MB de adjuntos | `lab_order::tests::attachments_too_big_for_an_email_are_left_out` |
+| Registro del programa | 1 MB por fichero, tres ficheros, 500 caracteres por línea | `registro::tests::the_log_rotates_and_keeps_three_files_at_most` |
+| Respuestas de las aseguradoras | 8 000 caracteres de la respuesta y 300 de la nota | `autorizaciones::tests::a_huge_answer_is_kept_trimmed` |
+| Resumen del grupo | 400 días por consulta | `grupo::tests::the_connection_text_round_trips_and_needs_the_server_fingerprint` |
+| IA de pago | tope mensual | `ia::tests::paid_agents_are_not_called_past_the_monthly_limit` |
+
+**Tareas largas:** van en segundo plano y la pantalla sigue respondiendo:
+cargar el visor 3D, el datáfono, el resumen del grupo, la IA, el dictado y
+los envíos de correo. Si el usuario pasa a otra cosa, lo que traiga la tarea
+anterior se descarta. Lo que dura cada una está acotado por los límites de la
+tabla y por los tiempos de espera de red.
+- `screens::visor3d::tests::a_stuck_load_neither_blocks_nor_replaces_the_next_model`:
+  una carga que no acaba no bloquea, y no sustituye al modelo abierto después.
+- `datafono::tests::a_lost_reply_is_recovered_by_asking_not_by_resending`:
+  una respuesta perdida del datáfono no cobra dos veces.
+
 ## 5. Hallazgos de las revisiones propias, ya corregidos
 Cada uno tiene su corrección y su prueba en la evidencia indicada:
 - E-008: primeras revisiones automáticas de seguridad.

@@ -2199,3 +2199,30 @@ impl eframe::App for App {
         self.handle_screenshot(&ctx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// T-R7-6. Un extracto que manda un puesto trae como mucho
+    /// `MAX_BANK_MOVES` movimientos, y cada texto, 500 caracteres.
+    #[test]
+    fn a_bank_statement_from_a_station_is_bounded() {
+        let one = serde_json::json!({ "fecha": "2026-11-02", "centimos": 1250, "concepto": "c".repeat(2_000), "referencia": "R" });
+        let ok = super::bank_moves_json(&serde_json::Value::Array(vec![one.clone(); 3])).unwrap();
+        assert_eq!((ok.len(), ok[0].concept.chars().count()), (3, 500));
+        let too_many = serde_json::Value::Array(vec![one; super::MAX_BANK_MOVES + 1]);
+        assert!(super::bank_moves_json(&too_many).unwrap_err().contains("por partes"));
+    }
+
+    /// T-R7-6. Las operaciones que manda un puesto traen listas acotadas.
+    #[test]
+    fn lists_in_station_operations_are_bounded() {
+        use serde_json::json;
+        let op = |v: serde_json::Value| super::ChainOp::from_json(&v).map(|_| ());
+        assert!(op(json!({ "accion": "reservar_correos", "mensajes": vec![1; 10_001], "marca": "m" })).unwrap_err().contains("Demasiados"));
+        assert!(op(json!({ "accion": "reservar_correos", "mensajes": [1], "marca": "m".repeat(65) })).is_err());
+        assert!(op(json!({ "accion": "pedido_recibir", "pedido": 1, "lineas": vec![json!([0, 1.0, "", ""]); 501] })).unwrap_err().contains("Demasiadas"));
+        assert!(op(json!({ "accion": "pedido_recibir", "pedido": 1, "lineas": vec![json!([0, 1.0, "", ""]); 500] })).is_ok());
+        assert!(op(json!({ "accion": "autorizacion", "paciente": 1, "actos": vec![1; 201] })).unwrap_err().contains("Demasiados"));
+        assert!(op(json!({ "accion": "autorizacion", "paciente": 1, "actos": vec![1; 200] })).is_ok());
+    }
+}

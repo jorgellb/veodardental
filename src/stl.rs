@@ -175,6 +175,19 @@ pub fn render(m: &Mesh, size: usize, yaw: f32, pitch: f32) -> (Vec<u8>, f32) {
 pub(crate) mod tests {
     use super::*;
 
+    /// T-R7-6. Un fichero que pasa del límite no se lee (ni se intenta): un
+    /// fichero «hueco» que dice ocupar más de la cuenta sin gastar disco.
+    #[test]
+    fn a_file_over_the_limit_is_refused_before_reading_it() {
+        let p = std::env::temp_dir().join(format!("vd_stl_grande_{}.stl", std::process::id()));
+        let f = std::fs::File::create(&p).unwrap();
+        f.set_len(MAX_FILE + 1).unwrap();
+        drop(f);
+        let e = read(&p).unwrap_err();
+        let _ = std::fs::remove_file(&p);
+        assert!(e.contains("límite"), "{e}");
+    }
+
     /// Un cubo de `l` mm (12 triángulos).
     pub(crate) fn cube(l: f32) -> Vec<[[f32; 3]; 3]> {
         let v = |x: u8, y: u8, z: u8| [x as f32 * l, y as f32 * l, z as f32 * l];

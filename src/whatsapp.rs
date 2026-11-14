@@ -1733,6 +1733,19 @@ mod tests {
     }
 
     /// Simula una pasarela WAHA y otra Evolution API en este ordenador.
+    /// T-R7-6. El aviso de la pasarela no acepta más de `MAX_BODY`.
+    #[test]
+    fn the_gateway_hook_refuses_oversized_bodies() {
+        let hook = listen(0, false, HookCfg { verify_token: "clave1".into(), accepting: true, ..Default::default() }, || {}).unwrap();
+        let big = "x".repeat(MAX_BODY as usize + 10);
+        let code = match agent().post(&format!("http://127.0.0.1:{}/pasarela?clave=clave1", hook.port)).send_string(&big) {
+            Ok(r) => r.status(),
+            Err(ureq::Error::Status(c, _)) => c,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(code, 413);
+    }
+
     #[test]
     fn gateway_round_trip_with_fake_waha_and_evolution() {
         let gw = tiny_http::Server::http("127.0.0.1:0").unwrap();

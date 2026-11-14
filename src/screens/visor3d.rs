@@ -337,6 +337,51 @@ pub fn compare(app: &mut crate::app::App, ui: &mut Ui, a: u32, b: u32) {
 mod tests {
     use super::*;
 
+    /// T-R7-6. La carga va en segundo plano: una que no acaba (un fichero que
+    /// no termina de llegar) no bloquea la pantalla, y si se pasa a otro
+    /// modelo, lo que traiga la anterior se descarta.
+    #[cfg(unix)]
+    #[test]
+    fn a_stuck_load_neither_blocks_nor_replaces_the_next_model() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("vd_visor_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (stuck, good) = (dir.join("lento.stl"), dir.join("bueno.stl"));
+        let _ = std::fs::remove_file(&stuck);
+        assert!(std::process::Command::new("mkfifo").arg(&stuck).status().unwrap().success());
+        std::fs::write(&good, crate::stl::tests::binary(&crate::stl::tests::cube(10.0))).unwrap();
+        let img = |id: u32, p: &std::path::Path| PatientImage {
+            id,
+            patient_id: 1,
+            kind: crate::model::ImageKind::Escaneo3D,
+            date: crate::model::today(),
+            teeth: vec![],
+            path: p.display().to_string(),
+            source: "Importada".into(),
+            notes: String::new(),
+            demo: false,
+        };
+        let mut v = V3d::default();
+        let t = std::time::Instant::now();
+        v.ensure(&img(1, &stuck));
+        v.poll();
+        assert!(v.loading() && t.elapsed() < std::time::Duration::from_millis(200), "la pantalla sigue");
+        // se pasa a otro modelo mientras la primera carga sigue atascada
+        v.ensure(&img(2, &good));
+        while v.loading() {
+            assert!(t.elapsed() < std::time::Duration::from_secs(10));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            v.poll();
+        }
+        assert!(matches!(&v.data, Some(Loaded::Mesh(m)) if m.tris.len() == 12));
+        // la atascada acaba (con un modelo distinto) y no sustituye al que se ve
+        std::fs::OpenOptions::new().write(true).open(&stuck).unwrap().write_all(&crate::stl::tests::binary(&crate::stl::tests::cube(10.0)[..2])).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        v.poll();
+        assert!(matches!(&v.data, Some(Loaded::Mesh(m)) if m.tris.len() == 12) && v.error.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// El nombre del fichero DICOM se compara con el de la ficha sin acentos,
     /// mayúsculas ni orden; si no coincide, el visor avisa.
     #[test]

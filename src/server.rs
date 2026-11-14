@@ -64,6 +64,12 @@ pub const DEFAULT_PORT: u16 = 8899;
 const MAX_BODY: usize = 512 * 1024 * 1024;
 /// Conexiones atendidas a la vez (cada puesto usa una cada vez que habla con el servidor).
 const MAX_CONNECTIONS: usize = 64;
+/// Conexiones a la vez desde un mismo ordenador: así uno solo no ocupa todas
+/// (una clínica tiene como mucho 15 puestos).
+const MAX_PER_IP: usize = 16;
+/// Una conexión que no envía nada en este tiempo se cierra (no ocupa su
+/// sitio indefinidamente). Cuenta entre lecturas, no en total.
+const IDLE_TIMEOUT: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(15) };
 /// Lo que ven los puestos en lugar de la huella de la contraseña o de la clave del móvil.
 pub const HIDDEN: &str = "oculto";
 /// Datos de los usuarios que solo cambia el servidor (al entrar o con sus órdenes propias).
@@ -595,7 +601,7 @@ struct Job {
 
 /// Atiende una conexión: cifrado, lectura de la petición y respuesta del servidor.
 fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: mpsc::Sender<Job>) {
-    let _ = tcp.set_read_timeout(Some(Duration::from_secs(60)));
+    let _ = tcp.set_read_timeout(Some(IDLE_TIMEOUT));
     let _ = tcp.set_write_timeout(Some(Duration::from_secs(120)));
     let Ok(peer) = tcp.peer_addr().map(|a| a.ip()) else { return };
     let mut first = [0u8; 1];
@@ -1977,6 +1983,7 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
     {
         let stop = stop.clone();
         let active = Arc::new(AtomicUsize::new(0));
+        let per_ip: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::new(Mutex::new(HashMap::new()));
         let key_for_conns = Arc::new(key.clone());
         std::thread::spawn(move || {
             for tcp in listener.incoming() {
@@ -1984,15 +1991,33 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
                     break;
                 }
                 let Ok(tcp) = tcp else { continue };
-                // demasiadas conexiones a la vez: se cierra esta (los puestos reintentan)
+                let Ok(ip) = tcp.peer_addr().map(|a| a.ip()) else { continue };
+                // demasiadas conexiones a la vez, o desde un mismo ordenador: se
+                // cierra esta (los puestos reintentan)
                 if active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
                     continue;
                 }
+                {
+                    let Ok(mut m) = per_ip.lock() else { continue };
+                    let n = m.entry(ip).or_default();
+                    if *n >= MAX_PER_IP {
+                        continue;
+                    }
+                    *n += 1;
+                }
                 active.fetch_add(1, Ordering::SeqCst);
-                let (tls, tx, active, key) = (tls.clone(), jobs_tx.clone(), active.clone(), key_for_conns.clone());
+                let (tls, tx, active, key, per_ip) = (tls.clone(), jobs_tx.clone(), active.clone(), key_for_conns.clone(), per_ip.clone());
                 std::thread::spawn(move || {
                     handle_conn(tcp, tls, &key, tx);
                     active.fetch_sub(1, Ordering::SeqCst);
+                    if let Ok(mut m) = per_ip.lock()
+                        && let Some(n) = m.get_mut(&ip)
+                    {
+                        *n -= 1;
+                        if *n == 0 {
+                            m.remove(&ip);
+                        }
+                    }
                 });
             }
         });
@@ -3377,6 +3402,38 @@ mod tests {
             println!("{who} · puesto los lee y prepara: {:?}", t.elapsed());
             drop(synced);
         }
+    }
+
+    /// T-R7-6. Conexiones que no envían nada («slowloris»): desde un mismo
+    /// ordenador no se ocupan más de `MAX_PER_IP`, las de más se cierran al
+    /// momento, y las quietas se cierran solas; después el servidor atiende
+    /// con normalidad.
+    #[test]
+    fn idle_connections_cannot_take_the_server() {
+        use std::io::Read;
+        let (addr, _path, h) = start("CLAVE58");
+        let dir = signed_in(&addr, "CLAVE58", "Despacho", 1, "0000");
+        let idle: Vec<std::net::TcpStream> = (0..MAX_PER_IP + 8).map(|_| std::net::TcpStream::connect(&addr).unwrap()).collect();
+        // sin esperar en la lectura: cerrada (0 bytes) o abierta (nada que leer aún)
+        let closed = |v: &[std::net::TcpStream]| {
+            v.iter()
+                .filter(|t| {
+                    t.set_nonblocking(true).unwrap();
+                    let mut b = [0u8; 1];
+                    !matches!((&**t).read(&mut b), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
+                })
+                .count()
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        // las de más de las que caben desde este ordenador, cerradas al momento
+        assert_eq!(closed(&idle), 8, "solo las de más, cerradas");
+        // las quietas se cierran solas (en pruebas, a los 2 s) y el servidor sigue
+        std::thread::sleep(IDLE_TIMEOUT + Duration::from_millis(800));
+        assert_eq!(closed(&idle), idle.len(), "las quietas, cerradas por el servidor");
+        assert!(dir.access().is_ok(), "después, el servidor atiende");
+        drop(idle);
+        dir.stop().unwrap();
+        h.join().unwrap();
     }
 
     #[test]

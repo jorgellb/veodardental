@@ -1076,8 +1076,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Auditoría con pruebas de tamaños máximos y cancelación sin bloquear la interfaz",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-080"]
   },
   {
    "id": "T-R7-7",

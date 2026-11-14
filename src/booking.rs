@@ -2683,6 +2683,22 @@ mod tests {
         assert_eq!(call("GET", &format!("/api/documento/{}", "b".repeat(32)), None).0, 404);
     }
 
+    /// T-R7-6. Las páginas públicas no aceptan peticiones de más de `MAX_BODY`.
+    #[test]
+    fn public_pages_refuse_oversized_requests() {
+        let today = today();
+        let mut db = Db::sample(today);
+        db.booking.enabled = true;
+        let srv = listen(0, false, publish(&db, today), || {}).unwrap();
+        let big = format!("{{\"nombre\": \"{}\"}}", "x".repeat(MAX_BODY as usize + 10));
+        let code = match ureq::post(&format!("http://127.0.0.1:{}/api/reservar", srv.port)).set("Content-Type", "application/json").send_string(&big) {
+            Ok(r) => r.status(),
+            Err(ureq::Error::Status(c, _)) => c,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(code, 413, "demasiado grande");
+    }
+
     #[test]
     fn web_page_books_a_free_slot() {
         let today = today();
