@@ -1690,3 +1690,63 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 523 pasan, 0 fallan, 10 ignoradas |
 | `systemd-analyze verify deploy/nube/veodardental-servidor.service` | 0 | solo avisa de que el programa no está instalado aquí |
+
+## E-066 T-F6-03: datáfono y financiación (adaptadores, estados, conciliación, cancelación y recuperación)
+- **Hecho (D-26, `docs/datafono.md`):**
+  - **Datáfono** (`src/datafono.rs`):
+    - operaciones con referencia única, estado e historia;
+    - el cobro o la devolución, una sola vez, al aprobarse, en la caja del centro donde se hizo;
+    - recuperación preguntando por la referencia;
+    - cancelación, en la que manda el datáfono;
+    - devolución por lo que quede;
+    - solo los cuatro últimos dígitos de la tarjeta;
+    - adaptadores manual y HTTP con contrato, y ajustes en un fichero privado del puesto.
+  - **Financiación** (`src/financiacion.rs`):
+    - solicitud, aprobación o denegación, firma, pago de la entidad y cancelación, con historia;
+    - el paciente, pagado por el total, una sola vez;
+    - la comisión, como gasto;
+    - desistimiento en plazo con devolución a la entidad;
+    - conciliación del ingreso del banco por lo recibido.
+  - **Pantalla:**
+    - Cuenta del paciente: datáfono, con aviso de las operaciones sin respuesta, y financiación;
+    - Configuración › Facturación: el datáfono del puesto.
+
+  Las listas nuevas pasan al fusionar fichas y quedan con los centros (`card_txs` es de un centro).
+- **Arreglado de paso:** las clínicas del grupo (`grupo.json`, con las claves de grupo) se guardaban legibles para otras cuentas del ordenador. Ahora van solo para el usuario (`write_private`).
+- **Pruebas** (todas con el datáfono simulado `datafono::fake` o sin red):
+  - `datafono::tests::a_connected_terminal_charges_once`:
+    - consultas hasta aprobarse;
+    - un solo cobro aunque se pregunte y se reenvíe, y el datáfono cobró una vez;
+    - denegada, sin cobro;
+    - con otra clave, el datáfono no atiende;
+    - la tarjeta queda como «···· 0004», sin el número completo.
+  - `datafono::tests::a_lost_reply_is_recovered_by_asking_not_by_resending`:
+    - respuesta perdida: «sin respuesta», se pregunta y se apunta el cobro que sí se hizo, una vez;
+    - no llegó al datáfono: no hecha;
+    - en el datáfono más de dos minutos: se comprueba.
+  - `datafono::tests::cancelling_and_refunding_follow_the_terminal`:
+    - cancelar mientras está en el datáfono;
+    - una cancelada que sí se cobró pasa a aprobada, y una aprobada no vuelve atrás;
+    - la devolución sin pasarse, y no de otro paciente.
+  - `datafono::tests::a_standalone_terminal_is_recorded_by_hand`: con autorización, una vez; «no pasó»; ajustes sin https rechazados.
+  - `financiacion::tests::a_financing_goes_from_request_to_payment_once`:
+    - orden de los pasos;
+    - el pago no supera lo financiado y se apunta una sola vez;
+    - saldo, comisión e historia;
+    - conciliación por lo recibido, una vez.
+  - `financiacion::tests::withdrawing_follows_the_deadline_and_returns_the_money`:
+    - cancelar antes del pago;
+    - desistir pagada en plazo, con devolución, y el paciente vuelve a deber lo de antes;
+    - fuera de plazo, no;
+    - validaciones.
+  - `ui_tests::the_card_terminal_and_a_financing_from_the_patient_account`: cobro con el datáfono sin conectar, con autorización, un solo cobro; solicitud de financiación y aprobación con referencia.
+  - `bank::tests::merging_moves_everything_of_the_removed_patient` sigue en verde con las listas nuevas.
+- **Ajuste por la prueba de pantalla:** los botones de los pasos de la financiación dicen «Marcar aprobada», «Marcar firmada»… Antes coincidían con el estado de los cobros y eran ambiguos.
+- **Pendiente externo:** proveedor, especificación y contrato (B-19, T-F6-03X).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 530 pasan (528 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

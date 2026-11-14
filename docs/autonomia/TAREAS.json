@@ -2712,8 +2712,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas con proveedor simulado conforme a la especificación disponible",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-066"]
   },
   {
    "id": "T-F6-03X",

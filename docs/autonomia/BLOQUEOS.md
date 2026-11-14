@@ -189,7 +189,9 @@ qué tareas la componen; el verificador comprueba que estén HECHA.
 - Falta: especificación y entorno de pruebas de un proveedor de datáfono integrado y de una entidad de financiación.
 - Por qué: cada proveedor tiene su protocolo; sin especificación no se puede validar la integración.
 - Parte afectada: conexión real (T-F6-03X).
-- Preparación terminada: T-F6-03 (adaptadores con proveedor simulado).
+- Preparación terminada: T-F6-03 (adaptadores con proveedor simulado, E-066).
+  - El datáfono funciona sin conectar (manual) y con el contrato HTTP de `docs/datafono.md`, probado con un datáfono simulado.
+  - La financiación se apunta a mano, con estados, cobro único, comisión, desistimiento y conciliación.
 - Responsable: clínica.
 - Paso para desbloquear: solicitar al proveedor su especificación y credenciales de pruebas.
 - Prueba posterior: operación de prueba conciliada.

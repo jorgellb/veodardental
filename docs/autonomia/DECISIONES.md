@@ -188,3 +188,23 @@ Hasta ahora solo había consentimiento de protección de datos y de cada canal. 
 **Alternativa descartada:** varias sociedades en una instalación, con un filtro de pacientes por sociedad en el servidor. Habría que separar en cada lista y en cada cálculo lo de cada NIF (cadena, numeración, cajas, remesas, copias). Un error en cualquiera de ellos mezclaría datos de dos responsables. Con instalaciones separadas no hay nada que mezclar.
 
 **Pendiente:** un grupo real trabajando con datos conjuntos (T-F6-09X). Si el grupo necesita más cifras, se añaden al resumen y a la lista cerrada de campos de su prueba.
+
+## D-26 Datáfono: preguntar, nunca reenviar; financiación: el paciente pagado por el total
+**Contexto.** T-F6-03 pide adaptadores de datáfono y financiación con estados, conciliación, cancelación y recuperación, sin especificación de un proveedor concreto (B-19).
+
+**Decisión:**
+- **Datáfono** (`src/datafono.rs`, contrato en `docs/datafono.md`):
+  - cada operación tiene una referencia única que el proveedor trata como una sola operación;
+  - si se corta la conexión, la operación queda «sin respuesta» y se pregunta por su referencia, nunca se reenvía;
+  - el cobro se apunta una sola vez, al aprobarse;
+  - lo que diga el datáfono manda: una cancelada que sí se cobró pasa a aprobada, y una aprobada no vuelve atrás;
+  - de la tarjeta, solo los cuatro últimos dígitos;
+  - sin datáfono conectado, el adaptador manual pide el número de autorización del justificante.
+- **Financiación** (`src/financiacion.rs`):
+  - cuando la entidad paga, el paciente queda pagado por el total financiado, porque esa es su deuda con la clínica;
+  - lo que se queda la entidad es un gasto de la clínica;
+  - el ingreso del banco se concilia por lo recibido;
+  - si el paciente desiste en el plazo legal después del pago, se apunta la devolución a la entidad y el paciente vuelve a deber el tratamiento;
+  - las decisiones de financiación son de la entidad: el programa solo apunta lo que pasa.
+
+**Pendiente:** la especificación, las credenciales de prueba y el contrato de un proveedor (T-F6-03X).

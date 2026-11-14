@@ -288,6 +288,8 @@ impl Db {
             portal_access: vec![].into(),
             campaigns: vec![].into(),
             group_keys: vec![].into(),
+            card_txs: vec![].into(),
+            financings: vec![].into(),
             punches: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,

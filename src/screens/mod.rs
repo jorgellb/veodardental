@@ -11,6 +11,7 @@ pub mod cobros;
 pub mod comunicaciones;
 pub mod config;
 pub mod correo;
+pub mod datafono;
 pub mod derechos;
 pub mod documentos;
 pub mod encuestas;

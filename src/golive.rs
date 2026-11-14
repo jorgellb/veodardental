@@ -245,6 +245,8 @@ impl Db {
             portal_access,
             campaigns,
             group_keys: _,
+            card_txs,
+            financings,
             punches,
             data_version: _,
             station: _,
@@ -301,6 +303,8 @@ impl Db {
         surveys.clear();
         portal_access.clear();
         campaigns.clear();
+        card_txs.clear();
+        financings.clear();
         punches.clear();
         // lo de ejemplo que no es de ningún paciente
         suppliers.retain(|s| !is_demo(&d.suppliers, s.id, &s.name));

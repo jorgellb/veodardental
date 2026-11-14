@@ -231,7 +231,8 @@ pub fn save_links(links: &[Link]) -> Result<(), String> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&p, serde_json::to_string_pretty(links).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    // llevan las claves de grupo: solo para el usuario de este ordenador
+    crate::paths::write_private(&p, serde_json::to_string_pretty(links).map_err(|e| e.to_string())?.as_bytes()).map_err(|e| e.to_string())
 }
 
 /// Un periodo que se puede pedir.

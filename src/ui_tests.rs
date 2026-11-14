@@ -3404,3 +3404,67 @@ fn a_user_is_limited_to_a_center_and_a_clinic_joins_the_group_view() {
     assert!(h.state().grupo.results.first().is_some_and(|(_, r)| r.is_err()), "no responde: se dice");
     assert!(!h.query_all_by_label_contains("Clínica Sur: ").collect::<Vec<_>>().is_empty());
 }
+
+/// Datáfono sin conectar y financiación en la cuenta del paciente (T-F6-03):
+/// se cobra, se apunta con la autorización y queda un solo cobro; una
+/// financiación se apunta y avanza.
+#[test]
+fn the_card_terminal_and_a_financing_from_the_patient_account() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 3200.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let before = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.card_txs.clear();
+        a.db.financings.clear();
+        a.card.amount = "45,50".into();
+        a.open_patient(101, crate::app::PatTab::Cuenta);
+        a.db.payments.iter().filter(|p| p.patient_id == 101).count()
+    };
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Cobrar con datáfono").click();
+    for _ in 0..30 {
+        h.step();
+        // ya respondió el datáfono (sin conectar): se puede apuntar el resultado
+        if h.state().card.msg.as_ref().is_some_and(|(_, m)| m.contains("En el datáfono")) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(h.state().db.card_txs.first().map(|t| t.state), Some(crate::datafono::CardState::EnDatafono));
+    h.state_mut().card.auth = "778899".into();
+    h.step();
+    h.get_by_label("Aprobada").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let a = h.state();
+    assert_eq!(a.db.card_txs[0].state, crate::datafono::CardState::Aprobada, "{:?}", a.card.msg);
+    assert_eq!(a.db.payments.iter().filter(|p| p.patient_id == 101).count(), before + 1, "un cobro");
+    assert!(a.db.payments.iter().any(|p| p.patient_id == 101 && p.method == "Tarjeta" && (p.amount - 45.5).abs() < 0.005));
+    // financiación: se apunta la solicitud y se aprueba
+    {
+        let a = h.state_mut();
+        a.card.fin_provider = "Financiera Ejemplo".into();
+        a.card.fin_amount = "1200".into();
+    }
+    h.step();
+    h.get_by_label("Apuntar solicitud").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.financings.len(), 1);
+    h.state_mut().card.fin_ref = "FE-1".into();
+    h.step();
+    h.get_by_label("Marcar aprobada").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.financings[0].state, crate::financiacion::FinState::Aprobada);
+    assert_eq!(h.state().db.financings[0].provider_ref, "FE-1");
+}

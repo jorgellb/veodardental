@@ -223,6 +223,8 @@ pub struct App {
     pub perio_voice: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Grupo de clínicas (claves de esta clínica y vista del grupo).
     pub grupo: screens::grupo::GroupUi,
+    /// Datáfono y financiación en la cuenta del paciente.
+    pub card: screens::datafono::CardUi,
 }
 
 impl App {
@@ -371,6 +373,7 @@ impl App {
             perio_audio: String::new(),
             perio_voice: None,
             grupo: Default::default(),
+            card: Default::default(),
         };
         if let Some(w) = clock {
             app.toast = Some((w, 15.0, crate::theme::WARN));
@@ -1329,6 +1332,8 @@ impl ChainOp {
             "surveys",
             "portal_access",
             "campaigns",
+            "card_txs",
+            "financings",
             "config",
             "audit_log",
         ];

@@ -193,3 +193,13 @@ queda marcado como pendiente.
   - el despliegue (`deploy/nube/`, `docs/despliegue_nube.md`) pide una región del EEE, el contrato de encargo, copias fuera del servidor y acceso solo por VPN o desde las direcciones de la clínica;
   - el servidor no escribe la clave de la clínica en el registro del sistema y arranca con la zona horaria de la clínica;
   - la contratación sigue pendiente (B-18).
+
+## Datáfono y financiación (T-F6-03)
+- **Fuentes, citadas de memoria y sin consultar en esta sesión:**
+  - PCI DSS: el número completo de la tarjeta no se guarda;
+  - Ley 16/2011, de contratos de crédito al consumo, artículo 28: desistimiento en 14 días naturales.
+
+  Las confirman la gestoría y el proveedor.
+- **Efecto en el código:**
+  - de la tarjeta solo quedan los cuatro últimos dígitos (`datafono::mask_card`), y una prueba comprueba que el número completo que manda el datáfono simulado no queda en los datos;
+  - la cancelación de una financiación ya pagada solo se admite dentro de `financiacion::WITHDRAWAL_DAYS` días desde la firma.

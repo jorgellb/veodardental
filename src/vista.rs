@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 /// Listas de un centro: en las de los demás centros, un usuario de unos
 /// centros no escribe.
-pub const CENTER_LISTS: [&str; 5] = ["appointments", "cash", "payments", "booking_requests", "slot_offers"];
+pub const CENTER_LISTS: [&str; 6] = ["appointments", "cash", "payments", "booking_requests", "slot_offers", "card_txs"];
 
 /// Listas de un centro que un usuario de otros centros no recibe.
 const CENTER_HIDDEN: [&str; 1] = ["cash"];

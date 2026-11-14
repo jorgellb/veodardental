@@ -901,6 +901,12 @@ pub struct Db {
     /// Claves con las que el grupo de clínicas pide el resumen (ver `grupo`).
     #[serde(default)]
     pub group_keys: Tracked<Vec<crate::grupo::GroupKey>>,
+    /// Operaciones con el datáfono (ver `datafono`).
+    #[serde(default)]
+    pub card_txs: Tracked<Vec<crate::datafono::CardTx>>,
+    /// Financiaciones con una entidad financiera (ver `financiacion`).
+    #[serde(default)]
+    pub financings: Tracked<Vec<crate::financiacion::Financing>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,
