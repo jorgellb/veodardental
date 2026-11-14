@@ -83,6 +83,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: autorizaciones y liquidaciones solo por el servidor | E-070 | `ab124fe` |
 | T-F6-05: pedidos por stock mínimo con aprobación, unidades de compra, lotes y recepción | E-071 | `759c52b` |
 | Revisión de seguridad: configuración, pedidos partidos y correo del proveedor | E-072 | `39aad16` |
+| Revisión de seguridad: configuración por lista de lo permitido y sin proveedores repetidos | E-073 | `e6f220f` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
