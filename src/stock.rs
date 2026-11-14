@@ -690,7 +690,7 @@ impl Db {
             cost: 0.0,
             notes: String::new(),
             attachments: vec![],
-            anonymize: false,
+            anonymize: true,
             order_sent: None,
             order_to: String::new(),
         });

@@ -93,12 +93,12 @@ contratado en este trabajo.
 
 | Servicio | Qué se envía | Dónde |
 |---|---|---|
-| Correo (SMTP de la clínica) | Lo que se envíe: avisos, órdenes al laboratorio con adjuntos | `src/mail.rs` |
+| Correo (SMTP de la clínica) | Lo que se envíe: avisos, órdenes al laboratorio con adjuntos. La orden al laboratorio va de serie con las iniciales y el número de historia; la clínica puede poner el nombre completo (D-30) | `src/mail.rs`, `src/lab_order.rs` |
 | WhatsApp Business (Meta) | Recordatorios y mensajes al paciente | `src/whatsapp.rs` |
 | SMS (pasarela que contrate la clínica) | Teléfono y texto del mensaje | `src/sms.rs` |
 | IA de imágenes (proveedor que elija la clínica, o uno local) | Solo la imagen y, si se quiere, la edad; nunca el nombre | `src/ia.rs` |
 | Transcripción de dictados (servicio que elija la clínica, o uno local) | La grabación del dictado; el programa no la guarda | `src/evolucion.rs` |
-| IA para resumir dictados (desactivado de serie) | El texto del dictado sin el nombre del paciente; el resumen es una propuesta que el profesional revisa | `src/evolucion.rs` |
+| IA para resumir dictados (desactivado de serie) | El texto del dictado sin el nombre del paciente ni los identificadores que se hayan dicho; el resumen es una propuesta que el profesional revisa | `src/evolucion.rs` |
 | Cloudflare Tunnel (si se publica la página de citas) | Las páginas de cita online y «Mi cita»: datos de esa cita y nombre de pila | `src/tunnel.rs`, `src/portal.rs` |
 | AEAT (VERI*FACTU) | Registros de facturación | `src/verifactu.rs` |
 | TPV virtual del banco (Redsys) | El pedido, el importe y el concepto del pago; la tarjeta la pide la página del banco, no el programa | `src/pago.rs` |
@@ -136,12 +136,35 @@ contratado en este trabajo.
 - Dentro de una sociedad, los centros comparten pacientes e historia. Un usuario puede limitarse a unos centros para lo que hace (citas, cobros, caja).
 - **Decide:** si compartir pacientes entre los centros de una misma sociedad necesita informar al paciente de algo más.
 
-## 6. Minimización en los registros
-- **Registro de errores:** antes de escribir se quitan correos, teléfonos,
-  documentos, IBAN, rutas y nombres. Tiene un tamaño acotado y no sale solo
-  del ordenador.
+## 6. Minimización: registros, portales, mensajes e IA (T-R7-7)
+Todas las pruebas usan datos inventados.
+- **Registro de errores:** antes de escribir se quitan correos, teléfonos
+  (también escritos por grupos, «612 34 56 78»), documentos, IBAN, rutas y
+  nombres. Tiene un tamaño acotado y no sale solo del ordenador.
   - `registro::tests::personal_data_never_reaches_the_log`;
+  - `registro::tests::phones_written_in_groups_are_removed_too`;
   - `registro::tests::the_support_report_is_previewed_and_only_sent_with_consent`.
+- **Páginas con enlace personal** (cita, presupuesto, documento, recetas,
+  pago, encuesta, «Mi espacio», hueco libre): antes de que la persona dé su
+  documento y su fecha de nacimiento, enseñan el nombre de pila y lo que trata
+  el enlace. Nunca enseñan apellidos, documento, teléfonos, correo, dirección,
+  fecha de nacimiento, número de historia o cuenta, ni alertas, alergias,
+  antecedentes o notas (`booking::tests::link_pages_show_only_the_first_name_and_what_the_link_is_for`).
+  Se miran la página y los datos que pide.
+- **Mensajes automáticos** (citas, revisiones, cumpleaños, presupuestos y el
+  recordatorio de WhatsApp): sin identificadores ni datos de salud
+  (`comms::tests::automatic_messages_carry_no_identifiers_or_health_data`).
+- **IA de imágenes:** solo viajan los píxeles, sin los metadatos del fichero,
+  con el tipo, las piezas y, si se quiere, la edad. El estudio DICOM no se
+  envía, porque su cabecera lleva la identidad
+  (`ia::tests::only_pixels_and_non_identifying_data_reach_the_agent`).
+  **Límite:** un texto quemado en la propia imagen (el nombre que algunos
+  equipos imprimen en la radiografía) viaja con los píxeles.
+- **Dictados para resumir con IA:** sin el nombre del paciente ni los
+  identificadores que se hayan dicho
+  (`evolucion::tests::identifiers_said_in_a_dictation_do_not_reach_the_ai`).
+- **Laboratorio:** la orden va de serie con iniciales y número de historia
+  (D-30), con las alergias, que hacen falta para elegir el material.
 - **Mediciones del piloto:** tiempos y pasos sin datos de pacientes
   (`medidas::tests::measures_carry_no_patient_data`).
 

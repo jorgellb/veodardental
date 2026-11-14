@@ -249,6 +249,9 @@ mod tests {
     #[test]
     fn order_document_and_package() {
         let (mut db, id) = db_with_work();
+        assert!(db.lab_works.iter().find(|w| w.id == id).unwrap().anonymize, "por defecto, sin el nombre (D-30)");
+        // la clínica lo desmarca: con el nombre completo
+        db.lab_works.iter_mut().find(|w| w.id == id).unwrap().anonymize = false;
         let w = db.lab_works.iter().find(|w| w.id == id).unwrap().clone();
         let html = order_html(&db, &w);
         assert!(html.contains("Orden de trabajo para laboratorio") && html.contains("Zirconio"));

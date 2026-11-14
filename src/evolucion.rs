@@ -226,10 +226,12 @@ pub fn summary_prompt(transcript: &str) -> String {
     )
 }
 
-/// El dictado sin el nombre del paciente (para mandarlo a la IA).
+/// El dictado sin el nombre del paciente ni identificadores (documento,
+/// teléfono, correo, cuenta, números largos), para mandarlo a la IA.
 pub fn without_names(text: &str, p: &Patient) -> String {
     let names: Vec<String> = [&p.first_name, &p.last_name].iter().flat_map(|s| s.split_whitespace()).filter(|w| w.chars().count() >= 3).map(crate::model::fold).collect();
-    text.split(' ').map(|w| if names.contains(&crate::model::fold(w.trim_matches(|c: char| !c.is_alphanumeric()))) { "[paciente]".to_string() } else { w.to_string() }).collect::<Vec<_>>().join(" ")
+    let text = text.split(' ').map(|w| if names.contains(&crate::model::fold(w.trim_matches(|c: char| !c.is_alphanumeric()))) { "[paciente]".to_string() } else { w.to_string() }).collect::<Vec<_>>().join(" ");
+    crate::registro::without_ids(&text)
 }
 
 /// Datos de `summary` que no están en `source`: cifras (piezas, dosis,
@@ -394,6 +396,20 @@ mod tests {
         let t = without_names(&format!("{} viene por dolor en la 36", p.first_name), &p);
         assert!(t.starts_with("[paciente]") && !t.contains(&p.first_name));
         assert!(summary_prompt("x").contains("SOLO la información del dictado"));
+    }
+
+    /// T-R7-7. Lo que se dicta y va a la IA para resumir tampoco lleva
+    /// identificadores que se hayan dicho (documento, teléfono, correo,
+    /// cuenta); lo clínico, piezas y medidas incluidas, se queda.
+    #[test]
+    fn identifiers_said_in_a_dictation_do_not_reach_the_ai() {
+        let db = Db::sample(now().date());
+        let p = db.patient(101).unwrap().clone();
+        let t = without_names(&format!("{} {}, DNI 12345678Z, teléfono 612 34 56 78, correo persona@ejemplo.invalid, cuenta ES9121000418450200051332: dolor en 36/37, bolsa de 5 mm, articaína 1/2 carpule.", p.first_name, p.last_name), &p);
+        for x in ["12345678Z", "612 34 56 78", "persona@ejemplo.invalid", "ES9121000418450200051332", p.first_name.as_str()] {
+            assert!(!t.contains(x), "«{x}» en «{t}»");
+        }
+        assert!(t.contains("dolor en 36/37, bolsa de 5 mm, articaína 1/2 carpule."), "{t}");
     }
 
     /// Doble de prueba del servicio de transcripción: comprueba lo que recibe.

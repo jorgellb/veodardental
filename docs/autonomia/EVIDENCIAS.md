@@ -2134,3 +2134,23 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 566 pasan (564 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-082 T-R7-7: minimización de datos en registros, portales, mensajes, informes de error e IA
+- **Revisión** (`docs/revision_externa/dpo.md`, apartado 6). Todas las pruebas usan datos inventados.
+- **Hallazgos corregidos:**
+  - **Teléfonos escritos por grupos en el registro.** «600 123 456» o «+34 612 34 56 78» llegaban al registro: cada grupo tenía pocas cifras para quitarlo. La prueba de antes llevaba uno así, pero no lo comprobaba. Ahora dos o más grupos seguidos que suman 9 cifras o más se quitan juntos (`src/registro.rs`). Las horas, los importes y los códigos de error se quedan. Prueba: `registro::tests::phones_written_in_groups_are_removed_too`, que falló antes de corregirlo.
+  - **Identificadores en los dictados para la IA.** Al resumir un dictado se quitaba el nombre del paciente, pero no un documento, teléfono, correo o cuenta dicho en voz alta. Ahora se quitan también, y las piezas («36/37») y las medidas se quedan. Prueba: `evolucion::tests::identifiers_said_in_a_dictation_do_not_reach_the_ai`.
+  - **Orden al laboratorio con el nombre completo** si no se marcaba lo contrario. Ahora va de serie con iniciales y número de historia (D-30).
+- **Pruebas nuevas de lo que ya estaba bien:**
+  - `booking::tests::link_pages_show_only_the_first_name_and_what_the_link_is_for`: las ocho clases de enlace personal, con su página y sus datos. Se comprobó que la prueba falla si se busca también el nombre de pila, que sí se enseña.
+  - `comms::tests::automatic_messages_carry_no_identifiers_or_health_data`: los mensajes automáticos de quince días y el recordatorio de WhatsApp.
+  - `ia::tests::only_pixels_and_non_identifying_data_reach_the_agent`: una radiografía PNG con el nombre y el documento en sus metadatos. A la IA de prueba solo le llegan los píxeles, el tipo, las piezas y la edad.
+- **Informes de error:** sin cambios. Ya se minimizaban y solo salen a mano, vistos enteros y con consentimiento (`registro::tests::the_support_report_is_previewed_and_only_sent_with_consent`).
+- **Límite anotado:** el texto quemado en la propia imagen viaja con los píxeles.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 571 pasan (569 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

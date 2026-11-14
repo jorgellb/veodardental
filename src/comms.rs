@@ -946,6 +946,35 @@ mod tests {
     /// Las plantillas de serie solo usan comodines de su clase; uno mal
     /// escrito, o de otra clase, se señala; y un dato de salud nunca sale en
     /// un mensaje aunque la plantilla lo lleve.
+    /// T-R7-7. Los mensajes automáticos de una quincena (citas, revisiones,
+    /// cumpleaños, presupuestos) y el recordatorio de WhatsApp, con datos
+    /// inventados en todas las fichas: ni apellidos, ni documento, ni número
+    /// de historia, dirección, fecha de nacimiento, cuenta, ni nada de salud.
+    #[test]
+    fn automatic_messages_carry_no_identifiers_or_health_data() {
+        let mut db = Db::sample(d());
+        let secret = ["Apellidoreservado", "11111111H", "4242424", "Calle Reservada", "01/05/1980", "ES9121000418450200051332", "Alergiareservada", "Antecedentereservado", "Notareservada", "Alertareservada"];
+        for p in db.patients.iter_mut() {
+            (p.last_name, p.nif, p.history_no, p.address, p.iban) = (secret[0].into(), secret[1].into(), 4242424, secret[3].into(), secret[5].into());
+            (p.allergies, p.background, p.notes, p.alerts) = (secret[6].into(), secret[7].into(), secret[8].into(), secret[9].into());
+            p.birth = NaiveDate::from_ymd_opt(1980, 5, 1);
+        }
+        // un cumpleaños dentro de la quincena
+        db.patients[0].birth = Some(NaiveDate::from_ymd_opt(1980, d().month(), d().day()).unwrap_or(NaiveDate::from_ymd_opt(1980, 5, 1).unwrap()));
+        db.messages.clear();
+        for i in 0..15 {
+            db.generate_messages(d() + Duration::days(i));
+        }
+        assert!(db.messages.len() >= 5, "hay mensajes que revisar: {}", db.messages.len());
+        let s = crate::whatsapp::WaSettings::default();
+        let wa: Vec<String> = db.appointments.iter().filter(|a| a.patient_id.is_some()).take(20).map(|a| db.wa_text(&s, a)).collect();
+        for text in db.messages.iter().map(|m| format!("{} {}", m.subject, m.text)).chain(wa) {
+            for x in secret {
+                assert!(!text.contains(x), "«{x}» en «{text}»");
+            }
+        }
+    }
+
     #[test]
     fn templates_only_use_placeholders_that_are_filled_and_no_health_data() {
         for t in default_msg_templates() {

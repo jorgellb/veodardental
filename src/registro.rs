@@ -65,15 +65,58 @@ pub fn scrub(text: &str) -> String {
             (None, c) => out.push(c),
         }
     }
-    let words: Vec<String> = out.split(' ').map(scrub_word).collect();
-    let mut s = words.join(" ");
+    let mut s = phone_groups(&out).split(' ').map(scrub_word).collect::<Vec<_>>().join(" ");
     if s.chars().count() > MAX_LINE {
         s = s.chars().take(MAX_LINE).collect::<String>() + "…";
     }
     s
 }
 
+/// Un teléfono escrito por grupos («600 123 456», «+34 612 34 56 78»): dos o
+/// más grupos de cifras seguidos que suman 9 o más cifras se quitan juntos.
+fn phone_groups(text: &str) -> String {
+    let edge = |c: char| matches!(c, ',' | ';' | '.' | ':' | '(' | ')');
+    let digits = |w: &str| {
+        let core = w.trim_matches(edge);
+        let n = core.strip_prefix('+').unwrap_or(core);
+        if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) { Some(n.len()) } else { None }
+    };
+    let words: Vec<&str> = text.split(' ').collect();
+    let mut out: Vec<String> = vec![];
+    let mut i = 0;
+    while i < words.len() {
+        let (mut j, mut n) = (i, 0);
+        while let Some(d) = words.get(j).and_then(|w| digits(w)) {
+            n += d;
+            j += 1;
+        }
+        if j - i >= 2 && n >= 9 {
+            let lead: String = words[i].chars().take_while(|c| *c == '(').collect();
+            let trail = &words[j - 1][words[j - 1].trim_end_matches(edge).len()..];
+            out.push(format!("{lead}<número>{trail}"));
+            i = j;
+        } else {
+            out.push(words[i].to_string());
+            i += 1;
+        }
+    }
+    out.join(" ")
+}
+
+/// Quita de un texto clínico (un dictado para la IA) los identificadores:
+/// correos, cuentas, documentos, teléfonos y números largos. Lo demás queda
+/// como está, también las piezas («36/37») y las medidas.
+pub fn without_ids(text: &str) -> String {
+    phone_groups(text).split(' ').map(|w| mark_word(w, false)).collect::<Vec<_>>().join(" ")
+}
+
 fn scrub_word(w: &str) -> String {
+    mark_word(w, true)
+}
+
+/// Marca una palabra que sea un dato de una persona; con `all`, también las
+/// rutas y lo que parezca una clave.
+fn mark_word(w: &str, all: bool) -> String {
     let core = w.trim_matches(|c: char| matches!(c, ',' | ';' | '.' | ':' | '(' | ')' | '[' | ']' | '\'' | '¿' | '?' | '¡' | '!'));
     if core.is_empty() {
         return w.to_string();
@@ -83,8 +126,8 @@ fn scrub_word(w: &str) -> String {
     let upper = core.to_uppercase();
     let nif = (core.len() == 9 && digits >= 7 && letters >= 1) || (core.len() >= 9 && upper.starts_with(['X', 'Y', 'Z']) && digits >= 7);
     let iban = core.len() >= 15 && upper.starts_with("ES") && digits >= 13;
-    let path = core.contains(['/', '\\']) && core.len() > 3;
-    let key = core.len() >= 20 && core.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '+' | '=')) && digits > 0 && letters > 0;
+    let path = all && core.contains(['/', '\\']) && core.len() > 3;
+    let key = all && core.len() >= 20 && core.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '+' | '=')) && digits > 0 && letters > 0;
     let mark = if core.contains('@') {
         Some("<correo>")
     } else if iban {
@@ -269,7 +312,7 @@ mod tests {
         let raw =
             "No se pudo leer /home/clinica/Pacientes/Juan Pérez/pano.jpg de «Juan Pérez» (DNI 12345678Z, ana.garcia@correo.es, 600 123 456, tel 600123456, ES9121000418450200051332, clave abcdEFGH1234ijklMNOP5678, X1234567L, C:\\Clinica\\Rx\\a.jpg)";
         let s = scrub(raw);
-        for secret in ["clinica/Pacientes", "Juan Pérez", "12345678Z", "ana.garcia", "600123456", "ES9121000418450200051332", "abcdEFGH1234ijklMNOP5678", "X1234567L", "Clinica\\Rx"] {
+        for secret in ["clinica/Pacientes", "Juan Pérez", "12345678Z", "ana.garcia", "600123456", "600 123 456", "ES9121000418450200051332", "abcdEFGH1234ijklMNOP5678", "X1234567L", "Clinica\\Rx"] {
             assert!(!s.contains(secret), "{secret} en «{s}»");
         }
         for mark in ["<ruta>", "«…»", "<documento>", "<correo>", "<número>", "<cuenta>", "<clave>"] {
@@ -286,6 +329,19 @@ mod tests {
         let s = scrub_with(&warn, &name_tokens(&db));
         assert!(!s.contains(&p.first_name) && !s.to_lowercase().contains(&p.last_name.to_lowercase()), "{s}");
         assert!(s.starts_with("No se puede borrar a <nombre>") && s.ends_with("tiene facturas."), "{s}");
+    }
+
+    /// T-R7-7. Los teléfonos escritos por grupos («600 123 456», «+34 612 34 56
+    /// 78») tampoco llegan al registro. Las horas, los importes y los códigos
+    /// de error, sí.
+    #[test]
+    fn phones_written_in_groups_are_removed_too() {
+        let s = scrub("Sin respuesta del 600 123 456 ni del +34 612 34 56 78 (o 91-123-45-67) a las 10:30; cobro de 1 234,50 €, error 503 tras 3 intentos");
+        for secret in ["600 123 456", "123 456", "612 34 56 78", "34 56 78", "91-123-45-67"] {
+            assert!(!s.contains(secret), "{secret} en «{s}»");
+        }
+        assert!(s.contains("del <número> ni del <número> (o <número>)"), "{s}");
+        assert!(s.contains("10:30") && s.contains("1 234,50 €") && s.contains("error 503 tras 3 intentos"), "{s}");
     }
 
     #[test]

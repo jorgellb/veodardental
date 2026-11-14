@@ -2683,6 +2683,83 @@ mod tests {
         assert_eq!(call("GET", &format!("/api/documento/{}", "b".repeat(32)), None).0, 404);
     }
 
+    /// T-R7-7. Lo que ve quien tiene un enlace personal (sin haber dado aún
+    /// su documento ni su fecha de nacimiento): el nombre de pila y lo que el
+    /// enlace trata. Ni apellidos, documento, teléfonos, correo, dirección,
+    /// fecha de nacimiento, número de historia o cuenta, ni las alertas,
+    /// alergias, antecedentes o notas de la ficha.
+    #[test]
+    fn link_pages_show_only_the_first_name_and_what_the_link_is_for() {
+        let today = today();
+        let now = chrono::Local::now().naive_local();
+        let mut db = Db::sample(today);
+        db.booking.enabled = true;
+        db.booking.public_url = "https://citas.clinica.es/".into();
+        db.config.pay_online = crate::pago::PayConfig { enabled: true, bizum: true, deposit: Default::default() };
+        let mut paths = vec![];
+        let appt = db.appointments.iter().find(|a| a.date > today && !a.state.is_cancelled()).unwrap().clone();
+        paths.push(format!("/mi-cita/{}", db.appt_token(appt.id)));
+        let bid = db.budgets.iter().find(|b| b.state == BudgetState::Pendiente && !b.lines.is_empty()).unwrap().id;
+        paths.push(format!("/presupuesto/{}", db.budget_token(bid)));
+        let tid = db.doc_templates.iter().find(|t| t.name.contains("implantes")).unwrap().id;
+        let doc = db.new_document(101, tid, &[36]).unwrap();
+        paths.push(format!("/documento/{}", db.doc_token(doc)));
+        paths.push(format!("/recetas/{}", db.rx_token(101)));
+        let pay = db.create_pay_request(crate::pago::PayFor::Budget(bid), Some(4250), now).unwrap();
+        paths.push(format!("/pagar/{}", db.pay_request(pay).unwrap().token));
+        let (_, survey) = db.new_survey(&appt, now).unwrap();
+        paths.push(format!("/encuesta/{survey}"));
+        let acc = db.portal_grant(crate::portal_paciente::Holder::Patient(101), now).unwrap();
+        paths.push(format!("/portal/{}", db.portal_access.iter().find(|a| a.id == acc).unwrap().token));
+        let mut day = today + Duration::days(4);
+        while day.weekday().num_days_from_monday() >= 5 || db.holidays.iter().any(|h| h.date == day) {
+            day += Duration::days(1);
+        }
+        db.appointments.retain(|a| !(a.date == day && a.doctor_id == 4));
+        let wid = db.new_id();
+        db.waitlist.push(WaitItem { id: wid, patient_id: 102, doctor_id: 4, reason: "Limpieza".into(), since: today, preference: "Cualquier hora".into() });
+        let offer = db.create_offer(crate::slot_offer::FreeSlot { doctor: 4, date: day, start: NaiveTime::from_hms_opt(10, 0, 0).unwrap(), minutes: 45, center: 1 }, None, now).unwrap();
+        paths.push(format!("/hueco/{}", db.slot_offers.iter().find(|o| o.id == offer).unwrap().invites[0].token));
+        // datos inventados, los mismos en todas las fichas, para buscarlos en las páginas
+        let secret = [
+            "Apellidoreservado",
+            "11111111H",
+            "699111222",
+            "955111222",
+            "persona@ejemplo.invalid",
+            "Calle Reservada",
+            "01/05/1980",
+            "1980-05-01",
+            "4242424",
+            "ES9121000418450200051332",
+            "Alergiareservada",
+            "Antecedentereservado",
+            "Notareservada",
+            "Alertareservada",
+        ];
+        for p in db.patients.iter_mut() {
+            (p.last_name, p.nif, p.mobile, p.phone, p.email, p.address) = (secret[0].into(), secret[1].into(), secret[2].into(), secret[3].into(), secret[4].into(), format!("{} 7", secret[5]));
+            (p.birth, p.history_no, p.iban) = (NaiveDate::from_ymd_opt(1980, 5, 1), 4242424, secret[9].into());
+            (p.allergies, p.background, p.notes, p.alerts) = (secret[10].into(), secret[11].into(), secret[12].into(), secret[13].into());
+        }
+        let srv = listen(0, false, publish(&db, today), || {}).unwrap();
+        let base = format!("http://127.0.0.1:{}", srv.port);
+        assert_eq!(paths.len(), 8, "un enlace de cada clase");
+        for path in paths {
+            for p in [path.clone(), format!("/api{path}")] {
+                let page = match ureq::get(&format!("{base}{p}")).call() {
+                    Ok(r) => r.into_string().unwrap(),
+                    Err(ureq::Error::Status(c, r)) if p.starts_with("/api") => format!("{c} {}", r.into_string().unwrap()),
+                    Err(e) => panic!("{p}: {e}"),
+                };
+                assert!(p.starts_with("/api") || page.contains("<html") || page.contains("<!doctype") || page.contains("<!DOCTYPE"), "{p}: {page}");
+                for x in secret {
+                    assert!(!page.contains(x), "{p} enseña «{x}»");
+                }
+            }
+        }
+    }
+
     /// T-R7-6. Las páginas públicas no aceptan peticiones de más de `MAX_BODY`.
     #[test]
     fn public_pages_refuse_oversized_requests() {

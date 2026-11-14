@@ -963,6 +963,69 @@ mod tests {
         Request { jpeg: jpeg_for_ai(&img).unwrap(), kind: "Radiografía periapical".into(), teeth: vec![46], age: Some(40) }
     }
 
+    /// T-R7-7. A la IA solo viaja la imagen, sin los metadatos del fichero, con
+    /// el tipo, las piezas y, si se quiere, la edad. No viaja nada de la ficha:
+    /// tampoco el nombre que traiga el propio fichero.
+    #[test]
+    fn only_pixels_and_non_identifying_data_reach_the_agent() {
+        // una radiografía PNG con el nombre y el documento en sus metadatos
+        let secret: [&[u8]; 2] = [b"Apellidoreservado", b"11111111H"];
+        let mut png = vec![];
+        image::RgbImage::from_pixel(64, 48, image::Rgb([90, 90, 90])).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        let crc = |b: &[u8]| {
+            let mut c = !0u32;
+            for &x in b {
+                c ^= x as u32;
+                for _ in 0..8 {
+                    c = if c & 1 != 0 { (c >> 1) ^ 0xEDB8_8320 } else { c >> 1 };
+                }
+            }
+            !c
+        };
+        let data = [b"tEXt".as_slice(), b"Comment\0Paciente: Apellidoreservado, 11111111H"].concat();
+        let mut chunk = ((data.len() - 4) as u32).to_be_bytes().to_vec();
+        chunk.extend(&data);
+        chunk.extend(crc(&data).to_be_bytes());
+        png.splice(33..33, chunk); // detrás de la firma y de la cabecera IHDR
+        let has = |b: &[u8], x: &[u8]| b.windows(x.len()).any(|w| w == x);
+        assert!(secret.iter().all(|x| has(&png, x)), "el fichero sí los lleva");
+        let path = std::env::temp_dir().join(format!("vd_ia_meta_{}.png", std::process::id()));
+        std::fs::write(&path, &png).unwrap();
+        let img = crate::model::PatientImage {
+            id: 1,
+            patient_id: 101,
+            kind: crate::model::ImageKind::Periapical,
+            date: crate::model::today(),
+            teeth: vec![46],
+            path: path.display().to_string(),
+            source: "Importada".into(),
+            notes: "Apellidoreservado".into(),
+            demo: false,
+        };
+        let rgb = crate::screens::imagenes::rgb_for_ai(&img).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let req = Request { jpeg: jpeg_for_ai(&rgb).unwrap(), kind: img.kind.label().to_string(), teeth: img.teeth.clone(), age: Some(40) };
+        assert!(secret.iter().all(|x| !has(&req.jpeg, x)), "en la imagen que viaja, solo los píxeles");
+        // lo que recibe el servicio
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let url = format!("http://127.0.0.1:{}/v1", server.server_addr().to_ip().unwrap().port());
+        let h = std::thread::spawn(move || {
+            let mut rq = server.recv().unwrap();
+            let mut body = String::new();
+            rq.as_reader().read_to_string(&mut body).unwrap();
+            let good = r#"{"resumen":"Sin hallazgos.","calidad":"buena","hallazgos":[],"propuesta":[]}"#;
+            rq.respond(tiny_http::Response::from_string(json!({"choices": [{"message": {"content": good}}]}).to_string())).unwrap();
+            body
+        });
+        let cfg = IaConfig { agents: vec![agent(1, Provider::Custom, &url, "bueno", true)], ..Default::default() };
+        assert!(analyze(&cfg, Mode::FreeOnly, &req, 0, &|_| {}).result.is_ok());
+        let body = h.join().unwrap();
+        let v: Value = serde_json::from_str(&body).unwrap();
+        let text = v.to_string();
+        assert!(text.contains("Radiografía periapical") && text.contains("46") && text.contains("40 años"));
+        assert!(!text.contains("Apellidoreservado") && !text.contains("11111111H") && !text.contains("Importada") && !text.contains("vd_ia_meta"), "nada de la ficha ni del fichero");
+    }
+
     #[test]
     fn falls_back_to_next_free_agent_and_never_pays() {
         let (url, h) = fake_service(3);

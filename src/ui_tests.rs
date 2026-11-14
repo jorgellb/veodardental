@@ -899,11 +899,10 @@ fn lab_order_sent_by_email_with_attachments() {
         h.step();
     }
     h.get_by_label(&label).click();
-    h.get_by_label("Sin el nombre del paciente (iniciales y nº de historia)").click();
     h.step();
     let w = h.state().db.lab_works.iter().find(|w| w.id == wid).unwrap().clone();
     assert_eq!(w.attachments.len(), 1, "se marca la panorámica");
-    assert!(w.anonymize);
+    assert!(w.anonymize, "por defecto, sin el nombre del paciente (D-30)");
     h.get_by_label("✉ Enviar por correo").click();
     for _ in 0..300 {
         h.step();

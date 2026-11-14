@@ -267,3 +267,15 @@ Las facturas ya emitidas calculan su total al vuelo, y ese total entra en su hue
   - Al aceptar un presupuesto, el tratamiento copia la de su línea.
   - La rectificativa copia la de la factura.
 - **Versión de los datos:** sigue siendo la 2. Esa versión aún no se ha publicado, y el campo nuevo tiene valor por defecto.
+
+## D-30 La orden al laboratorio va de serie sin el nombre del paciente
+**Contexto.** La revisión de minimización (T-R7-7) encontró que la orden de trabajo al laboratorio salía con el nombre completo del paciente. Iba en el documento, en el asunto y en el nombre del paquete, salvo que alguien marcara «Sin el nombre del paciente». Al laboratorio le basta con identificar el caso. La declaración de los productos a medida admite un seudónimo.
+
+**Decisión:**
+- Los trabajos nuevos se crean marcados: iniciales y número de historia.
+- La clínica puede desmarcarlo en cada trabajo.
+- Las alergias siguen yendo, porque hacen falta para elegir el material.
+- Los trabajos ya guardados conservan lo que tenían.
+
+**Consecuencia:** protección de datos por defecto (RGPD, artículo 25). Pruebas: `lab_order::tests::order_document_and_package` y `ui_tests::lab_order_sent_by_email_with_attachments`.
+

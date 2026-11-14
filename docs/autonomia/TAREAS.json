@@ -1090,8 +1090,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Revisión con pruebas de que no salen datos de salud innecesarios; fixtures ficticios",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-082"]
   },
   {
    "id": "T-CIERRE-01",
