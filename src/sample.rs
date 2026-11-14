@@ -202,6 +202,7 @@ impl Db {
                 support_email: String::new(),
                 iae_epigrafe: String::new(),
                 actividad_tipo: String::new(),
+                kpi_goals: Default::default(),
             },
             treatments,
             tariffs: tariffs.into(),

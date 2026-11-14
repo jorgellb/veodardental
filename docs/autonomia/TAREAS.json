@@ -2425,8 +2425,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Cada indicador probado con operaciones sintéticas calculadas aparte",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-043"
+   ]
   },
   {
    "id": "T-F5-02",

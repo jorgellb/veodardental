@@ -1111,3 +1111,30 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 449 pasan, 0 fallan, 10 ignoradas |
+
+## E-043 T-F5-01: cuadro de mando con fórmulas definidas y verificación independiente
+- **Hecho (`src/cuadro.rs`, Informes › Cuadro de mando):** cada indicador con su fórmula, su denominador y lo que no entra (detallado en el módulo). Todo se cuenta en enteros (minutos, citas, céntimos); sin denominador se muestra «—», no un 0 %.
+  - **Ocupación de cada profesional:** minutos citados ÷ minutos de su horario. Del horario se quitan festivos y bloqueos, y los bloqueos solapados cuentan una vez. Las citas anuladas y reprogramadas no cuentan; las de «no acude» sí, porque el hueco estaba reservado.
+  - **Ocupación de cada gabinete:** minutos citados ÷ minutos que abre la clínica.
+  - **Ausencias:** «no acude» ÷ (finalizadas + «no acude»). Las citas sin cerrar se cuentan aparte.
+  - **Aceptación de presupuestos:** en número y en importe, aceptados o cerrados ÷ presentados.
+  - **Producción por hora de sillón:** producción del informe ÷ horas de citas finalizadas, en total y por profesional.
+  - **Recalls citados:** citados ÷ recalls con fecha prevista en el periodo.
+  - **Filtros:** los de los informes. Se dice qué indicador no es de un centro (los profesionales, los presupuestos y los recalls).
+  - **Comparación** con el periodo anterior de la misma duración, y **objetivos** de la clínica, cada uno opcional (`ClinicConfig::kpi_goals`).
+- **Verificación independiente:** una semana sintética (16 a 22/11/2026) con un festivo, dos bloqueos solapados, dos profesionales con horarios distintos, citas en todos los estados, actos dentro y fuera del periodo, presupuestos y recalls. Los valores esperados están calculados a mano en el comentario de la prueba, no con el código:
+  - `cuadro::tests::each_indicator_matches_the_operations` (por ejemplo, 225 ÷ 1110 minutos, 1 ÷ 5 ausencias, 230,50 € en 210 minutos);
+  - `cuadro::tests::filters_comparison_and_goals`;
+  - `cuadro::tests::overlapping_blocks_are_not_counted_twice`.
+- **Pantalla:**
+  - los indicadores van en una rejilla de etiquetas, no pintados, para que se lean con un lector de pantalla;
+  - `ui_tests::the_dashboard_shows_each_indicator_with_its_formula` comprueba la fórmula que se ve con los valores de `cuadro` y un objetivo marcado;
+  - `ui_tests::every_screen_fits_1280_wide` incluye la pestaña nueva;
+  - captura: `docs/autonomia/capturas/informes_cuadro_de_mando.png`, con los datos de ejemplo.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 453 pasan, 0 fallan, 10 ignoradas |

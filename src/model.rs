@@ -661,6 +661,9 @@ pub struct ClinicConfig {
     pub iae_epigrafe: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub actividad_tipo: String,
+    /// Objetivos del cuadro de mando (ver `cuadro`).
+    #[serde(default, skip_serializing_if = "crate::cuadro::Goals::is_empty")]
+    pub kpi_goals: crate::cuadro::Goals,
     /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub support_email: String,

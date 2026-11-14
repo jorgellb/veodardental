@@ -2523,6 +2523,45 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// El cuadro de mando enseña cada indicador con su fórmula y los valores de
+/// `cuadro` (los mismos que comprueban sus pruebas), y guarda un objetivo.
+#[test]
+fn the_dashboard_shows_each_indicator_with_its_formula() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 3200.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Informes;
+        a.lists.report_tab = 8;
+        a.lists.report_from = a.today - chrono::Duration::days(30);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    for label in ["Ocupación de profesionales", "Ocupación de gabinetes", "Ausencias («no acude»)", "Aceptación de presupuestos", "Producción por hora de sillón", "Recalls que terminan en cita", "Por profesional", "Por gabinete", "Objetivos"]
+    {
+        h.get_by_label(label);
+    }
+    let k = {
+        let a = h.state();
+        a.db.dashboard(&crate::informes::Filter { from: a.lists.report_from, to: a.lists.report_to, center: None, doctor: None })
+    };
+    let how = format!("{} min citados ÷ {} min de horario (sin festivos ni bloqueos; las anuladas y reprogramadas no cuentan)", k.doctors_total.num, k.doctors_total.den);
+    h.get_by_label(&how);
+    assert!(k.doctors_total.den > 0, "los datos de ejemplo tienen horario");
+    // un objetivo (la ventana es alta para que se vea sin desplazar)
+    h.get_by_label("Aceptación mínima").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.config.kpi_goals.acceptance_pct, Some(50.0));
+    assert!(!h.query_all_by_label("Cumple").chain(h.query_all_by_label("No cumple")).collect::<Vec<_>>().is_empty(), "con objetivo se marca si se cumple");
+}
+
 /// Lo que se sale a la derecha de la ventana (o empieza fuera por la
 /// izquierda) en la pantalla que se ve: (nombre del elemento, su borde derecho).
 fn offscreen(h: &Harness<'static, App>, width: f32) -> Vec<(String, f32)> {
@@ -2585,7 +2624,7 @@ fn every_screen_fits_1280_wide() {
             }
         }
         // las pestañas de Informes y los apartados de Configuración
-        for tab in 0..8 {
+        for tab in 0..9 {
             {
                 let a = h.state_mut();
                 a.screen = crate::app::Screen::Informes;

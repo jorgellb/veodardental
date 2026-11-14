@@ -51,12 +51,12 @@ impl Filter {
         Filter { from, to, center: None, doctor: None }
     }
 
-    fn day(&self, d: NaiveDate) -> bool {
+    pub(crate) fn day(&self, d: NaiveDate) -> bool {
         d >= self.from && d <= self.to
     }
 
     /// (0 = centro principal, como en el resto del programa)
-    fn center(&self, c: u32) -> bool {
+    pub(crate) fn center(&self, c: u32) -> bool {
         self.center.is_none_or(|f| cid(f) == cid(c))
     }
 }

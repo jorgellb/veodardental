@@ -2,6 +2,7 @@
 //! de colaboradores, ingresos mensuales, presupuestos pendientes y el
 //! resumen económico. Los totales salen de `crate::informes`, que define qué
 //! entra en cada uno, con los mismos filtros de periodo, centro y profesional.
+//! El cuadro de mando, de `crate::cuadro`, con sus fórmulas.
 
 use crate::app::{App, Dialog, PatTab};
 use crate::informes::Filter;
@@ -10,7 +11,7 @@ use crate::theme::*;
 use chrono::Datelike;
 use egui::{Align2, CornerRadius, FontId, RichText, Sense, Ui, pos2, vec2};
 
-const TABS: [&str; 8] = ["Pendientes de cobro", "Libro diario", "Producción", "Ingresos", "Presupuestos", "Captación", "Consultas", "Resumen económico"];
+const TABS: [&str; 9] = ["Pendientes de cobro", "Libro diario", "Producción", "Ingresos", "Presupuestos", "Captación", "Consultas", "Resumen económico", "Cuadro de mando"];
 
 /// El filtro de los informes con lo elegido en la pantalla.
 fn filter(app: &App) -> Filter {
@@ -28,7 +29,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     });
     let tab = app.lists.report_tab;
     ui.horizontal_wrapped(|ui| {
-        if matches!(tab, 1 | 2 | 5 | 7) {
+        if matches!(tab, 1 | 2 | 5 | 7 | 8) {
             ui.label("Desde");
             crate::screens::date_picker(ui, "rep_from", &mut app.lists.report_from);
             ui.label("hasta");
@@ -38,7 +39,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             ui.label("Deuda a");
             crate::screens::date_picker(ui, "rep_debt", &mut app.lists.report_debt_at);
         }
-        if matches!(tab, 1 | 2 | 3 | 7) && app.db.multi_center() {
+        if matches!(tab, 1 | 2 | 3 | 7 | 8) && app.db.multi_center() {
             ui.add_space(8.0);
             ui.label("Centro");
             let centers: Vec<(u32, String)> = app.db.centers.iter().filter(|c| c.active).map(|c| (c.id, c.name.clone())).collect();
@@ -50,7 +51,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
             });
         }
-        if matches!(tab, 1 | 7) {
+        if matches!(tab, 1 | 7 | 8) {
             ui.add_space(8.0);
             ui.label("Profesional");
             let docs: Vec<(u32, String)> = app.db.collaborators.iter().filter(|c| c.active || Some(c.id) == app.lists.report_doctor).map(|c| (c.id, c.alias.clone())).collect();
@@ -72,7 +73,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         4 => budgets(app, ui),
         5 => crate::screens::salud::captacion(app, ui),
         6 => crate::screens::herramientas::consultas(app, ui),
-        _ => summary(app, ui),
+        7 => summary(app, ui),
+        _ => dashboard(app, ui),
     });
 }
 
@@ -385,4 +387,172 @@ fn budgets(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::Budget(id);
         }
     });
+}
+
+/// Fila del cuadro de mando: nombre, valor, anterior, objetivo, si se cumple y fórmula.
+type KpiRow = (&'static str, String, String, String, Option<bool>, String);
+
+fn pct_text(v: Option<f64>) -> String {
+    v.map(|x| format!("{x:.1} %").replace('.', ",")).unwrap_or_else(|| "—".into())
+}
+
+/// Cuadro de mando: cada indicador con su fórmula, el periodo anterior y el
+/// objetivo de la clínica (ver `crate::cuadro`).
+fn dashboard(app: &mut App, ui: &mut Ui) {
+    use crate::cuadro::{meets, previous};
+    let f = filter(app);
+    let k = app.db.dashboard(&f);
+    let before = app.db.dashboard(&previous(&f));
+    let g = app.db.config.kpi_goals.clone();
+    let per_hour = |c: Option<crate::cents::Cents>| c.map(|c| c.to_string()).unwrap_or_else(|| "—".into());
+    let per_hour_eur = |c: Option<crate::cents::Cents>| c.map(|c| c.0 as f64 / 100.0);
+    let rows: Vec<KpiRow> = vec![
+        (
+            "Ocupación de profesionales",
+            pct_text(k.doctors_total.pct()),
+            pct_text(before.doctors_total.pct()),
+            pct_text(g.occupancy_pct),
+            meets(k.doctors_total.pct(), g.occupancy_pct, true),
+            format!("{} min citados ÷ {} min de horario (sin festivos ni bloqueos; las anuladas y reprogramadas no cuentan)", k.doctors_total.num, k.doctors_total.den),
+        ),
+        ("Ocupación de gabinetes", pct_text(k.boxes_total.pct()), pct_text(before.boxes_total.pct()), "—".into(), None, format!("{} min citados ÷ {} min que abre la clínica, sumando los gabinetes", k.boxes_total.num, k.boxes_total.den)),
+        (
+            "Ausencias («no acude»)",
+            pct_text(k.no_shows.rate().pct()),
+            pct_text(before.no_shows.rate().pct()),
+            g.no_show_pct.map(|x| format!("≤ {}", pct_text(Some(x)))).unwrap_or_else(|| "—".into()),
+            meets(k.no_shows.rate().pct(), g.no_show_pct, false),
+            format!("{} «no acude» ÷ ({} finalizadas + {} «no acude»); {} sin cerrar no entran", k.no_shows.missed, k.no_shows.attended, k.no_shows.missed, k.no_shows.unclosed),
+        ),
+        (
+            "Aceptación de presupuestos",
+            pct_text(k.acceptance.count.pct()),
+            pct_text(before.acceptance.count.pct()),
+            pct_text(g.acceptance_pct),
+            meets(k.acceptance.count.pct(), g.acceptance_pct, true),
+            format!("{} aceptados o cerrados ÷ {} presentados en el periodo ({} rechazados, {} pendientes)", k.acceptance.count.num, k.acceptance.count.den, k.acceptance.rejected, k.acceptance.pending),
+        ),
+        (
+            "Aceptación en importe",
+            pct_text(k.acceptance.amount.pct()),
+            pct_text(before.acceptance.amount.pct()),
+            "—".into(),
+            None,
+            format!("{} aceptados ÷ {} presentados", crate::cents::Cents(k.acceptance.amount.num), crate::cents::Cents(k.acceptance.amount.den)),
+        ),
+        (
+            "Producción por hora de sillón",
+            per_hour(k.chair_total.per_hour()),
+            per_hour(before.chair_total.per_hour()),
+            g.per_hour_eur.map(|x| crate::cents::Cents::from_eur(x).to_string()).unwrap_or_else(|| "—".into()),
+            meets(per_hour_eur(k.chair_total.per_hour()), g.per_hour_eur, true),
+            format!("{} de producción ÷ {} min de citas finalizadas", k.chair_total.production, k.chair_total.minutes),
+        ),
+        (
+            "Recalls que terminan en cita",
+            pct_text(k.recalls.rate().pct()),
+            pct_text(before.recalls.rate().pct()),
+            pct_text(g.recall_pct),
+            meets(k.recalls.rate().pct(), g.recall_pct, true),
+            format!("{} citados ÷ {} con fecha prevista en el periodo ({} rechazados)", k.recalls.booked, k.recalls.due, k.recalls.rejected),
+        ),
+    ];
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Indicadores");
+        muted(ui, "Cada valor dice cómo se calcula. Sin denominador se muestra «—»: no es un 0 %. El periodo anterior es el de la misma duración justo antes.");
+        ui.add_space(4.0);
+        // la primera columna, con su fórmula, ocupa lo que dejan las otras
+        let first = (ui.available_width() - 420.0).max(280.0);
+        // con etiquetas (no pintado): se leen con un lector de pantalla
+        egui::Grid::new("kpi").num_columns(5).striped(true).spacing([18.0, 6.0]).show(ui, |ui| {
+            for h in ["Indicador", "Valor", "Anterior", "Objetivo", ""] {
+                ui.label(RichText::new(h).font(sbf(13.0)).color(MUTED));
+            }
+            ui.end_row();
+            for (name, v, prev, goal, ok, how) in rows {
+                ui.vertical(|ui| {
+                    ui.set_width(first);
+                    ui.label(RichText::new(name).font(sbf(14.0)));
+                    ui.label(RichText::new(how).size(12.5).color(MUTED));
+                });
+                ui.label(RichText::new(v).font(sbf(15.0)));
+                ui.label(prev);
+                ui.label(goal);
+                match ok {
+                    Some(true) => ui.label(RichText::new("Cumple").color(OK)),
+                    Some(false) => ui.label(RichText::new("No cumple").color(DANGER)),
+                    None => ui.label(""),
+                };
+                ui.end_row();
+            }
+        });
+    });
+    ui.add_space(8.0);
+    let half = (ui.available_width() - 12.0) / 2.0;
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, "Por profesional");
+                muted(ui, "Su horario no es de un centro: el filtro de centro no cambia su ocupación.");
+                let tbl = Table::new("kpi_doc", vec![("Profesional", 160.0), ("Ocupación", 90.0), ("Citado / horario", 140.0), ("Por hora", 100.0)]);
+                tbl.header(ui);
+                for (i, o) in k.doctors.iter().enumerate() {
+                    let name = app.db.doctor(o.id).map(|c| c.alias.clone()).unwrap_or_else(|| format!("#{}", o.id));
+                    let hour = k.chair.iter().find(|c| c.id == o.id).and_then(|c| c.per_hour());
+                    tbl.row(ui, i, false, &[cell(name), cell(pct_text(o.minutes.pct())), cell(format!("{} / {} min", o.minutes.num, o.minutes.den)), cell(per_hour(hour))]);
+                }
+            });
+        });
+        ui.add_space(12.0);
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            card(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section(ui, "Por gabinete");
+                let tbl = Table::new("kpi_box", vec![("Gabinete", 160.0), ("Ocupación", 90.0), ("Citado / abierto", 140.0)]);
+                tbl.header(ui);
+                for (i, o) in k.boxes.iter().enumerate() {
+                    let name = app.db.boxes.iter().find(|b| b.id == o.id).map(|b| b.name.clone()).unwrap_or_default();
+                    tbl.row(ui, i, false, &[cell(name), cell(pct_text(o.minutes.pct())), cell(format!("{} / {} min", o.minutes.num, o.minutes.den))]);
+                }
+            });
+        });
+    });
+    ui.add_space(8.0);
+    goals_card(app, ui);
+}
+
+/// Objetivos de la clínica (cada uno opcional).
+fn goals_card(app: &mut App, ui: &mut Ui) {
+    let before = app.db.config.kpi_goals.clone();
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Objetivos");
+        muted(ui, "Los pone la clínica; sin objetivo no se marca nada.");
+        let g = &mut app.db.config.kpi_goals;
+        ui.horizontal_wrapped(|ui| {
+            for (label, v, max, unit) in [
+                ("Ocupación mínima", &mut g.occupancy_pct, 100.0, "%"),
+                ("Ausencias máximas", &mut g.no_show_pct, 100.0, "%"),
+                ("Aceptación mínima", &mut g.acceptance_pct, 100.0, "%"),
+                ("Producción por hora", &mut g.per_hour_eur, 100_000.0, "€"),
+                ("Recalls citados", &mut g.recall_pct, 100.0, "%"),
+            ] {
+                let mut on = v.is_some();
+                if ui.checkbox(&mut on, label).changed() {
+                    *v = on.then_some(if unit == "%" { 50.0 } else { 60.0 });
+                }
+                if let Some(x) = v.as_mut() {
+                    ui.add(egui::DragValue::new(x).range(0.0..=max).speed(1.0).suffix(format!(" {unit}")));
+                }
+                ui.add_space(12.0);
+            }
+        });
+    });
+    if app.db.config.kpi_goals != before {
+        app.changed();
+    }
 }
