@@ -171,6 +171,10 @@ impl Db {
         if budget_hash(self, &b) != hash {
             return Err("El presupuesto ha cambiado mientras lo revisaba: vuelva a abrirlo, por favor.".into());
         }
+        // otra versión más nueva, u otra alternativa del plan ya aceptada
+        if let Some(p) = self.accept_problem(bid) {
+            return Err(p);
+        }
         let strokes = clean_strokes(&strokes)?;
         if installments > 0 && !installment_options(self, &b).iter().any(|o| o.0 == installments) {
             return Err("Esa forma de pago no está disponible.".into());
@@ -182,7 +186,7 @@ impl Db {
             let down = x.plan.as_ref().filter(|p| p.installments == installments).map(|p| p.down_payment).unwrap_or(0.0);
             x.plan = Some(FinancePlan { down_payment: down, installments, first_date: add_months(today(), 1), every_months: 1, paid: vec![false; installments as usize] });
         }
-        self.accept_budget(bid, today());
+        self.accept_plan(bid, &format!("{signer} (por internet)"), today()).map_err(|e| format!("No se puede aceptar: {e}"))?;
         let b = self.budgets.iter().find(|b| b.id == bid).cloned().unwrap_or(b);
         let pay = pay_text(&b);
         let lines: Vec<String> = b

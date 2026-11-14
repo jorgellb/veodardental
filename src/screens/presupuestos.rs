@@ -33,6 +33,7 @@ pub fn new_budget(app: &mut App, pid: u32) -> u32 {
         reject_reason: String::new(),
         notes: String::new(),
         plan: None,
+        tp: Default::default(),
     });
     app.changed();
     id
@@ -145,7 +146,11 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
     let mut reject = false;
     let mut delete = false;
     let mut to_patient = false;
-    let editable = b.state == BudgetState::Pendiente;
+    // plan de tratamiento: alternativa nueva, versión nueva o abrir otra del plan
+    let mut plan_act: Option<u8> = None;
+    let mut open_other: Option<u32> = None;
+    // una versión sustituida se conserva tal cual
+    let editable = b.state == BudgetState::Pendiente && b.tp.replaced_by.is_none();
     // con cuotas cobradas o en una remesa, el plan ya no se toca (ni se borra el presupuesto)
     let locked = app.db.plan_locked(id);
     crate::theme::modal("budget_dlg").show(ctx, |ui| {
@@ -194,16 +199,20 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section(ui, "Líneas");
-            let tbl = Table::new("blines", vec![("Código", 64.0), ("Tratamiento", 300.0), ("Piezas", 110.0), ("Uds.", 70.0), ("Precio", 100.0), ("Dto. %", 80.0), ("Importe", 110.0), ("", 40.0)]);
+            let tbl = Table::new("blines", vec![("Código", 64.0), ("Tratamiento", 250.0), ("Piezas", 110.0), ("Fase", 60.0), ("Uds.", 70.0), ("Precio", 100.0), ("Dto. %", 80.0), ("Importe", 110.0), ("", 40.0)]);
             tbl.header(ui);
             let mut remove = None;
             for (i, l) in b.lines.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
                     lab(ui, 60.0, &l.code);
-                    lab(ui, 296.0, &l.description);
+                    lab(ui, 246.0, &l.description);
                     let teeth: Vec<String> = l.teeth.iter().map(|t| t.to_string()).collect();
                     lab(ui, 106.0, teeth.join("-"));
                     ui.add_enabled_ui(editable, |ui| {
+                        let mut ph = l.phase as u32 + 1;
+                        if ui.add_sized([56.0, 32.0], egui::DragValue::new(&mut ph).range(1..=9)).on_hover_text("Fase del plan de tratamiento").changed() {
+                            l.phase = (ph - 1) as u8;
+                        }
                         ui.add_sized([66.0, 32.0], egui::DragValue::new(&mut l.units).range(1..=99));
                         ui.add_sized([96.0, 32.0], egui::DragValue::new(&mut l.price).range(0.0..=100000.0).speed(1.0).suffix(" €"));
                         ui.add_sized([76.0, 32.0], egui::DragValue::new(&mut l.discount_pct).range(0.0..=100.0).speed(0.5).suffix(" %"));
@@ -297,6 +306,8 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 }
             });
         });
+        ui.add_space(6.0);
+        plan_card(app, ui, &mut b, editable, &mut plan_act, &mut open_other);
         // enviarlo para firmar por internet (con la página de cita online activada)
         if app.db.booking.enabled && app.db.booking.budgets && (b.state == BudgetState::Pendiente || app.db.budget_link(b.id).is_some()) {
             ui.add_space(6.0);
@@ -311,8 +322,17 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if b.state == BudgetState::Pendiente && primary(ui, "✔ Aceptar presupuesto").on_hover_text("Pasa los tratamientos al historial del paciente como previstos").clicked() {
-                accept = true;
+            if b.state == BudgetState::Pendiente {
+                let problem = app.db.accept_problem(id).filter(|_| !b.lines.is_empty());
+                let label = if b.tp.alt.is_empty() { "✔ Aceptar presupuesto".to_string() } else { format!("✔ Aceptar la alternativa {}", b.tp.alt) };
+                let r = ui.add_enabled(problem.is_none(), egui::Button::new(RichText::new(label).color(egui::Color32::WHITE)).fill(ACCENT));
+                let r = match &problem {
+                    Some(p) => r.on_disabled_hover_text(p),
+                    None => r.on_hover_text("Pasa los tratamientos al historial del paciente como previstos y descarta las demás alternativas del plan"),
+                };
+                if r.clicked() {
+                    accept = true;
+                }
             }
             if ui.button("Guardar y cerrar").clicked() {
                 open = false;
@@ -359,17 +379,43 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
             app.warn("El presupuesto no tiene líneas.");
             return Dialog::Budget(id);
         }
-        app.db.accept_budget(id, app.today);
-        if let Some(pl) = &b.plan {
-            if pl.down_payment > 0.0 {
-                app.notify(format!("Presupuesto aceptado. Recuerde cobrar la entrada de {}.", money(pl.down_payment)));
-            } else {
-                app.notify("Presupuesto aceptado: tratamientos añadidos como previstos.");
+        let who = app.db.config.current_user.clone();
+        let r = match app.db.accept_plan(id, &who, app.today) {
+            Ok(r) => r,
+            Err(e) => {
+                app.warn(e);
+                return Dialog::Budget(id);
             }
-        } else {
-            app.notify("Presupuesto aceptado: tratamientos añadidos como previstos.");
+        };
+        let mut msg = "Presupuesto aceptado: tratamientos añadidos como previstos.".to_string();
+        if !r.discarded.is_empty() {
+            msg.push_str(&format!(" Descartadas {} alternativa(s) del plan.", r.discarded.len()));
         }
+        if !r.consents.is_empty() {
+            msg.push_str(&format!(" {} consentimiento(s) preparados para firmar en Documentos.", r.consents.len()));
+        }
+        if let Some(pl) = &b.plan
+            && pl.down_payment > 0.0
+        {
+            msg.push_str(&format!(" Recuerde cobrar la entrada de {}.", money(pl.down_payment)));
+        }
+        app.notify(msg);
         app.changed();
+        return Dialog::Budget(id);
+    }
+    if let Some(other) = open_other {
+        return Dialog::Budget(other);
+    }
+    if let Some(act) = plan_act {
+        let made = if act == 0 { app.db.new_alternative(id) } else { app.db.new_version(id) };
+        match made {
+            Ok(n) => {
+                app.changed();
+                app.notify(if act == 0 { "Alternativa creada: cámbiela como haga falta." } else { "Versión nueva creada: la anterior se conserva tal cual." });
+                return Dialog::Budget(n);
+            }
+            Err(e) => app.warn(e),
+        }
         return Dialog::Budget(id);
     }
     if reject {
@@ -387,6 +433,68 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
         return Dialog::None;
     }
     if open { Dialog::Budget(id) } else { app.dialog_take_or_none() }
+}
+
+/// Plan de tratamiento: fases con su subtotal, alternativas y versiones (ver `crate::plan`).
+fn plan_card(app: &App, ui: &mut Ui, b: &mut Budget, editable: bool, act: &mut Option<u8>, open_other: &mut Option<u32>) {
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            section(ui, "Plan de tratamiento");
+            let label = b.plan_label();
+            if !label.is_empty() {
+                pill(ui, &label, INFO);
+            }
+        });
+        if let Some(n) = b.tp.replaced_by {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Sustituido por una versión más nueva: se conserva tal cual y ya no se puede aceptar.").color(WARN));
+                if ui.small_button("Abrir la versión nueva").clicked() {
+                    *open_other = Some(n);
+                }
+            });
+        }
+        if let Some(n) = b.tp.discarded_for {
+            ui.label(RichText::new(format!("Descartado: se eligió otra alternativa del plan (#{n}).")).color(MUTED));
+        }
+        // fases con su subtotal (suman exactamente el total)
+        let phases = b.phase_totals();
+        if phases.len() > 1 {
+            for (p, _name, sum) in &phases {
+                ui.horizontal(|ui| {
+                    let i = *p as usize;
+                    if b.tp.phases.len() <= i {
+                        b.tp.phases.resize(i + 1, String::new());
+                    }
+                    ui.add_enabled(editable, egui::TextEdit::singleline(&mut b.tp.phases[i]).hint_text(format!("Fase {}", i + 1)).desired_width(220.0));
+                    ui.label(RichText::new(sum.to_string()).family(crate::theme::sb()));
+                });
+            }
+            ui.label(RichText::new(format!("Total del plan: {}", b.total_cents())).family(crate::theme::sb()));
+        } else {
+            muted(ui, "Ponga cada línea en su fase (columna «Fase») para ver el plan por fases con su subtotal.");
+        }
+        // las demás alternativas del plan
+        let others: Vec<(u32, String, String, BudgetState)> = app.db.plan_alternatives(b.id).iter().filter(|x| x.id != b.id).map(|x| (x.id, x.tp.alt.clone(), x.total_cents().to_string(), x.state)).collect();
+        for (oid, alt, total, st) in others {
+            ui.horizontal(|ui| {
+                ui.label(format!("Alternativa {alt} · {total} · {}", st.label()));
+                if ui.small_button("Abrir").clicked() {
+                    *open_other = Some(oid);
+                }
+            });
+        }
+        if b.state == BudgetState::Pendiente && b.tp.replaced_by.is_none() {
+            ui.horizontal(|ui| {
+                if ui.button("Crear alternativa").on_hover_text("Una copia en el mismo plan para cambiarla (por ejemplo, un puente en vez de un implante)").clicked() {
+                    *act = Some(0);
+                }
+                if ui.button("Versión nueva").on_hover_text("Para cambiarlo después de presentarlo: la versión anterior se conserva tal cual").clicked() {
+                    *act = Some(1);
+                }
+            });
+        }
+    });
 }
 
 fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
@@ -411,6 +519,7 @@ fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
                 price: app.db.price_for(&t.code, b.tariff_id),
                 discount_pct: app.db.patient(b.patient_id).map(|p| p.discount_pct).unwrap_or(0.0),
                 odg: t.odg,
+                phase: b.lines.last().map(|l| l.phase).unwrap_or(0),
             });
             st.1.clear();
         }

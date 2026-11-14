@@ -1056,7 +1056,7 @@ impl Db {
                     id
                 }
                 Entity::Presupuestos => {
-                    let line = BudgetLine { code: t.get(row, "codigo"), description: t.get(row, "descripcion"), teeth: teeth(&t.get(row, "piezas")), units: 1, price: v, discount_pct: 0.0, odg: OdgKind::Ninguno };
+                    let line = BudgetLine { code: t.get(row, "codigo"), description: t.get(row, "descripcion"), teeth: teeth(&t.get(row, "piezas")), units: 1, price: v, discount_pct: 0.0, odg: OdgKind::Ninguno, phase: 0 };
                     match self.imported(source, e, &key).and_then(|bid| self.budgets.iter_mut().find(|b| b.id == bid)) {
                         Some(b) => {
                             b.lines.push(line);
@@ -1090,6 +1090,7 @@ impl Db {
                                 reject_reason: String::new(),
                                 notes: format!("Importado de {source} ({key})"),
                                 plan: None,
+                                tp: Default::default(),
                             });
                             self.remember(source, e, &t.origin, &key, id, false);
                             id

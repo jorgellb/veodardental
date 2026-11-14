@@ -670,7 +670,14 @@ fn doc_templates(app: &mut App, ui: &mut Ui) {
                     right_aligned(ui, |ui| {
                         if ui.button("＋ Nuevo").clicked() {
                             let id = app.db.new_id();
-                            app.db.doc_templates.push(DocTemplate { id, name: "Nuevo documento".into(), category: "Consentimiento informado".into(), body: "D./Dña. [NOMBRE] [APELLIDOS] …\n\nEn [CIUDAD], a [FECHA].".into(), marks_gdpr: false });
+                            app.db.doc_templates.push(DocTemplate {
+                                id,
+                                name: "Nuevo documento".into(),
+                                category: "Consentimiento informado".into(),
+                                body: "D./Dña. [NOMBRE] [APELLIDOS] …\n\nEn [CIUDAD], a [FECHA].".into(),
+                                marks_gdpr: false,
+                                for_kinds: vec![],
+                            });
                             app.comms.doc_tpl_sel = Some(id);
                             app.changed();
                         }

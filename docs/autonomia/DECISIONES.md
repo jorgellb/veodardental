@@ -117,3 +117,13 @@ Las rutas locales se importan siempre, porque no salen del ordenador.
 **Los datos no se tocan durante el cambio de programa.** Se completan cuando la versión nueva arranca de verdad, con su copia previa. Así, volver atrás tras un corte nunca necesita restaurar datos. Volver atrás a mano días después solo lo necesita si la versión nueva cambió la de los datos, y el programa lo dice.
 
 **Firma de las versiones.** Va con Ed25519, con la clave pública en el programa y la privada fuera del repositorio. Hasta que exista (B-27), las versiones se instalan con su instalador.
+
+## D-23 Versión 2 de los datos
+**Contexto.** `DATA_VERSION` seguía en 1 desde el estado inicial, aunque este trabajo ha añadido campos. Desde T-F5-03 hay campos nuevos dentro de registros que ya existían (el plan de tratamiento en cada presupuesto, la fase de cada línea y la clase de tratamiento de los consentimientos). Un puesto con el programa anterior que editara uno de esos registros los borraría al guardarlo.
+
+**Decisión.** La versión de los datos pasa a 2, con la regla de D-22:
+- un puesto con otra versión lee, pero no escribe;
+- primero se actualiza el servidor;
+- al abrir datos de la versión 1 se hace antes una copia.
+
+**Al pasar a la versión 2** (`Db::upgrade`): los consentimientos de siempre (extracción, implantes y endodoncia) reciben la clase de tratamiento que los pide. Las plantillas que la clínica haya cambiado no se tocan.

@@ -20,7 +20,9 @@
 //!     aparte y no entran.
 //! - **Aceptación de presupuestos** = aceptados ÷ presentados, en número y en
 //!   importe.
-//!   - Presentados: los presupuestos con fecha en el periodo.
+//!   - Presentados: los presupuestos con fecha en el periodo, sin las
+//!     versiones sustituidas por otra ni las alternativas descartadas al
+//!     elegir otra del mismo plan (ver `plan`).
 //!   - Aceptados: los aceptados y los cerrados.
 //!   - Los presupuestos no son de un centro.
 //! - **Producción por hora de sillón** = producción del periodo
@@ -245,7 +247,7 @@ impl Db {
             }
         }
         // presupuestos presentados
-        for b in self.budgets.iter().filter(|b| f.day(b.date) && f.doctor.is_none_or(|d| d == b.doctor_id)) {
+        for b in self.budgets.iter().filter(|b| f.day(b.date) && f.doctor.is_none_or(|d| d == b.doctor_id) && b.tp.replaced_by.is_none() && b.tp.discarded_for.is_none()) {
             let amount = Cents::from_eur(b.total()).0;
             out.acceptance.count.den += 1;
             out.acceptance.amount.den += amount;

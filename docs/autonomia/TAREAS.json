@@ -2471,8 +2471,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Versiones, aceptación explícita, sumas exactas, sin duplicados y consentimientos enlazados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-045"
+   ]
   },
   {
    "id": "T-F5-04",

@@ -1171,3 +1171,33 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 461 pasan, 0 fallan, 10 ignoradas |
+
+## E-045 T-F5-03: plan de tratamiento por fases y alternativas, del odontograma al presupuesto
+- **Flujo (`src/plan.rs`, pantalla del presupuesto):**
+  1. Los previstos del odontograma pasan a un presupuesto, que es la alternativa A del plan.
+  2. **Fases:** cada línea va en una fase (columna «Fase»), con subtotal y nombre por fase.
+  3. **Alternativas:** copias en el mismo plan para cambiarlas («Crear alternativa»).
+  4. **Versiones:** «Versión nueva». La anterior se conserva tal cual, también si estaba firmada, y ya no se puede aceptar. Sus previstos pasan a la nueva.
+  5. **Aceptación expresa** de una alternativa («Aceptar la alternativa B»), también desde la firma por internet:
+     - las demás alternativas del plan quedan descartadas;
+     - los previstos comunes se reutilizan y los que solo eran de las descartadas se quitan;
+     - no se acepta dos veces, ni una versión sustituida, ni otra alternativa de un plan ya aceptado.
+  6. **Consentimientos:** al aceptar se crean, para firmar, los que piden sus tratamientos (plantilla con clase de tratamiento). Los firmados no se tocan y no se duplican.
+- **Sumas exactas:** en céntimos. Las fases suman exactamente el total, comprobado también con 200 presupuestos al azar, y el total exacto coincide con el que se imprime.
+- **Cuadro de mando:** las versiones sustituidas y las alternativas descartadas no cuentan como presupuestos presentados.
+- **Versión de los datos 2** (D-23), con su paso de actualización probado.
+- **Pruebas:**
+  - `plan::tests::phases_add_up_exactly_to_the_total`;
+  - `plan::tests::choosing_an_alternative_discards_the_others_without_duplicates`;
+  - `plan::tests::a_new_version_keeps_the_old_one_and_only_the_new_one_is_accepted`;
+  - `plan::tests::accepting_prepares_the_right_consents_and_leaves_signed_ones_alone`;
+  - `plan::tests::old_data_gets_the_consent_kinds_on_upgrade`;
+  - `ui_tests::a_treatment_plan_alternative_is_created_and_chosen`;
+  - captura: `docs/autonomia/capturas/presupuesto_plan_de_tratamiento.png`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 467 pasan, 0 fallan, 10 ignoradas |

@@ -2523,6 +2523,46 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Plan de tratamiento en el presupuesto: se crea una alternativa, se acepta
+/// expresamente y la otra queda descartada.
+#[test]
+fn a_treatment_plan_alternative_is_created_and_chosen() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 1600.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let bid;
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        bid = a.db.budgets.iter().find(|b| b.state == crate::model::BudgetState::Pendiente && !b.lines.is_empty()).map(|b| b.id).unwrap();
+        a.dialog = crate::app::Dialog::Budget(bid);
+    }
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("Plan de tratamiento");
+    h.get_by_label("Crear alternativa").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    let alt = match h.state().dialog {
+        crate::app::Dialog::Budget(id) => id,
+        _ => panic!("la alternativa se abre"),
+    };
+    assert_ne!(alt, bid);
+    assert_eq!(h.state().db.plan_alternatives(bid).len(), 2);
+    h.get_by_label("✔ Aceptar la alternativa B").click();
+    for _ in 0..4 {
+        h.step();
+    }
+    let db = &h.state().db;
+    let a = db.budgets.iter().find(|b| b.id == bid).unwrap();
+    assert_eq!((a.state, a.tp.discarded_for), (crate::model::BudgetState::Rechazado, Some(alt)));
+    assert_eq!(db.budgets.iter().find(|b| b.id == alt).unwrap().state, crate::model::BudgetState::Aceptado);
+}
+
 /// Pago por internet desde las pantallas: se pide desde el presupuesto (y
 /// el enlace queda copiado), sale en Cobros › Pagos por internet y un intento
 /// sin respuesta del banco se resuelve a mano tras comprobarlo en el portal.

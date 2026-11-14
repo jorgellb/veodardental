@@ -352,6 +352,13 @@ pub struct BudgetLine {
     pub price: f64,
     pub discount_pct: f64,
     pub odg: OdgKind,
+    /// Fase del plan de tratamiento (0: la primera).
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
+    pub phase: u8,
+}
+
+fn is_zero_u8(n: &u8) -> bool {
+    *n == 0
 }
 
 impl BudgetLine {
@@ -376,6 +383,9 @@ pub struct Budget {
     pub reject_reason: String,
     pub notes: String,
     pub plan: Option<FinancePlan>,
+    /// Plan de tratamiento: alternativa, versión y fases (ver `plan`).
+    #[serde(default, skip_serializing_if = "crate::plan::PlanInfo::is_default")]
+    pub tp: crate::plan::PlanInfo,
 }
 
 impl Budget {
@@ -877,7 +887,7 @@ pub fn default_centers() -> Vec<Center> {
 
 /// Los datos antiguos sin centro pertenecen al centro 1.
 /// Versión actual de los datos (ver `Db::upgrade`).
-pub const DATA_VERSION: u32 = 1;
+pub const DATA_VERSION: u32 = 2;
 
 pub fn cid(id: u32) -> u32 {
     if id == 0 { 1 } else { id }
@@ -1424,6 +1434,12 @@ impl Db {
             if !self.msg_templates.iter().any(|x| x.kind == t.kind && x.channel == Channel::Email) {
                 let id = self.msg_templates.iter().map(|x| x.id).max().unwrap_or(0) + 1;
                 self.msg_templates.push(crate::comms::MsgTemplate { id, ..t });
+            }
+        }
+        // versión 2: los consentimientos de siempre, con la clase de tratamiento que los pide (ver `plan`)
+        for t in crate::comms::default_doc_templates() {
+            if let Some(x) = self.doc_templates.iter_mut().find(|x| x.id == t.id && x.name == t.name && x.for_kinds.is_empty()) {
+                x.for_kinds = t.for_kinds;
             }
         }
         self.data_version = DATA_VERSION;
@@ -2038,7 +2054,7 @@ impl Db {
         }
         let p = self.patient(pid)?.clone();
         let id = self.new_id();
-        let lines = planned.iter().map(|e| BudgetLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, odg: e.odg }).collect();
+        let lines = planned.iter().map(|e| BudgetLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, odg: e.odg, phase: 0 }).collect();
         self.budgets.push(Budget {
             id,
             patient_id: pid,
@@ -2054,6 +2070,7 @@ impl Db {
             reject_reason: String::new(),
             notes: String::new(),
             plan: None,
+            tp: Default::default(),
         });
         for e in self.entries.iter_mut() {
             if planned.iter().any(|p| p.id == e.id) {

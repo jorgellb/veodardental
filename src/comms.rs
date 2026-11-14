@@ -202,6 +202,9 @@ pub struct DocTemplate {
     /// Al firmarse marca el consentimiento de protección de datos del paciente.
     #[serde(default)]
     pub marks_gdpr: bool,
+    /// Clases de tratamiento que piden este consentimiento al aceptar un presupuesto (ver `plan`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub for_kinds: Vec<crate::model::OdgKind>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -237,7 +240,14 @@ pub struct PatientDoc {
 }
 
 pub fn default_doc_templates() -> Vec<DocTemplate> {
-    let d = |id, name: &str, cat: &str, body: &str, gdpr| DocTemplate { id, name: name.into(), category: cat.into(), body: body.into(), marks_gdpr: gdpr };
+    use crate::model::OdgKind;
+    let kinds = |id| match id {
+        2 => vec![OdgKind::Extraccion],
+        3 => vec![OdgKind::Implante],
+        4 => vec![OdgKind::Endodoncia],
+        _ => vec![],
+    };
+    let d = |id, name: &str, cat: &str, body: &str, gdpr| DocTemplate { id, name: name.into(), category: cat.into(), body: body.into(), marks_gdpr: gdpr, for_kinds: kinds(id) };
     vec![
         d(
             1,
@@ -972,13 +982,14 @@ mod tests {
             doctor_id: 3,
             tariff_id: 1,
             state: BudgetState::Pendiente,
-            lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno }],
+            lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno, phase: 0 }],
             valid_days: 90,
             accepted_on: None,
             rejected_on: None,
             reject_reason: String::new(),
             notes: String::new(),
             plan: None,
+            tp: Default::default(),
         });
         let rid = db.new_id();
         db.recalls.push(Recall { id: rid, patient_id: 105, date: d(), reason: "Higiene anual".into(), doctor_id: 4, state: RecallState::Pendiente, channel: String::new(), comment: String::new(), contacted_on: None, appt_id: None });

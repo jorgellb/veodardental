@@ -45,6 +45,7 @@ mod nomenclator;
 mod pago;
 mod paths;
 mod phone;
+mod plan;
 mod portal;
 mod record;
 mod registro;
