@@ -116,6 +116,36 @@ jobs:
           mkdir -p "$RUNNER_TEMP/raiz"
           VEODARDENTAL_RAIZ="$RUNNER_TEMP/raiz" "$bin" --comprobar
 
+      # ── instalar de verdad y arrancar lo instalado (B-24): el .msi en Windows,
+      #    el .dmg en macOS. Sin firmar, así que solo en estos equipos de prueba. ──
+      - name: Instalar el .msi y arrancar lo instalado
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem dist\*.msi | Select-Object -First 1
+          $p = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart /l*v `"$env:RUNNER_TEMP\instalar.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\instalar.log" -Tail 40; exit $p.ExitCode }
+          $exe = Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA -Recurse -Filter veodardental.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Write-Error "No se encuentra el programa instalado"; exit 1 }
+          Write-Output "Instalado en $($exe.FullName)"
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\raiz-instalada" | Out-Null
+          $env:VEODARDENTAL_RAIZ = "$env:RUNNER_TEMP\raiz-instalada"
+          & $exe.FullName --comprobar
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Instalar el .dmg y arrancar lo instalado
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(ls dist/*.dmg | head -1)
+          hdiutil attach "$dmg" -mountpoint /Volumes/VeodarDental -nobrowse -quiet
+          cp -R /Volumes/VeodarDental/*.app /Applications/
+          hdiutil detach /Volumes/VeodarDental -quiet
+          app=$(ls -d /Applications/VeodarDental*.app | head -1)
+          echo "Instalado en $app"
+          mkdir -p "$RUNNER_TEMP/raiz-instalada"
+          VEODARDENTAL_RAIZ="$RUNNER_TEMP/raiz-instalada" "$app/Contents/MacOS/veodardental" --comprobar
+
       # ── firma en Windows (solo con certificado) ──
       - name: Firmar los instaladores de Windows
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows' && env.FIRMA_WINDOWS == 'true'
