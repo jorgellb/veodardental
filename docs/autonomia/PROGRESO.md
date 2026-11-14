@@ -56,6 +56,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F5-01: cuadro de mando con fórmulas definidas y verificación independiente | E-043 | `ccc20bb` |
 | T-F5-02: pago por internet (Redsys por redirección y Bizum), sin cargos | E-044 | `1dff1c8` |
 | T-F5-03: plan de tratamiento por fases y alternativas (versión de datos 2) | E-045 | `57db409` |
+| T-F5-04: notas de evolución con plantillas, dictado, transcripción y resumen revisado | E-046 | `d1d2d85` |
 
 ## Siguiente acción
 Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
