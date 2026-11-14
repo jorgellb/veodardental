@@ -1750,3 +1750,28 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 530 pasan (528 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-067 Revisión de seguridad: sacar dinero y el banco, con su permiso también en el servidor
+- **Hallazgos:**
+  1. La devolución con datáfono y los pasos de la financiación que mueven dinero se hacían en el puesto sin los permisos de las operaciones parecidas: caja para devolver o anular, cobros para cobrar, banco para conciliar.
+  2. **Fallo anterior, de más alcance:** el servidor no comprobaba los cobros que llegaban directamente de un puesto. Un usuario sin permiso de caja podía apuntar un cobro en negativo o una anulación, o cambiar el importe de un cobro o borrarlo, sin pasar por `ChainOp::Refund` o `ChainOp::CancelPayment`. También podía tocar los movimientos del banco.
+- **Correcciones:**
+  - **Servidor** (`State::save`, `payment_change_ok`), para quien no es Dirección:
+    - un cobro en negativo o que anula otro, solo con permiso de caja;
+    - un cobro no se borra, ni cambia de importe, paciente, forma de pago, fecha, lo que anula o la cuota que paga. Sí se corrigen otras cosas, como el concepto o la caja a la que va;
+    - los movimientos y las cuentas del banco, solo con su permiso.
+  - **Financiación:** el pago de la entidad, la cancelación y la conciliación son operaciones del servidor (`ChainOp::FinPaid` con permiso de cobros, `ChainOp::FinCancel` con el de caja y `ChainOp::FinMatchBank` con el del banco).
+  - **Pantalla:** «Devolver» del datáfono, solo con caja. En la financiación, «Pagada por la entidad» con cobros, «Cancelar» con caja y «Conciliar» con el banco.
+- **Pruebas:** `server::tests::money_out_and_the_bank_need_their_permission`, con el servidor de verdad:
+  - la doctora apunta un cobro, pero no uno en negativo ni una anulación; no cambia el importe de otro ni lo borra, y sí corrige el concepto;
+  - recepción apunta una devolución, pero no concilia a mano en el banco;
+  - financiación: la doctora no cancela (sin caja); recepción la marca pagada una vez, con el cobro del total y la comisión; recepción no concilia, y Dirección sí.
+
+  Comprobado que falla si se quita la regla de los cobros («sacar dinero o anular, no») o la del banco («el banco, con su permiso»).
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 531 pasan (529 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

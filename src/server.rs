@@ -130,6 +130,24 @@ pub fn unsent(db: &Db, synced: &Snapshot) -> Vec<Change> {
     station_changes(db, synced)
 }
 
+/// ¿Se acepta este cambio de un cobro de quien no es Dirección? (`caja`: tiene
+/// permiso de caja). Un cobro nuevo, sí, salvo que saque dinero (en negativo o
+/// anulando otro) sin permiso de caja; uno que ya está, no se borra ni cambia
+/// lo que es el cobro (importe, paciente, forma de pago, fecha, lo que anula o
+/// la cuota que paga); sí, por ejemplo, la caja a la que va.
+fn payment_change_ok(current: Option<&String>, after: Option<&String>, caja: bool) -> bool {
+    const FIXED: [&str; 6] = ["amount", "patient_id", "method", "date", "cancels", "installment"];
+    let parse = |j: &String| serde_json::from_str::<Value>(j).ok();
+    match (current.and_then(parse), after.and_then(parse)) {
+        // borrarlo, no
+        (Some(_), None) => false,
+        (None, Some(a)) => caja || (a["amount"].as_f64().is_some_and(|x| x >= 0.0) && a["cancels"].is_null()),
+        (Some(c), Some(a)) => FIXED.iter().all(|f| c[*f] == a[*f]),
+        // ilegible: no
+        (None, None) => after.is_none() && current.is_none(),
+    }
+}
+
 /// ¿Puede escribir en el servidor el puesto de esta petición?
 fn data_mismatch(req: &Request) -> Option<&'static str> {
     match req.header(DATA_HEADER).and_then(|v| v.trim().parse::<u32>().ok()) {
@@ -965,6 +983,21 @@ impl State {
                 let current = parse(c.key.as_deref().and_then(|k| snap.get("campaigns", Some(k))));
                 let after = parse(c.after.as_ref());
                 (c.after.is_none() || after.is_some()) && crate::campanas::draft_only(current.as_ref(), after.as_ref())
+            });
+        }
+        // dinero: un cobro en negativo o una anulación es sacar dinero, con permiso
+        // de caja (como `ChainOp::Refund`); un cobro no se borra ni cambia de
+        // importe, paciente, forma de pago o fecha (salvo Dirección); el banco,
+        // con su permiso (sus operaciones van por `ChainOp`)
+        if !admin {
+            let profile = self.user(user).map(|u| u.profile);
+            let can = |p: Perm| profile.is_some_and(|x| x.can(p));
+            let (caja, gastos) = (can(Perm::Caja), can(Perm::Gastos));
+            let snap = &self.snap;
+            changes.retain(|c| match c.field.as_str() {
+                "payments" => payment_change_ok(c.key.as_deref().and_then(|k| snap.get("payments", Some(k))), c.after.as_ref(), caja),
+                "bank_moves" | "bank_accounts" => gastos,
+                _ => true,
             });
         }
         // un paciente con los datos bloqueados tampoco lo borra otro perfil
@@ -3649,6 +3682,85 @@ mod tests {
         dir_b.stop().unwrap();
         ha.join().unwrap();
         hb.join().unwrap();
+    }
+
+    /// Sacar dinero, con permiso de caja; el banco, con el suyo; y un cobro no
+    /// se borra ni cambia de importe (revisión de seguridad de T-F6-03). Lo
+    /// mismo en los pasos de la financiación, que hace el servidor.
+    #[test]
+    fn money_out_and_the_bank_need_their_permission() {
+        use crate::app::ChainOp;
+        let (addr, path, h) = start("CLAVE53");
+        let doc = signed_in(&addr, "CLAVE53", "Gabinete", 3, "0000");
+        let rec = signed_in(&addr, "CLAVE53", "Recepción", 2, "0000");
+        let dir = signed_in(&addr, "CLAVE53", "Despacho", 1, "0000");
+        let on_disk = |id: u32| crate::sync::on_disk(&path).payments.iter().find(|p| p.id == id).cloned();
+        // la doctora (cobros sí, caja no): un cobro sí; sacar dinero, no
+        let (mut a, mut sa) = doc.load().unwrap();
+        a.station = doc.station;
+        let existing = a.payments.iter().find(|p| p.amount > 0.0).unwrap().clone();
+        let plus = a.add_payment(101, 20.0, "Efectivo", "Revisión");
+        let minus = a.add_payment(101, -20.0, "Efectivo", "Devolución");
+        let voiding = a.add_payment(101, 0.0, "Efectivo", "Anulación");
+        a.payments.iter_mut().find(|p| p.id == voiding).unwrap().cancels = Some(existing.id);
+        a.payments.iter_mut().find(|p| p.id == existing.id).unwrap().amount = 0.01;
+        doc.push(&mut a, &mut sa).unwrap();
+        assert!(on_disk(plus).is_some(), "un cobro, sí");
+        assert!(on_disk(minus).is_none() && on_disk(voiding).is_none(), "sacar dinero o anular, no");
+        assert_eq!(on_disk(existing.id).unwrap().amount, existing.amount, "ni cambiar el importe de un cobro");
+        let (mut a, mut sa) = doc.load().unwrap();
+        a.station = doc.station;
+        a.payments.iter_mut().find(|p| p.id == plus).unwrap().concept = "Revisión anual".into();
+        a.payments.retain(|p| p.id != existing.id);
+        doc.push(&mut a, &mut sa).unwrap();
+        assert!(on_disk(existing.id).is_some(), "ni borrarlo");
+        assert_eq!(on_disk(plus).unwrap().concept, "Revisión anual", "el concepto sí se corrige");
+        // recepción (caja sí, banco no): una devolución sí; el banco, no
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.station = rec.station;
+        let back = r.add_payment(101, -10.0, "Tarjeta", "Devolución con datáfono");
+        let mv = r.bank_moves.iter().find(|m| m.matched.is_none()).map(|m| m.id);
+        if let Some(m) = mv {
+            r.bank_moves.iter_mut().find(|x| x.id == m).unwrap().matched = Some(crate::bank::Match::Other("a mano".into()));
+        }
+        rec.push(&mut r, &mut sr).unwrap();
+        assert!(on_disk(back).is_some(), "con permiso de caja, sí");
+        if let Some(m) = mv {
+            assert!(crate::sync::on_disk(&path).bank_moves.iter().find(|x| x.id == m).unwrap().matched.is_none(), "el banco, con su permiso");
+        }
+        // financiación: los pasos con dinero, en el servidor y cada uno con su permiso
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.station = rec.station;
+        let at = crate::model::now();
+        let f = r.fin_new(105, None, "Financiera Ejemplo", crate::cents::Cents(60_000), 6, at).unwrap();
+        r.fin_step(f, crate::financiacion::FinState::Aprobada, "FE-9", at.date(), at).unwrap();
+        r.fin_step(f, crate::financiacion::FinState::Firmada, "", at.date(), at).unwrap();
+        rec.push(&mut r, &mut sr).unwrap();
+        let (mut a, mut sa) = doc.load().unwrap();
+        let cancel = ChainOp::FinCancel { fin: f, reason: "x".into(), date: at.date() }.json();
+        assert!(doc.chain_op(&mut a, &mut sa, &cancel).unwrap_err().contains("caja"), "cancelar (devolver), con caja");
+        let paid = ChainOp::FinPaid { fin: f, date: at.date(), received: 57_000 }.json();
+        rec.chain_op(&mut r, &mut sr, &paid).unwrap();
+        assert!(rec.chain_op(&mut r, &mut sr, &paid).is_err(), "una vez");
+        let disk = crate::sync::on_disk(&path);
+        let fin = disk.financings.iter().find(|x| x.id == f).unwrap().clone();
+        assert_eq!(fin.state, crate::financiacion::FinState::Pagada);
+        assert!(disk.payments.iter().any(|p| Some(p.id) == fin.payment_id && p.amount == 600.0));
+        assert!(disk.expenses.iter().any(|e| Some(e.id) == fin.fee_expense && e.base == 30.0), "con la comisión");
+        // conciliar: con permiso del banco (Dirección)
+        let (mut d, mut sd) = dir.load().unwrap();
+        d.station = dir.station;
+        d.add_bank_moves(1, &[crate::bank::RawMove { date: at.date(), amount: 570.0, concept: "FINANCIERA EJEMPLO".into(), reference: String::new() }]);
+        dir.push(&mut d, &mut sd).unwrap();
+        let (d, _) = dir.load().unwrap();
+        let mv = d.fin_bank_candidates(f)[0];
+        let bank = ChainOp::FinMatchBank { fin: f, bank_move: mv }.json();
+        assert!(rec.chain_op(&mut r, &mut sr, &bank).unwrap_err().contains("banco"), "recepción no concilia");
+        let (mut d, mut sd) = dir.load().unwrap();
+        dir.chain_op(&mut d, &mut sd, &bank).unwrap();
+        assert_eq!(crate::sync::on_disk(&path).financings.iter().find(|x| x.id == f).unwrap().bank_move, Some(mv));
+        dir.stop().unwrap();
+        h.join().unwrap();
     }
 
     /// Un usuario de un centro (T-F6-01, D-25): no recibe las cajas de los

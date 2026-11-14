@@ -32,7 +32,7 @@ La operación: `{"referencia", "estado": "en_curso" | "aprobada" | "denegada" | 
 - Comprueba las que llevan más de dos minutos en el datáfono.
 - **El cobro (o la devolución) se apunta una sola vez**, al quedar aprobada, en la caja del centro donde se hizo.
 - Una operación aprobada no vuelve atrás. Si se canceló pero el datáfono dice que se cobró, manda el datáfono.
-- **Devolución:** de una venta aprobada del mismo paciente, como mucho por lo que quede sin devolver.
+- **Devolución:** de una venta aprobada del mismo paciente, como mucho por lo que quede sin devolver. Hace falta permiso de caja: el servidor no acepta un cobro en negativo de quien no lo tiene.
 
 **Probado** con un datáfono simulado que cumple este contrato (`datafono::fake`):
 - `datafono::tests::a_connected_terminal_charges_once`;
@@ -53,6 +53,10 @@ Cada paso queda en la historia, con quién y cuándo, y con la referencia de la 
   - el paciente queda pagado por el total financiado, con un cobro «Financiación» que se apunta una sola vez;
   - lo que no llegó (lo que se queda la entidad) es un gasto de la clínica, «Comisión de financiación»;
   - el ingreso del banco se concilia con la financiación por lo recibido, en los 15 días de alrededor del pago.
+- **Permisos:** los pasos que mueven dinero los hace el servidor, cada uno con su permiso:
+  - el pago de la entidad, con el de cobros;
+  - la cancelación (y la devolución a la entidad), con el de caja;
+  - la conciliación, con el del banco.
 - **Desistimiento:** dentro de los 14 días siguientes a la firma (Ley 16/2011, artículo 28; lo confirma la gestoría). Si la entidad ya había pagado, se apunta la devolución a la entidad, y el paciente vuelve a deber el tratamiento. Pasado ese plazo, no se cancela desde aquí.
 - **Lo que no hace el programa:** las altas, los contratos y las decisiones de financiación son de la entidad, y el programa no las toma ni las simula.
 

@@ -6,6 +6,7 @@ use crate::cents::Cents;
 use crate::datafono::{CardKind, CardState, Reply};
 use crate::financiacion::FinState;
 use crate::theme::*;
+use crate::users::Perm;
 use egui::{RichText, Ui};
 
 type Job = std::sync::mpsc::Receiver<(u32, Result<Reply, String>)>;
@@ -154,7 +155,8 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
                             spawn(app, t.id, "cancel");
                         }
                     }
-                    (CardState::Aprobada, _) if t.kind == CardKind::Venta => {
+                    // devolver dinero, con permiso de caja (el servidor tampoco lo acepta sin él)
+                    (CardState::Aprobada, _) if t.kind == CardKind::Venta && app.can(Perm::Caja) => {
                         ui.add(egui::TextEdit::singleline(&mut app.card.refund).desired_width(80.0).hint_text("Devolver"));
                         if ui.add_enabled(!busy, egui::Button::new("Devolver")).clicked() {
                             match parse_eur(&app.card.refund) {
@@ -236,31 +238,32 @@ fn financing_card(app: &mut App, ui: &mut Ui, pid: u32) {
                         app.changed();
                     }
                 }
-                if f.state == FinState::Firmada {
+                // lo que mueve dinero lo hace el servidor, cada cosa con su permiso
+                use crate::app::ChainOp;
+                if f.state == FinState::Firmada && app.can(Perm::Economia) {
                     ui.add(egui::TextEdit::singleline(&mut app.card.fin_received).desired_width(90.0).hint_text("Recibido"));
                     if ui.button("Pagada por la entidad").clicked() {
                         let r = match parse_eur(&app.card.fin_received) {
-                            Some(a) => app.db.fin_paid(f.id, today, a, now).map(|_| ()),
+                            Some(a) => app.chain_op(ChainOp::FinPaid { fin: f.id, date: today, received: a.0 }).map(|_| ()),
                             None => Err("Escriba lo que ha llegado de la entidad.".into()),
                         };
                         app.card.msg = r.err().map(|e| (false, e));
-                        app.changed();
                     }
                 }
-                if !matches!(f.state, FinState::Denegada | FinState::Cancelada) {
+                if !matches!(f.state, FinState::Denegada | FinState::Cancelada) && app.can(Perm::Caja) {
                     ui.add(egui::TextEdit::singleline(&mut app.card.fin_reason).desired_width(140.0).hint_text("Motivo para cancelar"));
                     if ui.button("Cancelar").clicked() {
-                        let r = app.db.fin_cancel(f.id, &app.card.fin_reason, today, now);
+                        let r = app.chain_op(ChainOp::FinCancel { fin: f.id, reason: app.card.fin_reason.clone(), date: today });
                         app.card.msg = r.err().map(|e| (false, e));
-                        app.changed();
                     }
                 }
-                for m in app.db.fin_bank_candidates(f.id) {
-                    let label = app.db.bank_moves.iter().find(|x| x.id == m).map(|x| format!("Conciliar con el ingreso del {}", x.date.format("%d/%m/%Y"))).unwrap_or_default();
-                    if ui.button(label).clicked() {
-                        let r = app.db.fin_match_bank(f.id, m);
-                        app.card.msg = r.err().map(|e| (false, e));
-                        app.changed();
+                if app.can(Perm::Gastos) {
+                    for m in app.db.fin_bank_candidates(f.id) {
+                        let label = app.db.bank_moves.iter().find(|x| x.id == m).map(|x| format!("Conciliar con el ingreso del {}", x.date.format("%d/%m/%Y"))).unwrap_or_default();
+                        if ui.button(label).clicked() {
+                            let r = app.chain_op(ChainOp::FinMatchBank { fin: f.id, bank_move: m });
+                            app.card.msg = r.err().map(|e| (false, e));
+                        }
                     }
                 }
             });

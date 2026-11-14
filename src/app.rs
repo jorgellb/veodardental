@@ -1148,6 +1148,24 @@ pub enum ChainOp {
     /// Pasa a la cola los mensajes de las campañas programadas que tocan
     /// ahora (con la hora y los datos del servidor). Devuelve cuántos.
     QueueCampaigns,
+    /// La entidad financiera ha pagado (ver `financiacion`): el cobro y la
+    /// comisión (importe recibido en céntimos).
+    FinPaid {
+        fin: u32,
+        date: chrono::NaiveDate,
+        received: i64,
+    },
+    /// Cancelar una financiación (si ya pagó la entidad, con la devolución).
+    FinCancel {
+        fin: u32,
+        reason: String,
+        date: chrono::NaiveDate,
+    },
+    /// Conciliar el ingreso de la entidad con la financiación.
+    FinMatchBank {
+        fin: u32,
+        bank_move: u32,
+    },
 }
 
 impl ChainOp {
@@ -1181,6 +1199,9 @@ impl ChainOp {
             ChainOp::BankExpense { bank_move } => db.expense_for_move(*bank_move),
             ChainOp::ClaimEmails { ids, token } => Ok(db.claim_emails(ids, token, crate::model::now())),
             ChainOp::QueueCampaigns => Ok(db.campaign_tick(crate::model::now()) as u32),
+            ChainOp::FinPaid { fin, date, received } => db.fin_paid(*fin, *date, crate::cents::Cents(*received), crate::model::now()),
+            ChainOp::FinCancel { fin, reason, date } => db.fin_cancel(*fin, reason, *date, crate::model::now()).map(|_| *fin),
+            ChainOp::FinMatchBank { fin, bank_move } => db.fin_match_bank(*fin, *bank_move).map(|_| *fin),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
@@ -1217,6 +1238,9 @@ impl ChainOp {
             ChainOp::BankExpense { bank_move } => json!({ "accion": "gasto_del_cargo", "movimiento": bank_move }),
             ChainOp::ClaimEmails { ids, token } => json!({ "accion": "reservar_correos", "mensajes": ids, "marca": token }),
             ChainOp::QueueCampaigns => json!({ "accion": "campanas" }),
+            ChainOp::FinPaid { fin, date, received } => json!({ "accion": "financiacion_pagada", "financiacion": fin, "fecha": date, "recibido": received }),
+            ChainOp::FinCancel { fin, reason, date } => json!({ "accion": "financiacion_cancelada", "financiacion": fin, "motivo": reason, "fecha": date }),
+            ChainOp::FinMatchBank { fin, bank_move } => json!({ "accion": "financiacion_banco", "financiacion": fin, "movimiento": bank_move }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
@@ -1267,6 +1291,9 @@ impl ChainOp {
             "devolver" => ChainOp::Refund { patient: num("paciente")?, amount: v["importe"].as_f64().filter(|a| a.is_finite()).ok_or("Falta «importe».")?, method: pay_method(&text("forma"))?, reason: text("motivo") },
             "fusionar" => ChainOp::MergePatients { keep: num("conservar")?, remove: num("eliminar")? },
             "campanas" => ChainOp::QueueCampaigns,
+            "financiacion_pagada" => ChainOp::FinPaid { fin: num("financiacion")?, date: date("fecha")?, received: v["recibido"].as_i64().ok_or("Falta «recibido».")? },
+            "financiacion_cancelada" => ChainOp::FinCancel { fin: num("financiacion")?, reason: text("motivo"), date: date("fecha")? },
+            "financiacion_banco" => ChainOp::FinMatchBank { fin: num("financiacion")?, bank_move: num("movimiento")? },
             _ => return Err("Acción no válida.".into()),
         })
     }
@@ -1292,6 +1319,8 @@ impl ChainOp {
         const MESSAGES: &[&str] = &["messages"];
         // lo que mira al pasar los mensajes a la cola y lo que lleva el texto
         const CAMPAIGNS: &[&str] = &["campaigns", "patients", "appointments", "messages", "collaborators", "config", "next_id"];
+        // financiación: el cobro, la comisión, la devolución y el banco
+        const FIN: &[&str] = &["financings", "payments", "expenses", "bank_moves", "bank_accounts", "patients", "budgets", "cash", "config", "audit_log", "next_id"];
         const BOOKING: &[&str] = &["booking_requests", "appointments", "boxes", "blocks", "holidays", "booking", "appt_links", "next_id"];
         // el saldo del paciente sale de sus tratamientos y sus cobros
         const PAY: &[&str] = &["payments", "budgets", "remittances", "entries", "patients", "cash", "config", "audit_log", "next_id"];
@@ -1347,6 +1376,10 @@ impl ChainOp {
             ChainOp::ClaimEmails { .. } => (None, MESSAGES),
             // como generar los mensajes del día; las reglas son las de la campaña
             ChainOp::QueueCampaigns => (None, CAMPAIGNS),
+            // cobrar, sacar dinero y el banco, cada uno con su permiso
+            ChainOp::FinPaid { .. } => (Some(Economia), FIN),
+            ChainOp::FinCancel { .. } => (Some(Caja), FIN),
+            ChainOp::FinMatchBank { .. } => (Some(Gastos), FIN),
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
             ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),
