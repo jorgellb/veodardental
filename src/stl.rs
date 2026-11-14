@@ -97,10 +97,13 @@ pub fn parse(b: &[u8]) -> Result<Mesh, String> {
     Ok(Mesh { tris })
 }
 
+/// Tamaño del fichero como mucho: el de [`MAX_TRIANGLES`] en binario.
+pub const MAX_FILE: u64 = 84 + MAX_TRIANGLES as u64 * 50;
+
 pub fn read(path: &std::path::Path) -> Result<Mesh, String> {
-    let len = std::fs::metadata(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?.len() as usize;
-    if len > 84 + MAX_TRIANGLES * 50 * 3 {
-        return Err("El fichero es demasiado grande.".into());
+    let len = std::fs::metadata(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?.len();
+    if len > MAX_FILE {
+        return Err(format!("El fichero ocupa {} MB y el límite es {} MB: expórtelo en STL binario o con menos detalle.", len >> 20, MAX_FILE >> 20));
     }
     parse(&std::fs::read(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?)
 }

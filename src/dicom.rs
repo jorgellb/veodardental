@@ -25,7 +25,8 @@
 
 use std::path::Path;
 
-/// Píxeles de un estudio como mucho (512 MB).
+/// Memoria de un estudio como mucho (512 MB): la de los valores ya leídos (4
+/// bytes por vóxel) y la del color, no solo lo que ocupa en el fichero.
 pub const MAX_BYTES: usize = 512 << 20;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -181,8 +182,14 @@ fn u16_of(v: &[u8]) -> Option<u16> {
     v.get(..2).map(|s| u16::from_le_bytes([s[0], s[1]]))
 }
 
-/// Lee un fichero DICOM ya cargado.
+/// Lee un fichero DICOM ya cargado (en el programa se lee con [`read`]).
+#[cfg(test)]
 pub fn parse(bytes: &[u8]) -> Result<Dicom, String> {
+    parse_within(bytes, MAX_BYTES)
+}
+
+/// Lee un fichero DICOM sin pasar de `budget` bytes de memoria para la imagen.
+fn parse_within(bytes: &[u8], budget: usize) -> Result<Dicom, String> {
     if bytes.len() < 132 || &bytes[128..132] != b"DICM" {
         return Err("No es un fichero DICOM (falta la marca «DICM»).".into());
     }
@@ -248,8 +255,10 @@ pub fn parse(bytes: &[u8]) -> Result<Dicom, String> {
     };
     let n = h.rows.checked_mul(h.cols).and_then(|x| x.checked_mul(h.frames)).ok_or("Imagen demasiado grande.")?;
     let need = n.checked_mul(bytes_px).ok_or("Imagen demasiado grande.")?;
-    if need > MAX_BYTES {
-        return Err(format!("El estudio ocupa {} MB y el límite es {} MB.", need >> 20, MAX_BYTES >> 20));
+    // lo que de verdad se reserva: 4 bytes por vóxel y, en color, los bytes RGB
+    let alloc = n.checked_mul(4).and_then(|x| x.checked_add(if bytes_px == 3 { need } else { 0 })).ok_or("Imagen demasiado grande.")?;
+    if alloc > budget {
+        return Err(format!("El estudio necesita {} MB de memoria y el límite es {} MB.", alloc >> 20, budget >> 20));
     }
     if px.len() < need {
         return Err("Faltan píxeles: el fichero está cortado.".into());
@@ -288,11 +297,16 @@ fn rescale(h: &Header, v: i32) -> i32 {
 
 /// Lee un fichero.
 pub fn read(path: &Path) -> Result<Dicom, String> {
+    read_within(path, MAX_BYTES)
+}
+
+/// Lee un fichero sin pasar de `budget`: ni el fichero ni la imagen.
+fn read_within(path: &Path, budget: usize) -> Result<Dicom, String> {
     let meta = std::fs::metadata(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?;
-    if meta.len() as usize > MAX_BYTES + (16 << 20) {
-        return Err("El fichero es demasiado grande.".into());
+    if meta.len() > budget as u64 {
+        return Err(format!("El fichero ocupa {} MB y el límite es {} MB.", meta.len() >> 20, budget >> 20));
     }
-    parse(&std::fs::read(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?)
+    parse_within(&std::fs::read(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?, budget)
 }
 
 /// Un estudio CBCT: una carpeta de cortes (o un fichero multicorte).
@@ -303,15 +317,19 @@ pub fn read_series(path: &Path) -> Result<Dicom, String> {
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(path).map_err(|e| format!("No se puede leer la carpeta: {e}"))?.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
     files.sort();
     let mut slices: Vec<Dicom> = vec![];
-    let mut total = 0usize;
+    let mut used = 0usize;
     for f in files {
-        // los ficheros que no son DICOM (índices, miniaturas) no cuentan
-        let Ok(d) = read(&f) else { continue };
-        total += d.voxels.len() * 4;
-        if total > MAX_BYTES {
-            return Err(format!("El estudio pasa de {} MB.", MAX_BYTES >> 20));
+        // cada corte, con lo que queda del presupuesto (antes de leerlo)
+        let left = MAX_BYTES.saturating_sub(used);
+        match read_within(&f, left) {
+            Ok(d) => {
+                used += d.voxels.len() * 4;
+                slices.push(d);
+            }
+            Err(e) if e.contains("límite") => return Err(format!("El estudio pasa de {} MB de memoria.", MAX_BYTES >> 20)),
+            // los ficheros que no son DICOM (índices, miniaturas) no cuentan
+            Err(_) => continue,
         }
-        slices.push(d);
     }
     let first = slices.first().ok_or("La carpeta no tiene cortes DICOM.")?.header.clone();
     if slices.iter().any(|s| s.header.rows != first.rows || s.header.cols != first.cols || s.header.frames != 1) {
@@ -330,7 +348,11 @@ pub fn read_series(path: &Path) -> Result<Dicom, String> {
     if gap > 0.0 {
         h.thickness = Some(gap);
     }
-    let voxels = slices.into_iter().flat_map(|s| s.voxels).collect();
+    // sin copias de más: el volumen se reserva justo
+    let mut voxels = Vec::with_capacity(used / 4);
+    for s in slices {
+        voxels.extend(s.voxels);
+    }
     Ok(Dicom { header: h, voxels, rgb: None })
 }
 
@@ -536,6 +558,11 @@ pub(crate) mod tests {
         // más de lo que se admite: no se intenta reservar
         let huge = synth(true, 2, 2, 0.0, 1, |_, _| 0, "1.2.840.10008.1.2.1", &[(0x0028, 0x0008, "IS", b"999999".to_vec())]);
         assert!(parse(&huge).is_err());
+        // el límite es de memoria (4 bytes por vóxel), no de bytes del fichero:
+        // 200×200×5000 de 16 bits son 400 MB en el fichero y 800 MB en memoria
+        let big = synth(true, 200, 200, 0.0, 1, |_, _| 0, "1.2.840.10008.1.2.1", &[(0x0028, 0x0008, "IS", b"5000".to_vec())]);
+        assert!(parse(&big).unwrap_err().contains("memoria"));
+        assert!(parse_within(&good, 100).unwrap_err().contains("límite"), "con un presupuesto más pequeño, tampoco");
         let mut tall = good.clone();
         // filas = 65535 (el valor de «Rows» está tras su cabecera explícita)
         let at = tall.windows(4).position(|w| w == [0x28, 0x00, 0x10, 0x00]).unwrap() + 8;

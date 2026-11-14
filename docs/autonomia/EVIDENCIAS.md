@@ -1310,3 +1310,23 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 483 pasan, 0 fallan, 10 ignoradas |
+
+## E-050 Revisión de seguridad del visor: memoria de los estudios DICOM y de los STL
+- **Hallazgo:** el límite de los DICOM comparaba los bytes de los píxeles del fichero, pero la memoria que se reserva es mayor:
+  - 4 bytes por vóxel (`i32`) más el color, así que un estudio de 8 bits dentro del límite podía ocupar cuatro veces más;
+  - en una carpeta de cortes, el total se comprobaba después de leer cada corte.
+- **Corrección (`src/dicom.rs`):**
+  - el límite es de memoria y se comprueba antes de reservar nada (`parse_within`);
+  - en una serie, cada corte se lee con lo que queda del presupuesto, y el fichero no se carga si ya lo pasa;
+  - el volumen se reserva justo, sin copias de más.
+- **STL (`src/stl.rs`):** el fichero tampoco pasa de lo que ocupan 5 millones de triángulos en binario (`MAX_FILE`). Antes se admitía tres veces más, por si era ASCII.
+- **Prueba:** `dicom::tests::invalid_compressed_huge_or_random_files_are_refused_without_panicking` comprueba ahora dos casos:
+  - un estudio de 400 MB en el fichero y 800 MB en memoria se rechaza por memoria;
+  - con un presupuesto menor, se rechaza un corte que antes cabía.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 483 pasan, 0 fallan, 10 ignoradas |
