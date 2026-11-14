@@ -53,6 +53,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad del cifrado de los datos (sin vuelta atrás a sin cifrar) | E-040 | `0f80d57` |
 | T-F4-08: facturación foral (territorio confirmado, TicketBAI preparado, sin homologar ni activar) | E-041 | `51c4d65` |
 | T-F4-09: pruebas para la gestoría, el DPO y la auditoría de seguridad (docs/revision_externa) | E-042 | `fe0af03` |
+| T-F5-01: cuadro de mando con fórmulas definidas y verificación independiente | E-043 | `ccc20bb` |
 
 ## Siguiente acción
 Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
