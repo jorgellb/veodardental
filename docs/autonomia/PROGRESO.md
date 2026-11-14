@@ -97,6 +97,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-PROC-01: límites del encargo respetados; ningún servicio real se activa solo | E-084 | `f830cb6` |
 | T-PROC-02: ciclo por tarea anotado, con comprobación automática del seguimiento | E-085 | `6d02ca9` |
 | T-CIERRE-01: restauración ensayada en carpeta aislada con relaciones, dinero y diario comprobados | E-086 | `1ea9a48` |
+| T-CIERRE-02: cierre con el verificador, las órdenes de calidad y ENTREGA.md | E-087 | `5215e07` |
 
 ## Siguiente acción
 **Ingeniería disponible completada; validaciones o activaciones externas pendientes.** Las tareas de ingeniería de las fases 0 a 6, las transversales y las de cierre están hechas. El resumen de la entrega está en `ENTREGA.md`.
