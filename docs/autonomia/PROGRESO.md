@@ -77,6 +77,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F6-02: servidor en la nube opcional, desplegado y ensayado en local | E-064 | `1f554e5` |
 | Revisión de seguridad: carpeta del servicio y clave fuera de la orden | E-065 | `9bd690a` |
 | T-F6-03: datáfono y financiación (adaptadores, estados, conciliación, cancelación y recuperación) | E-066 | `ae1cca9` |
+| Revisión de seguridad: sacar dinero y el banco con su permiso en el servidor | E-067 | `c4e49e5` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
