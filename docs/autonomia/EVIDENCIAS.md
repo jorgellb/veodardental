@@ -3,7 +3,7 @@
 Órdenes ejecutadas con `tools/aislado.sh` (HOME, XDG y `VEODARDENTAL_RAIZ` en un
 directorio temporal), salvo indicación.
 
-## E-001 Batería inicial (HEAD `ade418b`, sin cambios)
+## E-001 Batería inicial (HEAD `69e33dc`, antes `ade418b`; sin cambios)
 | Orden | Código de salida | Resultado |
 |---|---|---|
 | `cargo fmt --all -- --check` | 1 | 397 bloques con diferencias: el código no seguía rustfmt y no había configuración |
@@ -14,19 +14,19 @@ directorio temporal), salvo indicación.
 Las 10 pruebas ignoradas están clasificadas en ESTADO_INICIAL.md. Necesitan
 servicios, ficheros reales o mediciones largas.
 
-## E-002 Aislamiento de rutas (commit `d7b977c`)
+## E-002 Aislamiento de rutas (commit `95efcd6`)
 - **Prueba nueva:** `paths::tests::tests_never_use_the_real_folders`. Ninguna ruta de las pruebas (datos, ajustes, documentos y `Db::path()`) cae fuera de la carpeta temporal ni dentro de las carpetas del programa de este ordenador.
 - **Prueba nueva:** `paths::tests::an_isolated_root_holds_every_folder`.
 - **Cambio:** 24 usos de `dirs::` pasan por `crate::paths`, con 0 usos restantes fuera de `src/paths.rs` según `grep -rn "dirs::" src`.
 - **Resultado:** `cargo test --locked` pasa con 304 pruebas, 0 fallos y 10 ignoradas; `cargo clippy --all-targets --locked -- -D warnings` da código 0.
 
-## E-003 Formato (commit `48892cd`)
+## E-003 Formato (commit `a39ef41`)
 - `rustfmt.toml` con `max_width = 250` y `use_small_heuristics = "Max"`.
 - `cargo fmt --all -- --check` da código 0.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` da código 0.
 - `cargo test --workspace --all-targets --locked`: 304 pasan, 0 fallan, 10 ignoradas.
 
-## E-004 Seguimiento, verificador y encargo (commits `59830ff` y `6380167`)
+## E-004 Seguimiento, verificador y encargo (commits `79fe438` y `ebae3bd`)
 - `VEODARDENTAL_GOAL.md` guardado sin cambios (SHA-256 `dceb8c7c…a38d`).
 - `cargo run --example verificar_objetivo -- --progreso`: 134 líneas del encargo y 134 requisitos, todos con tareas. «RESULTADO: inventario íntegro (modo progreso)».
 - `BLOQUEOS.md` registra los requisitos externos de la fase 0: GESDEN (B-03), receta certificada (B-09), AEAT (B-06), firma de instaladores (B-25) y WhatsApp (B-07), además de los demás.
@@ -96,7 +96,7 @@ servicios, ficheros reales o mediciones largas.
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 320 pasan, 0 fallan, 10 ignoradas |
 
-## E-008 Correcciones de la revisión automática de seguridad de los commits `7d7c3ad` y `78a0501`
+## E-008 Correcciones de la revisión automática de seguridad de los commits `95abeab` y `aad4f99`
 | Hallazgo | Corrección | Prueba de regresión, en rojo antes del arreglo |
 |---|---|---|
 | Un puesto podía «des-emitir» una receta borrando su código y cambiarla después | `firmado::keep_issued_rx` no acepta un código vacío, solo otro válido. En pantalla, «Quitar el código» pasa a ser «Corregir el código» | `finance::tests::an_issued_prescription_cannot_be_un_issued` |
@@ -149,7 +149,7 @@ servicios, ficheros reales o mediciones largas.
 
   - `chrono::NaiveDate::parse_from_str("05/11/26", "%d/%m/%Y")` → `Ok(0026-11-05)`: es el primer formato que probaba `parse_any_date`.
   - Flujo anterior en red, con una prueba temporal que no queda en el repositorio: dos puestos que importan los mismos 2 movimientos en el puesto y los envían dejan el servidor de 3 a 7 movimientos (duplicados).
-- **Por lectura del código anterior (`5e799b4`):**
+- **Por lectura del código anterior (`45b9ce3`):**
   - B1: solo se leían los registros 22 y 23.
   - B3: la comprobación de repetidos incluía los movimientos recién añadidos del mismo extracto.
   - B5: la primera columna que contenía «importe» era la de cargo.
@@ -215,7 +215,7 @@ servicios, ficheros reales o mediciones largas.
   - `screens::cobros::tests::the_payment_methods_add_up_to_the_total`
   - `ui_tests::the_economic_summary_shows_its_totals_and_filters`
   - `server::tests::a_station_is_warned_when_the_server_has_another_time_zone`
-- **Por lectura del código anterior (`06b6b95`):**
+- **Por lectura del código anterior (`eb78397`):**
   - I1: las casillas recorrían `PAY_METHODS`, que no tiene «Domiciliación».
   - I2: `amount()` es solo la parte del paciente, y nadie sumaba `insurer_fee`.
   - I4 e I5: no había ni centro en los tratamientos ni fecha en la deuda.
@@ -242,7 +242,7 @@ servicios, ficheros reales o mediciones largas.
   - Servidor SMTP de prueba que recibe el correo entero y se corta sin «250»: `send_tracked` da `Uncertain`. El `send` anterior lo devolvía como un error más y `email_failed` lo dejaba para reintentar: hasta 3 envíos del mismo correo.
   - Con un 550 tras los datos, o con un puerto cerrado: `NotSent`, y se reintenta.
   - Servidor HTTP de prueba que recibe la petición de WhatsApp y se corta: el error empieza por «No se sabe si llegó». Antes era «Sin conexión con WhatsApp» y el mensaje quedaba «No se pudo enviar».
-- **Por lectura del código anterior (`f8d9692`):**
+- **Por lectura del código anterior (`1e7fac2`):**
   - C1: `start_outbox` tomaba los pendientes del puesto sin reservarlos.
   - C3: `target = day + days` (día natural).
   - C4 a C6: no había ni baja por finalidad, ni lectura de «BAJA», ni comprobación de comodines.
@@ -273,7 +273,7 @@ servicios, ficheros reales o mediciones largas.
 ## E-013 Área 7: ortodoncia
 - Revisión en `docs/autonomia/revision/area7.md`: 6 defectos demostrados (T1 a T6).
 - **T1, demostrado en rojo antes del arreglo:** `server::tests::two_ortho_controls_recorded_at_once_are_both_kept` daba `left: 5, right: 6`. Se perdía el control del primer gabinete.
-- **Por lectura del código anterior (`98600db`):**
+- **Por lectura del código anterior (`94f4728`):**
   - T2: `c.state = s` sin registro.
   - T3: los recalls no se tocaban al finalizar.
   - T4: `doctor_id: 3` fijo.
@@ -294,7 +294,7 @@ servicios, ficheros reales o mediciones largas.
 
 ## E-014 Área 8: IA de radiografías
 - Revisión en `docs/autonomia/revision/area8.md`: 5 defectos demostrados (A1 a A5).
-- **Por lectura del código anterior (`62526cc`):**
+- **Por lectura del código anterior (`b589246`):**
   - A1 y A2: `unchecked` (marcadas por defecto) y sin revisión.
   - A3: sin límite de pago.
   - A4: el texto del aviso.
@@ -315,7 +315,7 @@ servicios, ficheros reales o mediciones largas.
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 368 pasan, 0 fallan, 10 ignoradas |
 
-## E-015 Corrección de la revisión automática de seguridad del área 8 (`0182c31`)
+## E-015 Corrección de la revisión automática de seguridad del área 8 (`072c493`)
 | Hallazgo | Corrección | Prueba |
 |---|---|---|
 | El servidor solo protegía la revisión. Un puesto podía cambiar lo que contestó la IA tras revisarlo, pasar un análisis de pago a gratuito (y saltarse el límite del mes) o borrar lo revisado, lo usado en el plan o lo de pago | `ia::protect_report`: paciente, imagen, fecha, agente, modelo, coste, intentos, instrucciones y resultado no cambian. La revisión la pone solo un profesional y después no cambia. Lo pasado al plan solo crece tras darlo por bueno. Solo se borra un borrador gratuito sin usar. `protect_new_report`: un análisis nuevo no llega revisado ni con propuestas en el plan si no lo revisa un profesional. La pantalla solo ofrece borrar lo que se puede borrar | `server::tests::only_a_licensed_professional_reviews_an_ai_analysis`, ampliada: un cambio del resultado, del coste y del modelo tras la revisión no queda; lo revisado y el borrador de pago no se borran; el borrador gratuito sí |
@@ -523,7 +523,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 401 pasan, 0 fallan, 10 ignoradas |
 
 ## E-022 Revisión de seguridad de la fase 2, ficheros privados y ensayo de instalación (T-F3-01)
-- **Revisión de seguridad automática del commit `24fd1b1`: dos hallazgos, corregidos.**
+- **Revisión de seguridad automática del commit `2aede99`: dos hallazgos, corregidos.**
   - **Hallazgo:** la guarda de rutas de red de los documentos importados no reconocía las barras mezcladas (`\/servidor`) ni los prefijos de dispositivo (`\\?\UNC\`, `\\.\`, `\??\`). Además, aunque no se mirara al importar, la galería abriría después esa ruta. En los dos casos, Windows daría las credenciales del usuario a ese servidor.
   - **Ahora:**
     - una ruta de red solo se importa dentro de la carpeta de documentos que la clínica indica, sin `..`;
@@ -605,7 +605,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` (dos veces) | 0 | 411 pasan, 0 fallan, 10 ignoradas |
 
 ## E-024 T-F3-03: firma y empaquetado, y revisión de seguridad de la bandeja
-- **Revisión de seguridad automática del commit `f42e45c`: dos hallazgos, corregidos.**
+- **Revisión de seguridad automática del commit `49db3a4`: dos hallazgos, corregidos.**
   - **Hallazgos:**
     - **Suplantación:** lo pendiente de un usuario se enviaba con la sesión del siguiente que entrara, con sus permisos.
     - **Pérdida de datos:** un envío correcto de otro usuario borraba esa bandeja ajena.
@@ -640,7 +640,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 411 pasan, 0 fallan, 10 ignoradas |
 
 ## E-025 T-F3-04: registro de errores e informe para soporte, y revisión de seguridad de la CI y de la sesión caducada
-- **Revisión de seguridad automática del commit `8817b9e`: dos hallazgos, corregidos.**
+- **Revisión de seguridad automática del commit `7a6af9f`: dos hallazgos, corregidos.**
   - **CI.**
     - **Hallazgo:** una ejecución a mano desde cualquier rama recibía las claves de firma.
     - **Ahora:**
@@ -673,7 +673,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 415 pasan, 0 fallan, 10 ignoradas |
 
 ## E-026 T-F3-05: ensayo de restauración y clave de recuperación, y revisión de seguridad del registro
-- **Revisión de seguridad automática del commit `ec6689f`: un hallazgo, corregido.**
+- **Revisión de seguridad automática del commit `a999448`: un hallazgo, corregido.**
   - **Hallazgo:** el texto de los avisos es libre. Un nombre de paciente sin comillas («No se puede borrar a Juan Pérez…») pasaba la minimización.
   - **Ahora:** los avisos y los errores del servidor se apuntan quitando además las palabras de los nombres que hay en los datos: pacientes y responsables, usuarios, colaboradores y contactos (`registro::log_free`, `scrub_with`).
   - **Prueba:** ampliada `personal_data_never_reaches_the_log`.
@@ -797,7 +797,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - `docs/restauracion.md`: restaurar una copia (con contraseña o clave de recuperación), ensayo mensual, pérdida de la contraseña, y actualizar y volver atrás (orden, paquete firmado, apagón a mitad, `--volver-atras` y cuándo hay que restaurar).
   - `docs/guia_breve.md`: recepción (cita, llegadas, cobro, caja, mensajes, sin conexión), profesionales y qué hacer si algo va mal.
   - **Prueba:** `docs_tests::tests::the_guides_only_name_what_the_program_has`. Cada texto entre «» de las guías (más de 40 citas) está en el código, y cada opción `--…` en `main.rs`.
-- **Revisión de seguridad automática del commit `060c6b9`: un hallazgo, corregido.**
+- **Revisión de seguridad automática del commit `c836bab`: un hallazgo, corregido.**
   - **Hallazgo:** inyección de fórmulas en el CSV de medidas. El mismo problema tenían dos exportaciones anteriores a este trabajo (la liquidación a mutuas y los gastos) y el informe de migración que se pega en una hoja de cálculo.
   - **Ahora:** todas pasan sus textos por `model::sheet_cell`: sin separadores ni saltos de línea, y con un apóstrofo delante de lo que empieza por `=`, `+`, `-`, `@` o un tabulador.
   - **Pruebas:** `medidas::tests::measures_carry_no_patient_data` y `migracion::tests::the_report_reads_as_text`, con un nombre de paciente «=HIPERVINCULO(…)» en el origen.
@@ -848,7 +848,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 429 pasan, 0 fallan, 10 ignoradas |
 
 ## E-033 T-F4-03: derechos de protección de datos, y revisión de seguridad del registro de accesos
-- **Revisión de seguridad automática del commit `2df4522`: cuatro hallazgos.**
+- **Revisión de seguridad automática del commit `8b7bd05`: cuatro hallazgos.**
   - **Corregidos:**
     1. **Paciente de una modificación:** el servidor lo saca de sus propios datos (lo que había y lo que queda), no de lo que diga el puesto. Un «antes» falso que nombra a otro paciente no se le atribuye.
     2. **Puesto:** el de una consulta sale de la sesión, no de la cabecera `X-Puesto`.
@@ -884,7 +884,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 433 pasan, 0 fallan, 10 ignoradas |
 
 ## E-034 T-F4-05: retirada de la carpeta compartida, y revisión de seguridad de los derechos RGPD
-- **Revisión de seguridad automática del commit `a871f41`: dos hallazgos, corregidos.**
+- **Revisión de seguridad automática del commit `135c680`: dos hallazgos, corregidos.**
   1. **Desbloqueo solo en el puesto.**
      - **Hallazgo:** que solo Dirección desbloquee se comprobaba únicamente en el puesto.
      - **Ahora:** el servidor conserva el bloqueo si lo pone o lo quita otro perfil, sin impedir el resto del cambio.
@@ -914,7 +914,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 436 pasan, 0 fallan, 10 ignoradas |
 
 ## E-035 T-F4-06: registro de jornada, y revisión de seguridad del bloqueo
-- **Revisión de seguridad automática del commit `a4b4b6e`: un hallazgo, corregido.**
+- **Revisión de seguridad automática del commit `b0ca0e0`: un hallazgo, corregido.**
   - **Hallazgo:** otro perfil podía borrar en red un paciente con los datos bloqueados.
   - **Ahora:** el servidor descarta ese borrado.
   - **Prueba:** final de `server::tests::the_time_record_only_grows_on_the_server`.
@@ -949,7 +949,7 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo test --workspace --all-targets --locked` | 0 | 439 pasan, 0 fallan, 10 ignoradas |
 
 ## E-036 Revisión de seguridad del registro de jornada en red
-- **Revisión de seguridad automática del commit `7f8b84e`: dos hallazgos, corregidos.**
+- **Revisión de seguridad automática del commit `0658182`: dos hallazgos, corregidos.**
   1. **Orden de los fichajes.**
      - **Hallazgo:** el servidor no comprobaba el orden: una segunda entrada seguida, o una salida sin entrada, enviadas desde el puesto.
      - **Ahora:** la comprueba con lo que ya tiene de esa persona (`jornada::next_allowed`), y pone el puesto de la sesión.

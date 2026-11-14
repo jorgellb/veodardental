@@ -1,6 +1,6 @@
 # VeodarDental: lo hecho y el plan de desarrollo
 
-Situación a 13 de noviembre de 2026 (último commit: `ade418b`).
+Situación a 13 de noviembre de 2026 (último commit: `69e33dc` (antes `ade418b`)).
 
 ## 1. En pocas palabras
 
@@ -40,7 +40,7 @@ fallaba y después se ha arreglado.
 ## 3. Lo hecho en esta etapa
 
 ### 3.1 Seguridad
-Commits: `7be6594`, `cabe65c`, `7c26044`, `a56e4ed`, `b5997af`, `fa7cf82`, `fec1660`, `d753a4c`, `a7f1265`, `654ab1e`, `0140a2c`.
+Commits: `9cff921`, `97462ea`, `5f2680b`, `c630915`, `21b7016`, `97b3505`, `12896b3`, `47209ac`, `a409b76`, `eaafc96`, `b410f1c`.
 
 - **Contraseñas y accesos**
   - Contraseñas con PBKDF2-HMAC-SHA256 (600.000 vueltas) y sal aleatoria.
@@ -61,7 +61,7 @@ Commits: `7be6594`, `cabe65c`, `7c26044`, `a56e4ed`, `b5997af`, `fa7cf82`, `fec1
 - **Pruebas:** no tocan nunca los datos reales.
 
 ### 3.2 Trabajo en red y velocidad
-Commits: `4680ff6`, `e104976`, `fa7cf82`, `45da9ff`, `5f4bd2c`, `5c9f0e4`, `f7666ef`, `1b43e91`, `382aee6`.
+Commits: `4a8158a`, `05c9608`, `97b3505`, `b33f60b`, `d15496b`, `ca56cc4`, `7293a19`, `904e149`, `92cc7d5`.
 
 Medido con una clínica de prueba de 220 MB de datos:
 
@@ -79,7 +79,7 @@ Además:
 - Solo una ventana guarda en los datos a la vez.
 
 ### 3.3 Dinero: facturas, cobros, cuotas, remesas y caja
-Commits: `d08c78a`, `58164ff`, `8a98292`, `df50dc3`, `d2d090b`, `80ddb86`.
+Commits: `ab7712b`, `b53be06`, `dff18e7`, `21021f3`, `5cd069b`, `289941c`.
 
 - **Facturas en red:** las numera y las encadena el servidor. Antes, dos puestos podían sacar el mismo número y partir la cadena de VERI*FACTU.
 - **Operaciones que no se pueden hacer dos veces:** el servidor las hace una tras otra, cada una con su permiso:
@@ -99,7 +99,7 @@ Commits: `d08c78a`, `58164ff`, `8a98292`, `df50dc3`, `d2d090b`, `80ddb86`.
 - **Presupuestos:** cada línea genera su propio tratamiento. Antes, dos líneas iguales generaban uno solo y se cobraba la mitad.
 
 ### 3.4 Agenda
-Commits: `e48d528`, `c2d9cd1`, `415ca00`, `c668483`.
+Commits: `7b9305d`, `b4305e8`, `1f620dd`, `feff6cd`.
 
 - Las citas que se solapan se ven una al lado de otra.
 - **Horario de la clínica y de cada profesional, por día:**
@@ -110,7 +110,7 @@ Commits: `e48d528`, `c2d9cd1`, `415ca00`, `c668483`.
 - El correo automático tiene hora final y no sale de noche.
 
 ### 3.5 Clínica, almacén y laboratorio
-Commits: `32eb94f`, `6aac0a9`, `0222094`.
+Commits: `4561405`, `46b64c1`, `769b73d`.
 
 - **Stock con varios puestos:** cuenta lo que gasta cada gabinete y no descuenta dos veces un cambio que se reenvía.
 - **Borrar tratamientos**
@@ -126,7 +126,7 @@ Commits: `32eb94f`, `6aac0a9`, `0222094`.
   - Hoja para dar al paciente y aviso de lo que caduca pronto.
 
 ### 3.6 Pacientes, copias e importación
-Commits: `8a98292`, `80ddb86`, `ade418b`.
+Commits: `dff18e7`, `289941c`, `69e33dc` (antes `ade418b`).
 
 - **Copias de seguridad**
   - Escalonadas: todas las de las últimas dos semanas, una por semana de los últimos tres meses y una por mes del último año.
@@ -142,7 +142,7 @@ Commits: `8a98292`, `80ddb86`, `ade418b`.
   - Copia de seguridad antes de importar.
 
 ### 3.7 Limpieza del código
-Commits: `af04f54`, `cee2273`. El código queda sin avisos de clippy y sin cambios de comportamiento.
+Commits: `c48d57a`, `327ad1a`. El código queda sin avisos de clippy y sin cambios de comportamiento.
 
 ---
 

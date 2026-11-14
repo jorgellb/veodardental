@@ -12,7 +12,7 @@ Todo eso queda pendiente, cada parte con su bloqueo (apartado 6). La
 preparación técnica de cada una está hecha y probada con dobles de prueba. Un
 doble de prueba no equivale a una prueba con el proveedor real.
 
-- Rama local: `autonomia/fases-0-6`, desde `main` (`ade418b`). Sin remoto, sin push, sin fusión y sin versiones publicadas.
+- Rama local: `autonomia/fases-0-6`, desde `main` (`69e33dc`, antes `ade418b`). Sin remoto, sin push, sin fusión y sin versiones publicadas.
 - Fecha de cierre: 2026-11-14.
 - Seguimiento:
   - `PROGRESO.md`: una fila por tarea, con su evidencia y su commit;
@@ -50,7 +50,7 @@ ordenador) y `--offline`:
 
 - **Matriz soportada:** el paquete no tiene funcionalidades opcionales (`[features]`), así que no hay combinaciones que ejecutar.
 - **Sin otros sistemas:** Windows y macOS no se han probado en máquinas reales (B-24). Compilar en Linux no prueba esos sistemas, y no se citan resultados de CI.
-- **Al empezar:** 302 pruebas que pasan y 10 ignoradas, en `ade418b` (E-001). Ninguna prueba se ha quitado ni rebajado. Cuando una prueba cambió de expectativa, fue por un cambio de comportamiento decidido y anotado. Por ejemplo, la orden al laboratorio sin el nombre por defecto (D-30).
+- **Al empezar:** 302 pruebas que pasan y 10 ignoradas, en `69e33dc` (antes `ade418b`) (E-001). Ninguna prueba se ha quitado ni rebajado. Cuando una prueba cambió de expectativa, fue por un cambio de comportamiento decidido y anotado. Por ejemplo, la orden al laboratorio sin el nombre por defecto (D-30).
 - **Ignoradas:** las 10 de siempre. Son manuales o de integración: servir la página de ejemplo, ensayos con proveedores reales, etc.
 - **Fallo encontrado al cierre y corregido:** tres pruebas de «nadie escuchando» abrían y cerraban un puerto, y otra prueba que corría a la vez podía cogerlo. Fue una carrera de las pruebas, no del programa. Ahora usan un puerto fuera de los que da el sistema (E-087).
 
@@ -179,10 +179,10 @@ parte afectada, preparación terminada y prueba posterior) está en
   - B-08, piloto de un mes: acordarlo, instalar con la lista de instalación y activar los instrumentos de medida.
 
 ## 7. Git
-- **Commits propios:** 158 en `autonomia/fases-0-6` sobre `main` (`ade418b`). Cuentan el de este cierre, su seguimiento y el que actualiza los identificadores tras quitar la línea de coautores (D-31). Van del primero (`d7b977c`, aislamiento) al último. Todos están firmados por `jorgellb <jorgellb@gmail.com>`, sin coautores.
+- **Commits propios:** 158 en `autonomia/fases-0-6` sobre `main` (`69e33dc`, antes `ade418b`). Cuentan el de este cierre, su seguimiento y el que actualiza los identificadores tras quitar la línea de coautores (D-31). Van del primero (`95efcd6`, aislamiento) al último. Todos están firmados por `jorgellb <jorgellb@gmail.com>`, sin coautores.
 - **HEAD final y estado:** se muestran al cierre en la conversación. El estado final es limpio, sin cambios sin guardar.
 - **Cambios ajenos que había al empezar:**
-  - `VEODARDENTAL_GOAL.md`, el encargo del propietario: se guardó sin cambios en su propio commit, `59830ff`, que cita su SHA-256 (D-04);
-  - `PLAN_DE_DESARROLLO.md`, del asistente de la sesión anterior: guardado en `6380167`.
+  - `VEODARDENTAL_GOAL.md`, el encargo del propietario: se guardó sin cambios en su propio commit, `79fe438`, que cita su SHA-256 (D-04);
+  - `PLAN_DE_DESARROLLO.md`, del asistente de la sesión anterior: guardado en `ebae3bd`.
   - No había más ramas, `stash` ni cambios sin guardar (`ESTADO_INICIAL.md`).
 - No se ha hecho reset destructivo, limpieza indiscriminada, rebase, force push ni push.

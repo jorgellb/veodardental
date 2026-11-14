@@ -24,6 +24,7 @@ Las cifras del informe son referencias históricas. Solo las marcadas como
 ## Git
 
 - Rama inicial: `main`, HEAD `ade418b`. No hay más ramas ni `stash`.
+- Nota posterior (D-31): al quitar la línea de coautores de los mensajes, `ade418b` pasó a ser `69e33dc`. El contenido es el mismo.
 - Ficheros sin seguimiento al empezar:
   - `VEODARDENTAL_GOAL.md`: el encargo, del propietario. Se conserva sin cambios (D-04).
   - `PLAN_DE_DESARROLLO.md`: documento del asistente de la sesión anterior, que lo escribió a petición del propietario.

@@ -1,7 +1,7 @@
 # Decisiones técnicas
 
 ## D-01 Rama de trabajo
-Todo el trabajo del encargo va en la rama local `autonomia/fases-0-6`, creada desde `ade418b`. No se hace push, fusión ni versión pública. `main` no se toca.
+Todo el trabajo del encargo va en la rama local `autonomia/fases-0-6`, creada desde `69e33dc` (antes `ade418b`). No se hace push, fusión ni versión pública. `main` no se toca. Excepción, autorizada por el propietario: lo de D-31.
 
 ## D-02 Aislamiento de rutas
 Todas las rutas pasan por `src/paths.rs`:
@@ -14,7 +14,7 @@ Las capturas, mediciones y ensayos se lanzan siempre con `tools/aislado.sh`.
 ## D-03 Formato
 El encargo cita `cargo fmt --all -- --check` como control. El repositorio no tenía configuración y el código no estaba formateado. Se adopta `rustfmt.toml` con `max_width = 250` y `use_small_heuristics = "Max"`, que es lo más parecido al estilo existente: de las configuraciones medidas, la que menos cambia.
 
-Se aplica una sola vez en su propio commit (`48892cd`), sin cambios de comportamiento: pasan las pruebas y clippy estricto.
+Se aplica una sola vez en su propio commit (`a39ef41`), sin cambios de comportamiento: pasan las pruebas y clippy estricto.
 
 ## D-04 Encargo en el repositorio
 La fase 0 pide conservar el encargo en el repositorio. `VEODARDENTAL_GOAL.md` se guarda tal como lo dejó el propietario, sin modificarlo, en un commit propio que cita su SHA-256. No se incluye ningún otro cambio ajeno.
@@ -287,5 +287,6 @@ Las facturas ya emitidas calculan su total al vuelo, y ese total entra en su hue
 - Los identificadores de commit han cambiado. Los que citan `PROGRESO.md`, `EVIDENCIAS.md`, `ENTREGA.md` y estas decisiones se han puesto al día. `docs_tests::tests::every_task_row_cites_its_evidence_and_commit_and_the_battery_is_recorded` comprueba que existen.
 - El historial anterior se conserva en la rama local `respaldo/fases-0-6-con-coautores`, que no se sube a ningún sitio.
 - Los commits nuevos van sin coautores.
-- Los 36 commits de `main`, anteriores a este encargo, siguen con la línea: no se han tocado.
+- Después, también con su permiso, se ha quitado de los 36 commits de `main`, anteriores a este encargo. `ade418b` es hoy `69e33dc`, con el mismo contenido. La rama cuelga de ella y sus identificadores han vuelto a cambiar. Los documentos citan los nuevos, salvo dos sitios: el encargo (`VEODARDENTAL_GOAL.md`, que no se modifica) y el texto de su requisito en `TAREAS.json`, que cita `ade418b` tal cual. Copias locales: `respaldo/main-dental-con-coautores` y `respaldo/fases-0-6-antes-de-limpiar-main`.
+- Con su permiso expreso, `main` y la rama se suben a un repositorio privado de GitHub (`jorgellb/veodardental`). El objetivo es lanzar el flujo «Instaladores» y probar en Windows y macOS (B-24). No se fusiona ni se publica ninguna versión.
 
