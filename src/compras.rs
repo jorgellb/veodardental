@@ -38,10 +38,18 @@ impl Db {
     /// no se evita partiendo un pedido en varios pequeños).
     fn approval_total(&self, id: u32, now: NaiveDateTime) -> f64 {
         let Some(o) = self.orders.iter().find(|o| o.id == id) else { return 0.0 };
+        // el mismo proveedor: la misma ficha, o el mismo NIF o correo en otra
+        let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.').collect::<String>().to_lowercase();
+        let key = |sid: u32| self.suppliers.iter().find(|s| s.id == sid).map(|s| (norm(&s.nif), norm(&s.email))).unwrap_or_default();
+        let (nif, email) = key(o.supplier_id);
+        let same = |sid: u32| {
+            let (n, e) = key(sid);
+            sid == o.supplier_id || (!nif.is_empty() && n == nif) || (!email.is_empty() && e == email)
+        };
         let recent: f64 = self
             .orders
             .iter()
-            .filter(|x| x.id != id && x.supplier_id == o.supplier_id && x.state != OrderState::Cancelado)
+            .filter(|x| x.id != id && same(x.supplier_id) && x.state != OrderState::Cancelado)
             .filter(|x| x.approved.as_ref().is_some_and(|(t, how)| how.starts_with("sin aprobación") && (now - *t).num_days() < 30))
             .map(|x| x.total())
             .sum();
@@ -292,6 +300,14 @@ mod tests {
             states.push(db.order_submit(piece, at(4)).unwrap());
         }
         assert_eq!(states, vec![OrderState::Aprobado, OrderState::Aprobado, OrderState::PorAprobar], "7 + 35 + 35 = 77 €; con el tercero, 112 €: pasa de 100 €");
+        // y en otra ficha del mismo proveedor (mismo correo), también cuentan juntos
+        let twin = db.new_id();
+        let mut s2 = db.suppliers.iter().find(|s| s.id == sid).unwrap().clone();
+        (s2.id, s2.name, s2.email) = (twin, "Proveedor Ficticio (2)".into(), " Pedidos@Proveedor-Ficticio.example".into());
+        db.suppliers.push(s2);
+        let id = db.new_id();
+        db.orders.push(crate::stock::PurchaseOrder { id, supplier_id: twin, date: at(4).date(), lines: vec![OrderLine { product_id: pid, qty: 400.0, cost: 0.07, ..Default::default() }], ..Default::default() });
+        assert_eq!(db.order_submit(id, at(4)).unwrap(), OrderState::PorAprobar, "28 € solo no llega a 100, pero con los 77 € del mismo proveedor (otra ficha, mismo correo) sí");
         assert!(db.audit_log.iter().any(|a| a.action == "Pedido aprobado"));
     }
 

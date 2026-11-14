@@ -158,17 +158,29 @@ fn financing_change_ok(current: Option<&String>, after: Option<&String>) -> bool
     }
 }
 
-/// Campos de la configuración que solo cambia Dirección: identidad de la
-/// clínica, IVA, cobros por internet, remesas, aprobación y envío de pedidos,
-/// encuestas y resúmenes con IA (datos que salen).
-const ADMIN_CONFIG: [&str; 12] = ["name", "nif", "address", "receipt_series", "vat_exemption", "creditor_id", "clinic_iban", "pay_online", "surveys", "evo_ai", "order_approval_from", "orders_auto_send"];
+/// Lo único de la configuración que cambia quien no es Dirección: las
+/// iniciales en la pizarra y lo propio de su puesto (su usuario y su centro).
+/// Todo lo demás (quién es la clínica, IVA, numeración, cobros, remesas,
+/// pedidos, encuestas, IA, correo de soporte…) y lo que se añada después,
+/// solo Dirección.
+const USER_CONFIG: [&str; 3] = ["board_initials", "current_user", "current_center"];
 
 /// ¿Se acepta este cambio de un proveedor de quien no es Dirección? Lo de
 /// siempre, sí; activar o quitar el envío automático de pedidos, o cambiar el
 /// correo de un proveedor que lo tiene, no (los pedidos irían a otro sitio).
-fn supplier_change_ok(current: Option<&String>, after: Option<&String>) -> bool {
+fn supplier_change_ok(current: Option<&String>, after: Option<&String>, others: &[Value]) -> bool {
     let parse = |j: Option<&String>| j.and_then(|j| serde_json::from_str::<Value>(j).ok());
     let (c, a) = (parse(current), parse(after));
+    // uno nuevo no repite el NIF ni el correo de otro (no se parte un pedido en dos fichas)
+    if c.is_none()
+        && let Some(a) = &a
+    {
+        let norm = |v: &Value, k: &str| v[k].as_str().unwrap_or("").chars().filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.').collect::<String>().to_lowercase();
+        let dup = |k: &str| !norm(a, k).is_empty() && others.iter().any(|o| o["id"] != a["id"] && norm(o, k) == norm(a, k));
+        if dup("nif") || dup("email") {
+            return false;
+        }
+    }
     let auto = |v: &Option<Value>| v.as_ref().is_some_and(|v| v["auto_send"].as_bool().unwrap_or(false));
     if !auto(&c) && !auto(&a) {
         return true;
@@ -1039,6 +1051,7 @@ impl State {
             let can = |p: Perm| profile.is_some_and(|x| x.can(p));
             let (caja, gastos) = (can(Perm::Caja), can(Perm::Gastos));
             let snap = &self.snap;
+            let suppliers: Vec<Value> = snap.records.get("suppliers").into_iter().flat_map(|r| r.iter()).filter_map(|(_, j)| serde_json::from_str(j).ok()).collect();
             changes.retain(|c| match c.field.as_str() {
                 "payments" => payment_change_ok(c.key.as_deref().and_then(|k| snap.get("payments", Some(k))), c.after.as_ref(), caja),
                 "bank_moves" | "bank_accounts" => gastos,
@@ -1051,18 +1064,20 @@ impl State {
                 // un pedido: desde el puesto, solo el borrador; lo demás, por sus operaciones
                 "orders" => order_change_ok(c.key.as_deref().and_then(|k| snap.get("orders", Some(k))), c.after.as_ref()),
                 // el envío automático de pedidos a un proveedor, y su correo mientras lo tenga, solo Dirección
-                "suppliers" => supplier_change_ok(c.key.as_deref().and_then(|k| snap.get("suppliers", Some(k))), c.after.as_ref()),
+                "suppliers" => supplier_change_ok(c.key.as_deref().and_then(|k| snap.get("suppliers", Some(k))), c.after.as_ref(), &suppliers),
                 _ => true,
             });
         }
-        // de la configuración, lo que decide dinero, aprobaciones, datos que salen
-        // o quién es la clínica solo lo cambia Dirección: de otro perfil se queda como está
+        // la configuración la cambia Dirección: de otro perfil solo se aceptan los
+        // pocos campos de `USER_CONFIG` (lo demás, también lo que se añada, se queda como está)
         if !admin {
             let current = self.snap.get("config", None).and_then(|j| serde_json::from_str::<Value>(j).ok());
-            for c in changes.iter_mut().filter(|c| c.field == "config" && c.key.is_none() && c.after.is_some()) {
-                if let (Some(cur), Some(Ok(mut v))) = (current.as_ref(), c.after.as_deref().map(serde_json::from_str::<Value>)) {
-                    for f in ADMIN_CONFIG {
-                        match cur.get(f) {
+            changes.retain(|c| c.field != "config" || (c.after.is_some() && current.is_some()));
+            for c in changes.iter_mut().filter(|c| c.field == "config" && c.key.is_none()) {
+                if let (Some(cur), Some(Ok(after))) = (current.as_ref(), c.after.as_deref().map(serde_json::from_str::<Value>)) {
+                    let mut v = cur.clone();
+                    for f in USER_CONFIG {
+                        match after.get(f) {
                             Some(x) => v[f] = x.clone(),
                             None => {
                                 if let Some(o) = v.as_object_mut() {
@@ -3827,8 +3842,17 @@ mod tests {
         let (mut a, mut sa) = r1.load().unwrap();
         a.station = r1.station;
         a.suppliers.iter_mut().find(|s| s.id == sid).unwrap().email = "otro@sitio.example".into();
+        a.config.support_email = "fuera@sitio.example".into();
+        a.config.next_receipt = 1;
+        let twin = a.new_id();
+        let mut s2 = a.suppliers.iter().find(|s| s.id == sid).unwrap().clone();
+        (s2.id, s2.auto_send) = (twin, false);
+        a.suppliers.push(s2);
         r1.push(&mut a, &mut sa).unwrap();
-        assert_ne!(crate::sync::on_disk(&path).suppliers.iter().find(|s| s.id == sid).unwrap().email, "otro@sitio.example", "ni se cambia su correo mientras lo tiene");
+        let disk = crate::sync::on_disk(&path);
+        assert_ne!(disk.suppliers.iter().find(|s| s.id == sid).unwrap().email, "otro@sitio.example", "ni se cambia su correo mientras lo tiene");
+        assert_ne!(disk.config.support_email, "fuera@sitio.example", "ni a dónde van los informes de errores");
+        assert!(!disk.suppliers.iter().any(|s| s.id == twin), "ni otra ficha del mismo proveedor (mismo NIF o correo)");
         // dos puestos reciben lo mismo a la vez: entra una vez
         let o = disk.orders.iter().find(|o| o.id == first).unwrap().clone();
         let traced = o.lines.iter().any(|l| disk.product(l.product_id).is_some_and(|p| p.traced));

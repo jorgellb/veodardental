@@ -49,13 +49,18 @@ pub fn panel(app: &mut App, ui: &mut Ui) {
                 };
             }
         });
-        ui.horizontal_wrapped(|ui| {
-            let mut to = app.db.config.support_email.clone();
-            if field(ui, "Correo de soporte", &mut to, 260.0).changed() {
-                app.db.config.support_email = to;
-                app.changed();
-            }
-        });
+        // a dónde va el informe lo decide Dirección (el servidor tampoco acepta otra cosa)
+        if app.can(crate::users::Perm::Configuracion) {
+            ui.horizontal_wrapped(|ui| {
+                let mut to = app.db.config.support_email.clone();
+                if field(ui, "Correo de soporte", &mut to, 260.0).changed() {
+                    app.db.config.support_email = to;
+                    app.changed();
+                }
+            });
+        } else {
+            muted(ui, format!("Se envía a {} (lo decide Dirección).", if app.db.config.support_email.is_empty() { "—" } else { &app.db.config.support_email }));
+        }
         ui.checkbox(&mut app.support.consent, "He revisado el informe y acepto enviarlo a esa dirección");
         let can = app.support.consent && app.db.config.support_email.contains('@');
         if ui.add_enabled(can, egui::Button::new("✉ Enviar por correo")).clicked() {

@@ -1932,3 +1932,31 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 542 pasan (540 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-073 Revisión de seguridad: la configuración por lista de lo permitido y sin proveedores repetidos
+- **Hallazgos:**
+  1. La lista de campos protegidos de la configuración (E-072) dejaba fuera otros que también importan, como el correo de soporte (a dónde salen los informes de errores) o la numeración de recibos. Un campo nuevo quedaría sin proteger por defecto.
+  2. Creando otra ficha del mismo proveedor (con el mismo NIF o correo) se podía volver a partir un pedido para no llegar al importe de aprobación.
+- **Correcciones:**
+  - **Configuración** (`USER_CONFIG`): de quien no es Dirección, el servidor parte de la configuración que tiene y solo toma de lo que llega:
+    - las iniciales en la pizarra;
+    - el usuario y el centro del puesto.
+
+    Todo lo demás se queda como está, también lo que se añada en adelante.
+  - **Correo de soporte:** en Soporte solo lo cambia Dirección; los demás ven a dónde se envía.
+  - **Proveedores:** uno nuevo de quien no es Dirección no puede repetir el NIF ni el correo (normalizados) de otro.
+  - **Aprobación:** el «mismo proveedor» es la misma ficha, o el mismo NIF o correo en otra.
+- **Pruebas:**
+  - `compras::tests::approval_depends_on_the_amount_and_sending_needs_it`, además: un pedido de 28 € en otra ficha con el mismo correo suma con los 77 € anteriores y queda por aprobar.
+  - `server::tests::orders_are_proposed_and_received_once_and_approved_by_expenses`, además:
+    - recepción no cambia el correo de soporte;
+    - no crea otra ficha del mismo proveedor.
+
+    Comprobado que falla si se quita la lista de lo permitido o la regla de los repetidos.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 542 pasan (540 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
