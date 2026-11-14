@@ -61,6 +61,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F5-05: periodontograma por voz con corrección y confirmación visibles | E-048 | `0d1b386` |
 | T-F5-06: visor DICOM/CBCT y STL, y comparación de radiografías | E-049 | `6637bc5` |
 | Revisión de seguridad: memoria de los DICOM y tamaño de los STL | E-050 | `107cb20` |
+| T-F5-07: alertas clínicas ampliadas con fuente citada y revisión del profesional | E-051 | `a65de92` |
 
 ## Siguiente acción
 Las fases 1 a 4 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS: piloto, AEAT con certificado, Meta, firma de código, clave de versiones, esquemas de los programas de origen, homologación foral y revisiones externas (B-13, con el paquete de `docs/revision_externa`). Toca la fase 5: funcionalidades que distinguen al producto.
