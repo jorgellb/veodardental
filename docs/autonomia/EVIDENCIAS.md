@@ -2322,6 +2322,12 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
     - **Ensayado** con el paso tal cual está en el flujo: el portable de verdad pasa; uno con el programa como enlace a `/etc/hostname` y otro con la carpeta como enlace fuera del portable se rechazan.
 - **Fallo propio encontrado y corregido:** `tools/paquetes_linux.sh` fallaba la segunda vez, porque no podía vaciar la carpeta que deja makepkg. Ahora usa una carpeta nueva en cada ejecución y la borra al terminar. Dos pasadas seguidas, bien.
 - **Guías:** `README.md` (Instaladores) y `docs/instalacion.md`.
+- **En GitHub, ejecución 43652328181** (commit `903a54d`), todos sus trabajos bien:
+  - pruebas en Ubuntu, Windows y macOS;
+  - instaladores de Windows (con el `.msi` instalado y arrancado), macOS Apple Silicon e Intel (con el `.dmg` instalado y arrancado);
+  - Linux (AlmaLinux 8) y su instalación en Rocky 8, Ubuntu 20.04 y 24.04, Debian 12 y 13, Fedora, openSUSE Leap 15.6, Arch y el portable;
+  - `firmar-actualizacion`, que sin etiqueta no firma y lo dice.
+  - `publicar` no corre, porque solo corre con una etiqueta `v…`.
 - **Batería:**
 
 | Orden | Código de salida | Resultado |
