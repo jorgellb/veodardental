@@ -699,6 +699,37 @@ mod tests {
         assert!(v.iter().filter(|c| !c.essential).all(|c| c.status != Status::Pendiente));
     }
 
+    /// T-PROC-01. Ningún servicio real se activa solo. Tanto con los datos de
+    /// ejemplo como con la clínica vacía, y con los ajustes de cada
+    /// ordenador sin tocar, están apagados o en pruebas:
+    /// - la AEAT (VERI*FACTU), el correo, el TPV del banco y la receta electrónica;
+    /// - la IA, sin claves, y la transcripción;
+    /// - WhatsApp, los SMS, el datáfono (a mano) y las páginas públicas.
+    ///
+    /// Ninguna campaña está programada.
+    #[test]
+    fn every_real_service_starts_switched_off() {
+        let sample = Db::sample(day());
+        let mut empty = sample.clone();
+        empty.start_empty().unwrap();
+        for db in [&sample, &empty] {
+            assert!(!db.verifactu.enabled && !db.verifactu.auto_send && db.verifactu.env == crate::verifactu::Env::Pruebas, "AEAT");
+            assert!(!db.mail.enabled && !db.mail.auto_send, "correo");
+            assert!(!db.ia.enabled && db.ia.agents.iter().all(|a| a.api_key.is_empty()), "IA");
+            assert!(!db.booking.enabled, "páginas públicas");
+            assert!(!db.config.pay_online.enabled, "pago por internet");
+            assert!(db.erx.url.is_empty() && db.erx.repo_addr.is_empty(), "receta electrónica");
+            assert!(db.campaigns.iter().all(|c| c.state != crate::campanas::CampState::Programada), "campañas");
+        }
+        // los ajustes de cada ordenador, de serie
+        assert!(!crate::whatsapp::WaSettings::default().enabled, "WhatsApp");
+        assert!(!crate::sms::SmsSettings::default().enabled(), "SMS");
+        assert!(!crate::evolucion::SttSettings::default().enabled(), "transcripción");
+        assert!(crate::datafono::Settings::default().url.is_empty(), "datáfono: a mano");
+        let tpv = crate::pago::TpvSettings::default();
+        assert!(tpv.env == crate::pago::Env::Pruebas && tpv.problem().is_some(), "TPV: en pruebas y sin datos");
+    }
+
     #[test]
     fn empty_clinic_keeps_the_setup() {
         let mut db = Db::sample(day());

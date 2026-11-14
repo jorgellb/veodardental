@@ -962,8 +962,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Evidencia de aislamiento, dobles de prueba, activaciones reales desactivadas y commits solo locales",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-084"]
   },
   {
    "id": "T-PROC-02",

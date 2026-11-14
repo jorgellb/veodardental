@@ -2168,3 +2168,29 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 572 pasan (570 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-084 T-PROC-01: los límites del encargo, respetados
+- **Sin datos reales.** Todo se ha ejecutado con `tools/aislado.sh`, que pone el inicio y las carpetas XDG del programa en un directorio temporal, y la raíz propia del programa (`VEODARDENTAL_RAIZ`) dentro de él.
+  - `paths::tests::tests_never_use_the_real_folders` y `paths::tests::an_isolated_root_holds_every_folder` comprueban que ninguna ruta de las pruebas sale de esa carpeta.
+  - `--medir` no arranca sin una raíz aislada (E-075).
+  - No se ha abierto el programa contra los datos de la clínica ni se ha leído la carpeta de copias, tampoco las del 11 y 12 de noviembre (T-F0-06 sigue bloqueada a la espera de la clínica).
+- **Nada sensible en el repositorio.** `git ls-files` no tiene certificados, claves, bases de datos, volcados ni estudios DICOM (búsqueda por extensión, sin resultados). Los datos de las pruebas son inventados: «Apellidoreservado», documentos de ejemplo y correos `@ejemplo.invalid`.
+- **Sin servicios reales.** Las pruebas solo hablan con dobles en 127.0.0.1, dentro del propio proceso:
+  - SMTP (`fake_smtp`), AEAT (`fake_aeat`), Redsys (`fake_redsys`), pasarelas de WhatsApp y Meta (`fake_gateway`), IA (`fake_service`);
+  - además: SMS, colegios, receta electrónica, transcripción, datáfono y el servidor de la clínica.
+  - Ninguna prueba llama a una dirección que no sea local.
+- **Activaciones reales desactivadas.** Nueva `golive::tests::every_real_service_starts_switched_off`: con los datos de ejemplo, con la clínica vacía y con los ajustes de cada ordenador de serie, están apagados o en pruebas:
+  - la AEAT, el correo, la IA (sin claves), las páginas públicas, el pago por internet y la receta electrónica;
+  - WhatsApp, los SMS, la transcripción, el datáfono (a mano) y el TPV;
+  - y no hay campañas programadas.
+- **Sin cargos ni cuentas.** No se ha contratado nada, ni gastado créditos de proveedores, ni creado cuentas. Lo que necesita un proveedor está en `BLOQUEOS.md` y en las 27 tareas `BLOQUEADA_EXTERNA` de `TAREAS.json`.
+- **Commits solo locales:**
+  - `git remote -v` está vacío: el repositorio no tiene ningún remoto configurado, y `git branch -r` no lista ninguna rama;
+  - los 149 commits de `autonomia/fases-0-6` sobre `main` no han salido de este ordenador. No hay fusiones ni versiones publicadas.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 573 pasan (571 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
