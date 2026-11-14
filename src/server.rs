@@ -1012,9 +1012,9 @@ impl State {
                 "cash" => caja,
                 "card_txs" => caja || ![c.key.as_deref().and_then(|k| snap.get("card_txs", Some(k))), c.after.as_ref()].iter().any(|j| j.is_some_and(|j| j.contains("\"Devolucion\""))),
                 "financings" => financing_change_ok(c.key.as_deref().and_then(|k| snap.get("financings", Some(k))), c.after.as_ref()),
-                // una solicitud de autorización la crea el servidor (sin duplicados); el
-                // puesto apunta el envío y las respuestas, y no la borra
-                "auth_requests" => c.key.as_deref().and_then(|k| snap.get("auth_requests", Some(k))).is_some() && c.after.is_some(),
+                // autorizaciones y liquidaciones: solo por sus operaciones en el
+                // servidor (`ChainOp::Auth*` y `Claim*`), que apuntan quién lo hizo
+                "auth_requests" | "claims" => false,
                 _ => true,
             });
         }
@@ -3724,28 +3724,50 @@ mod tests {
         let op = ChainOp::AuthRequest { patient: pid, entries: vec![e] }.json();
         let id = a1.chain_op(&mut d1, &mut s1, &op).unwrap();
         assert!(a2.chain_op(&mut d2, &mut s2, &op).unwrap_err().contains("ya está en la solicitud"), "una sola");
-        // por su cuenta, no: ni crearla ni borrarla
+        // por su cuenta, no: ni crearla, ni apuntar el envío o una respuesta, ni borrarla
         let (mut d2, mut s2) = a2.load().unwrap();
         d2.station = a2.station;
         let mut forged = d2.auth_requests.iter().find(|r| r.id == id).unwrap().clone();
         forged.id = d2.new_id();
         d2.auth_requests.push(forged.clone());
-        rec_sent(&mut d2, id);
+        d2.auth_sent(id, "Portal", "W-1", crate::model::now()).unwrap();
         a2.push(&mut d2, &mut s2).unwrap();
         let disk = crate::sync::on_disk(&path);
         assert!(!disk.auth_requests.iter().any(|r| r.id == forged.id), "no se crea por otro camino");
-        assert_eq!(disk.auth_requests.iter().find(|r| r.id == id).unwrap().state, crate::autorizaciones::AuthState::Enviada, "el envío, sí");
+        assert_eq!(disk.auth_requests.iter().find(|r| r.id == id).unwrap().state, crate::autorizaciones::AuthState::Borrador, "ni se apunta el envío a mano");
         let (mut d2, mut s2) = a2.load().unwrap();
         d2.station = a2.station;
         d2.auth_requests.retain(|r| r.id != id);
         a2.push(&mut d2, &mut s2).unwrap();
         assert!(crate::sync::on_disk(&path).auth_requests.iter().any(|r| r.id == id), "ni se borra");
+        // por el servidor, sí, con quién lo hizo
+        let (mut d2, mut s2) = a2.load().unwrap();
+        a2.chain_op(&mut d2, &mut s2, &ChainOp::AuthSent { req: id, channel: "Portal".into(), external_ref: "W-1".into() }.json()).unwrap();
+        a2.chain_op(&mut d2, &mut s2, &ChainOp::AuthAnswer { req: id, approved: true, number: "N-7".into(), denied: vec![], valid_until: None, note: String::new(), raw: "ok".into() }.json()).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let r = disk.auth_requests.iter().find(|r| r.id == id).unwrap();
+        assert_eq!((r.state, r.answers[0].by.as_str()), (crate::autorizaciones::AuthState::Aprobada, "Recepción"), "quien estaba en la sesión");
+        assert_eq!(disk.auth_no(e), "N-7");
+        // liquidaciones: rechazar a mano un acto (para cobrarlo otra vez) o tocar lo cobrado, no
+        let (mut d1, mut s1) = a1.load().unwrap();
+        d1.station = a1.station;
+        let today = crate::model::today();
+        let claim = a1.chain_op(&mut d1, &mut s1, &ChainOp::Claim { tariff: t.id, from: today - chrono::Duration::days(800), to: today, date: today }.json()).unwrap();
+        let (mut d1, mut s1) = a1.load().unwrap();
+        d1.station = a1.station;
+        let c = d1.claims.iter_mut().find(|c| c.id == claim).unwrap();
+        c.lines[0].rejected = Some("a mano".into());
+        c.paid = c.total;
+        a1.push(&mut d1, &mut s1).unwrap();
+        let c = crate::sync::on_disk(&path).claims.iter().find(|c| c.id == claim).unwrap().clone();
+        assert!(c.lines.iter().all(|l| l.rejected.is_none()) && c.paid == 0.0, "ni rechazos ni cobros a mano");
+        let (mut d1, mut s1) = a1.load().unwrap();
+        a1.chain_op(&mut d1, &mut s1, &ChainOp::ClaimSent { claim, channel: "Portal".into(), external_ref: String::new() }.json()).unwrap();
+        a1.chain_op(&mut d1, &mut s1, &ChainOp::ClaimPaid { claim, amount: 100 }.json()).unwrap();
+        assert!(a1.chain_op(&mut d1, &mut s1, &ChainOp::ClaimPaid { claim, amount: 99_999_999 }.json()).is_err(), "no más de lo pendiente");
+        assert_eq!(crate::sync::on_disk(&path).claims.iter().find(|c| c.id == claim).unwrap().paid, 1.0, "por el servidor, sí");
         a1.stop().unwrap();
         h.join().unwrap();
-    }
-
-    fn rec_sent(d: &mut Db, id: u32) {
-        d.auth_sent(id, "Portal", "W-1", crate::model::now()).unwrap();
     }
 
     /// Sacar dinero, con permiso de caja; el banco, con el suyo; y un cobro no

@@ -2,7 +2,7 @@
 //! envío y la respuesta de las liquidaciones en Mutuas (ver
 //! `crate::autorizaciones` e `insurer`).
 
-use crate::app::App;
+use crate::app::{App, ChainOp};
 use crate::autorizaciones::AuthState;
 use crate::model::TxState;
 use crate::theme::*;
@@ -30,7 +30,6 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
     if !app.db.tariff(p.tariff_id).is_some_and(|t| t.is_insurer) {
         return;
     }
-    let now = crate::model::now();
     let today = app.today;
     ui.add_space(8.0);
     card(ui, |ui| {
@@ -96,8 +95,7 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
                     ui.add(egui::TextEdit::singleline(&mut app.auth_ui.ext_ref).desired_width(120.0).hint_text("Referencia"));
                     if ui.button("Enviada").clicked() {
                         let (c, e) = (app.auth_ui.channel.clone(), app.auth_ui.ext_ref.clone());
-                        app.auth_ui.msg = app.db.auth_sent(r.id, &c, &e, now).err().map(|e| (false, e));
-                        app.changed();
+                        app.auth_ui.msg = app.chain_op(ChainOp::AuthSent { req: r.id, channel: c, external_ref: e }).err().map(|e| (false, e));
                     }
                 }
                 AuthState::Enviada | AuthState::Aprobada | AuthState::Parcial => {
@@ -106,12 +104,10 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
                     if ui.button("Autorizada").clicked() {
                         let (n, days) = (app.auth_ui.number.clone(), app.auth_ui.valid_days);
                         let valid = (days > 0).then(|| today + chrono::Duration::days(days as i64));
-                        app.auth_ui.msg = app.db.auth_answer(r.id, true, &n, &[], valid, "", "", now).err().map(|e| (false, e));
-                        app.changed();
+                        app.auth_ui.msg = app.chain_op(ChainOp::AuthAnswer { req: r.id, approved: true, number: n, denied: vec![], valid_until: valid, note: String::new(), raw: String::new() }).err().map(|e| (false, e));
                     }
                     if ui.button("Denegada").clicked() {
-                        app.auth_ui.msg = app.db.auth_answer(r.id, false, "", &[], None, "", "", now).err().map(|e| (false, e));
-                        app.changed();
+                        app.auth_ui.msg = app.chain_op(ChainOp::AuthAnswer { req: r.id, approved: false, number: String::new(), denied: vec![], valid_until: None, note: String::new(), raw: String::new() }).err().map(|e| (false, e));
                     }
                 }
                 _ => {}
@@ -121,8 +117,7 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
                     ui.add(egui::TextEdit::singleline(&mut app.auth_ui.reason).desired_width(180.0).hint_text("Motivo para anular"));
                     if ui.button("Anular").clicked() {
                         let why = app.auth_ui.reason.clone();
-                        app.auth_ui.msg = app.db.auth_cancel(r.id, &why, now).err().map(|e| (false, e));
-                        app.changed();
+                        app.auth_ui.msg = app.chain_op(ChainOp::AuthCancel { req: r.id, reason: why }).err().map(|e| (false, e));
                     }
                 });
             }
@@ -136,12 +131,12 @@ pub fn claim_controls(app: &mut App, ui: &mut Ui, c: &crate::insurer::Claim) {
     if c.cancelled.is_some() {
         return;
     }
-    let now = crate::model::now();
     if c.sent.is_empty() {
         if ui.button("Enviada").on_hover_text("Apunte que se ha enviado a la compañía (por su portal o por correo)").clicked() {
-            let r = app.db.claim_sent(c.id, "Portal o fichero de la compañía", "", now);
-            app.auth_ui.msg = r.err().map(|e| (false, e));
-            app.changed();
+            let r = app.chain_op(ChainOp::ClaimSent { claim: c.id, channel: "Portal o fichero de la compañía".into(), external_ref: String::new() });
+            if let Err(e) = r {
+                app.warn(e);
+            }
         }
     } else if ui.button("Respuesta…").on_hover_text("Apunte los actos que rechaza la compañía").clicked() {
         app.auth_ui.claim = if app.auth_ui.claim == Some(c.id) { None } else { Some(c.id) };
@@ -179,13 +174,13 @@ pub fn claim_answer_panel(app: &mut App, ui: &mut Ui) {
         if ui.button("Guardar la respuesta").clicked() {
             let rejected: Vec<(u32, String)> = app.auth_ui.rejected.iter().map(|(k, v)| (*k, v.clone())).collect();
             let raw = app.auth_ui.claim_raw.clone();
-            match app.db.claim_answer(id, &rejected, &raw, crate::model::now()) {
-                Ok(expected) => {
+            match app.chain_op(ChainOp::ClaimAnswer { claim: id, rejected, raw }) {
+                Ok(_) => {
+                    let expected = app.db.claims.iter().find(|c| c.id == id).map(|c| c.expected()).unwrap_or_default();
                     app.notify(format!("Respuesta guardada. La compañía debe pagar {}.", crate::model::money(expected)));
                     app.auth_ui.claim = None;
                     app.auth_ui.rejected.clear();
                     app.auth_ui.claim_raw.clear();
-                    app.changed();
                 }
                 Err(e) => app.warn(e),
             }

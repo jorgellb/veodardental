@@ -1842,3 +1842,28 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 536 pasan (534 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-070 Revisión de seguridad: autorizaciones y liquidaciones, solo por el servidor
+- **Hallazgos:**
+  1. Un puesto podía cambiar a mano una solicitud de autorización: el envío, las respuestas, los actos o quién la apuntó.
+  2. **También antes de esta tarea, en las liquidaciones:** un puesto podía marcar a mano un acto como rechazado (y volver a liquidarlo, cobrándolo dos veces a la compañía) o cambiar lo cobrado. «Cobrada» y «Anular» se hacían en el puesto.
+- **Correcciones:**
+  - **Operaciones del servidor** con permiso de facturación, que apuntan al usuario de la sesión:
+    - `ChainOp::AuthSent`, `AuthAnswer` y `AuthCancel`;
+    - `ClaimSent`, `ClaimAnswer`, `ClaimPaid` (entre 0 y lo pendiente) y `ClaimCancel`.
+  - **Regla del servidor:** de quien no es Dirección no se acepta ningún cambio directo en `auth_requests` ni en `claims`.
+  - **Pantalla:** cuenta del paciente y Mutuas, todo por esas operaciones.
+- **Pruebas:** `server::tests::two_stations_cannot_ask_twice_for_the_same_authorization`, además:
+  - apuntar el envío a mano no se acepta, y por el servidor sí, con «Recepción» como quien la respondió;
+  - el número pasa al acto;
+  - en una liquidación, un rechazo y un cobro a mano no se aceptan;
+  - por el servidor, el envío y el cobro sí, y no más de lo pendiente.
+
+  Comprobado que falla si se quita la regla («no se crea por otro camino»). Siguen en verde `server::tests::remittances_and_claims_made_by_two_stations_at_once_charge_once` y `ui_tests::an_authorization_is_asked_from_the_insured_patient_account`.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 536 pasan (534 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

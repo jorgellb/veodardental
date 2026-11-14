@@ -27,6 +27,9 @@ cada paso.
   - Se pueden liquidar de nuevo, ya corregidos, en otra liquidación, una sola vez.
   - No se acepta un rechazo que deje lo cobrado por encima de lo que queda.
 
+## Quién y cómo
+Cada paso de una autorización o de una liquidación es una operación del servidor, con permiso de facturación: crear, enviar, responder, anular y cobrar. El servidor apunta quién lo hizo. Un puesto no puede cambiarlas por su cuenta. Así, por ejemplo, nadie marca a mano un acto como rechazado para cobrarlo otra vez a la compañía.
+
 ## Contrato para una conexión directa
 Cuando una compañía dé su API, el adaptador tendrá que traducir a y desde esto:
 

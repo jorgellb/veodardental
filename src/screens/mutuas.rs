@@ -154,10 +154,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 if c.pending() > 0.0 {
-                    if ui.button("✔ Cobrada").on_hover_text("La compañía ha pagado todo lo pendiente").clicked() {
-                        app.db.claim_paid(c.id, c.pending(), app.today);
-                        app.db.audit("Cobro de mutua", &format!("{} · {}", c.number, money(c.pending())));
-                        app.changed();
+                    if ui.button("✔ Cobrada").on_hover_text("La compañía ha pagado todo lo pendiente").clicked()
+                        && let Err(e) = app.chain_op(crate::app::ChainOp::ClaimPaid { claim: c.id, amount: crate::cents::Cents::from_eur(c.pending()).0 })
+                    {
+                        app.warn(e);
                     }
                     if c.paid == 0.0 && ui.button("Anular").on_hover_text("Los actos vuelven a quedar pendientes").clicked() {
                         del = Some(c.id);
@@ -167,9 +167,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
         if let Some(id) = del {
             let reason = format!("Anulada por {}", app.db.config.current_user);
-            match app.db.cancel_claim(id, &reason, app.today) {
-                Ok(()) => app.changed(),
-                Err(e) => app.warn(e),
+            if let Err(e) = app.chain_op(crate::app::ChainOp::ClaimCancel { claim: id, reason }) {
+                app.warn(e);
             }
         }
     });

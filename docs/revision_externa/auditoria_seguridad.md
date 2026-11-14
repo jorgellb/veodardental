@@ -43,7 +43,7 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
 - **Perfiles:** Dirección, Doctor, Higienista y Recepción. La vista de
   Recepción no incluye lo clínico (`src/vista.rs`).
 - **Dinero:** el servidor no acepta de quien no tiene permiso de caja un cobro en negativo ni una anulación. Un cobro no se borra ni cambia de importe, paciente, forma de pago o fecha salvo Dirección, y el banco solo con su permiso. La caja y las devoluciones con datáfono, solo con permiso de caja. Una financiación ya pedida solo cambia por las operaciones del servidor, con su fecha y el permiso de cada paso (`server::tests::money_out_and_the_bank_need_their_permission`).
-- **Autorizaciones de las compañías:** las crea el servidor, sin duplicados. Un puesto no las crea por su cuenta ni las borra (`server::tests::two_stations_cannot_ask_twice_for_the_same_authorization`).
+- **Autorizaciones y liquidaciones de las compañías:** solo cambian por las operaciones del servidor, con permiso de facturación, y el servidor apunta quién lo hizo: crear, enviar, responder, anular, cobrar. Un puesto no las crea, no las cambia ni las borra por su cuenta (`server::tests::two_stations_cannot_ask_twice_for_the_same_authorization`).
 - **Centros:** un usuario puede trabajar solo en unos centros (D-25). El servidor no acepta de él citas, cajas, cobros, citas pedidas por internet ni huecos de otro centro, ni operaciones en otro centro, y no le manda las cajas de los demás (`server::tests::a_user_of_one_center_cannot_act_in_another`). Los pacientes, su historia y su saldo son de toda la clínica.
 - **Comprobado en el servidor:**
   - `server::tests::only_direction_changes_users_and_secrets_stay_on_the_server`;

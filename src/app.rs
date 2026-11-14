@@ -1177,6 +1177,45 @@ pub enum ChainOp {
         patient: u32,
         entries: Vec<u32>,
     },
+    /// Pasos de una autorización y de una liquidación (ver `autorizaciones`
+    /// e `insurer`): solo por aquí, en el servidor, que apunta quién lo hizo.
+    AuthSent {
+        req: u32,
+        channel: String,
+        external_ref: String,
+    },
+    AuthAnswer {
+        req: u32,
+        approved: bool,
+        number: String,
+        denied: Vec<u32>,
+        valid_until: Option<chrono::NaiveDate>,
+        note: String,
+        raw: String,
+    },
+    AuthCancel {
+        req: u32,
+        reason: String,
+    },
+    ClaimSent {
+        claim: u32,
+        channel: String,
+        external_ref: String,
+    },
+    ClaimAnswer {
+        claim: u32,
+        rejected: Vec<(u32, String)>,
+        raw: String,
+    },
+    /// Lo que ha pagado la compañía de una liquidación (en céntimos).
+    ClaimPaid {
+        claim: u32,
+        amount: i64,
+    },
+    ClaimCancel {
+        claim: u32,
+        reason: String,
+    },
     /// Conciliar el ingreso de la entidad con la financiación.
     FinMatchBank {
         fin: u32,
@@ -1221,6 +1260,25 @@ impl ChainOp {
             ChainOp::FinCancel { fin, reason } => db.fin_cancel(*fin, reason, crate::model::today(), crate::model::now()).map(|_| *fin),
             ChainOp::FinMatchBank { fin, bank_move } => db.fin_match_bank(*fin, *bank_move).map(|_| *fin),
             ChainOp::AuthRequest { patient, entries } => db.auth_new(*patient, entries, crate::model::now()),
+            ChainOp::AuthSent { req, channel, external_ref } => db.auth_sent(*req, channel, external_ref, crate::model::now()).map(|_| *req),
+            ChainOp::AuthAnswer { req, approved, number, denied, valid_until, note, raw } => db.auth_answer(*req, *approved, number, denied, *valid_until, note, raw, crate::model::now()).map(|_| *req),
+            ChainOp::AuthCancel { req, reason } => db.auth_cancel(*req, reason, crate::model::now()).map(|_| *req),
+            ChainOp::ClaimSent { claim, channel, external_ref } => db.claim_sent(*claim, channel, external_ref, crate::model::now()).map(|_| *claim),
+            ChainOp::ClaimAnswer { claim, rejected, raw } => db.claim_answer(*claim, rejected, raw, crate::model::now()).map(|_| *claim),
+            ChainOp::ClaimPaid { claim, amount } => {
+                let c = db.claims.iter().find(|c| c.id == *claim).cloned().ok_or("La liquidación ya no existe.")?;
+                if c.cancelled.is_some() {
+                    return Err("Esa liquidación está anulada.".into());
+                }
+                let eur = crate::cents::Cents(*amount).eur();
+                if eur <= 0.0 || eur > c.pending() + 0.005 {
+                    return Err(format!("El cobro tiene que estar entre 0 y lo pendiente ({}).", crate::model::money(c.pending())));
+                }
+                db.claim_paid(*claim, eur, crate::model::today());
+                db.audit("Cobro de mutua", &format!("{} · {}", c.number, crate::model::money(eur)));
+                Ok(*claim)
+            }
+            ChainOp::ClaimCancel { claim, reason } => db.cancel_claim(*claim, reason, crate::model::today()).map(|_| *claim),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
             ChainOp::PayInstallment { budget, index, method } => db.pay_installment(*budget, *index, method),
@@ -1262,6 +1320,15 @@ impl ChainOp {
             ChainOp::FinCancel { fin, reason } => json!({ "accion": "financiacion_cancelada", "financiacion": fin, "motivo": reason }),
             ChainOp::FinMatchBank { fin, bank_move } => json!({ "accion": "financiacion_banco", "financiacion": fin, "movimiento": bank_move }),
             ChainOp::AuthRequest { patient, entries } => json!({ "accion": "autorizacion", "paciente": patient, "actos": entries }),
+            ChainOp::AuthSent { req, channel, external_ref } => json!({ "accion": "autorizacion_enviada", "solicitud": req, "canal": channel, "referencia": external_ref }),
+            ChainOp::AuthAnswer { req, approved, number, denied, valid_until, note, raw } => {
+                json!({ "accion": "autorizacion_respuesta", "solicitud": req, "aprobada": approved, "numero": number, "denegados": denied, "valida_hasta": valid_until, "nota": note, "texto": raw })
+            }
+            ChainOp::AuthCancel { req, reason } => json!({ "accion": "autorizacion_anulada", "solicitud": req, "motivo": reason }),
+            ChainOp::ClaimSent { claim, channel, external_ref } => json!({ "accion": "liquidacion_enviada", "liquidacion": claim, "canal": channel, "referencia": external_ref }),
+            ChainOp::ClaimAnswer { claim, rejected, raw } => json!({ "accion": "liquidacion_respuesta", "liquidacion": claim, "rechazos": rejected, "texto": raw }),
+            ChainOp::ClaimPaid { claim, amount } => json!({ "accion": "liquidacion_cobrada", "liquidacion": claim, "importe": amount }),
+            ChainOp::ClaimCancel { claim, reason } => json!({ "accion": "liquidacion_anulada", "liquidacion": claim, "motivo": reason }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
             ChainOp::PayInstallment { budget, index, method } => json!({ "accion": "cobrar_cuota", "presupuesto": budget, "cuota": index, "forma": method }),
@@ -1316,6 +1383,28 @@ impl ChainOp {
             "financiacion_pagada" => ChainOp::FinPaid { fin: num("financiacion")?, received: v["recibido"].as_i64().ok_or("Falta «recibido».")? },
             "financiacion_cancelada" => ChainOp::FinCancel { fin: num("financiacion")?, reason: text("motivo") },
             "financiacion_banco" => ChainOp::FinMatchBank { fin: num("financiacion")?, bank_move: num("movimiento")? },
+            "autorizacion_enviada" => ChainOp::AuthSent { req: num("solicitud")?, channel: text("canal"), external_ref: text("referencia") },
+            "autorizacion_respuesta" => {
+                let denied = v["denegados"].as_array().map(|a| a.iter().take(500).filter_map(|x| x.as_u64().map(|n| n as u32)).collect()).unwrap_or_default();
+                let valid_until = v["valida_hasta"].as_str().and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+                ChainOp::AuthAnswer {
+                    req: num("solicitud")?,
+                    approved: v["aprobada"].as_bool().unwrap_or(false),
+                    number: text("numero"),
+                    denied,
+                    valid_until,
+                    note: text("nota"),
+                    raw: text("texto").chars().take(crate::autorizaciones::RAW_MAX).collect(),
+                }
+            }
+            "autorizacion_anulada" => ChainOp::AuthCancel { req: num("solicitud")?, reason: text("motivo") },
+            "liquidacion_enviada" => ChainOp::ClaimSent { claim: num("liquidacion")?, channel: text("canal"), external_ref: text("referencia") },
+            "liquidacion_respuesta" => {
+                let rejected = v["rechazos"].as_array().map(|a| a.iter().take(500).filter_map(|x| Some((x[0].as_u64()? as u32, x[1].as_str()?.to_string()))).collect()).unwrap_or_default();
+                ChainOp::ClaimAnswer { claim: num("liquidacion")?, rejected, raw: text("texto").chars().take(crate::autorizaciones::RAW_MAX).collect() }
+            }
+            "liquidacion_cobrada" => ChainOp::ClaimPaid { claim: num("liquidacion")?, amount: v["importe"].as_i64().ok_or("Falta «importe».")? },
+            "liquidacion_anulada" => ChainOp::ClaimCancel { claim: num("liquidacion")?, reason: text("motivo") },
             "autorizacion" => {
                 let list = v["actos"].as_array().ok_or("Faltan los actos.")?;
                 if list.len() > 200 {
@@ -1412,7 +1501,9 @@ impl ChainOp {
             ChainOp::FinStep { .. } | ChainOp::FinPaid { .. } => (Some(Economia), FIN),
             ChainOp::FinCancel { .. } => (Some(Caja), FIN),
             ChainOp::FinMatchBank { .. } => (Some(Gastos), FIN),
-            ChainOp::AuthRequest { .. } => (Some(Facturacion), AUTH),
+            ChainOp::AuthRequest { .. } | ChainOp::AuthSent { .. } | ChainOp::AuthAnswer { .. } | ChainOp::AuthCancel { .. } | ChainOp::ClaimSent { .. } | ChainOp::ClaimAnswer { .. } | ChainOp::ClaimPaid { .. } | ChainOp::ClaimCancel { .. } => {
+                (Some(Facturacion), AUTH)
+            }
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
             // sacar dinero (o quitar un cobro) es cosa de quien lleva la caja
             ChainOp::CancelPayment { .. } | ChainOp::Refund { .. } => (Some(Caja), PAY),
