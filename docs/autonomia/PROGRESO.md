@@ -74,6 +74,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F5-12: campañas a grupos de pacientes con consentimiento, límites, previsualización y atribución | E-061 | `bfe56e4` |
 | Revisión de seguridad: el servidor pasa a la cola los mensajes de las campañas | E-062 | `e51bbdd` |
 | T-F6-01: grupos de clínicas (sociedades, centros con permisos y vista del grupo) | E-063 | `6d277fb` |
+| T-F6-02: servidor en la nube opcional, desplegado y ensayado en local | E-064 | `1f554e5` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
