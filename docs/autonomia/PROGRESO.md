@@ -75,6 +75,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: el servidor pasa a la cola los mensajes de las campañas | E-062 | `e51bbdd` |
 | T-F6-01: grupos de clínicas (sociedades, centros con permisos y vista del grupo) | E-063 | `6d277fb` |
 | T-F6-02: servidor en la nube opcional, desplegado y ensayado en local | E-064 | `1f554e5` |
+| Revisión de seguridad: carpeta del servicio y clave fuera de la orden | E-065 | `9bd690a` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
