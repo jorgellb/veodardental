@@ -926,8 +926,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Cada invariante del apartado 2 con al menos una prueba que lo demuestra, registrada en EVIDENCIAS",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-083"]
   },
   {
    "id": "T-INI-08",

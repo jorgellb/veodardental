@@ -758,6 +758,25 @@ mod tests {
         assert!(ids.contains(&keep));
     }
 
+    /// T-INI-07. Los identificadores que crea cada puesto (del 1 al 15) y el
+    /// servidor (el 16) acaban cada uno en su número, módulo 16. Así nunca
+    /// coinciden, aunque partan del mismo contador o uno vaya por delante.
+    #[test]
+    fn ids_made_on_different_stations_never_collide() {
+        let base = Db::sample(d());
+        let mut seen = std::collections::HashSet::new();
+        for station in 1..=16u32 {
+            let mut db = base.clone();
+            db.station = station;
+            db.next_id += station * 7;
+            for _ in 0..200 {
+                let id = db.new_id();
+                assert_eq!(id % 16, station % 16);
+                assert!(seen.insert(id), "el {id} ya lo creó otro puesto");
+            }
+        }
+    }
+
     #[test]
     fn receipts_are_unique_per_station() {
         let mut db = Db::sample(d());

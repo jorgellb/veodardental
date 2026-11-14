@@ -2154,3 +2154,17 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 571 pasan (569 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-083 T-INI-07: catálogo de invariantes protegidos, cada uno con sus pruebas
+- **Catálogo:** `docs/revision_externa/invariantes.md`. Recoge los once invariantes del apartado 2 del objetivo, con qué se garantiza, dónde está y sus pruebas: de cuatro a once por invariante. `docs_tests::tests::the_review_package_only_cites_what_exists` incluye ahora este documento, así que cada prueba citada existe.
+- **Pruebas que faltaban:**
+  - **Identificadores únicos entre puestos:** no había una prueba directa. `sample::tests::ids_made_on_different_stations_never_collide` crea 200 identificadores en cada uno de los 15 puestos y en el servidor, con contadores distintos. Ninguno coincide, y cada uno acaba en su número de puesto (módulo 16).
+  - **Fusión completa con las listas nuevas** (cobros con datáfono, financiaciones y autorizaciones de la compañía): la prueba de la fusión no tenía de estos registros del paciente que se va. Se añaden a `bank::tests::merging_moves_everything_of_the_removed_patient`. Comprobado que la prueba falla si la fusión deja de pasar las autorizaciones.
+- **Citas revisadas:** las pruebas que fallan sin su regla citan la evidencia donde se comprobó: E-063, E-067, E-079, E-080 y E-081.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 572 pasan (570 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

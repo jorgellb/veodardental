@@ -1017,6 +1017,13 @@ mod tests {
         });
         let tariff = db.patient(remove).unwrap().tariff_id;
         db.create_claim(tariff, d() - chrono::Duration::days(800), d(), d());
+        // un cobro con datáfono, una financiación y una autorización de la compañía
+        db.card_new(remove, crate::datafono::CardKind::Venta, crate::cents::Cents(1500), None, "Prueba", now()).unwrap();
+        db.fin_new(remove, None, "Financiera de prueba", crate::cents::Cents(60_000), 12, now()).unwrap();
+        let insurer = db.tariffs.iter().find(|t| t.is_insurer).map(|t| t.id).unwrap();
+        db.patients.iter_mut().find(|p| p.id == remove).unwrap().tariff_id = insurer;
+        let e = db.add_entry(remove, "0101", vec![36], vec![], crate::model::TxState::Previsto, 1, d());
+        db.auth_new(remove, &[e], now()).unwrap();
         if let Some(c) = db.calls.first_mut() {
             c.patients = vec![remove];
         }

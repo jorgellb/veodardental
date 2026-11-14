@@ -9,6 +9,7 @@ Esta carpeta prepara las revisiones que una revisión propia no sustituye
 | Responsable o delegado de protección de datos (DPO) | [dpo.md](dpo.md) | Plazos de conservación, supresión, derechos, encargados del tratamiento y medidas de seguridad |
 | Auditoría de seguridad externa | [auditoria_seguridad.md](auditoria_seguridad.md) | Alcance, pruebas de intrusión y revisión de la criptografía y de los permisos |
 | Traductores nativos (catalán, euskera, gallego e inglés) | [traducciones.md](traducciones.md) | Las traducciones del catálogo y cuándo un consentimiento traducido se puede usar |
+| Cualquiera de los anteriores | [invariantes.md](invariantes.md) | Las once garantías que se conservan (secretos, permisos, límites, guardado, numeración, facturas, cobros, importes, implantes, fusión, importaciones y copias), con sus pruebas |
 
 ## Qué es y qué no es
 - **Es** una relación, para cada revisor, de lo hecho, dónde está en el
