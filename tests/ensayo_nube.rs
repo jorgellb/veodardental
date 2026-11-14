@@ -54,8 +54,9 @@ impl Env {
         c
     }
 
-    /// Arranca el servidor y espera a que diga su hora. Devuelve el proceso y
-    /// lo que escribió hasta entonces.
+    /// Arranca el servidor y espera a que diga que atiende a los puestos (lo
+    /// de antes, como la hora, no lo garantiza: en Windows la comprobación del
+    /// disco va después). Devuelve el proceso y lo que escribió hasta entonces.
     fn start(&self, port: u16, extra: &[&str]) -> (Child, Vec<String>) {
         let mut child = self.cmd().arg("--servidor").arg("--puerto").arg(port.to_string()).args(extra).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let out = child.stdout.take().unwrap();
@@ -73,7 +74,7 @@ impl Env {
         while Instant::now() < until && !started {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(l) => {
-                    started = l.contains("Hora del servidor");
+                    started = l.contains("Atendiendo a los puestos.");
                     lines.push(l);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) if matches!(child.try_wait(), Ok(Some(_))) => break,

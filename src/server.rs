@@ -2033,6 +2033,9 @@ impl State {
 }
 
 /// Atiende peticiones hasta recibir /parar desde el propio ordenador.
+/// Lo que escribe el servidor cuando ya atiende a los puestos.
+pub const READY: &str = "Atendiendo a los puestos.";
+
 pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8>, initial: Db) {
     let tls = match server_tls(&identity) {
         Ok(t) => t,
@@ -2094,6 +2097,8 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
         eprintln!("No se pueden guardar los datos: {e}");
         return;
     }
+    // desde aquí atiende de verdad (lo que se escribe antes no lo garantiza)
+    println!("  {READY}");
     run_jobs(&mut st, jobs, &key);
     stop.store(true, Ordering::SeqCst);
     // despierta la espera de conexiones para que termine

@@ -2274,9 +2274,14 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - **Prueba:** `server::tests::stopping_waits_until_the_answer_is_written`.
 - **macOS** (`the_provisioning_script_rehearses_without_touching_the_system`): el aprovisionamiento es para servidores Linux con systemd, y en macOS las carpetas del programa no siguen las variables de la unidad. Fuera de Linux la prueba queda ignorada, con el motivo.
 - **Windows** (los dos ensayos: «el servidor no arrancó», código 1, sin salida):
-  - **Causa probable:** la prueba vacía el entorno, y en Windows la red no se inicia sin `SystemRoot`, así que el servidor no puede abrir su puerto.
-  - **Corrección:** la prueba conserva las variables que un servicio de Windows siempre tiene, y si el servidor no arranca enseña lo que escribió en la salida de errores.
-  - **Sin comprobar** hasta la próxima ejecución en GitHub.
+  - **Primera causa:** la prueba vacía el entorno, y en Windows la red no se inicia sin `SystemRoot`, así que el servidor no puede abrir su puerto.
+  - **Corrección:** la prueba conserva las variables que un servicio de Windows siempre tiene, y si el servidor no arranca enseña lo que escribió en la salida de errores. Comprobado en la ejecución 43649548912: el servidor ya arranca.
+  - **Segunda causa** (vista en esa misma ejecución): «No hay conexión» al pedir el estado, tras 20 s, que es lo que el cliente espera una respuesta. Después de escribir «Hora del servidor», el servidor preguntaba a Windows por BitLocker con PowerShell, sin límite de tiempo, y solo después atendía.
+    - **Fallo del programa, no solo de la prueba:** si PowerShell no contesta, la clínica se queda sin servidor por un aviso.
+  - **Corrección:**
+    - La comprobación del disco al arrancar el servidor tiene como mucho 10 s. Si no contesta, se avisa «El sistema no ha contestado…» y el servidor sigue (`disco::within`).
+    - El servidor escribe «Atendiendo a los puestos.» cuando de verdad atiende, y el ensayo espera esa línea.
+  - **Prueba:** `disco::tests::the_server_does_not_wait_for_a_slow_answer`, que no compilaba sin el arreglo.
 - **Linux, un solo programa para todas las distribuciones:**
   - `tools/compilar_linux.sh` compila en AlmaLinux 8. El programa solo enlaza libc, libm y libgcc_s y pide como mucho glibc 2.28 (comprobado con `objdump -T`). El compilado en este ordenador (Fedora 44) pedía glibc 2.43.
   - `tools/paquetes_linux.sh` crea el `.deb`, el `.rpm` (cargo-generate-rpm), el `.pkg.tar.zst` (makepkg en un contenedor de Arch, con el nombre `veodardental`), la AppImage y el `.tar.gz` portable.
@@ -2323,4 +2328,4 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 |---|---|---|
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
-| `cargo test --workspace --all-targets --locked` | 0 | 576 pasan (574 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+| `cargo test --workspace --all-targets --locked` | 0 | 577 pasan (575 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

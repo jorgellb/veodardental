@@ -53,9 +53,26 @@ pub fn status() -> Disk {
     state.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
-/// Comprobación sin hilo (para el servidor, que la necesita al arrancar).
+/// Lo más que espera el servidor al arrancar para saber si el disco está
+/// cifrado: es un aviso, y un sistema que no contesta no puede dejar a la
+/// clínica sin servidor.
+const CHECK_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Comprobación para el servidor, que la necesita al arrancar (como mucho
+/// [`CHECK_LIMIT`]).
 pub fn check_now() -> Disk {
-    check(&data_dir())
+    let dir = data_dir();
+    within(CHECK_LIMIT, move || check(&dir))
+}
+
+/// Lo que diga `f`, o «no se sabe» si tarda más de `limit` (la comprobación
+/// sigue sola y su resultado se descarta).
+fn within(limit: std::time::Duration, f: impl FnOnce() -> Disk + Send + 'static) -> Disk {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(limit).unwrap_or_else(|_| Disk::Unknown(format!("El sistema no ha contestado en {} segundos: compruébelo en «Puesta en marcha».", limit.as_secs())))
 }
 
 /// Carpeta de los datos (o la de las copias, que también los llevan).
@@ -165,6 +182,22 @@ pub fn parse_lsblk(types: &str, device: &str) -> Disk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// El servidor no espera sin límite a saber si el disco está cifrado: si
+    /// el sistema no contesta (en Windows, PowerShell), sigue y lo avisa. En
+    /// la integración continua, el servidor de Windows tardaba en atender por esto.
+    #[test]
+    fn the_server_does_not_wait_for_a_slow_answer() {
+        let t = std::time::Instant::now();
+        let d = within(std::time::Duration::from_millis(100), || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            Disk::Encrypted("tarde".into())
+        });
+        assert!(t.elapsed() < std::time::Duration::from_secs(2), "no esperó a la respuesta lenta: {:?}", t.elapsed());
+        assert!(matches!(&d, Disk::Unknown(why) if why.contains("no ha contestado")), "{d:?}");
+        // si contesta a tiempo, su respuesta
+        assert_eq!(within(std::time::Duration::from_secs(5), || Disk::Plain("rápido".into())), Disk::Plain("rápido".into()));
+    }
 
     #[test]
     fn reads_each_system_answer() {
