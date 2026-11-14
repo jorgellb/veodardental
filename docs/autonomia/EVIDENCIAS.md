@@ -2114,3 +2114,23 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 564 pasan (562 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-081 Revisión automática de E-080: conexiones que envían un byte de vez en cuando, y direcciones IPv6
+- **Hallazgo** (revisión automática de seguridad del commit de E-080):
+  - el tiempo de una conexión quieta cuenta entre lecturas. Quien manda un byte cada 14 s retiene la conexión sin límite;
+  - con IPv6, un solo ordenador tiene muchas direcciones de su red /64 y se salta el tope de 16.
+- **Corrección** (`src/server.rs`):
+  - el saludo cifrado y la cabecera tienen un plazo total de 20 s desde que se acepta la conexión (3 s en las pruebas). Es lo que se lee antes de saber si trae la clave de la clínica. Después, para el cuerpo, solo cuenta el tiempo de una conexión quieta;
+  - las conexiones se cuentan por dirección IPv4 o por red IPv6 /64. Las IPv4 que llegan como IPv6 se cuentan por su dirección IPv4, para no juntarlas todas.
+- **Pruebas:**
+  - `server::tests::a_slow_drip_head_is_cut_at_the_deadline`: un byte cada 400 ms, sin cifrar o empezando un saludo TLS. La conexión se corta al plazo y los puestos siguen;
+  - `server::tests::connections_are_counted_per_address_or_ipv6_network`.
+- **Comprobado que la prueba falla** sin el plazo total.
+- **Queda como límite conocido** (auditoría, apartado 6): no hay sitios reservados para los puestos que ya traen la clave.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 566 pasan (564 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

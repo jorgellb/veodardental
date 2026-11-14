@@ -53,7 +53,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -70,6 +70,61 @@ const MAX_PER_IP: usize = 16;
 /// Una conexión que no envía nada en este tiempo se cierra (no ocupa su
 /// sitio indefinidamente). Cuenta entre lecturas, no en total.
 const IDLE_TIMEOUT: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(15) };
+/// Tiempo total para el saludo cifrado y la cabecera, lo que se lee antes de
+/// saber si trae la clave de la clínica: quien envía un byte de vez en cuando
+/// no retiene la conexión.
+const HEAD_DEADLINE: Duration = if cfg!(test) { Duration::from_secs(3) } else { Duration::from_secs(20) };
+
+/// A quién se cuentan las conexiones: la dirección IPv4, o la red /64 de una
+/// IPv6 (un solo ordenador puede tener muchas direcciones de la misma red).
+fn conn_group(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+        v4 => v4,
+    }
+}
+
+/// La conexión, con un plazo total para lo que se lee antes de comprobar la
+/// clave ([`HEAD_DEADLINE`]); después, solo el de una conexión quieta.
+struct Timed {
+    tcp: TcpStream,
+    deadline: Option<Instant>,
+}
+
+impl Timed {
+    fn head_read(&mut self) {
+        self.deadline = None;
+        let _ = self.tcp.set_read_timeout(Some(IDLE_TIMEOUT));
+    }
+}
+
+impl Read for Timed {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if let Some(d) = self.deadline {
+            let left = d.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+            let _ = self.tcp.set_read_timeout(Some(left.min(IDLE_TIMEOUT)));
+        }
+        self.tcp.read(buf)
+    }
+}
+
+impl Write for Timed {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.tcp.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.tcp.flush()
+    }
+}
 /// Lo que ven los puestos en lugar de la huella de la contraseña o de la clave del móvil.
 pub const HIDDEN: &str = "oculto";
 /// Datos de los usuarios que solo cambia el servidor (al entrar o con sus órdenes propias).
@@ -604,19 +659,20 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
     let _ = tcp.set_read_timeout(Some(IDLE_TIMEOUT));
     let _ = tcp.set_write_timeout(Some(Duration::from_secs(120)));
     let Ok(peer) = tcp.peer_addr().map(|a| a.ip()) else { return };
+    let mut tcp = Timed { tcp, deadline: Some(Instant::now() + HEAD_DEADLINE) };
     let mut first = [0u8; 1];
-    if !matches!(tcp.peek(&mut first), Ok(1)) {
+    if !matches!(tcp.tcp.peek(&mut first), Ok(1)) {
         return;
     }
     // Un saludo TLS empieza por 0x16. Si no, es un puesto con una versión
     // anterior (HTTP sin cifrar): se lee su petición y se le explica qué pasa.
     if first[0] != 0x16 {
         // un cuerpo pequeño se lee para que la respuesta le llegue bien; uno grande, no
-        let mut r = BufReader::new(&tcp);
+        let mut r = BufReader::new(&mut tcp);
         if let Ok(Some(mut req)) = read_head(&mut r, peer) {
             let _ = read_body(&mut r, &mut req, 64 * 1024);
         }
-        let _ = write_response(&mut &tcp, &error(426, OLD_STATION), false);
+        let _ = write_response(&mut tcp, &error(426, OLD_STATION), false);
         return;
     }
     let Ok(conn) = rustls::ServerConnection::new(tls) else { return };
@@ -625,7 +681,10 @@ fn handle_conn(tcp: TcpStream, tls: Arc<rustls::ServerConfig>, key: &str, jobs: 
         let mut r = BufReader::new(&mut s);
         match read_head(&mut r, peer) {
             // sin la clave no se lee el cuerpo: el servidor contesta (y apunta el intento)
-            Ok(Some(mut req)) if has_key(&req, key) => read_body(&mut r, &mut req, MAX_BODY).map(|_| Some(req)),
+            Ok(Some(mut req)) if has_key(&req, key) => {
+                r.get_mut().sock.head_read();
+                read_body(&mut r, &mut req, MAX_BODY).map(|_| Some(req))
+            }
             other => other,
         }
     };
@@ -1991,7 +2050,7 @@ pub fn serve(listener: TcpListener, path: PathBuf, key: String, identity: Vec<u8
                     break;
                 }
                 let Ok(tcp) = tcp else { continue };
-                let Ok(ip) = tcp.peer_addr().map(|a| a.ip()) else { continue };
+                let Ok(ip) = tcp.peer_addr().map(|a| conn_group(a.ip())) else { continue };
                 // demasiadas conexiones a la vez, o desde un mismo ordenador: se
                 // cierra esta (los puestos reintentan)
                 if active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
@@ -3434,6 +3493,53 @@ mod tests {
         drop(idle);
         dir.stop().unwrap();
         h.join().unwrap();
+    }
+
+    /// Hallazgo de la revisión automática de E-080: quien manda un byte de vez
+    /// en cuando (antes del tiempo de una conexión quieta) tampoco retiene la
+    /// conexión, porque el saludo y la cabecera tienen un plazo total.
+    #[test]
+    fn a_slow_drip_head_is_cut_at_the_deadline() {
+        use std::io::Read;
+        let (addr, _path, h) = start("CLAVE59");
+        let dir = signed_in(&addr, "CLAVE59", "Despacho", 1, "0000");
+        for tls in [false, true] {
+            let mut t = std::net::TcpStream::connect(&addr).unwrap();
+            let mut w = t.try_clone().unwrap();
+            let start = Instant::now();
+            // sin cifrar (un puesto antiguo) o empezando un saludo TLS, byte a byte
+            let drip: Vec<u8> = if tls { vec![0x16, 0x03, 0x01, 0x40, 0x00].into_iter().chain(std::iter::repeat_n(0u8, 200)).collect() } else { b"GET /acceso HTTP/1.1\r\nX-Relleno: ".iter().copied().chain(std::iter::repeat_n(b'a', 200)).collect() };
+            let writer = std::thread::spawn(move || {
+                for b in drip {
+                    if w.write_all(&[b]).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(400));
+                }
+            });
+            t.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+            let mut sink = vec![];
+            let _ = t.read_to_end(&mut sink);
+            let took = start.elapsed();
+            assert!(took >= HEAD_DEADLINE - Duration::from_millis(200) && took < HEAD_DEADLINE + Duration::from_secs(2), "cortada al plazo ({tls}): {took:?}");
+            drop(t);
+            writer.join().unwrap();
+        }
+        assert!(dir.access().is_ok(), "los puestos siguen");
+        dir.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    /// Las conexiones de una misma red IPv6 /64 cuentan juntas; las IPv4,
+    /// también las que llegan como IPv6, por su dirección.
+    #[test]
+    fn connections_are_counted_per_address_or_ipv6_network() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        assert_eq!(conn_group(ip("2001:db8:1:2:aaaa::1")), conn_group(ip("2001:db8:1:2:bbbb:cccc:dddd:2")));
+        assert_ne!(conn_group(ip("2001:db8:1:2::1")), conn_group(ip("2001:db8:1:3::1")));
+        assert_eq!(conn_group(ip("::ffff:192.0.2.7")), ip("192.0.2.7"));
+        assert_ne!(conn_group(ip("::ffff:192.0.2.7")), conn_group(ip("::ffff:192.0.2.8")));
+        assert_ne!(conn_group(ip("192.0.2.7")), conn_group(ip("192.0.2.8")));
     }
 
     #[test]

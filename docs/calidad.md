@@ -10,7 +10,7 @@ tools/aislado.sh cargo fmt --all -- --check
 tools/aislado.sh cargo clippy --workspace --all-targets --locked -- -D warnings
 tools/aislado.sh cargo test --workspace --all-targets --locked
 ```
-- **Acotada:** las pruebas tardan unos segundos (sin contar la compilación): unos 3,5 s las del programa y alrededor de 1 s el ensayo en la nube (`tests/ensayo_nube.rs`). Cada prueba con red usa 127.0.0.1 y servidores de prueba en el propio proceso.
+- **Acotada:** las pruebas tardan unos segundos (sin contar la compilación): unos 7,5 s las del programa (las más largas esperan a que el servidor corte conexiones lentas) y alrededor de 1 s el ensayo en la nube (`tests/ensayo_nube.rs`). Cada prueba con red usa 127.0.0.1 y servidores de prueba en el propio proceso.
 - **Reproducible:** las pruebas con entradas al azar llevan semilla fija (`src/test_rng.rs`), así que cada ejecución prueba lo mismo:
   - el protocolo del servidor con peticiones al azar (`server::tests::the_server_survives_random_requests_and_its_data_stays_readable`, 4 000 peticiones) y con bytes al azar (`server::tests::the_request_reader_survives_random_bytes`);
   - los extractos del banco (`bank::tests::statement_tables_and_amounts_survive_random_input`);

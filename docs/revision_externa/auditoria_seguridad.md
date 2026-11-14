@@ -131,7 +131,7 @@ hacer.
 | Entrada | Límite | Prueba |
 |---|---|---|
 | Petición al servidor de la clínica | cabecera acotada, cuerpo de 512 MB como mucho, sin envío por partes | `server::tests::requests_are_limited` |
-| Conexiones al servidor | 64 a la vez; 16 desde un mismo ordenador; una conexión quieta se cierra a los 15 s | `server::tests::idle_connections_cannot_take_the_server` (corregido en E-080) |
+| Conexiones al servidor | 64 a la vez; 16 desde una misma dirección IPv4 o red IPv6 /64; una conexión quieta se cierra a los 15 s; el saludo cifrado y la cabecera, 20 s en total | `server::tests::idle_connections_cannot_take_the_server`, `server::tests::a_slow_drip_head_is_cut_at_the_deadline`, `server::tests::connections_are_counted_per_address_or_ipv6_network` (corregido en E-080 y E-081) |
 | Respuestas que lee un puesto | 1 GB de datos; 64 KB de prueba de identidad, también comprimida (bomba gzip) | `server::tests::answers_are_read_with_a_limit`, `server::tests::big_answers_travel_compressed` |
 | Números de historia | hasta 999 999 999 (con ellos se nombran carpetas) | `server::tests::two_new_patients_never_share_a_history_number` |
 | Operaciones que manda un puesto | extracto del banco: 50 000 movimientos y 500 caracteres por texto; 10 000 mensajes por reserva de correo; 500 líneas por recepción de pedido; 200 actos por autorización | `app::tests::a_bank_statement_from_a_station_is_bounded`, `app::tests::lists_in_station_operations_are_bounded` |
@@ -182,6 +182,11 @@ Cada uno tiene su corrección y su prueba en la evidencia indicada:
   impedirlo haría falta un contador guardado fuera de la carpeta.
 - **Clave de la clínica:** la comparten todos los puestos, y por eso además
   hace falta usuario y sesión.
+- **Conexiones desde muchos ordenadores:** con cuatro direcciones distintas
+  se pueden ocupar los 64 sitios, 20 s cada vez. No hay sitios reservados
+  para los puestos que ya traen la clave. En internet, esto lo frena un
+  cortafuegos o un servicio contra ataques de denegación de servicio, delante
+  del servidor.
 - **Firma de código e instaladores:** sin certificado de firma de código
   (B-25) ni clave de versiones (B-27).
 - **Sin pruebas reales:** no se ha probado en Windows ni en macOS reales
