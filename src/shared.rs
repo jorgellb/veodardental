@@ -1010,40 +1010,11 @@ mod tests {
     }
 }
 
-/// Clínica grande de prueba (unos 10 años de trabajo) para medir tiempos.
+/// Clínica grande de prueba (unos 10 años de trabajo) para medir tiempos
+/// (ver `rendimiento`).
 #[cfg(test)]
 pub fn big_clinic() -> Db {
-    let sample = serde_json::to_value(Db::sample(chrono::NaiveDate::from_ymd_opt(2026, 11, 4).unwrap())).unwrap();
-    let targets = [
-        ("patients", 8_000),
-        ("entries", 100_000),
-        ("appointments", 120_000),
-        ("payments", 80_000),
-        ("invoices", 40_000),
-        ("budgets", 20_000),
-        ("documents", 20_000),
-        ("perio", 3_000),
-        ("messages", 100_000),
-        ("calls", 50_000),
-        ("recalls", 8_000),
-        ("health", 8_000),
-        ("images", 30_000),
-    ];
-    let mut v = sample.clone();
-    for (k, n) in targets {
-        let Some(src) = sample[k].as_array().filter(|a| !a.is_empty()) else { continue };
-        let out: Vec<Value> = (0..n)
-            .map(|i| {
-                let mut r = src[i % src.len()].clone();
-                if r.get("id").is_some() {
-                    r["id"] = Value::from(1_000_000 + i as u64);
-                }
-                r
-            })
-            .collect();
-        v[k] = Value::Array(out);
-    }
-    serde_json::from_value(v).unwrap()
+    crate::rendimiento::big_clinic(1.0)
 }
 
 #[cfg(test)]

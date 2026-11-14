@@ -16,7 +16,7 @@ Comprobado el 13 de noviembre de 2026 al empezar el encargo de
 | Avisos de clippy | Informe (histórico) | 0 |
 | Avisos de clippy | `cargo clippy --workspace --all-targets --locked -- -D warnings`, medido (E-001) | 0, código de salida 0 |
 | Mediciones de rendimiento (220 MB, 20.000 pacientes) | Informe (histórico) | guardado local de 0,02 a 0,2 s, cambio de unos 1 KB, entrada comprimida de unos 8 MB |
-| Mediciones de rendimiento | Pendiente de reproducir con datos sintéticos (T-INI-08) | — |
+| Mediciones de rendimiento | `tools/medir.sh`, clínica sintética de 8.000 pacientes y 226,5 MB, medido el 14/11/2026 (T-INI-08, `docs/autonomia/mediciones/v0.1.0.md`) | guardado local de un cambio de 0,021 a 0,147 s; cambio enviado de 4,5 KB (una cita y un cobro, contando cómo estaban y cómo quedan); entrada comprimida de recepción de 13,0 MB |
 
 Las cifras del informe son referencias históricas. Solo las marcadas como
 «medido» son de esta ejecución.
@@ -83,5 +83,34 @@ Las cifras del informe son referencias históricas. Solo las marcadas como
 
 ## Funciones que el informe da por existentes
 
-Comprobación pendiente de detallar en T-INI-06. Los módulos de la tabla de
-componentes existen y tienen pruebas.
+Comprobado en el código (T-INI-06). Cada función que cita el informe, dónde
+está y una prueba que la cubre. Las pruebas siguen en la batería.
+
+| Función | Dónde | Prueba |
+|---|---|---|
+| Pacientes y responsables | `src/model.rs` (`Patient`, `Payer`), `src/screens/pacientes.rs`; fusión en `src/bank.rs` | `stock::tests::a_childs_treatment_is_invoiced_to_the_parent`, `bank::tests::merging_moves_everything_of_the_removed_patient` |
+| Agenda | `src/model.rs` (`Appointment`), `src/agenda_extra.rs`, `src/horario.rs`, `src/screens/agenda.rs` | `agenda_extra::tests::overlapping_appointments_go_side_by_side` |
+| Odontograma | `src/model.rs` (`MedEntry`, `OdgKind`), `src/screens/odontograma.rs` | `stock::tests::marking_a_planned_treatment_done_on_the_chart_completes_it`, `ui_tests::the_chart_completes_planned_treatments_and_can_undo_them` |
+| Periodontograma | `src/screens/perio.rs`, dictado en `src/perio_voz.rs` | `perio_voz::tests::a_clean_dictation_is_understood` |
+| Imágenes | `src/screens/imagenes.rs`, `src/dicom.rs`, `src/stl.rs`, `src/screens/visor3d.rs` | `dicom::tests::synthetic_images_are_read_with_scale_window_and_orientation`, `ui_tests::dicom_stl_and_comparison_are_shown_in_the_viewer` |
+| Ortodoncia | `src/extra.rs`, `src/screens/ortodoncia.rs` | `extra::tests::ortho_phases_are_kept_and_a_finished_case_stops_its_controls` |
+| Recetas | `src/erx.rs`, `src/srep.rs`, `src/srep_doc.rs`, `src/screens/recetas.rs` | `erx::tests::direct_prescription_signed_and_dispensed` |
+| Presupuestos | `src/model.rs` (`Budget`), `src/plan.rs`, `src/screens/presupuestos.rs` | `extra::tests::a_plan_with_paid_or_remitted_installments_cannot_change` |
+| Cobros | `src/model.rs` (`add_payment`), `src/finance.rs`, `src/screens/cobros.rs` | `finance::tests::a_wrong_payment_is_cancelled_and_leaves_the_cash_balanced` |
+| Caja | `src/model.rs` (`CashSession`), `src/screens/caja.rs` | `server::tests::a_payment_made_while_another_station_closes_the_cash_leaves_it_balanced` |
+| Facturas y VERI*FACTU | `src/model.rs` (`issue_invoice`), `src/verifactu.rs`, `src/screens/facturas.rs` | `server::tests::invoices_from_two_stations_keep_their_numbers_and_the_chain`, `verifactu::tests::the_exemption_article_stays_with_each_invoice` |
+| SEPA | `src/extra.rs` (remesas), `src/screens/remesas.rs` | `extra::tests::sepa_remittance_flow` |
+| Mutuas | `src/insurer.rs`, `src/screens/mutuas.rs` | `insurer::tests::claim_collects_insured_acts_once` |
+| Bancos | `src/bank.rs`, `src/screens/bancos.rs` | `bank::tests::norma43_with_several_accounts_and_control_totals` |
+| Almacén | `src/stock.rs`, `src/screens/almacen.rs` | `stock::tests::realizing_treatment_consumes_stock`, `server::tests::material_spent_by_two_stations_at_once_is_all_taken_from_stock` |
+| Laboratorio | `src/stock.rs` (`LabWork`), `src/lab_order.rs`, `src/screens/laboratorio.rs` | `stock::tests::lab_cost_written_after_receiving_goes_to_expenses` |
+| Informes | `src/informes.rs`, `src/screens/informes.rs` | `informes::tests::collected_matches_the_operations`, `informes::tests::production_matches_the_operations` |
+| Comunicaciones | `src/comms.rs`, `src/mail.rs`, `src/whatsapp.rs`, `src/sms.rs`, `src/screens/comunicaciones.rs` | `comms::tests::reminders_generated_twice_are_left_once` |
+| Portales web | `src/booking.rs`, `src/portal.rs`, `src/budget_link.rs`, `src/doc_link.rs`, `src/rx_link.rs`, `src/tunnel.rs` | `portal::tests::tokens_are_random_and_checked` |
+| Usuarios y doble factor | `src/users.rs`, `src/totp.rs`, `src/screens/login.rs` | `users::tests::lockout_after_failures_and_pin_change`, `users::tests::second_factor_with_the_phone_code` |
+| Servidor TLS | `src/server.rs` (TLS 1.3 con identidad propia, prueba de la clave y huella fijada) | `server::tests::stations_only_accept_the_server_they_know`, `server::tests::nothing_secret_goes_to_an_unproven_server` |
+| Copias | `src/tools.rs`, `src/cifrado.rs` | `tools::tests::backup_roundtrip_and_prune` |
+| Importadores | `src/mssql.rs`, `src/migracion.rs`, `src/gesden.rs`, `src/extra.rs` | `migracion::tests::a_full_migration_with_its_reconciliation`, `mssql::tests::catalog_from_gesden_rows` |
+
+No falta ninguna: todas estaban antes del encargo y no se han construido otra
+vez. Las ampliaciones de este encargo están en `PROGRESO.md`.

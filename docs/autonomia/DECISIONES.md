@@ -227,3 +227,23 @@ Hasta ahora el pedido se editaba y se recibía en el puesto. Dos puestos podían
 - **Unidades de compra:** el producto dice cuántas unidades trae su caja. La propuesta pide cajas enteras, y el almacén cuenta unidades.
 - **Recepción en partes:** cada parte con sus lotes y caducidades, y lo que falta sigue «en pedido». Se cierra con lo recibido, y el gasto es por lo recibido.
 - **Envío automático por correo:** solo con la clínica (`orders_auto_send`) y el proveedor (`Supplier::auto_send`) activados, que de entrada no lo están, y con el correo configurado. Si falla, el pedido sigue aprobado y se envía a mano.
+
+## D-28 Almacenamiento: se mantiene (JSON con diario, una instalación por sociedad)
+**Contexto.** T-F6-08 pide medir memoria, tiempos, tamaño y concurrencia con varias clínicas, y migrar a una base de datos solo con una necesidad demostrada. Hoy los datos son un fichero JSON cifrado con un diario de cambios (`local`, `sync`). El servidor los tiene en memoria registro a registro.
+
+**Medido** (`tools/medir.sh`, `docs/autonomia/mediciones/v0.1.0.md`, ordenador de 16 núcleos):
+- **Datos:** clínica sintética de 8 000 pacientes y 226,5 MB.
+- **Guardar un cambio:** de 0,021 a 0,147 s, con el diario.
+- **Abrir:** 1,1 s. **Cerrar** (fichero completo): 1,1 s.
+- **Cambio enviado:** 4,5 KB, una cita y un cobro, contando cómo estaban y cómo quedan.
+- **Entrada de un puesto de recepción:** 13 MB comprimida, preparada en 1,3 s.
+- **Memoria:** unos 1,8 GB en el proceso de la medición con la clínica abierta. Con tres clínicas más abiertas a la vez, 1,1 GB más.
+- **Concurrencia:** 8 puestos guardando 20 veces cada uno a la vez, con una mediana de 1 ms, un percentil 95 de 2 ms y ningún guardado perdido.
+
+**Decisión: se mantiene el almacenamiento actual.**
+- **Guardar:** el guardado de un cambio y la concurrencia van muy por debajo de lo que se nota al trabajar.
+- **Abrir:** abrir una clínica grande (1 s) solo ocurre al arrancar.
+- **Varias clínicas:** cada sociedad tiene su instalación (D-25), así que la memoria de un servidor es la de su clínica, no la del grupo.
+- **Coste de cambiar:** una base de datos obligaría a reescribir la persistencia, el diario, la combinación entre puestos, las copias cifradas y la restauración, que hoy están probados. No hay una necesidad medida que lo justifique.
+
+**Cuándo revisarla:** volver a medir con cada versión (`tools/medir.sh`) y replantearlo si una clínica real pasa de unos 600 MB de datos, si abrirla tarda más de 5 s o si la memoria del servidor no cabe en el ordenador de la clínica. El servidor de una clínica grande necesita unos 4 GB libres.

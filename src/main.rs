@@ -63,6 +63,7 @@ mod portal;
 mod portal_paciente;
 mod record;
 mod registro;
+mod rendimiento;
 mod rgpd;
 mod rx_link;
 mod sample;
@@ -160,6 +161,35 @@ fn main() -> eframe::Result<()> {
         if let Err(e) = server::run(&opts) {
             eprintln!("{e}");
             std::process::exit(1)
+        }
+        return Ok(());
+    }
+    // mediciones de rendimiento con clínicas sintéticas (tools/medir.sh)
+    if args.iter().any(|a| a == "--medir") {
+        // nunca con las carpetas de verdad: el servidor de la medición hace copias
+        if std::env::var_os(paths::ROOT_VAR).is_none_or(|v| v.is_empty()) {
+            eprintln!("Las mediciones solo se hacen con una raíz aislada: use tools/medir.sh.");
+            std::process::exit(2)
+        }
+        let num = |name: &str, default: f64| value(name).and_then(|v| v.replace(',', ".").parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0).unwrap_or(default);
+        let dir = std::env::temp_dir().join(format!("veodardental-medicion-{}", std::process::id()));
+        match rendimiento::measure(num("--escala", 1.0).min(5.0), num("--clinicas", 3.0) as usize, num("--puestos", 8.0) as usize, num("--guardados", 20.0) as usize, &dir) {
+            Ok(r) => {
+                let md = r.markdown();
+                print!("{md}");
+                if let Some(out) = value("--salida") {
+                    if let Err(e) = std::fs::write(&out, &md) {
+                        eprintln!("No se pudo guardar {out}: {e}");
+                        std::process::exit(1)
+                    }
+                    let json = std::path::Path::new(&out).with_extension("json");
+                    let _ = std::fs::write(&json, serde_json::to_string_pretty(&r).unwrap_or_default());
+                }
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1)
+            }
         }
         return Ok(());
     }

@@ -1998,3 +1998,55 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 545 pasan (543 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-075 T-F6-07, T-INI-08 y T-F6-08: calidad continua y mediciones reproducibles por versión
+- **Hecho:**
+  - **Medición** (`src/rendimiento.rs`, `veodardental --medir`, `tools/medir.sh`):
+    - una clínica sintética grande;
+    - varias clínicas;
+    - varios puestos guardando a la vez en un servidor de verdad en 127.0.0.1.
+
+    Guarda en `docs/autonomia/mediciones/v<versión>.md` (y `.json`) con la versión del programa y de los datos, la fecha y el ordenador. Sin una raíz aislada no arranca, porque el servidor de la medición hace copias. Los puestos de la medición son ligeros (sin los datos enteros), como otros ordenadores.
+  - **Calidad continua:** `docs/calidad.md` recoge la batería acotada y reproducible (semillas fijas, red solo local), las pruebas de pantalla, las mediciones por versión y el paquete para la auditoría externa. La prueba de anchura recorre ya todas las pestañas de Informes.
+  - **`shared::big_clinic`** usa la misma clínica sintética que la medición.
+- **Mediciones** (T-INI-08 y T-F6-08), del 14/11/2026, con escala 1 (8 000 pacientes), 3 clínicas y 8 puestos × 20 guardados:
+
+| Medición | Ahora (medido) | Informe (histórico) |
+|---|---|---|
+| Datos de la clínica | 226,5 MB, 8 000 pacientes | unos 220 MB, 20 000 pacientes |
+| Guardado local de un cambio | 0,147 s; en un paciente, 0,021 s | de 0,02 a 0,2 s |
+| Cambio enviado | 4,5 KB (una cita y un cobro, antes y después) | unos 1 KB |
+| Entrada de un puesto (recepción), comprimida | 13,0 MB (201 MB sin comprimir) | unos 8 MB |
+| Abrir y cerrar con un solo ordenador | 1,1 s y 1,1 s | — |
+| Memoria con la clínica abierta | 1 764 MB | — |
+| Tres clínicas más abiertas a la vez | 1 069 MB más; 680 MB en disco | — |
+| 8 puestos × 20 guardados a la vez | mediana 1 ms, percentil 95 2 ms, total 0,033 s, 0 perdidos | — |
+
+  El guardado local está en lo histórico. La entrada comprimida es mayor y el cambio cuenta también el «antes». No se publican las cifras históricas como nuevas. La decisión de almacenamiento está en D-28.
+- **Pruebas:** `rendimiento::tests::a_small_measurement_runs_and_is_complete`, la misma medición en pequeño dentro de la batería (0,3 s):
+  - salen todas las cifras, con valores con sentido;
+  - un cambio son pocos KB;
+  - con 3 puestos a la vez no se pierde nada;
+  - no deja ficheros.
+- **Órdenes:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `tools/medir.sh` | 0 | `docs/autonomia/mediciones/v0.1.0.md` y `.json` |
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 547 pasan (545 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-076 T-F6-09: escenario sintético de un grupo de clínicas con permisos y totales comprobados
+- **Prueba:** `server::tests::a_synthetic_group_of_clinics_keeps_permissions_and_totals`, con dos servidores de verdad (dos sociedades). La primera tiene dos centros, una caja en cada uno y una recepción limitada al centro 2:
+  - la recepción solo recibe su caja; sus cobros quedan en su centro; da citas en su centro y no en el otro;
+  - Dirección cobra en el centro 1, y la otra sociedad, por su lado;
+  - el resumen de cada clínica coincide centro a centro con sus informes (cobrado y producción), y los centros suman la clínica;
+  - el del grupo es la suma de las dos;
+  - en los resúmenes solo van los campos permitidos;
+  - la clave de una clínica no vale en la otra.
+- **Pendiente externo:** un grupo real con datos conjuntos (T-F6-09X, B-21).
+
+## E-077 T-INI-06: las funciones que el informe da por existentes, comprobadas en el código
+- **Hecho:** tabla en `docs/autonomia/ESTADO_INICIAL.md` («Funciones que el informe da por existentes»). Cada una de las funciones que cita el informe (de pacientes y responsables a importadores) tiene su sitio en el código y al menos una prueba de la batería. Están todas; ninguna se ha construido otra vez.
+- **Comprobación:** las pruebas citadas existen. Doce se comprobaron a mano con `grep` y el resto salió del propio código.

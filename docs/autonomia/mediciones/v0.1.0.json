@@ -1,0 +1,123 @@
+{
+  "version": "0.1.0",
+  "data_version": 2,
+  "date": "2026-11-14 09:16",
+  "machine": "linux x86_64 · 16 núcleos",
+  "scale": 1.0,
+  "patients": 8000,
+  "clinics": 3,
+  "stations": 8,
+  "pushes": 20,
+  "metrics": [
+    {
+      "name": "crear la clínica sintética",
+      "value": 2.081502484,
+      "unit": "s"
+    },
+    {
+      "name": "memoria con la clínica abierta",
+      "value": 1764.438016,
+      "unit": "MB"
+    },
+    {
+      "name": "datos enteros a texto",
+      "value": 0.719288335,
+      "unit": "s"
+    },
+    {
+      "name": "tamaño de los datos",
+      "value": 226.53386,
+      "unit": "MB"
+    },
+    {
+      "name": "abrir con un solo ordenador",
+      "value": 1.079552418,
+      "unit": "s"
+    },
+    {
+      "name": "guardado local de un cambio",
+      "value": 0.146639495,
+      "unit": "s"
+    },
+    {
+      "name": "diario tras un cambio",
+      "value": 0.502,
+      "unit": "KB"
+    },
+    {
+      "name": "guardado local de un cambio en un paciente",
+      "value": 0.020658061,
+      "unit": "s"
+    },
+    {
+      "name": "cerrar (fichero completo)",
+      "value": 1.059677883,
+      "unit": "s"
+    },
+    {
+      "name": "partir en registros (servidor)",
+      "value": 1.099332787,
+      "unit": "s"
+    },
+    {
+      "name": "puesto: ver qué ha cambiado",
+      "value": 0.224915148,
+      "unit": "s"
+    },
+    {
+      "name": "cambio enviado (una cita y un cobro)",
+      "value": 4.54,
+      "unit": "KB"
+    },
+    {
+      "name": "entrada de un puesto: preparar y comprimir",
+      "value": 1.330813883,
+      "unit": "s"
+    },
+    {
+      "name": "entrada de un puesto (recepción), comprimida",
+      "value": 13.017899,
+      "unit": "MB"
+    },
+    {
+      "name": "entrada de un puesto (recepción), sin comprimir",
+      "value": 201.287109,
+      "unit": "MB"
+    },
+    {
+      "name": "abrir una clínica (del disco)",
+      "value": 1.068566949,
+      "unit": "s"
+    },
+    {
+      "name": "varias clínicas: en disco",
+      "value": 679.60158,
+      "unit": "MB"
+    },
+    {
+      "name": "varias clínicas: memoria con todas abiertas a la vez",
+      "value": 1068.683264,
+      "unit": "MB"
+    },
+    {
+      "name": "concurrencia: tiempo total",
+      "value": 0.033045063,
+      "unit": "s"
+    },
+    {
+      "name": "concurrencia: guardado de un puesto, mediana",
+      "value": 0.001345438,
+      "unit": "s"
+    },
+    {
+      "name": "concurrencia: guardado de un puesto, percentil 95",
+      "value": 0.001641392,
+      "unit": "s"
+    },
+    {
+      "name": "concurrencia: guardados perdidos",
+      "value": 0.0,
+      "unit": ""
+    }
+  ]
+}

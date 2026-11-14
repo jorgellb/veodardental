@@ -912,8 +912,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Tabla en ESTADO_INICIAL con cada módulo citado y dónde está implementado",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-077"]
   },
   {
    "id": "T-INI-07",
@@ -940,8 +940,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Mediciones de guardado local, cambio enviado y entrada comprimida con datos sintéticos, procedimiento y versión registrados",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-075"]
   },
   {
    "id": "T-PROC-01",
@@ -2796,8 +2796,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Script de medición y pruebas acotadas reproducibles",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-075"]
   },
   {
    "id": "T-F6-08",
@@ -2809,8 +2809,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Memoria, tiempos, tamaño y concurrencia medidos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-075"]
   },
   {
    "id": "T-F6-09",
@@ -2824,8 +2824,8 @@
     "T-F6-01"
    ],
    "criterio": "Prueba automática del escenario",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-076"]
   },
   {
    "id": "T-F6-09X",

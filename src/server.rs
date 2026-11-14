@@ -580,7 +580,7 @@ fn write_response(w: &mut impl Write, resp: &Response, gzip_ok: bool) -> std::io
 }
 
 /// Comprime con gzip (nivel rápido: el JSON de los datos ocupa unas diez veces menos).
-fn gzip(data: &[u8]) -> Vec<u8> {
+pub(crate) fn gzip(data: &[u8]) -> Vec<u8> {
     let mut e = flate2::write::GzEncoder::new(Vec::with_capacity(data.len() / 6), flate2::Compression::fast());
     if e.write_all(data).is_err() {
         return vec![];
@@ -3716,6 +3716,95 @@ mod tests {
         assert_eq!(last, 429);
         assert_eq!(st.handle(&req("GET", "/grupo/resumen", year, &[("X-Grupo", &token)]), "CLAVEG").0.code, 429);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T-F6-09. Escenario sintético de un grupo: dos sociedades, cada una con
+    /// su servidor; la primera con dos centros. Actividad en cada centro
+    /// (citas y cobros), una recepción limitada a un centro y la vista del
+    /// grupo. Se comprueban a la vez los permisos y los totales:
+    /// - la recepción del centro 2 trabaja en su centro y no en el otro, y no
+    ///   recibe su caja;
+    /// - el resumen de cada clínica coincide, centro a centro, con sus
+    ///   informes, y el del grupo es la suma;
+    /// - la clave de una clínica no vale en la otra, y en los resúmenes no hay
+    ///   nada de los pacientes.
+    #[test]
+    fn a_synthetic_group_of_clinics_keeps_permissions_and_totals() {
+        use crate::grupo::{Link, consolidate, only_known_fields};
+        use crate::informes::Filter;
+        let (addr_a, path_a, ha) = start("CLAVE56");
+        let (addr_b, path_b, hb) = start("CLAVE57");
+        let dir_a = signed_in(&addr_a, "CLAVE56", "Despacho A", 1, "0000");
+        let dir_b = signed_in(&addr_b, "CLAVE57", "Despacho B", 1, "0000");
+        let today = crate::model::today();
+        // Sociedad A: dos centros, una caja en cada uno, recepción solo en el centro 2
+        let (mut a, mut sa) = dir_a.load().unwrap();
+        a.station = dir_a.station;
+        if !a.centers.iter().any(|c| c.id == 2) {
+            a.centers.push(crate::model::Center { id: 2, name: "Centro 2".into(), address: String::new(), phone: String::new(), color: [1, 2, 3], active: true });
+        }
+        a.cash.clear();
+        for c in [1, 2] {
+            a.config.current_center = c;
+            a.open_cash_session(100.0);
+        }
+        a.users.iter_mut().find(|u| u.id == 2).unwrap().centers = vec![2];
+        let (_, key_a) = a.group_key_new("Grupo").unwrap();
+        dir_a.push(&mut a, &mut sa).unwrap();
+        let (mut b, mut sb) = dir_b.load().unwrap();
+        b.station = dir_b.station;
+        let (_, key_b) = b.group_key_new("Grupo").unwrap();
+        dir_b.push(&mut b, &mut sb).unwrap();
+        // actividad: la recepción del centro 2 cobra y da citas en su centro
+        let rec = signed_in(&addr_a, "CLAVE56", "Recepción C2", 2, "0000");
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.station = rec.station;
+        assert!(r.cash.iter().all(|c| crate::model::cid(c.center_id) == 2), "solo su caja");
+        r.config.current_center = 2;
+        let pays_c2: Vec<u32> = (0..3).map(|i| r.add_payment(101 + i, 50.0 + i as f64, "Efectivo", "Escenario")).collect();
+        let base = r.appointments.iter().find(|x| x.patient_id.is_some()).unwrap().clone();
+        let mut mine = base.clone();
+        (mine.id, mine.center_id, mine.date) = (r.new_id(), 2, today);
+        let mut other = base.clone();
+        (other.id, other.center_id, other.date) = (r.new_id(), 1, today);
+        r.appointments.push(mine.clone());
+        r.appointments.push(other.clone());
+        rec.push(&mut r, &mut sr).unwrap();
+        let disk_a = crate::sync::on_disk(&path_a);
+        assert!(pays_c2.iter().all(|p| disk_a.payments.iter().any(|x| x.id == *p && crate::model::cid(x.center_id) == 2)), "sus cobros, en su centro");
+        assert!(disk_a.appointments.iter().any(|x| x.id == mine.id) && !disk_a.appointments.iter().any(|x| x.id == other.id), "citas en su centro, sí; en el otro, no");
+        // Dirección de A cobra en el centro 1; la sociedad B, por su lado
+        let (mut a, mut sa) = dir_a.load().unwrap();
+        a.station = dir_a.station;
+        a.config.current_center = 1;
+        a.add_payment(105, 300.0, "Tarjeta", "Escenario");
+        dir_a.push(&mut a, &mut sa).unwrap();
+        let (mut b, mut sb) = dir_b.load().unwrap();
+        b.station = dir_b.station;
+        b.add_payment(106, 120.0, "Tarjeta", "Escenario B");
+        dir_b.push(&mut b, &mut sb).unwrap();
+        // la vista del grupo
+        let (from, to) = (today - chrono::Duration::days(365), today);
+        let link = |addr: &str, pin: String, token: &str| Link { name: addr.into(), address: addr.into(), pin, token: token.into() };
+        let sum_a = group_summary(&link(&addr_a, dir_a.pinned(), &key_a), from, to).unwrap();
+        let sum_b = group_summary(&link(&addr_b, dir_b.pinned(), &key_b), from, to).unwrap();
+        let (disk_a, disk_b) = (crate::sync::on_disk(&path_a), crate::sync::on_disk(&path_b));
+        for (sum, disk) in [(&sum_a, &disk_a), (&sum_b, &disk_b)] {
+            for (center, (name, f)) in disk.centers.iter().map(|c| c.id).zip(&sum.centers) {
+                let fl = Filter { from, to, center: Some(center), doctor: None };
+                assert_eq!(f.collected, disk.report_collected(&fl).net.0, "{name}: lo cobrado, como en sus informes");
+                assert_eq!(f.production, disk.report_production(&fl).total().0, "{name}: la producción");
+            }
+            assert_eq!(sum.totals().collected, disk.report_collected(&Filter::period(from, to)).net.0, "los centros suman la clínica");
+            only_known_fields(&serde_json::to_string(sum).unwrap()).unwrap();
+        }
+        let (t, _, _) = consolidate(&[sum_a.clone(), sum_b.clone()]);
+        assert_eq!(t.collected, sum_a.totals().collected + sum_b.totals().collected, "el grupo es la suma de las dos");
+        assert!(group_summary(&link(&addr_b, dir_b.pinned(), &key_a), from, to).is_err(), "la clave de A no vale en B");
+        dir_a.stop().unwrap();
+        dir_b.stop().unwrap();
+        ha.join().unwrap();
+        hb.join().unwrap();
     }
 
     /// Dos sociedades, cada una con su servidor (T-F6-01, D-25): el grupo junta
