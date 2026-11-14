@@ -21,7 +21,7 @@ use crate::users::{Perm, Profile};
 use serde_json::Value;
 
 /// Listas clínicas que no recibe quien no tiene el permiso clínico.
-const CLINICAL_LISTS: [&str; 5] = ["perio", "images", "ia_reports", "prescriptions", "ortho"];
+const CLINICAL_LISTS: [&str; 6] = ["perio", "images", "ia_reports", "prescriptions", "ortho", "evo_notes"];
 
 /// Campos clínicos de otros registros (se mandan vacíos). De los cuestionarios
 /// de salud quedan la fecha, quién lo rellenó y si está firmado.

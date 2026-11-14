@@ -247,7 +247,15 @@ fn tab_content(app: &mut App, ui: &mut Ui, tab: CfgTab) {
             crate::screens::comunicaciones::sms_settings(app, ui);
         }
         CfgTab::Receta => crate::screens::recetas::config_panel(app, ui),
-        CfgTab::Ia => crate::screens::ia::config_panel(app, ui),
+        CfgTab::Ia => {
+            crate::screens::ia::config_panel(app, ui);
+            ui.add_space(10.0);
+            let w = (ui.clip_rect().right() - ui.cursor().left() - 8.0).max(320.0);
+            ui.scope(|ui| {
+                ui.set_max_width(w);
+                crate::screens::evolucion::settings(app, ui);
+            });
+        }
         CfgTab::Importar => crate::screens::importar::panel(app, ui),
         CfgTab::Copias => {
             crate::screens::herramientas::backups_panel(app, ui);

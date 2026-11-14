@@ -2486,8 +2486,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas del flujo de confirmación y de procedencia; transcripción con doble de prueba",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-046"
+   ]
   },
   {
    "id": "T-F5-04X",

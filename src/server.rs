@@ -996,11 +996,12 @@ impl State {
                 }
             }
         }
-        // lo firmado (documentos, cuestionarios) y las recetas emitidas no se
-        // cambian ni se borran ni pasan a otro paciente: solo se anota la
-        // revocación o el estado en las farmacias (fusionar pacientes es una
-        // operación del servidor, `ChainOp::MergePatients`)
-        for c in changes.iter_mut().filter(|c| matches!(c.field.as_str(), "documents" | "health" | "prescriptions")) {
+        // lo firmado (documentos, cuestionarios), las recetas emitidas y las
+        // notas de evolución confirmadas no se cambian ni se borran ni pasan a
+        // otro paciente: solo se anota la revocación o el estado en las
+        // farmacias (fusionar pacientes es una operación del servidor,
+        // `ChainOp::MergePatients`)
+        for c in changes.iter_mut().filter(|c| crate::firmado::PROTECTED_LISTS.contains(&c.field.as_str())) {
             let Some(cur) = c.key.as_deref().and_then(|k| self.snap.get(&c.field, Some(k))).cloned() else { continue };
             if let Some(kept) = crate::firmado::protect_json(&c.field, &cur, c.after.as_deref()) {
                 c.after = Some(kept);
@@ -3166,6 +3167,38 @@ mod tests {
         let disk = crate::sync::on_disk(&path);
         let r = disk.documents.iter().find(|d| d.id == d1).unwrap();
         assert!(r.revoked_at.is_some() && r.revoke_reason == "Prefiere no operarse" && r.body == orig.body);
+        rd.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    /// Notas de evolución en red: una confirmada no la cambia ni la borra un
+    /// puesto (un borrador sí), y Recepción no las recibe.
+    #[test]
+    fn a_confirmed_evolution_note_cannot_be_changed_by_a_station() {
+        let (addr, path, h) = start("CLAVE47");
+        let rd = signed_in(&addr, "CLAVE47", "Gabinete", 3, "0000");
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        let now = crate::model::now();
+        let p = |o| crate::evolucion::Provenance { origin: o, detail: String::new(), at: now, source_hash: String::new() };
+        let done = a.evo_draft(101, 1, None, "Pieza 46: endodoncia sin incidencias.", vec![p(crate::evolucion::Origin::Escrito)], now);
+        a.evo_confirm(done, "Dra. Ruiz", &[], false, now).unwrap();
+        let draft = a.evo_draft(101, 1, None, "Borrador", vec![p(crate::evolucion::Origin::Escrito)], now);
+        rd.push(&mut a, &mut sa).unwrap();
+        let orig = crate::sync::on_disk(&path).evo_notes.iter().find(|n| n.id == done).unwrap().clone();
+        // el puesto cambia la confirmada, la borra… y cambia el borrador
+        a.evo_notes.iter_mut().find(|n| n.id == done).unwrap().text = "Pieza 47".into();
+        a.evo_notes.iter_mut().find(|n| n.id == draft).unwrap().text = "Borrador cambiado".into();
+        rd.push(&mut a, &mut sa).unwrap();
+        a.evo_notes.retain(|n| n.id != done);
+        rd.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.evo_notes.iter().find(|n| n.id == done), Some(&orig), "la confirmada ni cambia ni se borra");
+        assert_eq!(disk.evo_notes.iter().find(|n| n.id == draft).unwrap().text, "Borrador cambiado");
+        // Recepción no las recibe
+        let rr = signed_in(&addr, "CLAVE47", "Recepción", 2, "0000");
+        let (r, _) = rr.load().unwrap();
+        assert!(r.evo_notes.is_empty(), "las notas clínicas no van a Recepción");
         rd.stop().unwrap();
         h.join().unwrap();
     }

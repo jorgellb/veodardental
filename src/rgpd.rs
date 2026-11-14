@@ -213,6 +213,9 @@ pub fn export_zip(db: &Db, pid: u32, dest: &Path, who: &str) -> Result<usize, St
         "ortodoncia": db.ortho.iter().filter(|o| o.patient_id == pid).collect::<Vec<_>>(),
         "analisis_con_ia": db.ia_reports.iter().filter(|r| r.patient_id == pid).collect::<Vec<_>>(),
         "solicitudes_de_derechos": db.rights_requests.iter().filter(|r| r.patient_id == pid).collect::<Vec<_>>(),
+        // las confirmadas: los borradores no son aún parte de la historia
+        "notas_de_evolucion": db.evo_notes.iter().filter(|n| n.patient_id == pid && n.is_confirmed()).collect::<Vec<_>>(),
+        "pagos_por_internet": db.pay_requests.iter().filter(|r| r.patient_id == pid).collect::<Vec<_>>(),
     });
     let mut files: Vec<(String, Vec<u8>)> = vec![("datos.json".into(), data.into_bytes()), ("datos_adicionales.json".into(), serde_json::to_vec_pretty(&extra).map_err(|e| e.to_string())?)];
     let mut missing = vec![];

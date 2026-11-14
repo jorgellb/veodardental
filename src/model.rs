@@ -677,6 +677,12 @@ pub struct ClinicConfig {
     /// Pago por internet: activado, Bizum y señal (la clave del TPV va aparte, ver `pago`).
     #[serde(default, skip_serializing_if = "crate::pago::PayConfig::is_default")]
     pub pay_online: crate::pago::PayConfig,
+    /// Plantillas de las notas de evolución.
+    #[serde(default = "crate::evolucion::default_templates")]
+    pub evo_templates: Vec<crate::evolucion::EvoTemplate>,
+    /// Resumir los dictados con la IA (con los agentes de IA configurados).
+    #[serde(default)]
+    pub evo_ai: bool,
     /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub support_email: String,
@@ -854,6 +860,9 @@ pub struct Db {
     /// Peticiones de pago por internet (ver `pago`).
     #[serde(default)]
     pub pay_requests: Tracked<Vec<crate::pago::PayRequest>>,
+    /// Notas de evolución (ver `evolucion`).
+    #[serde(default)]
+    pub evo_notes: Tracked<Vec<crate::evolucion::EvoNote>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

@@ -11,6 +11,7 @@ pub mod config;
 pub mod correo;
 pub mod derechos;
 pub mod documentos;
+pub mod evolucion;
 pub mod facturas;
 pub mod fichas;
 pub mod gastos;

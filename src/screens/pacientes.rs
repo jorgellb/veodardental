@@ -522,6 +522,8 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
     if !app.can(crate::users::Perm::Clinico) {
         return;
     }
+    crate::screens::evolucion::card_for(app, ui, pid);
+    ui.add_space(8.0);
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Antecedentes y notas clínicas");

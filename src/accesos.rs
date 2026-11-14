@@ -125,7 +125,7 @@ pub fn read(path: &Path, patient: Option<u32>) -> Vec<Entry> {
 }
 
 /// Listas que forman la historia de un paciente, y cómo se llaman.
-pub const HISTORY_LISTS: [(&str, &str); 10] = [
+pub const HISTORY_LISTS: [(&str, &str); 11] = [
     ("patients", "ficha"),
     ("entries", "tratamientos"),
     ("budgets", "presupuestos"),
@@ -136,6 +136,7 @@ pub const HISTORY_LISTS: [(&str, &str); 10] = [
     ("prescriptions", "recetas"),
     ("ortho", "ortodoncia"),
     ("ia_reports", "análisis con IA"),
+    ("evo_notes", "notas de evolución"),
 ];
 
 /// De unos cambios, a qué pacientes tocan y en qué partes de su historia.

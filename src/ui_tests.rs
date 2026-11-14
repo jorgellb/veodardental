@@ -2523,6 +2523,55 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Nota de evolución desde la ficha: plantilla, huecos completados y
+/// confirmación; solo entonces está en la historia, y ya no se cambia.
+#[test]
+fn an_evolution_note_is_written_from_a_template_and_confirmed() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 2400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.db.evo_notes.clear();
+        a.open_patient(101, crate::app::PatTab::Historial);
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Notas de evolución");
+    h.get_by_label("＋ Nota nueva").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.query_all_by_label_contains("Revisión").next().expect("plantilla de revisión").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let id = h.state().evo.draft.expect("borrador abierto");
+    assert!(h.state().db.evo_notes.iter().find(|n| n.id == id).unwrap().text.contains("___"));
+    // con huecos no se confirma
+    h.get_by_label("Confirmar y guardar en la historia").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(!h.state().db.evo_notes.iter().find(|n| n.id == id).unwrap().is_confirmed());
+    h.state_mut().db.evo_edit(id, "Motivo: revisión. Exploración: sin caries. Diagnóstico: sano. Plan: revisión en 6 meses.", None).unwrap();
+    for _ in 0..2 {
+        h.step();
+    }
+    h.get_by_label("Confirmar y guardar en la historia").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let n = h.state().db.evo_notes.iter().find(|n| n.id == id).unwrap().clone();
+    assert!(n.is_confirmed() && n.provenance.iter().any(|p| p.origin == crate::evolucion::Origin::Plantilla));
+    assert!(h.state().evo.draft.is_none());
+    h.get_by_label("Corregir");
+}
+
 /// Plan de tratamiento en el presupuesto: se crea una alternativa, se acepta
 /// expresamente y la otra queda descartada.
 #[test]

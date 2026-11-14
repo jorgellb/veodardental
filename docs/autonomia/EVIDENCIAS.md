@@ -1201,3 +1201,34 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 467 pasan, 0 fallan, 10 ignoradas |
+
+## E-046 T-F5-04: notas de evolución con plantillas, dictado, transcripción y resumen revisado
+- **Hecho (`src/evolucion.rs`, `src/screens/evolucion.rs`):** notas en la ficha › Historial.
+  - **Plantillas por tratamiento:** se proponen primero las de los tratamientos de hoy, con las piezas puestas y huecos «___» que hay que completar.
+  - **Dictado desde una grabación,** transcrito por un servicio compatible con la API de OpenAI (Configuración › IA, fichero privado `stt.json`).
+  - **Resumen opcional con la IA,** desactivado de serie. Se envía sin el nombre del paciente; lo que sale es una propuesta y se señala lo que no está en el dictado (piezas, cifras, dosis y medicamentos del vademécum).
+- **Nada entra en la historia sin confirmar:**
+  - un borrador con huecos no se confirma;
+  - con dictado o IA hay que marcar que se ha revisado;
+  - con datos de la IA que no están en el dictado, hay que revisarlos expresamente.
+- **Procedencia** en cada nota: escrito, plantilla, dictado (servicio y huella del texto), resumen con IA (modelo), y quién confirmó y cuándo.
+- **Mínimo de datos:** el audio no se guarda y la grabación puede borrarse al terminar; del dictado solo queda la huella.
+- **Confirmada, no cambia:** se corrige con otra nota que la cita.
+  - Protegida en el servidor y en la carpeta compartida.
+  - La lista de lo protegido está ahora en una sola constante (`firmado::PROTECTED_LISTS`).
+- **Fallo encontrado por la prueba nueva y corregido:** el servidor dejaba borrar una nota confirmada porque su filtro tenía la lista escrita a mano.
+- **Otras listas:** las notas son clínicas (Recepción no las recibe) y entran en el registro de accesos. Salen en la exportación del paciente, junto con los pagos por internet. Al fusionar pacientes pasan a la ficha que se conserva, también las peticiones de pago.
+- **Pruebas:**
+  - `evolucion::tests::nothing_enters_the_history_without_review_and_confirmation`;
+  - `evolucion::tests::an_ai_summary_with_facts_not_in_the_dictation_is_flagged`;
+  - `evolucion::tests::dictation_is_transcribed_by_the_configured_service`: doble de prueba que comprueba el multipart, el modelo y la clave;
+  - `server::tests::a_confirmed_evolution_note_cannot_be_changed_by_a_station`;
+  - `ui_tests::an_evolution_note_is_written_from_a_template_and_confirmed`.
+- **Pendiente (B-15, T-F5-04X):** el proveedor o modelo real y la grabación desde el micrófono dentro del programa.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 472 pasan, 0 fallan, 10 ignoradas |

@@ -214,6 +214,8 @@ pub struct App {
     pub cobros_tab: u8,
     pub tools: screens::herramientas::ToolsState,
     pub bank: screens::bancos::BankUi,
+    /// Notas de evolución: el borrador y el dictado en curso.
+    pub evo: screens::evolucion::EvoUi,
 }
 
 impl App {
@@ -356,6 +358,7 @@ impl App {
             cobros_tab: 0,
             tools: screens::herramientas::ToolsState::default(),
             bank: screens::bancos::BankUi::default(),
+            evo: Default::default(),
         };
         if let Some(w) = clock {
             app.toast = Some((w, 15.0, crate::theme::WARN));

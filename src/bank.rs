@@ -761,7 +761,7 @@ impl Db {
             ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == remove { x.patient_id = keep; } } )* };
         }
         // todo lo suyo (lo clínico, lo económico y los avisos) pasa al que se conserva
-        move_pid!(entries, budgets, payments, recalls, waitlist, invoices, perio, images, messages, documents, lab_works, prescriptions, ortho, health, ia_reports, whatsapp, rx_links, rights_requests);
+        move_pid!(entries, budgets, payments, recalls, waitlist, invoices, perio, images, messages, documents, lab_works, prescriptions, ortho, health, ia_reports, whatsapp, rx_links, rights_requests, pay_requests, evo_notes);
         macro_rules! move_opt_pid {
             ($($v:ident),*) => { $( for x in self.$v.iter_mut() { if x.patient_id == Some(remove) { x.patient_id = Some(keep); } } )* };
         }

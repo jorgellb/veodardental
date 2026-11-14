@@ -41,7 +41,8 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
   - `server::tests::signed_documents_and_forms_cannot_be_changed_by_a_station`;
   - `server::tests::only_management_blocks_or_unblocks_a_patient_on_the_server`;
   - `server::tests::only_a_prescriber_marks_prescription_warnings_reviewed`;
-  - `server::tests::the_time_record_only_grows_on_the_server`.
+  - `server::tests::the_time_record_only_grows_on_the_server`;
+  - `server::tests::a_confirmed_evolution_note_cannot_be_changed_by_a_station` (las listas protegidas están en `firmado::PROTECTED_LISTS`).
 
 ## 3. Criptografía (sin criptografía propia: `ring` y `rustls`)
 

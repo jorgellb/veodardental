@@ -186,6 +186,10 @@ pub fn keep_issued_rx(current: &Prescription, proposed: Option<&Prescription>) -
 
 // ───────────────────────── protección en red y en carpeta ─────────────────────────
 
+/// Las listas con registros que un puesto no puede cambiar ni borrar una vez
+/// firmados, emitidos o confirmados (ver [`protect_json`]).
+pub const PROTECTED_LISTS: [&str; 4] = ["documents", "health", "prescriptions", "evo_notes"];
+
 /// Servidor: versión que se acepta de un registro firmado de `documents` o
 /// `health`, o de una receta emitida de `prescriptions` (`current`), cuando un
 /// puesto manda `after` (`None`: lo borra). Devuelve `None` si no hay nada que
@@ -207,6 +211,7 @@ pub fn protect_json(field: &str, current: &str, after: Option<&str>) -> Option<S
         "documents" => fix::<PatientDoc>(current, after, |d| d.signed, keep_signed_doc),
         "health" => fix::<HealthForm>(current, after, |f| f.signed, keep_signed_health),
         "prescriptions" => fix::<Prescription>(current, after, |r| r.issued(), keep_issued_rx),
+        "evo_notes" => fix::<crate::evolucion::EvoNote>(current, after, |n| n.is_confirmed(), crate::evolucion::keep_confirmed),
         _ => None,
     }
 }
@@ -217,6 +222,7 @@ pub struct SignedOnDisk {
     docs: Vec<PatientDoc>,
     health: Vec<HealthForm>,
     rx: Vec<Prescription>,
+    notes: Vec<crate::evolucion::EvoNote>,
 }
 
 impl SignedOnDisk {
@@ -226,6 +232,7 @@ impl SignedOnDisk {
             docs: take("documents").into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
             health: take("health").into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
             rx: disk["prescriptions"].as_array().into_iter().flatten().filter_map(|v| serde_json::from_value::<Prescription>(v.clone()).ok()).filter(|r| r.issued()).collect(),
+            notes: disk["evo_notes"].as_array().into_iter().flatten().filter_map(|v| serde_json::from_value::<crate::evolucion::EvoNote>(v.clone()).ok()).filter(|n| n.is_confirmed()).collect(),
         }
     }
 }
@@ -260,6 +267,9 @@ impl Db {
         }
         for cur in &disk.health {
             restore(&mut self.health, cur, |f| f.id == cur.id, keep_signed_health);
+        }
+        for cur in &disk.notes {
+            restore(&mut self.evo_notes, cur, |n| n.id == cur.id, crate::evolucion::keep_confirmed);
         }
     }
 

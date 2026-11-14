@@ -97,6 +97,8 @@ contratado en este trabajo.
 | WhatsApp Business (Meta) | Recordatorios y mensajes al paciente | `src/whatsapp.rs` |
 | SMS (pasarela que contrate la clínica) | Teléfono y texto del mensaje | `src/sms.rs` |
 | IA de imágenes (proveedor que elija la clínica, o uno local) | Solo la imagen y, si se quiere, la edad; nunca el nombre | `src/ia.rs` |
+| Transcripción de dictados (servicio que elija la clínica, o uno local) | La grabación del dictado; el programa no la guarda | `src/evolucion.rs` |
+| IA para resumir dictados (desactivado de serie) | El texto del dictado sin el nombre del paciente; el resumen es una propuesta que el profesional revisa | `src/evolucion.rs` |
 | Cloudflare Tunnel (si se publica la página de citas) | Las páginas de cita online y «Mi cita»: datos de esa cita y nombre de pila | `src/tunnel.rs`, `src/portal.rs` |
 | AEAT (VERI*FACTU) | Registros de facturación | `src/verifactu.rs` |
 | TPV virtual del banco (Redsys) | El pedido, el importe y el concepto del pago; la tarjeta la pide la página del banco, no el programa | `src/pago.rs` |
@@ -108,6 +110,13 @@ contratado en este trabajo.
   - los contratos de encargado del tratamiento con cada proveedor;
   - si la IA con proveedores externos es admisible y con qué garantías;
   - los textos informativos al paciente.
+
+## 5 bis. Notas de evolución
+- Solo entran en la historia cuando el profesional las confirma. Guardan su procedencia (escrito, plantilla, dictado, resumen con IA) y quién las confirmó.
+- Del dictado solo queda la huella; el audio no se guarda.
+- Una nota confirmada no se cambia ni se borra, ni desde un puesto en red (`server::tests::a_confirmed_evolution_note_cannot_be_changed_by_a_station`): se corrige con otra que la cita.
+- Recepción no las recibe. Su lectura queda en el registro de accesos y salen en la exportación del paciente.
+- **Decide:** si se puede usar un proveedor externo para transcribir o resumir.
 
 ## 6. Minimización en los registros
 - **Registro de errores:** antes de escribir se quitan correos, teléfonos,
