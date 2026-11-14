@@ -89,6 +89,7 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-F6-09: escenario sintético de un grupo de clínicas con permisos y totales | E-076 | `486b58c` |
 | T-INI-06: funciones que el informe da por existentes, comprobadas en el código | E-077 | `486b58c` |
 | T-R7-1: dinero al céntimo con pruebas de propiedades, sin tocar lo ya guardado (D-29) | E-078 | `0bb9405` |
+| T-R7-5: autorización en el servidor, rutas revisadas y matrices por perfil | E-079 | `7f94af7` |
 
 ## Siguiente acción
 Las fases 1 a 6 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS, cada cosa con su tarea X:
