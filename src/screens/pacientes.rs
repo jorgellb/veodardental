@@ -533,6 +533,7 @@ fn historial(app: &mut App, ui: &mut Ui, pid: u32) {
     }
     crate::screens::evolucion::card_for(app, ui, pid);
     ui.add_space(8.0);
+    crate::screens::esterilizacion::patient_card(app, ui, pid);
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Antecedentes y notas clínicas");

@@ -2523,6 +2523,52 @@ fn the_economic_summary_shows_its_totals_and_filters() {
     assert!(!h.query_all_by_label(&c2.to_string()).collect::<Vec<_>>().is_empty(), "el neto del centro 2: {c2}");
 }
 
+/// Esterilización en Almacén: ciclo con sus etiquetas, validación, uso de un
+/// lote en un paciente y, con un biológico positivo, el paciente afectado.
+#[test]
+fn a_sterilization_incident_shows_the_affected_patient() {
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 2000.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        a.screen = crate::app::Screen::Almacen;
+        a.stock.tab = 4;
+    }
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_label("Ciclo nuevo");
+    h.get_by_label("Registrar ciclo y etiquetas");
+    // el ciclo (lo de escribir los lotes ya lo prueba `esterilizacion`)
+    h.state_mut().db.new_cycle("Autoclave 1", "134 ºC", &["Kit de extracción".into(), "Kit de higiene".into()], 30, crate::model::now()).unwrap();
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(h.state().db.sterile_packs.len(), 2);
+    h.get_by_label("Indicadores correctos").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let code = h.state().db.sterile_packs[0].code.clone();
+    let hist = h.state().db.patient(101).unwrap().history_no;
+    h.state_mut().db.use_pack(&code, 101, None, None, crate::model::now()).unwrap();
+    for _ in 0..2 {
+        h.step();
+    }
+    h.get_by_label("Biológico positivo").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let name = h.state().db.patient_name(101);
+    h.query_all_by_label_contains(&format!("Afectado: {name}")).next().expect("el paciente afectado sale en el ciclo");
+    assert!(h.state().db.sterile_packs[1].withdrawn.is_some(), "el lote sin usar se retira");
+    assert!(hist > 0);
+}
+
 /// Alertas clínicas: el paciente anticoagulado tiene su alerta con la
 /// fuente; una extracción no se deja como hecha hasta que el profesional la
 /// revisa, y queda quién y cuándo.

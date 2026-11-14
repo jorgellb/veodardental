@@ -1357,3 +1357,40 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 486 pasan, 0 fallan, 10 ignoradas |
+
+## E-052 Revisión de seguridad de las alertas revisadas (vistos sellados por el servidor)
+- **Hallazgo:** el visto de una alerta clínica lo mandaba el puesto con su nombre y su hora, y el servidor no lo comprobaba. Se podía poner otro nombre o cambiar o borrar un visto.
+- **Corrección (`src/server.rs`, `src/firmado.rs`):**
+  - un visto nuevo solo se guarda si el usuario de la sesión está activo y tiene permiso clínico, y si la alerta y el paciente existen;
+  - quién y cuándo los pone el servidor;
+  - un visto ya guardado no cambia ni se borra: `alert_acks` está en `firmado::PROTECTED_LISTS`.
+- **Prueba:** `server::tests::alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server`:
+  - nombre y hora falsos sustituidos;
+  - una alerta inventada no se guarda;
+  - un visto borrado desde el puesto sigue en el servidor.
+
+## E-053 T-F5-08: esterilización (ciclos, lotes, instrumental, pacientes, incidencias y afectados)
+- **Hecho (`src/esterilizacion.rs`, Almacén › Esterilización):**
+  - **Ciclos:** por autoclave (numerados), con programa, hora y quién. Sus lotes llevan contenido, caducidad y una etiqueta única, también entre autoclaves de nombre parecido.
+  - **Validación:** con los indicadores químico y Bowie-Dick al terminar, y biológico después.
+  - **Uso:** solo un lote de un ciclo validado, sin caducar, sin retirar y sin usar; queda ligado al paciente (y a su tratamiento o cita). La ficha › Historial muestra los lotes usados y avisa si su ciclo es fallido.
+  - **Incidencia** (indicador no conforme, biológico positivo o notificada a mano): el ciclo pasa a fallido, se retiran sus lotes sin usar y sale la lista de pacientes en que se usaron sus lotes, con fecha y tratamiento. Se puede exportar a un CSV privado, con fórmulas neutralizadas.
+  - **Auditoría:** ciclo, validación, uso, incidencia (con lotes retirados y número de afectados) y resultado biológico.
+- **En red:**
+  - el uso lo sella el servidor y no cambia ni se borra una vez anotado;
+  - un lote retirado no vuelve;
+  - un ciclo fallido no vuelve atrás.
+  - Al fusionar pacientes, el uso pasa a la ficha que se conserva.
+- **Fallo encontrado por la prueba y corregido:** las etiquetas de «Autoclave 1» y «Autoclave 2» salían iguales («AUTO-0001-01»).
+- **Pruebas:**
+  - `esterilizacion::tests::packs_are_only_used_from_a_validated_cycle_and_traced_to_the_patient`;
+  - `esterilizacion::tests::an_incident_lists_exactly_the_affected_patients_and_is_audited`: solo los pacientes del ciclo fallido, por fecha, y la auditoría;
+  - `server::tests::alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server`;
+  - `ui_tests::a_sterilization_incident_shows_the_affected_patient`.
+- **Batería** (de E-052 y E-053):
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 490 pasan, 0 fallan, 10 ignoradas |

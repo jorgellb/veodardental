@@ -776,6 +776,11 @@ impl Db {
                 l.patient_id = keep;
             }
         }
+        for p in self.sterile_packs.iter_mut() {
+            if let Some(u) = p.used.as_mut().filter(|u| u.patient_id == remove) {
+                u.patient_id = keep;
+            }
+        }
         for o in self.slot_offers.iter_mut() {
             for i in o.invites.iter_mut().filter(|i| i.patient_id == remove) {
                 i.patient_id = keep;

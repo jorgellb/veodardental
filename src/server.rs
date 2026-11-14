@@ -1021,6 +1021,74 @@ impl State {
                 c.after = serde_json::to_string(&after).ok();
             }
         }
+        // alertas clínicas revisadas: solo se añaden, por un usuario con
+        // permiso clínico, con su nombre y la hora del servidor, de una alerta
+        // que existe y de un paciente que existe (las ya guardadas no cambian:
+        // `firmado::PROTECTED_LISTS`)
+        let mut drop: Vec<Option<String>> = vec![];
+        for c in changes.iter_mut().filter(|c| c.field == "alert_acks") {
+            if c.key.as_deref().and_then(|k| self.snap.get("alert_acks", Some(k))).is_some() {
+                continue;
+            }
+            let Some(mut ack) = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::alertas::AlertAck>(a).ok()) else {
+                drop.push(c.key.clone());
+                continue;
+            };
+            let known = crate::alertas::RULES.iter().any(|r| r.key == ack.rule) && self.snap.get("patients", Some(&ack.patient_id.to_string())).is_some();
+            match (&confirmer, known) {
+                (Some(name), true) => {
+                    (ack.by, ack.at) = (name.clone(), crate::model::now());
+                    c.after = serde_json::to_string(&ack).ok();
+                }
+                _ => drop.push(c.key.clone()),
+            }
+        }
+        // esterilización: el uso de un lote lo sella el servidor y no cambia
+        // una vez anotado; un lote retirado no vuelve; un ciclo fallido no
+        // vuelve atrás; y nada de eso se borra
+        let who = self.user(user).filter(|u| u.active).map(|u| u.name);
+        for c in changes.iter_mut().filter(|c| c.field == "sterile_packs") {
+            let cur = c.key.as_deref().and_then(|k| self.snap.get("sterile_packs", Some(k))).and_then(|j| serde_json::from_str::<crate::esterilizacion::Pack>(j).ok());
+            let after = c.after.as_deref().and_then(|a| serde_json::from_str::<crate::esterilizacion::Pack>(a).ok());
+            let fixed = match (cur, after) {
+                (Some(cur), None) if cur.used.is_some() || cur.withdrawn.is_some() => Some(cur),
+                (Some(cur), Some(mut a)) => {
+                    (a.code, a.cycle_id) = (cur.code.clone(), cur.cycle_id);
+                    if cur.used.is_some() {
+                        a.used = cur.used.clone();
+                    } else if let Some(u) = a.used.as_mut() {
+                        match &who {
+                            Some(n) => (u.by, u.at) = (n.clone(), crate::model::now()),
+                            None => a.used = None,
+                        }
+                    }
+                    if cur.withdrawn.is_some() {
+                        a.withdrawn = cur.withdrawn.clone();
+                    }
+                    Some(a)
+                }
+                (None, Some(mut a)) => {
+                    if let Some(u) = a.used.as_mut() {
+                        match &who {
+                            Some(n) => (u.by, u.at) = (n.clone(), crate::model::now()),
+                            None => a.used = None,
+                        }
+                    }
+                    Some(a)
+                }
+                _ => None,
+            };
+            if let Some(f) = fixed {
+                c.after = serde_json::to_string(&f).ok();
+            }
+        }
+        for c in changes.iter_mut().filter(|c| c.field == "sterile_cycles") {
+            let cur = c.key.as_deref().and_then(|k| self.snap.get("sterile_cycles", Some(k))).and_then(|j| serde_json::from_str::<crate::esterilizacion::Cycle>(j).ok());
+            if let Some(cur) = cur.filter(|x| x.state == crate::esterilizacion::CycleState::Fallido || c.after.is_none()) {
+                c.after = serde_json::to_string(&cur).ok();
+            }
+        }
+        changes.retain(|c| !(c.field == "alert_acks" && drop.contains(&c.key)));
         // recetas: la revisión de sus avisos solo la da quien puede recetar,
         // con su nombre; y el prescriptor tiene que poder recetar
         let reviewer = self.prescriber_name(user);
@@ -3251,6 +3319,59 @@ mod tests {
         let disk = crate::sync::on_disk(&path);
         assert_eq!(disk.evo_notes.iter().find(|n| n.id == n2).unwrap().patient_id, 104, "la nota pasa a la ficha que se conserva");
         assert_eq!(disk.pay_requests.iter().find(|r| r.id == rq).unwrap().patient_id, 104, "y la petición de pago también");
+        rd.stop().unwrap();
+        h.join().unwrap();
+    }
+
+    /// Alertas revisadas y esterilización en red: el servidor sella quién y
+    /// cuándo; un visto o un uso anotado no se cambia ni se borra desde un
+    /// puesto; un lote retirado no vuelve y un ciclo fallido no vuelve atrás.
+    #[test]
+    fn alert_reviews_and_sterilization_are_stamped_and_kept_by_the_server() {
+        let (addr, path, h) = start("CLAVE48");
+        let rd = signed_in(&addr, "CLAVE48", "Gabinete", 3, "0000");
+        let (mut a, mut sa) = rd.load().unwrap();
+        a.station = rd.station;
+        let me = a.users.iter().find(|u| u.id == 3).unwrap().name.clone();
+        let then = crate::model::now() - chrono::Duration::days(3);
+        // un visto con otro nombre y otra hora, y otro de una alerta que no existe
+        a.ack_alert(101, "anticoagulantes", "Dr. Falso", then).unwrap();
+        let fake = a.new_id();
+        a.alert_acks.push(crate::alertas::AlertAck { id: fake, patient_id: 101, rule: "inventada".into(), by: "x".into(), at: then });
+        // un ciclo validado con dos lotes: uno usado (con otro nombre y hora) y otro retirado
+        let c = a.new_cycle("Autoclave 1", "134 ºC", &["A".into(), "B".into()], 30, then).unwrap();
+        a.validate_cycle(c, true, None, then).unwrap();
+        let codes: Vec<String> = a.sterile_packs.iter().filter(|p| p.cycle_id == c).map(|p| p.code.clone()).collect();
+        a.use_pack(&codes[0], 101, None, None, then).unwrap();
+        a.sterile_packs.iter_mut().find(|p| p.code == codes[0]).unwrap().used.as_mut().unwrap().by = "Dr. Falso".into();
+        a.sterile_packs.iter_mut().find(|p| p.code == codes[1]).unwrap().withdrawn = Some("Envoltorio dañado".into());
+        rd.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        let ack = disk.alert_acks.iter().find(|x| x.rule == "anticoagulantes").unwrap().clone();
+        assert_eq!(ack.by, me, "lo pone el servidor");
+        assert!(ack.at > then + chrono::Duration::days(2), "a la hora del servidor");
+        assert!(!disk.alert_acks.iter().any(|x| x.id == fake), "una alerta que no existe no se guarda");
+        let used = disk.sterile_packs.iter().find(|p| p.code == codes[0]).unwrap().used.clone().unwrap();
+        assert_eq!((used.patient_id, used.by.as_str()), (101, me.as_str()));
+        // el puesto intenta cambiarlo y borrarlo todo
+        let (mut b, mut sb) = rd.load().unwrap();
+        b.station = rd.station;
+        b.alert_acks.clear();
+        b.sterile_packs.iter_mut().find(|p| p.code == codes[0]).unwrap().used.as_mut().unwrap().patient_id = 102;
+        b.sterile_packs.iter_mut().find(|p| p.code == codes[1]).unwrap().withdrawn = None;
+        rd.push(&mut b, &mut sb).unwrap();
+        b.cycle_incident(c, "Biológico positivo", crate::model::now()).unwrap();
+        rd.push(&mut b, &mut sb).unwrap();
+        b.sterile_cycles.iter_mut().find(|x| x.id == c).unwrap().state = crate::esterilizacion::CycleState::Validado;
+        b.sterile_packs.retain(|p| p.code != codes[0]);
+        rd.push(&mut b, &mut sb).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.alert_acks.iter().find(|x| x.id == ack.id), Some(&ack), "el visto ni cambia ni se borra");
+        let p0 = disk.sterile_packs.iter().find(|p| p.code == codes[0]).expect("un lote usado no se borra");
+        assert_eq!(p0.used.as_ref().unwrap().patient_id, 101, "ni cambia de paciente");
+        assert!(disk.sterile_packs.iter().find(|p| p.code == codes[1]).unwrap().withdrawn.is_some(), "un lote retirado no vuelve");
+        assert_eq!(disk.cycle(c).unwrap().state, crate::esterilizacion::CycleState::Fallido, "un ciclo fallido no vuelve atrás");
+        assert_eq!(disk.affected_by_cycle(c).len(), 1);
         rd.stop().unwrap();
         h.join().unwrap();
     }

@@ -280,6 +280,8 @@ impl Db {
             pay_requests: vec![].into(),
             evo_notes: vec![].into(),
             alert_acks: vec![].into(),
+            sterile_cycles: vec![].into(),
+            sterile_packs: vec![].into(),
             punches: vec![].into(),
             data_version: DATA_VERSION,
             station: 0,

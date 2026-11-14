@@ -75,7 +75,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
     expiring(app, ui);
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        for (i, n) in ["Productos", "Pedidos", "Proveedores", "Consumos por tratamiento"].iter().enumerate() {
+        for (i, n) in ["Productos", "Pedidos", "Proveedores", "Consumos por tratamiento", "Esterilización"].iter().enumerate() {
             if ui.selectable_label(app.stock.tab == i, *n).clicked() {
                 app.stock.tab = i;
             }
@@ -86,7 +86,8 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         0 => products(app, ui),
         1 => orders(app, ui),
         2 => suppliers(app, ui),
-        _ => consumptions(app, ui),
+        3 => consumptions(app, ui),
+        _ => crate::screens::esterilizacion::panel(app, ui),
     }
 }
 

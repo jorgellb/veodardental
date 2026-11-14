@@ -866,6 +866,11 @@ pub struct Db {
     /// Alertas clínicas revisadas por el profesional (ver `alertas`).
     #[serde(default)]
     pub alert_acks: Tracked<Vec<crate::alertas::AlertAck>>,
+    /// Esterilización: ciclos del autoclave y lotes (ver `esterilizacion`).
+    #[serde(default)]
+    pub sterile_cycles: Tracked<Vec<crate::esterilizacion::Cycle>>,
+    #[serde(default)]
+    pub sterile_packs: Tracked<Vec<crate::esterilizacion::Pack>>,
     /// Medidas del piloto (tiempos y pasos, incidencias, caídas, restauraciones).
     #[serde(default)]
     pub measures: Tracked<Vec<crate::medidas::Measure>>,

@@ -2581,8 +2581,10 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Pruebas de consulta de afectados y auditoría",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": [
+    "E-053"
+   ]
   },
   {
    "id": "T-F5-09",
