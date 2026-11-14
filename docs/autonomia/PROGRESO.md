@@ -85,6 +85,9 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | Revisión de seguridad: configuración, pedidos partidos y correo del proveedor | E-072 | `39aad16` |
 | Revisión de seguridad: configuración por lista de lo permitido y sin proveedores repetidos | E-073 | `e6f220f` |
 | T-F6-06: modo tableta (controles grandes, contraste ajustable y uso sin ratón) | E-074 | `80e5f03` |
+| T-F6-07, T-INI-08 y T-F6-08: calidad continua y mediciones reproducibles por versión (D-28) | E-075 | `486b58c` |
+| T-F6-09: escenario sintético de un grupo de clínicas con permisos y totales | E-076 | `486b58c` |
+| T-INI-06: funciones que el informe da por existentes, comprobadas en el código | E-077 | `486b58c` |
 
 ## Siguiente acción
 Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
