@@ -2071,3 +2071,21 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 553 pasan (551 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-079 T-R7-5: autorización en el servidor para cada lectura y escritura sensible, con pruebas por perfil
+- **Revisión de las rutas** (`docs/revision_externa/auditoria_seguridad.md`, apartado 2 bis): cada ruta con lo que exige (clave de la clínica, sesión, perfil o permiso). Solo dos rutas van sin la clave de la clínica: la prueba de identidad y el resumen del grupo, que lleva su propia clave. Ambas están limitadas por ordenador.
+- **Pruebas nuevas, por perfil** (Dirección, Recepción, Doctor e Higienista):
+  - `server::tests::the_server_applies_each_write_rule_to_each_profile`: doce cambios sensibles enviados directamente desde un puesto, con lo que se espera de cada perfil. Por ejemplo:
+    - el cobro en negativo, solo con caja (Dirección y Recepción);
+    - el periodontograma, solo con lo clínico (no Recepción);
+    - el pedido en borrador, cualquiera;
+    - el fichaje de otro, nadie: solo el servidor apunta la hora.
+  - `server::tests::the_server_applies_each_operation_permission_to_each_profile`: ocho operaciones del servidor con los cuatro perfiles, y a ningún puesto le llegan contraseñas, sales ni claves del móvil (con una clave del móvil de prueba).
+- **Antes de esta tarea**, cada regla se probó al añadirla, comprobando que su prueba falla sin ella (E-067, E-068, E-070, E-072, E-073…). Estas dos matrices las ven todas juntas.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 555 pasan (553 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

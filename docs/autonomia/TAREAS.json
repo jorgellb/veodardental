@@ -1062,8 +1062,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Auditoría de rutas y operaciones del servidor con pruebas por perfil; ninguna contraseña ni semilla viaja a los puestos",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-079"]
   },
   {
    "id": "T-R7-6",

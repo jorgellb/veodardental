@@ -3718,6 +3718,188 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// T-R7-5. Matriz de permisos del servidor con los cuatro perfiles:
+    /// cada cambio sensible que llega directamente de un puesto se acepta o
+    /// no según el perfil de la sesión (no según lo que diga el puesto).
+    #[test]
+    fn the_server_applies_each_write_rule_to_each_profile() {
+        use crate::stock::OrderState;
+        let today = NaiveDate::from_ymd_opt(2026, 11, 16).unwrap();
+        let mut base = Db::sample(today);
+        // una liquidación a una compañía, para intentar tocarla
+        base.create_claim(2, today - chrono::Duration::days(800), today, today).expect("hay actos de la compañía de ejemplo");
+        let base = base;
+        // usuarios de la muestra: 1 Dirección, 2 Recepción, 3 Doctor, 5 Higienista
+        let profiles = [(1u32, "Dirección"), (2, "Recepción"), (3, "Doctor"), (5, "Higienista")];
+        type Mutate = Box<dyn Fn(&mut Db)>;
+        type Check = Box<dyn Fn(&Db) -> bool>;
+        let pay = base.payments.iter().find(|p| p.amount > 0.0).unwrap().id;
+        let mv = base.bank_moves.iter().find(|m| m.matched.is_none()).map(|m| m.id).unwrap_or(0);
+        let cash = base.cash.first().map(|c| c.id).unwrap_or(0);
+        let claim = base.claims.first().map(|c| c.id);
+        let draft = move |d: &mut Db| {
+            let id = d.new_id();
+            let p = d.products[0].clone();
+            d.orders.push(crate::stock::PurchaseOrder { id: 777_001, supplier_id: p.supplier_id, date: today, lines: vec![crate::stock::OrderLine { product_id: p.id, qty: 1.0, cost: 1.0, ..Default::default() }], ..Default::default() });
+            id
+        };
+        let cases: Vec<(&str, Mutate, Check, [bool; 4])> = vec![
+            (
+                "cobro en negativo (sacar dinero)",
+                Box::new(|d| {
+                    d.add_payment(101, -5.0, "Efectivo", "matriz");
+                }),
+                Box::new(|d| d.payments.iter().any(|p| p.concept == "matriz")),
+                [true, true, false, false],
+            ),
+            ("cambiar el importe de un cobro", Box::new(move |d| d.payments.iter_mut().find(|p| p.id == pay).unwrap().amount = 0.01), Box::new(move |d| d.payments.iter().find(|p| p.id == pay).unwrap().amount == 0.01), [true, false, false, false]),
+            (
+                "conciliar a mano en el banco",
+                Box::new(move |d| {
+                    if let Some(m) = d.bank_moves.iter_mut().find(|m| m.id == mv) {
+                        m.matched = Some(crate::bank::Match::Other("matriz".into()))
+                    }
+                }),
+                Box::new(move |d| d.bank_moves.iter().any(|m| m.id == mv && m.matched.is_some())),
+                [true, false, false, false],
+            ),
+            (
+                "salida de caja",
+                Box::new(move |d| {
+                    if let Some(c) = d.cash.iter_mut().find(|c| c.id == cash) {
+                        c.moves.push(crate::model::CashMove { when: crate::model::now(), amount: -1.0, concept: "matriz".into() })
+                    }
+                }),
+                Box::new(move |d| d.cash.iter().any(|c| c.moves.iter().any(|m| m.concept == "matriz"))),
+                [true, true, false, false],
+            ),
+            ("nombre de la clínica", Box::new(|d| d.config.name = "Otra".into()), Box::new(|d| d.config.name == "Otra"), [true, false, false, false]),
+            ("cambiar un usuario", Box::new(|d| d.users.iter_mut().find(|u| u.id == 4).unwrap().name = "Otro".into()), Box::new(|d| d.user(4).unwrap().name == "Otro"), [true, false, false, false]),
+            (
+                "clave de grupo",
+                Box::new(|d| {
+                    d.group_key_new("matriz").unwrap();
+                }),
+                Box::new(|d| !d.group_keys.is_empty()),
+                [true, false, false, false],
+            ),
+            (
+                "tocar una liquidación",
+                Box::new(move |d| {
+                    if let Some(c) = claim.and_then(|c| d.claims.iter_mut().find(|x| x.id == c)) {
+                        c.paid = c.total
+                    }
+                }),
+                Box::new(move |d| claim.is_some_and(|c| d.claims.iter().any(|x| x.id == c && x.paid > 0.0 && x.paid == x.total))),
+                [true, false, false, false],
+            ),
+            (
+                "pedido en borrador",
+                Box::new(move |d| {
+                    draft(d);
+                }),
+                Box::new(|d| d.orders.iter().any(|o| o.id == 777_001)),
+                [true, true, true, true],
+            ),
+            (
+                "pedido aprobado a mano",
+                Box::new(move |d| {
+                    draft(d);
+                    d.orders.iter_mut().find(|o| o.id == 777_001).unwrap().state = OrderState::Aprobado;
+                }),
+                Box::new(|d| d.orders.iter().any(|o| o.id == 777_001 && o.state == OrderState::Aprobado)),
+                [true, false, false, false],
+            ),
+            (
+                "periodontograma (clínico)",
+                Box::new(|d| {
+                    let mut x = d.perio[0].clone();
+                    x.id = 777_002;
+                    d.perio.push(x);
+                }),
+                Box::new(|d| d.perio.iter().any(|x| x.id == 777_002)),
+                [true, false, true, true],
+            ),
+            (
+                "fichaje de otro usuario",
+                Box::new(|d| {
+                    let id = d.new_id();
+                    d.punches.push(crate::jornada::Punch { id, user_id: 4, at: crate::model::now(), kind: crate::jornada::Kind::Entrada, station: 1, corrects: None, reason: String::new(), by: String::new(), void: false });
+                }),
+                Box::new(|d| d.punches.iter().any(|p| p.user_id == 4)),
+                [false, false, false, false],
+            ),
+        ];
+        let mut wrong = vec![];
+        for (name, mutate, check, allowed) in &cases {
+            assert!(!check(&base), "«{name}»: la muestra no lo tiene ya");
+            for (k, (user, who)) in profiles.iter().enumerate() {
+                let dir = std::env::temp_dir().join(format!("ds_matriz_{}_{k}", std::process::id()));
+                let mut st = State::new(&base, dir.join("clinica.json"), "CLAVEM", vec![3; 32]);
+                let before = st.snap.clone();
+                let mut d = st.snap.to_db().unwrap();
+                d.station = 1;
+                mutate(&mut d);
+                let changes = crate::sync::diff(&before, &Snapshot::from_db(&d));
+                let _ = st.save(changes, 1, *user);
+                let got = check(&st.snap.to_db().unwrap());
+                if got != allowed[k] {
+                    wrong.push(format!("«{name}» de {who}: {} (se esperaba {})", if got { "aceptado" } else { "no aceptado" }, if allowed[k] { "aceptado" } else { "no aceptado" }));
+                }
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// T-R7-5. Las operaciones del servidor, cada una con su permiso y para
+    /// cada perfil; y a ningún perfil le llegan contraseñas ni claves del móvil.
+    #[test]
+    fn the_server_applies_each_operation_permission_to_each_profile() {
+        use crate::app::ChainOp;
+        let today = NaiveDate::from_ymd_opt(2026, 11, 16).unwrap();
+        let mut base = Db::sample(today);
+        // una clave del móvil de prueba (se ve que no es de nadie)
+        let test_secret = "PRUEBA".repeat(3);
+        base.users.iter_mut().find(|u| u.id == 2).unwrap().totp_secret = test_secret.clone();
+        let dir = std::env::temp_dir().join(format!("ds_matriz_ops_{}", std::process::id()));
+        let mut st = State::new(&base, dir.join("clinica.json"), "CLAVEO", vec![4; 32]);
+        let peer = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let pay = base.payments.iter().find(|p| p.amount > 0.0).unwrap().id;
+        // (operación, [Dirección, Recepción, Doctor, Higienista] pueden)
+        let ops: Vec<(&str, Value, [bool; 4])> = vec![
+            ("facturar", ChainOp::Issue { patient: 101, entries: vec![], date: today }.json(), [true, true, false, false]),
+            ("remesa (cobros)", ChainOp::Remit { until: today, collection: today }.json(), [true, true, true, false]),
+            ("banco (gastos)", ChainOp::Reconcile.json(), [true, false, false, false]),
+            ("anular un cobro (caja)", ChainOp::CancelPayment { payment: pay, reason: "matriz".into() }.json(), [true, true, false, false]),
+            ("fusionar pacientes (Dirección)", ChainOp::MergePatients { keep: 100, remove: 9_999 }.json(), [true, false, false, false]),
+            ("proponer pedidos (almacén)", ChainOp::ProposeOrders.json(), [true, true, true, true]),
+            ("aprobar un pedido (gastos)", ChainOp::ApproveOrder { order: 1 }.json(), [true, false, false, false]),
+            ("campañas (cualquiera)", ChainOp::QueueCampaigns.json(), [true, true, true, true]),
+        ];
+        let denied = |body: &str| body.contains("Este usuario no") || body.contains("Solo Dirección puede hacerlo");
+        let mut wrong = vec![];
+        for (k, (user, who)) in [(1u32, "Dirección"), (2, "Recepción"), (3, "Doctor"), (5, "Higienista")].iter().enumerate() {
+            for (name, op, allowed) in &ops {
+                let req = Request { method: "POST".into(), path: "/cadena".into(), query: String::new(), headers: vec![], body: op.to_string().into_bytes(), peer };
+                let r = st.chain_op(&req, *user);
+                if denied(&r.body) == allowed[k] {
+                    wrong.push(format!("«{name}» con {who}: {} {}", r.code, r.body));
+                }
+            }
+            // lo que recibe su puesto: los usuarios, sin contraseñas ni claves del móvil
+            let view = st.view_of(*user);
+            let body = st.snap.to_json_with(&|list, rec| State::outgoing(&view, list, rec));
+            for u in &base.users {
+                assert!(u.pin_hash.is_empty() || !body.contains(&u.pin_hash), "{who}: llega una contraseña");
+                assert!(u.salt.is_empty() || !body.contains(&u.salt), "{who}: llega una sal");
+            }
+            assert!(!body.contains(&test_secret), "{who}: llega una clave del móvil");
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// T-F6-09. Escenario sintético de un grupo: dos sociedades, cada una con
     /// su servidor; la primera con dos centros. Actividad en cada centro
     /// (citas y cobros), una recepción limitada a un centro y la vista del

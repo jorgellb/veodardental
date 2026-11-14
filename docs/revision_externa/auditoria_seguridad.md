@@ -55,6 +55,36 @@ propia con revisiones automáticas de cada commit; no sustituye la auditoría
   - `server::tests::the_time_record_only_grows_on_the_server`;
   - `server::tests::a_confirmed_evolution_note_cannot_be_changed_by_a_station` (las listas protegidas están en `firmado::PROTECTED_LISTS`).
 
+## 2 bis. Rutas del servidor y lo que exige cada una (T-R7-5)
+| Ruta | Sin la clave de la clínica | Sin sesión | Lo que se comprueba |
+|---|---|---|---|
+| `GET /prueba` | sí | sí | Firma un reto con la clave de la clínica. Limitada por ordenador. |
+| `GET /grupo/resumen` | sí, con la clave de grupo | sí | Clave de grupo en uso; solo cifras (D-25). Limitada por ordenador. |
+| `GET /acceso`, `POST /registro` | no | sí | La clave de la clínica. Los usuarios van sin contraseñas ni claves del móvil. |
+| `POST /entrar`, `POST /codigo` | no | sí | Contraseña y código del móvil. Bloqueo por intentos fallidos. |
+| `POST /parar` | no | sí | Solo desde el propio ordenador servidor. |
+| `GET /estado` | no | no | — |
+| `GET /datos`, `GET /cambios` | no | no | Lo que ve el perfil (`vista`): sin lo clínico para recepción, sin las cajas de otros centros. |
+| `POST /cambios` | no | no | Reglas por lista (`State::save`). La matriz por perfil, abajo. |
+| `POST /cadena` | no | no | Permiso de cada operación (`ChainOp::needs`), el centro del usuario y lo que comprueba cada una. |
+| `POST /historia` | no | no | Apunta quién consulta cada historia. |
+| `GET /historia` | no | no | Solo Dirección. |
+| `POST /contrasena` | no | no | La propia, con la actual; la de otro, solo Dirección. |
+| `POST /movil` | no | no | Solo Dirección. |
+
+- **Matriz de escrituras directas** (`server::tests::the_server_applies_each_write_rule_to_each_profile`): con Dirección, Recepción, Doctor e Higienista se prueba:
+  - un cobro en negativo y cambiar el importe de un cobro;
+  - conciliar a mano y una salida de caja;
+  - el nombre de la clínica, otro usuario y una clave de grupo;
+  - una liquidación;
+  - un pedido en borrador y uno aprobado a mano;
+  - el periodontograma;
+  - el fichaje de otro.
+
+  Cada cambio se acepta o no según el perfil de la sesión, no según lo que diga el puesto.
+- **Matriz de operaciones** (`server::tests::the_server_applies_each_operation_permission_to_each_profile`): facturar, remesa, banco, anular un cobro, fusionar, proponer y aprobar pedidos y campañas, con los cuatro perfiles. Además, a ningún perfil le llegan contraseñas, sales ni claves del móvil.
+- **Páginas públicas** (cita online, Mi espacio, presupuestos, pagos, encuestas): van aparte (`src/booking.rs`). Cada enlace es un código aleatorio de 128 bits, y cada página solo enseña lo de su enlace (`booking::tests::the_patient_portal_never_shows_another_patient_by_changing_an_id`).
+
 ## 3. Criptografía (sin criptografía propia: `ring` y `rustls`)
 
 | Uso | Algoritmo | Dónde |
