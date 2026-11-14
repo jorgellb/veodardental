@@ -53,9 +53,9 @@ Cada paso queda en la historia, con quién y cuándo, y con la referencia de la 
   - el paciente queda pagado por el total financiado, con un cobro «Financiación» que se apunta una sola vez;
   - lo que no llegó (lo que se queda la entidad) es un gasto de la clínica, «Comisión de financiación»;
   - el ingreso del banco se concilia con la financiación por lo recibido, en los 15 días de alrededor del pago.
-- **Permisos:** los pasos que mueven dinero los hace el servidor, cada uno con su permiso:
-  - el pago de la entidad, con el de cobros;
-  - la cancelación (y la devolución a la entidad), con el de caja;
+- **Permisos:** un puesto solo pide la financiación. Los pasos los hace el servidor, con su fecha y cada uno con su permiso:
+  - aprobada, denegada, firmada y el pago de la entidad, con el de cobros;
+  - la cancelación (y la devolución a la entidad), con el de caja; el plazo para desistir se cuenta con la fecha del servidor;
   - la conciliación, con el del banco.
 - **Desistimiento:** dentro de los 14 días siguientes a la firma (Ley 16/2011, artículo 28; lo confirma la gestoría). Si la entidad ya había pagado, se apunta la devolución a la entidad, y el paciente vuelve a deber el tratamiento. Pasado ese plazo, no se cancela desde aquí.
 - **Lo que no hace el programa:** las altas, los contratos y las decisiones de financiación son de la entidad, y el programa no las toma ni las simula.

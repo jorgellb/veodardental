@@ -148,6 +148,16 @@ fn payment_change_ok(current: Option<&String>, after: Option<&String>, caja: boo
     }
 }
 
+/// ¿Se acepta este cambio de una financiación de quien no es Dirección? Solo
+/// pedirla (nueva, sin nada de dinero); lo demás lo hace el servidor con sus
+/// operaciones (`ChainOp::FinStep`, `FinPaid`, `FinCancel`, `FinMatchBank`).
+fn financing_change_ok(current: Option<&String>, after: Option<&String>) -> bool {
+    match (current, after.and_then(|j| serde_json::from_str::<Value>(j).ok())) {
+        (None, Some(a)) => a["state"] == "Solicitada" && ["signed", "paid", "payment_id", "fee_expense", "refund_payment_id", "bank_move"].iter().all(|f| a[*f].is_null()) && a["history"].as_array().is_some_and(|h| h.len() <= 1),
+        _ => false,
+    }
+}
+
 /// ¿Puede escribir en el servidor el puesto de esta petición?
 fn data_mismatch(req: &Request) -> Option<&'static str> {
     match req.header(DATA_HEADER).and_then(|v| v.trim().parse::<u32>().ok()) {
@@ -988,7 +998,9 @@ impl State {
         // dinero: un cobro en negativo o una anulación es sacar dinero, con permiso
         // de caja (como `ChainOp::Refund`); un cobro no se borra ni cambia de
         // importe, paciente, forma de pago o fecha (salvo Dirección); el banco,
-        // con su permiso (sus operaciones van por `ChainOp`)
+        // con su permiso (sus operaciones van por `ChainOp`); la caja y las
+        // devoluciones con datáfono, con el de caja; una financiación ya pedida
+        // solo cambia por sus operaciones (`ChainOp::Fin*`)
         if !admin {
             let profile = self.user(user).map(|u| u.profile);
             let can = |p: Perm| profile.is_some_and(|x| x.can(p));
@@ -997,6 +1009,9 @@ impl State {
             changes.retain(|c| match c.field.as_str() {
                 "payments" => payment_change_ok(c.key.as_deref().and_then(|k| snap.get("payments", Some(k))), c.after.as_ref(), caja),
                 "bank_moves" | "bank_accounts" => gastos,
+                "cash" => caja,
+                "card_txs" => caja || ![c.key.as_deref().and_then(|k| snap.get("card_txs", Some(k))), c.after.as_ref()].iter().any(|j| j.is_some_and(|j| j.contains("\"Devolucion\""))),
+                "financings" => financing_change_ok(c.key.as_deref().and_then(|k| snap.get("financings", Some(k))), c.after.as_ref()),
                 _ => true,
             });
         }
@@ -3733,13 +3748,49 @@ mod tests {
         r.station = rec.station;
         let at = crate::model::now();
         let f = r.fin_new(105, None, "Financiera Ejemplo", crate::cents::Cents(60_000), 6, at).unwrap();
-        r.fin_step(f, crate::financiacion::FinState::Aprobada, "FE-9", at.date(), at).unwrap();
-        r.fin_step(f, crate::financiacion::FinState::Firmada, "", at.date(), at).unwrap();
         rec.push(&mut r, &mut sr).unwrap();
+        assert!(crate::sync::on_disk(&path).financings.iter().any(|x| x.id == f), "pedirla, sí");
+        // los pasos, en el servidor y con su fecha; a mano desde el puesto, no
+        use crate::financiacion::FinState;
+        for (to, rf) in [(FinState::Aprobada, "FE-9"), (FinState::Firmada, "")] {
+            rec.chain_op(&mut r, &mut sr, &ChainOp::FinStep { fin: f, to, provider_ref: rf.into() }.json()).unwrap();
+        }
+        assert_eq!(crate::sync::on_disk(&path).financings.iter().find(|x| x.id == f).unwrap().signed, Some(crate::model::today()), "firmada con la fecha del servidor");
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.station = rec.station;
+        r.financings.iter_mut().find(|x| x.id == f).unwrap().signed = Some(at.date() + chrono::Duration::days(60));
+        let forged = r.fin_new(106, None, "X", crate::cents::Cents(100), 3, at).unwrap();
+        r.financings.iter_mut().find(|x| x.id == forged).unwrap().state = FinState::Pagada;
+        rec.push(&mut r, &mut sr).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        assert_eq!(disk.financings.iter().find(|x| x.id == f).unwrap().signed, Some(crate::model::today()), "ni se cambia la fecha de la firma (el plazo para desistir)");
+        assert!(!disk.financings.iter().any(|x| x.id == forged), "ni se crea ya pagada");
+        // la caja y las devoluciones con datáfono, con permiso de caja
         let (mut a, mut sa) = doc.load().unwrap();
-        let cancel = ChainOp::FinCancel { fin: f, reason: "x".into(), date: at.date() }.json();
+        a.station = doc.station;
+        let cash = a.cash.first().map(|c| c.id);
+        if let Some(c) = cash {
+            a.cash.iter_mut().find(|x| x.id == c).unwrap().moves.push(crate::model::CashMove { when: at, amount: -50.0, concept: "Salida".into() });
+        }
+        let sale = a.card_new(101, crate::datafono::CardKind::Venta, crate::cents::Cents(1000), None, "manual", at).unwrap();
+        doc.push(&mut a, &mut sa).unwrap();
+        let disk = crate::sync::on_disk(&path);
+        if let Some(c) = cash {
+            assert!(!disk.cash.iter().find(|x| x.id == c).unwrap().moves.iter().any(|m| m.concept == "Salida"), "la caja, con permiso de caja");
+        }
+        assert!(disk.card_txs.iter().any(|t| t.id == sale), "un cobro con datáfono, sí");
+        let (mut a, mut sa) = doc.load().unwrap();
+        a.station = doc.station;
+        a.card_txs.iter_mut().find(|t| t.id == sale).unwrap().state = crate::datafono::CardState::Aprobada;
+        let refund = a.card_new(101, crate::datafono::CardKind::Devolucion, crate::cents::Cents(500), Some(sale), "manual", at).unwrap();
+        doc.push(&mut a, &mut sa).unwrap();
+        assert!(!crate::sync::on_disk(&path).card_txs.iter().any(|t| t.id == refund), "una devolución con datáfono, con caja");
+        let (mut a, mut sa) = doc.load().unwrap();
+        let cancel = ChainOp::FinCancel { fin: f, reason: "x".into() }.json();
         assert!(doc.chain_op(&mut a, &mut sa, &cancel).unwrap_err().contains("caja"), "cancelar (devolver), con caja");
-        let paid = ChainOp::FinPaid { fin: f, date: at.date(), received: 57_000 }.json();
+        let (mut r, mut sr) = rec.load().unwrap();
+        r.station = rec.station;
+        let paid = ChainOp::FinPaid { fin: f, received: 57_000 }.json();
         rec.chain_op(&mut r, &mut sr, &paid).unwrap();
         assert!(rec.chain_op(&mut r, &mut sr, &paid).is_err(), "una vez");
         let disk = crate::sync::on_disk(&path);

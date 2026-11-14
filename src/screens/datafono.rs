@@ -180,7 +180,6 @@ pub fn patient_card(app: &mut App, ui: &mut Ui, pid: u32) {
 /// Financiación en la cuenta del paciente.
 fn financing_card(app: &mut App, ui: &mut Ui, pid: u32) {
     let now = crate::model::now();
-    let today = app.today;
     card(ui, |ui| {
         ui.set_width(ui.available_width());
         section(ui, "Financiación con una entidad");
@@ -233,9 +232,8 @@ fn financing_card(app: &mut App, ui: &mut Ui, pid: u32) {
                 }
                 for to in f.state.next() {
                     if ui.button(format!("Marcar {}", to.label().to_lowercase())).clicked() {
-                        let r = app.db.fin_step(f.id, *to, &app.card.fin_ref, today, now);
+                        let r = app.chain_op(crate::app::ChainOp::FinStep { fin: f.id, to: *to, provider_ref: app.card.fin_ref.clone() });
                         app.card.msg = r.err().map(|e| (false, e));
-                        app.changed();
                     }
                 }
                 // lo que mueve dinero lo hace el servidor, cada cosa con su permiso
@@ -244,7 +242,7 @@ fn financing_card(app: &mut App, ui: &mut Ui, pid: u32) {
                     ui.add(egui::TextEdit::singleline(&mut app.card.fin_received).desired_width(90.0).hint_text("Recibido"));
                     if ui.button("Pagada por la entidad").clicked() {
                         let r = match parse_eur(&app.card.fin_received) {
-                            Some(a) => app.chain_op(ChainOp::FinPaid { fin: f.id, date: today, received: a.0 }).map(|_| ()),
+                            Some(a) => app.chain_op(ChainOp::FinPaid { fin: f.id, received: a.0 }).map(|_| ()),
                             None => Err("Escriba lo que ha llegado de la entidad.".into()),
                         };
                         app.card.msg = r.err().map(|e| (false, e));
@@ -253,7 +251,7 @@ fn financing_card(app: &mut App, ui: &mut Ui, pid: u32) {
                 if !matches!(f.state, FinState::Denegada | FinState::Cancelada) && app.can(Perm::Caja) {
                     ui.add(egui::TextEdit::singleline(&mut app.card.fin_reason).desired_width(140.0).hint_text("Motivo para cancelar"));
                     if ui.button("Cancelar").clicked() {
-                        let r = app.chain_op(ChainOp::FinCancel { fin: f.id, reason: app.card.fin_reason.clone(), date: today });
+                        let r = app.chain_op(ChainOp::FinCancel { fin: f.id, reason: app.card.fin_reason.clone() });
                         app.card.msg = r.err().map(|e| (false, e));
                     }
                 }

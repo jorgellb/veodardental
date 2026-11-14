@@ -1775,3 +1775,27 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 531 pasan (529 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-068 Revisión de seguridad: la financiación, la caja y las devoluciones con datáfono, solo por su camino
+- **Hallazgos:**
+  1. Un puesto sin permisos podía cambiar directamente los campos de dinero de una financiación (estado, pago, fecha de la firma…) sin pasar por las operaciones del servidor. También podía tocar la caja y crear devoluciones con datáfono.
+  2. La cancelación y el pago de la financiación usaban la fecha que mandaba el puesto. Con una fecha anterior se habría saltado el plazo para desistir.
+- **Correcciones:**
+  - **Servidor**, para quien no es Dirección:
+    - de una financiación, solo pedirla: nueva, «Solicitada» y sin nada de dinero (`financing_change_ok`). Lo demás va por `ChainOp::FinStep` (aprobada, denegada o firmada, con permiso de cobros), `FinPaid`, `FinCancel` y `FinMatchBank`;
+    - la caja, solo con permiso de caja;
+    - una operación de datáfono que sea una devolución, solo con permiso de caja.
+  - **Fecha:** las operaciones de la financiación ya no llevan fecha. Usan la de quien las hace: el servidor, en red.
+- **Pruebas:** `server::tests::money_out_and_the_bank_need_their_permission`, además:
+  - recepción pide una financiación, y los pasos van por el servidor: firmada con la fecha del servidor;
+  - cambiar a mano la fecha de la firma, o crearla ya pagada, no se acepta;
+  - la doctora no apunta una salida de caja ni una devolución con datáfono, y sí un cobro con datáfono.
+
+  Comprobado que falla si se quita cualquiera de las tres reglas: financiación, caja y devoluciones con datáfono.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 531 pasan (529 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

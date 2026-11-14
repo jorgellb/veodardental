@@ -1148,18 +1148,24 @@ pub enum ChainOp {
     /// Pasa a la cola los mensajes de las campañas programadas que tocan
     /// ahora (con la hora y los datos del servidor). Devuelve cuántos.
     QueueCampaigns,
-    /// La entidad financiera ha pagado (ver `financiacion`): el cobro y la
-    /// comisión (importe recibido en céntimos).
+    /// Un paso de la entidad (aprobada, denegada, firmada), con la fecha del
+    /// servidor (ver `financiacion`).
+    FinStep {
+        fin: u32,
+        to: crate::financiacion::FinState,
+        provider_ref: String,
+    },
+    /// La entidad financiera ha pagado: el cobro y la comisión (importe
+    /// recibido en céntimos), con la fecha del servidor.
     FinPaid {
         fin: u32,
-        date: chrono::NaiveDate,
         received: i64,
     },
-    /// Cancelar una financiación (si ya pagó la entidad, con la devolución).
+    /// Cancelar una financiación (si ya pagó la entidad, con la devolución). El
+    /// plazo para desistir se cuenta con la fecha del servidor.
     FinCancel {
         fin: u32,
         reason: String,
-        date: chrono::NaiveDate,
     },
     /// Conciliar el ingreso de la entidad con la financiación.
     FinMatchBank {
@@ -1199,8 +1205,10 @@ impl ChainOp {
             ChainOp::BankExpense { bank_move } => db.expense_for_move(*bank_move),
             ChainOp::ClaimEmails { ids, token } => Ok(db.claim_emails(ids, token, crate::model::now())),
             ChainOp::QueueCampaigns => Ok(db.campaign_tick(crate::model::now()) as u32),
-            ChainOp::FinPaid { fin, date, received } => db.fin_paid(*fin, *date, crate::cents::Cents(*received), crate::model::now()),
-            ChainOp::FinCancel { fin, reason, date } => db.fin_cancel(*fin, reason, *date, crate::model::now()).map(|_| *fin),
+            // la fecha es la de quien lo hace (el servidor, en red), nunca la que diga el puesto
+            ChainOp::FinStep { fin, to, provider_ref } => db.fin_step(*fin, *to, provider_ref, crate::model::today(), crate::model::now()).map(|_| *fin),
+            ChainOp::FinPaid { fin, received } => db.fin_paid(*fin, crate::model::today(), crate::cents::Cents(*received), crate::model::now()),
+            ChainOp::FinCancel { fin, reason } => db.fin_cancel(*fin, reason, crate::model::today(), crate::model::now()).map(|_| *fin),
             ChainOp::FinMatchBank { fin, bank_move } => db.fin_match_bank(*fin, *bank_move).map(|_| *fin),
             ChainOp::Confirm { request } => db.booking_confirm(*request),
             ChainOp::Reject { request, why } => db.booking_reject(*request, why).map(|_| *request),
@@ -1238,8 +1246,9 @@ impl ChainOp {
             ChainOp::BankExpense { bank_move } => json!({ "accion": "gasto_del_cargo", "movimiento": bank_move }),
             ChainOp::ClaimEmails { ids, token } => json!({ "accion": "reservar_correos", "mensajes": ids, "marca": token }),
             ChainOp::QueueCampaigns => json!({ "accion": "campanas" }),
-            ChainOp::FinPaid { fin, date, received } => json!({ "accion": "financiacion_pagada", "financiacion": fin, "fecha": date, "recibido": received }),
-            ChainOp::FinCancel { fin, reason, date } => json!({ "accion": "financiacion_cancelada", "financiacion": fin, "motivo": reason, "fecha": date }),
+            ChainOp::FinStep { fin, to, provider_ref } => json!({ "accion": "financiacion_paso", "financiacion": fin, "estado": to, "referencia": provider_ref }),
+            ChainOp::FinPaid { fin, received } => json!({ "accion": "financiacion_pagada", "financiacion": fin, "recibido": received }),
+            ChainOp::FinCancel { fin, reason } => json!({ "accion": "financiacion_cancelada", "financiacion": fin, "motivo": reason }),
             ChainOp::FinMatchBank { fin, bank_move } => json!({ "accion": "financiacion_banco", "financiacion": fin, "movimiento": bank_move }),
             ChainOp::Confirm { request } => json!({ "accion": "confirmar_cita", "solicitud": request }),
             ChainOp::Reject { request, why } => json!({ "accion": "rechazar_cita", "solicitud": request, "motivo": why }),
@@ -1291,8 +1300,9 @@ impl ChainOp {
             "devolver" => ChainOp::Refund { patient: num("paciente")?, amount: v["importe"].as_f64().filter(|a| a.is_finite()).ok_or("Falta «importe».")?, method: pay_method(&text("forma"))?, reason: text("motivo") },
             "fusionar" => ChainOp::MergePatients { keep: num("conservar")?, remove: num("eliminar")? },
             "campanas" => ChainOp::QueueCampaigns,
-            "financiacion_pagada" => ChainOp::FinPaid { fin: num("financiacion")?, date: date("fecha")?, received: v["recibido"].as_i64().ok_or("Falta «recibido».")? },
-            "financiacion_cancelada" => ChainOp::FinCancel { fin: num("financiacion")?, reason: text("motivo"), date: date("fecha")? },
+            "financiacion_paso" => ChainOp::FinStep { fin: num("financiacion")?, to: serde_json::from_value(v["estado"].clone()).map_err(|_| "Estado no válido.")?, provider_ref: text("referencia") },
+            "financiacion_pagada" => ChainOp::FinPaid { fin: num("financiacion")?, received: v["recibido"].as_i64().ok_or("Falta «recibido».")? },
+            "financiacion_cancelada" => ChainOp::FinCancel { fin: num("financiacion")?, reason: text("motivo") },
             "financiacion_banco" => ChainOp::FinMatchBank { fin: num("financiacion")?, bank_move: num("movimiento")? },
             _ => return Err("Acción no válida.".into()),
         })
@@ -1377,7 +1387,7 @@ impl ChainOp {
             // como generar los mensajes del día; las reglas son las de la campaña
             ChainOp::QueueCampaigns => (None, CAMPAIGNS),
             // cobrar, sacar dinero y el banco, cada uno con su permiso
-            ChainOp::FinPaid { .. } => (Some(Economia), FIN),
+            ChainOp::FinStep { .. } | ChainOp::FinPaid { .. } => (Some(Economia), FIN),
             ChainOp::FinCancel { .. } => (Some(Caja), FIN),
             ChainOp::FinMatchBank { .. } => (Some(Gastos), FIN),
             ChainOp::PayInstallment { .. } => (Some(Economia), PAY),
