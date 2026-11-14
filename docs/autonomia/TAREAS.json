@@ -1000,8 +1000,8 @@
    "tipo": "ingenieria",
    "dependencias": [],
    "criterio": "Tipo Cents usado en el código nuevo; facturas, presupuestos, cuotas, caja y remesas cuadran al céntimo con pruebas de propiedades",
-   "estado": "PENDIENTE",
-   "evidencia": []
+   "estado": "HECHA",
+   "evidencia": ["E-078"]
   },
   {
    "id": "T-R7-2",

@@ -1059,7 +1059,7 @@ pub(crate) mod tests {
         let (mut db, b, now) = clinic();
         // cuota: el importe es el de la cuota y queda pagada
         let bud = db.budgets.iter_mut().find(|x| x.id == b).unwrap();
-        bud.plan = Some(FinancePlan { down_payment: 0.0, installments: 3, first_date: now.date(), every_months: 1, paid: vec![false; 3] });
+        bud.plan = Some(FinancePlan { down_payment: 0.0, installments: 3, first_date: now.date(), every_months: 1, paid: vec![false; 3], exact: true });
         let total = bud.total();
         let want = crate::cents::Cents::from_eur(bud.plan.as_ref().unwrap().installment(1, total)).0;
         let id = db.create_pay_request(PayFor::Installment(b, 1), Some(1), now).unwrap();

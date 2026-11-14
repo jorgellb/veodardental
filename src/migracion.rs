@@ -1032,6 +1032,7 @@ impl Db {
                     let code = t.get(row, "codigo");
                     let id = self.new_id();
                     self.entries.push(MedEntry {
+                        exact: true,
                         id,
                         patient_id: pid,
                         date,
@@ -1056,7 +1057,7 @@ impl Db {
                     id
                 }
                 Entity::Presupuestos => {
-                    let line = BudgetLine { code: t.get(row, "codigo"), description: t.get(row, "descripcion"), teeth: teeth(&t.get(row, "piezas")), units: 1, price: v, discount_pct: 0.0, odg: OdgKind::Ninguno, phase: 0 };
+                    let line = BudgetLine { code: t.get(row, "codigo"), description: t.get(row, "descripcion"), teeth: teeth(&t.get(row, "piezas")), units: 1, price: v, discount_pct: 0.0, odg: OdgKind::Ninguno, phase: 0, exact: true };
                     match self.imported(source, e, &key).and_then(|bid| self.budgets.iter_mut().find(|b| b.id == bid)) {
                         Some(b) => {
                             b.lines.push(line);
@@ -1245,6 +1246,7 @@ impl Db {
                     let id = self.new_id();
                     let tariff = self.patient(local).map(|p| p.tariff_id).unwrap_or(1);
                     self.entries.push(MedEntry {
+                        exact: true,
                         id,
                         patient_id: local,
                         date: opt.today,

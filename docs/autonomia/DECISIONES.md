@@ -247,3 +247,23 @@ Hasta ahora el pedido se editaba y se recibía en el puesto. Dos puestos podían
 - **Coste de cambiar:** una base de datos obligaría a reescribir la persistencia, el diario, la combinación entre puestos, las copias cifradas y la restauración, que hoy están probados. No hay una necesidad medida que lo justifique.
 
 **Cuándo revisarla:** volver a medir con cada versión (`tools/medir.sh`) y replantearlo si una clínica real pasa de unos 600 MB de datos, si abrirla tarda más de 5 s o si la memoria del servidor no cabe en el ordenador de la clínica. El servidor de una clínica grande necesita unos 4 GB libres.
+
+## D-29 Dinero exacto al céntimo en lo nuevo, sin tocar lo ya guardado
+**Contexto.** Las pruebas de propiedades de T-R7-1 encontraron dos fallos:
+- **Importe de una línea:** precio × unidades × (1 − descuento) en coma flotante salía un céntimo por debajo en el 3 % de los casos al azar. Por ejemplo, 27,45 € × 2 − 5 % = 52,155 €, que debe ser 52,16 € y salía 52,15 €. Afecta a tratamientos, líneas de presupuesto y bases de factura.
+- **Cuotas:** con una entrada y muchas cuotas, la cuota normal se redondeaba hacia arriba y la última salía en negativo. Por ejemplo, 0,29 € en 58 cuotas.
+
+Las facturas ya emitidas calculan su total al vuelo, y ese total entra en su huella VERI*FACTU. Corregir el cálculo para todo cambiaría las huellas y las cifras ya enviadas a la AEAT.
+
+**Decisión:**
+- **Marca `exact`** en tratamientos, líneas de presupuesto, líneas de factura y planes de cuotas. Lo guardado antes no la tiene y se calcula como siempre: sus importes, sus totales y la cadena de facturas no cambian.
+- **Lo nuevo,** creado por esta versión, se calcula en enteros (`Cents::line` y `Cents::percent`):
+  - el precio con hasta 4 decimales;
+  - el descuento y el IVA en centésimas de punto;
+  - el redondeo al céntimo, con las mitades lejos del cero.
+- **Cuotas de los planes nuevos:** en céntimos, sin redondear hacia arriba, y la última completa el total. Ninguna sale negativa.
+- **Lo que sale de otro registro lleva su marca.** Así, la factura de un tratamiento antiguo coincide con el tratamiento, y la rectificativa de una factura antigua, con la factura.
+  - La factura y el presupuesto copian la marca de los tratamientos.
+  - Al aceptar un presupuesto, el tratamiento copia la de su línea.
+  - La rectificativa copia la de la factura.
+- **Versión de los datos:** sigue siendo la 2. Esa versión aún no se ha publicado, y el campo nuevo tiene valor por defecto.

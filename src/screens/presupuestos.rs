@@ -263,7 +263,7 @@ pub fn edit_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                 }
                 ui.add_enabled_ui(b.state != BudgetState::Cerrado && locked.is_none(), |ui| {
                     if ui.checkbox(&mut has, "Pagar a plazos").changed() {
-                        b.plan = if has { Some(FinancePlan { down_payment: 0.0, installments: 6, first_date: add_months(app.today, 1), every_months: 1, paid: vec![false; 6] }) } else { None };
+                        b.plan = if has { Some(FinancePlan { down_payment: 0.0, installments: 6, first_date: add_months(app.today, 1), every_months: 1, paid: vec![false; 6], exact: true }) } else { None };
                     }
                     let total = b.total();
                     if let Some(pl) = &mut b.plan {
@@ -512,6 +512,7 @@ fn add_line(app: &App, ui: &mut Ui, b: &mut Budget) {
             let teeth: Vec<u8> = st.1.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).filter(|t| crate::screens::pacientes::valid_tooth(*t)).collect();
             let units = if t.per_tooth { teeth.len().max(1) as u32 } else { 1 };
             b.lines.push(BudgetLine {
+                exact: true,
                 code: t.code.clone(),
                 description: t.description.clone(),
                 teeth,

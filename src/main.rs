@@ -61,6 +61,8 @@ mod phone;
 mod plan;
 mod portal;
 mod portal_paciente;
+#[cfg(test)]
+mod propiedades;
 mod record;
 mod registro;
 mod rendimiento;

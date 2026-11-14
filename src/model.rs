@@ -318,11 +318,20 @@ pub struct MedEntry {
     /// liquida otra vez. Sigue contando en el historial y en el saldo.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub settled_elsewhere: bool,
+    /// Importe exacto al céntimo (D-29). Los de antes, sin la marca, se
+    /// calculan como siempre para no cambiar lo ya cobrado o facturado.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exact: bool,
+}
+
+/// Importe de una línea: exacto (D-29) o como antes (los datos de antes).
+pub fn line_amount(price: f64, units: u32, discount_pct: f64, exact: bool) -> f64 {
+    if exact { crate::cents::Cents::line(price, units, discount_pct).eur() } else { round2(price * units as f64 * (1.0 - discount_pct / 100.0)) }
 }
 
 impl MedEntry {
     pub fn amount(&self) -> f64 {
-        round2(self.price * self.units as f64 * (1.0 - self.discount_pct / 100.0))
+        line_amount(self.price, self.units, self.discount_pct, self.exact)
     }
 
     /// Acto hecho de verdad: realizado y no un ajuste de saldo de la migración
@@ -363,6 +372,9 @@ pub struct BudgetLine {
     /// Fase del plan de tratamiento (0: la primera).
     #[serde(default, skip_serializing_if = "is_zero_u8")]
     pub phase: u8,
+    /// Importe exacto al céntimo (D-29).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exact: bool,
 }
 
 fn is_default_lang(l: &crate::i18n::Lang) -> bool {
@@ -375,7 +387,7 @@ fn is_zero_u8(n: &u8) -> bool {
 
 impl BudgetLine {
     pub fn amount(&self) -> f64 {
-        round2(self.price * self.units as f64 * (1.0 - self.discount_pct / 100.0))
+        line_amount(self.price, self.units, self.discount_pct, self.exact)
     }
 }
 
@@ -417,12 +429,21 @@ pub struct FinancePlan {
     pub first_date: NaiveDate,
     pub every_months: u32,
     pub paid: Vec<bool>,
+    /// Cuotas exactas al céntimo (D-29): ninguna en negativo y la última
+    /// completa el total. Los planes de antes se calculan como siempre.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exact: bool,
 }
 
 impl FinancePlan {
     pub fn installment_amount(&self, total: f64) -> f64 {
         if self.installments == 0 {
             return 0.0;
+        }
+        if self.exact {
+            // en céntimos, sin redondear hacia arriba: lo que sobra va a la última
+            let rest = (crate::cents::Cents::from_eur(total).0 - crate::cents::Cents::from_eur(self.down_payment).0).max(0);
+            return crate::cents::Cents(rest / self.installments as i64).eur();
         }
         round2((total - self.down_payment).max(0.0) / self.installments as f64)
     }
@@ -433,6 +454,10 @@ impl FinancePlan {
         let each = self.installment_amount(total);
         if self.installments == 0 || i + 1 < self.installments {
             return each;
+        }
+        if self.exact {
+            let rest = (crate::cents::Cents::from_eur(total).0 - crate::cents::Cents::from_eur(self.down_payment).0).max(0);
+            return crate::cents::Cents(rest - crate::cents::Cents::from_eur(each).0 * (self.installments - 1) as i64).eur();
         }
         round2((total - self.down_payment).max(0.0) - each * (self.installments - 1) as f64)
     }
@@ -1174,14 +1199,18 @@ pub struct InvoiceLine {
     pub discount_pct: f64,
     /// Los servicios odontológicos están exentos de IVA (0 %).
     pub vat_pct: f64,
+    /// Base e IVA exactos al céntimo (D-29). Las facturas de antes, sin la
+    /// marca, se calculan como siempre: su huella VERI*FACTU no cambia.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exact: bool,
 }
 
 impl InvoiceLine {
     pub fn base(&self) -> f64 {
-        round2(self.price * self.units as f64 * (1.0 - self.discount_pct / 100.0))
+        line_amount(self.price, self.units, self.discount_pct, self.exact)
     }
     pub fn vat(&self) -> f64 {
-        round2(self.base() * self.vat_pct / 100.0)
+        if self.exact { crate::cents::Cents::from_eur(self.base()).percent(self.vat_pct).eur() } else { round2(self.base() * self.vat_pct / 100.0) }
     }
 }
 
@@ -1835,6 +1864,7 @@ impl Db {
         let units = if per_tooth { teeth.len().max(1) as u32 } else { 1 };
         let id = self.new_id();
         self.entries.push(MedEntry {
+            exact: true,
             id,
             patient_id: pid,
             date,
@@ -2061,12 +2091,14 @@ impl Db {
                 e.price = l.price;
                 e.units = l.units;
                 e.discount_pct = l.discount_pct;
+                e.exact = l.exact;
                 used.push(e.id);
                 continue;
             }
             let id = self.new_id();
             used.push(id);
             self.entries.push(MedEntry {
+                exact: l.exact,
                 id,
                 patient_id: b.patient_id,
                 date,
@@ -2123,7 +2155,7 @@ impl Db {
         }
         let p = self.patient(pid)?.clone();
         let id = self.new_id();
-        let lines = planned.iter().map(|e| BudgetLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, odg: e.odg, phase: 0 }).collect();
+        let lines = planned.iter().map(|e| BudgetLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, odg: e.odg, phase: 0, exact: e.exact }).collect();
         self.budgets.push(Budget {
             id,
             patient_id: pid,
@@ -2259,7 +2291,7 @@ impl Db {
             client_name,
             client_nif,
             client_address,
-            lines: entries.iter().map(|e| InvoiceLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, vat_pct: 0.0 }).collect(),
+            lines: entries.iter().map(|e| InvoiceLine { code: e.code.clone(), description: e.description.clone(), teeth: e.teeth.clone(), units: e.units, price: e.price, discount_pct: e.discount_pct, vat_pct: 0.0, exact: e.exact }).collect(),
             rectifies: None,
             rectified_by: None,
             reason: String::new(),

@@ -23,6 +23,26 @@ impl Cents {
     pub fn is_zero(self) -> bool {
         self.0 == 0
     }
+
+    /// Importe exacto de una línea (T-R7-1, D-29): precio (hasta 4 decimales) ×
+    /// unidades × (100 − descuento %), con el descuento en centésimas de punto,
+    /// en enteros y redondeado al céntimo con las mitades lejos del cero.
+    pub fn line(price: f64, units: u32, discount_pct: f64) -> Cents {
+        let p = (price * 10_000.0).round() as i128;
+        let d = (discount_pct * 100.0).round() as i128;
+        Cents(div_round(p * units as i128 * (10_000 - d), 1_000_000) as i64)
+    }
+
+    /// Este importe por un porcentaje (el IVA), exacto y redondeado al céntimo.
+    pub fn percent(self, pct: f64) -> Cents {
+        Cents(div_round(self.0 as i128 * (pct * 100.0).round() as i128, 10_000) as i64)
+    }
+}
+
+/// División entera redondeada al más cercano (las mitades, lejos del cero).
+fn div_round(num: i128, den: i128) -> i128 {
+    let (q, r) = (num / den, num % den);
+    if r.abs() * 2 >= den { q + num.signum() } else { q }
 }
 
 impl Add for Cents {

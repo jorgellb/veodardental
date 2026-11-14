@@ -90,25 +90,28 @@ Trabajar siempre con `tools/aislado.sh` y en la rama `autonomia/fases-0-6`. Cada
 | T-INI-06: funciones que el informe da por existentes, comprobadas en el código | E-077 | `486b58c` |
 
 ## Siguiente acción
-Las fases 1 a 5 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS:
-- piloto;
-- AEAT con certificado;
-- Meta;
+Las fases 1 a 6 están terminadas en la parte de ingeniería. Lo externo sigue en BLOQUEOS, cada cosa con su tarea X:
+- piloto, AEAT con certificado y Meta;
 - firma de código y clave de versiones;
-- esquemas de los programas de origen;
 - homologación foral;
-- revisiones externas (B-13, con el paquete de `docs/revision_externa`, que ya incluye el DPO para campañas);
-- contrato de TPV, transcripción, revisión clínica de las alertas y traducciones (T-F5-02X, T-F5-04X, T-F5-07X y T-F5-11X).
+- revisiones externas (B-13, paquete en `docs/revision_externa`);
+- TPV, transcripción, revisión clínica y traducciones;
+- alojamiento en la nube (B-18);
+- datáfono y financiación (B-19);
+- aseguradoras (B-20);
+- grupo real de clínicas (B-21).
 
-Toca la fase 6.
-1. T-F6-01 a T-F6-09, en orden (ver `TAREAS.json` y la fase 6 de `VEODARDENTAL_GOAL.md`).
-   - Grupos de clínicas, servidor en la nube probado en local, datáfono y financiación, aseguradoras, pedidos por stock mínimo, modo tableta, calidad continua, almacenamiento y escenario de varias clínicas.
-   - Lo que necesita contrato o proveedor queda en sus tareas X bloqueadas.
-2. Después, las transversales pendientes:
-   - T-R7-1 (propiedades de `Cents`) y T-R7-5 a T-R7-7;
-   - T-PROC-01/02;
-   - T-INI-06 a T-INI-08.
-3. Por último, el cierre (T-CIERRE-01/02).
+Quedan:
+1. **Transversales:**
+   - T-R7-1: el dinero, al céntimo, con pruebas de propiedades;
+   - T-R7-5: autorización en el servidor, ruta por ruta;
+   - T-R7-6: límites de entrada;
+   - T-R7-7: minimización de datos;
+   - T-INI-07: catálogo de invariantes;
+   - T-PROC-01 y T-PROC-02: evidencia de los límites y del ciclo.
+2. **Cierre:**
+   - T-CIERRE-01: restauración ensayada en una carpeta aislada;
+   - T-CIERRE-02: verificador, órdenes de calidad, `ENTREGA.md` y resumen en la conversación.
 
 ## Notas para seguir
 - La anchura a 1280 px la vigila `ui_tests::every_screen_fits_1280_wide`. Una pantalla nueva o cambiada debe pasarla. Para los campos, `field`; para las tablas, `Table`; en filas de campos, `horizontal_wrapped`.

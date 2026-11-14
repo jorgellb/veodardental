@@ -103,7 +103,7 @@ pub fn installment_options(db: &Db, b: &Budget) -> Vec<(u32, f64, f64)> {
 
 /// Importe de cada cuota para la página del paciente: «333,33 € (la última de 333,34 €)».
 fn installment_text(total: f64, n: u32, each: f64, down: f64) -> String {
-    let plan = FinancePlan { down_payment: down, installments: n, first_date: today(), every_months: 1, paid: vec![] };
+    let plan = FinancePlan { down_payment: down, installments: n, first_date: today(), every_months: 1, paid: vec![], exact: true };
     let last = plan.installment(n.saturating_sub(1), total);
     if n > 1 && (last - each).abs() > 0.004 { format!("{} (la última de {})", money(each), money(last)) } else { money(each) }
 }
@@ -184,7 +184,7 @@ impl Db {
             && let Some(x) = self.budgets.iter_mut().find(|x| x.id == bid)
         {
             let down = x.plan.as_ref().filter(|p| p.installments == installments).map(|p| p.down_payment).unwrap_or(0.0);
-            x.plan = Some(FinancePlan { down_payment: down, installments, first_date: add_months(today(), 1), every_months: 1, paid: vec![false; installments as usize] });
+            x.plan = Some(FinancePlan { down_payment: down, installments, first_date: add_months(today(), 1), every_months: 1, paid: vec![false; installments as usize], exact: true });
         }
         self.accept_plan(bid, &format!("{signer} (por internet)"), today()).map_err(|e| format!("No se puede aceptar: {e}"))?;
         let b = self.budgets.iter().find(|b| b.id == bid).cloned().unwrap_or(b);
@@ -529,7 +529,7 @@ mod tests {
         let total = db.budgets.iter().find(|b| b.id == bid).unwrap().total();
         db.booking.finance_min = 0.0;
         db.booking.installment_options = vec![3, 12];
-        db.budgets.iter_mut().find(|b| b.id == bid).unwrap().plan = Some(FinancePlan { down_payment: 100.0, installments: 6, first_date: today(), every_months: 1, paid: vec![false; 6] });
+        db.budgets.iter_mut().find(|b| b.id == bid).unwrap().plan = Some(FinancePlan { down_payment: 100.0, installments: 6, first_date: today(), every_months: 1, paid: vec![false; 6], exact: true });
         let b = db.budgets.iter().find(|b| b.id == bid).unwrap().clone();
         let o = installment_options(&db, &b);
         assert_eq!(o.iter().map(|x| x.0).collect::<Vec<_>>(), vec![3, 6, 12]);

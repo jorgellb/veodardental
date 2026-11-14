@@ -2050,3 +2050,24 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 ## E-077 T-INI-06: las funciones que el informe da por existentes, comprobadas en el código
 - **Hecho:** tabla en `docs/autonomia/ESTADO_INICIAL.md` («Funciones que el informe da por existentes»). Cada una de las funciones que cita el informe (de pacientes y responsables a importadores) tiene su sitio en el código y al menos una prueba de la batería. Están todas; ninguna se ha construido otra vez.
 - **Comprobación:** las pruebas citadas existen. Doce se comprobaron a mano con `grep` y el resto salió del propio código.
+
+## E-078 T-R7-1: dinero al céntimo, con pruebas de propiedades y sin tocar lo ya guardado
+- **Pruebas de propiedades** (`src/propiedades.rs`, semillas fijas, miles de casos al azar):
+  - `line_amounts_are_exact_to_the_cent` (20 000 líneas): cada importe es el exacto, calculado con enteros. **Falló:** 630 importes un céntimo por debajo (por ejemplo, 27,45 € × 2 − 5 %: 52,15 € en vez de 52,16 €).
+  - `installments_plus_down_payment_add_up_to_the_total` (20 000 planes): las cuotas y la entrada suman el total exacto, ninguna sale negativa y la última solo completa los céntimos. **Falló:** última cuota en negativo.
+  - `budgets_and_invoices_add_up_line_by_line` (3 000 presupuestos y facturas de hasta 30 líneas): el total es la suma de las líneas, la base y el IVA son la suma de los de cada línea, y el total es base más IVA. **Falló:** un presupuesto se desviaba 2 céntimos.
+  - `cash_and_cancellations_balance_to_the_cent` (2 000 cobros con anulaciones): la caja esperada es la apertura más los cobros en efectivo, y el saldo del paciente baja justo lo cobrado.
+  - `a_remittance_adds_up_its_items` (2 000 remesas de hasta 200 recibos): el total es la suma de los recibos.
+  - `old_records_keep_their_amounts_and_the_invoice_chain_its_hashes`: una factura guardada sin la marca conserva su total (52,15 €) y su huella; la nueva da 52,16 €; la cadena de ejemplo sigue íntegra; los tratamientos y los planes de antes se calculan igual.
+- **Corrección (D-29):** importes exactos en enteros para lo nuevo (`Cents::line`, `Cents::percent`, cuotas en céntimos), con la marca `exact`. Lo guardado antes, sin la marca, se calcula como siempre.
+- **Revisión de las sumas que ya había:**
+  - los informes, los saldos, la caja de cada día y el cuadro de mando ya sumaban en `Cents`;
+  - el total del presupuesto, la base y el IVA de la factura, la caja esperada y el total de la remesa suman importes ya redondeados al céntimo. Las pruebas de arriba demuestran que dan la suma exacta;
+  - en lo nuevo de este encargo (pagos por internet, datáfono, financiación, grupo de clínicas) los importes ya van en céntimos enteros.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 553 pasan (551 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

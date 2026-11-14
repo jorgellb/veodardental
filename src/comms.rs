@@ -1042,7 +1042,7 @@ mod tests {
             doctor_id: 3,
             tariff_id: 1,
             state: BudgetState::Pendiente,
-            lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno, phase: 0 }],
+            lines: vec![BudgetLine { code: "0101".into(), description: "Estudio".into(), teeth: vec![], units: 1, price: 90.0, discount_pct: 0.0, odg: OdgKind::Ninguno, phase: 0, exact: true }],
             valid_days: 90,
             accepted_on: None,
             rejected_on: None,

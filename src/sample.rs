@@ -359,7 +359,7 @@ impl Db {
         if let Some(b) = db.budget_from_planned(101) {
             set_budget(&mut db, b, "Implante 36", 10);
             if let Some(bb) = db.budgets.iter_mut().find(|x| x.id == b) {
-                bb.plan = Some(FinancePlan { down_payment: 300.0, installments: 6, first_date: today, every_months: 1, paid: vec![false; 6] });
+                bb.plan = Some(FinancePlan { down_payment: 300.0, installments: 6, first_date: today, every_months: 1, paid: vec![false; 6], exact: true });
             }
         }
         for (pid, title, ago) in [(102, "Carillas sector anterior", 14), (105, "Prótesis esquelética superior", 20), (107, "Corona 21", 8), (113, "Estética anterior", 3)] {

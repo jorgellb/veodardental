@@ -284,7 +284,7 @@ mod tests {
     }
 
     fn line(code: &str, teeth: &[u8], price: f64, odg: OdgKind, phase: u8) -> BudgetLine {
-        BudgetLine { code: code.into(), description: format!("Tratamiento {code}"), teeth: teeth.to_vec(), units: 1, price, discount_pct: 0.0, odg, phase }
+        BudgetLine { code: code.into(), description: format!("Tratamiento {code}"), teeth: teeth.to_vec(), units: 1, price, discount_pct: 0.0, odg, phase, exact: true }
     }
 
     /// Un paciente con tres previstos en el odontograma y un presupuesto

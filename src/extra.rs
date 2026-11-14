@@ -1450,10 +1450,10 @@ mod tests {
 
     #[test]
     fn installments_add_up_to_the_total() {
-        let pl = FinancePlan { down_payment: 0.0, installments: 3, first_date: d(), every_months: 1, paid: vec![] };
+        let pl = FinancePlan { down_payment: 0.0, installments: 3, first_date: d(), every_months: 1, paid: vec![], exact: true };
         let all: Vec<f64> = (0..3).map(|i| pl.installment(i, 1000.0)).collect();
         assert_eq!(all, vec![333.33, 333.33, 333.34]);
-        let pl = FinancePlan { down_payment: 100.0, installments: 7, first_date: d(), every_months: 1, paid: vec![] };
+        let pl = FinancePlan { down_payment: 100.0, installments: 7, first_date: d(), every_months: 1, paid: vec![], exact: true };
         let sum: f64 = (0..7).map(|i| pl.installment(i, 1234.56)).sum();
         assert!((sum - 1134.56).abs() < 0.001, "{sum}");
         // un presupuesto de 1.000 € en 3 cuotas, todas cobradas: no queda deuda
