@@ -8,8 +8,14 @@
 //!
 //! Lo atiende un solo ordenador de la clínica, el que se elija, en el puerto y
 //! con el nombre DICOM (AE Title) que se configuren. DICOM no cifra ni pide
-//! contraseña: es para la red de la clínica, y se puede limitar a los nombres
-//! DICOM de sus aparatos.
+//! contraseña, así que:
+//! - **Solo los aparatos de la lista:** cada uno con su nombre DICOM y, mejor,
+//!   su dirección IP. Sin lista no se atiende a nadie (el servicio ni arranca).
+//! - **Solo desde la red de la clínica:** direcciones privadas.
+//! - **La lista de trabajo,** solo del día que se pide (hoy, si no se dice).
+//! - **Lo que manda un aparato** se escribe en disco según llega (en memoria
+//!   no se guarda una imagen entera), con un tope, y nunca pisa una imagen que
+//!   ya estaba.
 //!
 //! Los nombres van en mayúsculas y sin tildes (sin juego de caracteres): así
 //! los entienden también los aparatos antiguos.
@@ -31,7 +37,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Lo más que ocupa una imagen recibida (un TAC multicorte grande cabe).
-const MAX_INSTANCE: usize = 1 << 30;
+const MAX_INSTANCE: u64 = 2 << 30;
+/// Lo más que ocupa un comando o una pregunta a la lista de trabajo.
+const MAX_SMALL: usize = 64 << 10;
+/// Días que puede abarcar una pregunta a la lista de trabajo.
+const MAX_DAYS: i64 = 7;
 /// Conexiones a la vez como mucho.
 const MAX_CONNECTIONS: usize = 8;
 
@@ -45,7 +55,8 @@ pub struct Settings {
     pub port: u16,
     /// Nombre DICOM (AE Title) de VeodarDental, el que se pone en los aparatos.
     pub ae_title: String,
-    /// Nombres DICOM de los aparatos admitidos, separados por espacios o comas (vacío: cualquiera).
+    /// Los aparatos admitidos, uno por línea: su nombre DICOM (AE Title) y,
+    /// detrás, su dirección IP («CBCT1 192.168.1.50»). Sin ninguno no se atiende a nadie.
     pub allowed: String,
     /// Carpeta donde se guarda lo recibido (vacío: la de los datos de este
     /// ordenador). Mejor una compartida, para que los demás puestos lo abran.
@@ -62,9 +73,32 @@ impl Settings {
     pub fn is_default(&self) -> bool {
         *self == Settings::default()
     }
-    fn allows(&self, ae: &str) -> bool {
-        let list: Vec<String> = self.allowed.split([' ', ',', ';']).map(|s| s.trim().to_uppercase()).filter(|s| !s.is_empty()).collect();
-        list.is_empty() || list.contains(&ae.trim().to_uppercase())
+
+    /// Los aparatos de la lista: (nombre DICOM, dirección IP si se dio).
+    pub fn devices(&self) -> Vec<(String, Option<std::net::IpAddr>)> {
+        self.allowed
+            .lines()
+            .flat_map(|l| l.split([',', ';']))
+            .filter_map(|entry| {
+                let mut w = entry.split_whitespace();
+                let ae = w.next()?.trim().to_uppercase();
+                Some((ae, w.next().and_then(|ip| ip.parse().ok())))
+            })
+            .collect()
+    }
+
+    /// ¿Es de la lista este aparato, con este nombre DICOM y desde esta dirección?
+    fn allows(&self, ae: &str, ip: Option<std::net::IpAddr>) -> bool {
+        let ae = ae.trim().to_uppercase();
+        self.devices().iter().any(|(a, want)| *a == ae && want.is_none_or(|w| Some(w) == ip))
+    }
+}
+
+/// ¿Viene de la red de la clínica (direcciones privadas, o este mismo ordenador)?
+fn local_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v) => v.is_private() || v.is_loopback() || v.is_link_local(),
+        std::net::IpAddr::V6(v) => v.is_loopback() || (v.segments()[0] & 0xfe00) == 0xfc00 || (v.segments()[0] & 0xffc0) == 0xfe80 || v.to_ipv4_mapped().is_some_and(|m| m.is_private() || m.is_loopback()),
     }
 }
 
@@ -160,6 +194,23 @@ fn wildcard(pattern: &str, value: &str) -> bool {
 }
 
 impl Query {
+    /// La pregunta con las fechas acotadas: sin fecha, hoy; un intervalo, como
+    /// mucho de [`MAX_DAYS`] días desde su principio.
+    pub fn bounded(mut self, today: NaiveDate) -> Query {
+        let day = |s: &str| NaiveDate::parse_from_str(s.trim(), "%Y%m%d").ok();
+        let fmt = |d: NaiveDate| d.format("%Y%m%d").to_string();
+        self.date = match self.date.trim().split_once('-') {
+            None if self.date.trim().is_empty() => fmt(today),
+            None => self.date.trim().to_string(),
+            Some((a, b)) => {
+                let from = day(a).or_else(|| day(b).map(|e| e - chrono::Duration::days(MAX_DAYS))).unwrap_or(today);
+                let to = day(b).unwrap_or(from + chrono::Duration::days(MAX_DAYS)).min(from + chrono::Duration::days(MAX_DAYS));
+                format!("{}-{}", fmt(from), fmt(to))
+            }
+        };
+        self
+    }
+
     pub fn matches(&self, it: &WlItem) -> bool {
         let id_ok = self.patient_id.trim().is_empty() || self.patient_id.trim() == it.patient_id;
         let name_ok = {
@@ -275,22 +326,35 @@ fn pdata(pc: u8, kind: PDataValueType, data: Vec<u8>) -> Pdu {
     Pdu::PData { data: vec![PDataValue { presentation_context_id: pc, value_type: kind, is_last: true, data }] }
 }
 
-/// Guarda una imagen recibida en la carpeta de entrada: una carpeta por serie
-/// y un fichero por imagen, escrito aparte y movido al terminar (la búsqueda
-/// nunca ve uno a medias).
-fn store(inbox: &Path, data: &[u8], ts_uid: &str) -> Result<PathBuf, String> {
-    let ts = TransferSyntaxRegistry.get(ts_uid).ok_or("Sintaxis de transferencia desconocida.")?;
-    let obj = InMemDicomObject::read_dataset_with_ts(data, ts).map_err(|e| e.to_string())?;
-    let class = text(&obj, tags::SOP_CLASS_UID);
-    let instance = uid_name(&text(&obj, tags::SOP_INSTANCE_UID)).ok_or("Identificador de imagen no válido.")?;
-    let series = uid_name(&text(&obj, tags::SERIES_INSTANCE_UID)).unwrap_or_else(|| "sueltas".into());
-    let meta = FileMetaTableBuilder::new().media_storage_sop_class_uid(class).media_storage_sop_instance_uid(instance.clone()).transfer_syntax(ts_uid).build().map_err(|e| e.to_string())?;
+/// Guarda una imagen recibida (sus datos, tal como llegaron, están en `part`)
+/// como fichero DICOM en la carpeta de entrada: una carpeta por serie y un
+/// fichero por imagen. Se escribe aparte y se mueve al terminar (la búsqueda
+/// nunca ve uno a medias), y una imagen que ya estaba no se pisa.
+fn store(inbox: &Path, part: &Path, class: &str, instance: &str, ts_uid: &str) -> Result<PathBuf, String> {
+    let instance = uid_name(instance).ok_or("Identificador de imagen no válido.")?;
+    let class = uid_name(class).ok_or("Clase de imagen no válida.")?;
+    let ts = uid_name(ts_uid).ok_or("Sintaxis de transferencia no válida.")?;
+    let meta = FileMetaTableBuilder::new().media_storage_sop_class_uid(class).media_storage_sop_instance_uid(instance.clone()).transfer_syntax(ts).build().map_err(|e| e.to_string())?;
+    let file = part.with_extension("dcm.parcial");
+    {
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&file).map_err(|e| e.to_string())?);
+        out.write_all(&[0u8; 128]).and_then(|_| out.write_all(b"DICM")).map_err(|e| e.to_string())?;
+        meta.write(&mut out).map_err(|e| e.to_string())?;
+        std::io::copy(&mut std::fs::File::open(part).map_err(|e| e.to_string())?, &mut out).map_err(|e| e.to_string())?;
+        out.flush().map_err(|e| e.to_string())?;
+    }
+    let _ = std::fs::remove_file(part);
+    // la serie, de la cabecera de lo ya escrito
+    let series = crate::dicom::read_header(&file).ok().and_then(|h| uid_name(&h.series)).unwrap_or_else(|| "sueltas".into());
     let dir = inbox.join(series);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{instance}.dcm"));
-    let tmp = dir.join(format!("{instance}.parcial"));
-    obj.with_exact_meta(meta).write_to_file(&tmp).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    if path.exists() {
+        // ya la tenía (un reenvío): se queda la que había
+        let _ = std::fs::remove_file(&file);
+        return Ok(path);
+    }
+    std::fs::rename(&file, &path).map_err(|e| e.to_string())?;
     Ok(path)
 }
 
@@ -299,106 +363,162 @@ struct Shared {
     settings: Settings,
     inbox: PathBuf,
     worklist: Arc<Mutex<Vec<WlItem>>>,
+    /// El día de la clínica, para las preguntas sin fecha.
+    today: Mutex<NaiveDate>,
     received: AtomicUsize,
+    /// Para los nombres de los ficheros que se están recibiendo.
+    counter: AtomicUsize,
 }
 
-/// Solo los aparatos de la lista (si la hay): a los demás se les rechaza la conexión.
+/// Solo los nombres DICOM de la lista: a los demás se les rechaza la conexión.
 struct Allowed(Settings);
 
 impl dicom_ul::association::server::AccessControl for Allowed {
     fn check_access(&self, _this: &str, calling: &str, _called: &str, _user: Option<&dicom_ul::pdu::UserIdentity>) -> Result<(), dicom_ul::pdu::AssociationRJServiceUserReason> {
-        if self.0.allows(calling) { Ok(()) } else { Err(dicom_ul::pdu::AssociationRJServiceUserReason::CallingAETitleNotRecognized) }
+        let ae = calling.trim().to_uppercase();
+        if self.0.devices().iter().any(|(a, _)| *a == ae) { Ok(()) } else { Err(dicom_ul::pdu::AssociationRJServiceUserReason::CallingAETitleNotRecognized) }
     }
 }
 
-/// Atiende una conexión de un aparato hasta que la cierra.
-fn serve<S: Read + Write + dicom_ul::association::CloseSocket>(mut assoc: dicom_ul::ServerAssociation<S>, sh: &Shared) -> Result<(), String> {
-    let (mut cmd_buf, mut data_buf): (Vec<u8>, Vec<u8>) = (vec![], vec![]);
+fn cmd_u16(cmd: &InMemDicomObject, tag: dicom_core::Tag) -> u16 {
+    cmd.element_opt(tag).ok().flatten().and_then(|e| e.to_int::<u16>().ok()).unwrap_or(0)
+}
+
+/// Atiende una conexión de un aparato hasta que la cierra. `ip` es la
+/// dirección desde la que llega.
+fn serve<S: Read + Write + dicom_ul::association::CloseSocket>(mut assoc: dicom_ul::ServerAssociation<S>, sh: &Shared, ip: Option<std::net::IpAddr>) -> Result<(), String> {
+    use dicom_ul::association::Association;
+    // el nombre ya se comprobó al conectar; ahora, que venga de su dirección
+    if !sh.settings.allows(assoc.peer_ae_title(), ip) {
+        let _ = assoc.abort();
+        return Err("Aparato no admitido desde esa dirección.".into());
+    }
+    let mut cmd_buf: Vec<u8> = vec![];
+    let mut small: Vec<u8> = vec![];
+    // la imagen que se está recibiendo: su fichero y lo que lleva
+    let mut part: Option<(PathBuf, std::fs::File, u64)> = None;
     let mut pending: Option<(InMemDicomObject, u8)> = None;
     let implicit = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
-    loop {
-        let pdu = assoc.receive().map_err(|e| e.to_string())?;
-        match pdu {
-            Pdu::PData { data } => {
-                for pdv in data {
-                    let pc = pdv.presentation_context_id;
-                    match pdv.value_type {
-                        PDataValueType::Command => {
-                            cmd_buf.extend(pdv.data);
-                            if !pdv.is_last {
-                                continue;
-                            }
-                            let cmd = InMemDicomObject::read_dataset_with_ts(cmd_buf.as_slice(), &implicit).map_err(|e| e.to_string())?;
-                            cmd_buf.clear();
-                            data_buf.clear();
-                            let has_data = cmd.element_opt(tags::COMMAND_DATA_SET_TYPE).ok().flatten().and_then(|e| e.to_int::<u16>().ok()) != Some(0x0101);
-                            if has_data {
-                                pending = Some((cmd, pc));
-                            } else {
-                                // C-ECHO
-                                let field = cmd.element_opt(tags::COMMAND_FIELD).ok().flatten().and_then(|e| e.to_int::<u16>().ok()).unwrap_or(0);
-                                let id = cmd.element_opt(tags::MESSAGE_ID).ok().flatten().and_then(|e| e.to_int::<u16>().ok()).unwrap_or(0);
-                                if field == 0x0030 {
-                                    assoc.send(&pdata(pc, PDataValueType::Command, response(0x8030, id, uids::VERIFICATION, None, 0, false))).map_err(|e| e.to_string())?;
+    let recv = sh.inbox.join(".recibiendo");
+    let result = (|| -> Result<(), String> {
+        loop {
+            let pdu = assoc.receive().map_err(|e| e.to_string())?;
+            match pdu {
+                Pdu::PData { data } => {
+                    for pdv in data {
+                        let pc = pdv.presentation_context_id;
+                        match pdv.value_type {
+                            PDataValueType::Command => {
+                                if cmd_buf.len() + pdv.data.len() > MAX_SMALL {
+                                    return Err("Comando demasiado grande.".into());
+                                }
+                                cmd_buf.extend(pdv.data);
+                                if !pdv.is_last {
+                                    continue;
+                                }
+                                let cmd = InMemDicomObject::read_dataset_with_ts(cmd_buf.as_slice(), &implicit).map_err(|e| e.to_string())?;
+                                cmd_buf.clear();
+                                small.clear();
+                                if let Some((f, _, _)) = part.take() {
+                                    let _ = std::fs::remove_file(f);
+                                }
+                                if cmd_u16(&cmd, tags::COMMAND_DATA_SET_TYPE) != 0x0101 {
+                                    pending = Some((cmd, pc));
+                                } else if cmd_u16(&cmd, tags::COMMAND_FIELD) == 0x0030 {
+                                    // C-ECHO
+                                    assoc.send(&pdata(pc, PDataValueType::Command, response(0x8030, cmd_u16(&cmd, tags::MESSAGE_ID), uids::VERIFICATION, None, 0, false))).map_err(|e| e.to_string())?;
                                 }
                             }
-                        }
-                        PDataValueType::Data => {
-                            data_buf.extend(pdv.data);
-                            if data_buf.len() > MAX_INSTANCE {
-                                let _ = assoc.abort();
-                                return Err("Imagen demasiado grande.".into());
-                            }
-                            if !pdv.is_last {
-                                continue;
-                            }
-                            let Some((cmd, cmd_pc)) = pending.take() else { continue };
-                            let field = cmd.element_opt(tags::COMMAND_FIELD).ok().flatten().and_then(|e| e.to_int::<u16>().ok()).unwrap_or(0);
-                            let id = cmd.element_opt(tags::MESSAGE_ID).ok().flatten().and_then(|e| e.to_int::<u16>().ok()).unwrap_or(0);
-                            let class = text(&cmd, tags::AFFECTED_SOP_CLASS_UID);
-                            let ts = assoc.presentation_contexts().iter().find(|p| p.id == cmd_pc).map(|p| p.transfer_syntax.clone()).unwrap_or_default();
-                            match field {
-                                // C-STORE
-                                0x0001 => {
-                                    let instance = text(&cmd, tags::AFFECTED_SOP_INSTANCE_UID);
-                                    let status = match store(&sh.inbox, &data_buf, &ts) {
-                                        Ok(_) => {
-                                            sh.received.fetch_add(1, Ordering::Relaxed);
-                                            0x0000
-                                        }
-                                        Err(_) => 0xA700,
-                                    };
-                                    assoc.send(&pdata(cmd_pc, PDataValueType::Command, response(0x8001, id, &class, Some(&instance), status, false))).map_err(|e| e.to_string())?;
-                                }
-                                // C-FIND de la lista de trabajo
-                                0x0020 => {
-                                    let tsx = TransferSyntaxRegistry.get(&ts).ok_or("Sintaxis desconocida.")?;
-                                    let identifier = InMemDicomObject::read_dataset_with_ts(data_buf.as_slice(), tsx).map_err(|e| e.to_string())?;
-                                    let q = query_of(&identifier);
-                                    let items: Vec<WlItem> = sh.worklist.lock().map(|w| w.iter().filter(|i| q.matches(i)).cloned().collect()).unwrap_or_default();
-                                    for it in items.iter().take(500) {
-                                        let mut body = vec![];
-                                        answer(it, &q).write_dataset_with_ts(&mut body, tsx).map_err(|e| e.to_string())?;
-                                        assoc.send(&pdata(cmd_pc, PDataValueType::Command, response(0x8020, id, &class, None, 0xFF00, true))).map_err(|e| e.to_string())?;
-                                        assoc.send(&pdata(cmd_pc, PDataValueType::Data, body)).map_err(|e| e.to_string())?;
+                            PDataValueType::Data => {
+                                let Some((cmd, cmd_pc)) = pending.as_ref() else { continue };
+                                let (field, id, cmd_pc) = (cmd_u16(cmd, tags::COMMAND_FIELD), cmd_u16(cmd, tags::MESSAGE_ID), *cmd_pc);
+                                let (class, instance) = (text(cmd, tags::AFFECTED_SOP_CLASS_UID), text(cmd, tags::AFFECTED_SOP_INSTANCE_UID));
+                                if field == 0x0001 {
+                                    // C-STORE: los datos, a disco según llegan
+                                    if part.is_none() {
+                                        std::fs::create_dir_all(&recv).map_err(|e| e.to_string())?;
+                                        let n = sh.counter.fetch_add(1, Ordering::Relaxed);
+                                        let f = recv.join(format!("{}-{n}", std::process::id()));
+                                        let file = std::fs::OpenOptions::new().write(true).create_new(true).open(&f).map_err(|e| e.to_string())?;
+                                        part = Some((f, file, 0));
                                     }
-                                    assoc.send(&pdata(cmd_pc, PDataValueType::Command, response(0x8020, id, &class, None, 0x0000, false))).map_err(|e| e.to_string())?;
+                                    let Some((_, file, len)) = part.as_mut() else { continue };
+                                    *len += pdv.data.len() as u64;
+                                    if *len > MAX_INSTANCE {
+                                        return Err("Imagen demasiado grande.".into());
+                                    }
+                                    file.write_all(&pdv.data).map_err(|e| e.to_string())?;
+                                } else {
+                                    if small.len() + pdv.data.len() > MAX_SMALL {
+                                        return Err("Pregunta demasiado grande.".into());
+                                    }
+                                    small.extend(pdv.data);
                                 }
-                                _ => {}
+                                if !pdv.is_last {
+                                    continue;
+                                }
+                                pending = None;
+                                let ts = assoc.presentation_contexts().iter().find(|p| p.id == cmd_pc).map(|p| p.transfer_syntax.clone()).unwrap_or_default();
+                                match field {
+                                    0x0001 => {
+                                        let status = match part.take() {
+                                            Some((f, file, _)) => {
+                                                drop(file);
+                                                match store(&sh.inbox, &f, &class, &instance, &ts) {
+                                                    Ok(_) => {
+                                                        sh.received.fetch_add(1, Ordering::Relaxed);
+                                                        0x0000
+                                                    }
+                                                    Err(_) => {
+                                                        let _ = std::fs::remove_file(&f);
+                                                        0xA700
+                                                    }
+                                                }
+                                            }
+                                            None => 0xA700,
+                                        };
+                                        assoc.send(&pdata(cmd_pc, PDataValueType::Command, response(0x8001, id, &class, Some(&instance), status, false))).map_err(|e| e.to_string())?;
+                                    }
+                                    // C-FIND de la lista de trabajo
+                                    0x0020 => {
+                                        let tsx = TransferSyntaxRegistry.get(&ts).ok_or("Sintaxis desconocida.")?;
+                                        let identifier = InMemDicomObject::read_dataset_with_ts(small.as_slice(), tsx).map_err(|e| e.to_string())?;
+                                        let today = sh.today.lock().map(|d| *d).unwrap_or_else(|_| chrono::Local::now().date_naive());
+                                        let q = query_of(&identifier).bounded(today);
+                                        let items: Vec<WlItem> = sh.worklist.lock().map(|w| w.iter().filter(|i| q.matches(i)).cloned().collect()).unwrap_or_default();
+                                        for it in items.iter().take(200) {
+                                            let mut body = vec![];
+                                            answer(it, &q).write_dataset_with_ts(&mut body, tsx).map_err(|e| e.to_string())?;
+                                            assoc.send(&pdata(cmd_pc, PDataValueType::Command, response(0x8020, id, &class, None, 0xFF00, true))).map_err(|e| e.to_string())?;
+                                            assoc.send(&pdata(cmd_pc, PDataValueType::Data, body)).map_err(|e| e.to_string())?;
+                                        }
+                                        assoc.send(&pdata(cmd_pc, PDataValueType::Command, response(0x8020, id, &class, None, 0x0000, false))).map_err(|e| e.to_string())?;
+                                    }
+                                    _ => {}
+                                }
+                                small.clear();
                             }
-                            data_buf.clear();
                         }
                     }
                 }
+                Pdu::ReleaseRQ => {
+                    let _ = assoc.send(&Pdu::ReleaseRP);
+                    return Ok(());
+                }
+                Pdu::AbortRQ { .. } => return Ok(()),
+                _ => {}
             }
-            Pdu::ReleaseRQ => {
-                let _ = assoc.send(&Pdu::ReleaseRP);
-                return Ok(());
-            }
-            Pdu::AbortRQ { .. } => return Ok(()),
-            _ => {}
         }
+    })();
+    // lo que quedó a medias no se queda en el disco
+    if let Some((f, file, _)) = part.take() {
+        drop(file);
+        let _ = std::fs::remove_file(f);
     }
+    if result.is_err() {
+        let _ = assoc.abort();
+    }
+    result
 }
 
 /// El servicio en marcha. Se para al soltarlo.
@@ -418,7 +538,10 @@ impl Service {
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&inbox).map_err(|e| format!("No se puede crear {}: {e}", inbox.display()))?;
         let stop = Arc::new(AtomicBool::new(false));
-        let shared = Arc::new(Shared { settings: settings.clone(), inbox, worklist: Arc::new(Mutex::new(vec![])), received: AtomicUsize::new(0) });
+        if settings.devices().is_empty() {
+            return Err("Añada antes los aparatos admitidos (su nombre DICOM y su dirección IP).".into());
+        }
+        let shared = Arc::new(Shared { settings: settings.clone(), inbox, worklist: Arc::new(Mutex::new(vec![])), today: Mutex::new(chrono::Local::now().date_naive()), received: AtomicUsize::new(0), counter: AtomicUsize::new(0) });
         let (stop2, sh) = (stop.clone(), shared.clone());
         let active = Arc::new(AtomicUsize::new(0));
         let listener = std::thread::spawn(move || {
@@ -443,10 +566,14 @@ impl Service {
         Ok(Service { stop, shared, port, listener: Some(listener) })
     }
 
-    /// Los citados que verá el aparato (se renueva desde los datos de la clínica).
-    pub fn set_worklist(&self, items: Vec<WlItem>) {
+    /// Los citados que verá el aparato (se renueva desde los datos de la
+    /// clínica) y el día de hoy de la clínica.
+    pub fn set_worklist(&self, items: Vec<WlItem>, today: NaiveDate) {
         if let Ok(mut w) = self.shared.worklist.lock() {
             *w = items;
+        }
+        if let Ok(mut t) = self.shared.today.lock() {
+            *t = today;
         }
     }
 
@@ -471,6 +598,11 @@ impl Drop for Service {
 }
 
 fn handle(stream: TcpStream, sh: &Shared) -> Result<(), String> {
+    // solo desde la red de la clínica
+    let ip = stream.peer_addr().ok().map(|a| a.ip());
+    if !ip.is_some_and(local_network) {
+        return Err("Conexión desde fuera de la red de la clínica.".into());
+    }
     stream.set_nonblocking(false).map_err(|e| e.to_string())?;
     let mut options = dicom_ul::association::ServerAssociationOptions::new()
         .ae_access_control(Allowed(sh.settings.clone()))
@@ -487,7 +619,7 @@ fn handle(stream: TcpStream, sh: &Shared) -> Result<(), String> {
         }
     }
     let assoc = options.establish(stream).map_err(|e| e.to_string())?;
-    serve(assoc, sh)
+    serve(assoc, sh, ip)
 }
 
 /// La carpeta donde se guarda lo que mandan los aparatos.
@@ -542,6 +674,32 @@ mod tests {
     }
 
     #[test]
+    fn a_question_without_date_is_about_today_and_ranges_are_short() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 16).unwrap();
+        let q = |date: &str| Query { date: date.into(), ..Default::default() }.bounded(today).date;
+        assert_eq!(q(""), "20261116");
+        assert_eq!(q("20261120"), "20261120");
+        assert_eq!(q("20261101-20261231"), "20261101-20261108", "como mucho una semana");
+        assert_eq!(q("20261110-"), "20261110-20261117");
+        assert_eq!(q("-20261120"), "20261113-20261120");
+        let carlos = item("1002", "MARTINEZ SANZ^CARLOS", "20261117");
+        assert!(!Query::default().bounded(today).matches(&carlos), "sin fecha, solo los de hoy");
+    }
+
+    #[test]
+    fn only_listed_devices_from_their_address_and_from_the_clinic_network() {
+        let s = Settings { allowed: "CBCT1 192.168.1.50\npano".into(), ..Default::default() };
+        let ip = |x: &str| Some(x.parse::<std::net::IpAddr>().unwrap());
+        assert!(s.allows("cbct1", ip("192.168.1.50")));
+        assert!(!s.allows("CBCT1", ip("192.168.1.51")), "con su dirección");
+        assert!(s.allows("PANO", ip("192.168.1.77")), "sin dirección en la lista, desde cualquiera de la red");
+        assert!(!s.allows("OTRO", ip("192.168.1.50")));
+        assert!(!Settings::default().allows("PANO", ip("192.168.1.50")), "sin lista, nadie");
+        assert!(local_network("192.168.1.2".parse().unwrap()) && local_network("10.0.0.1".parse().unwrap()) && local_network("127.0.0.1".parse().unwrap()));
+        assert!(!local_network("8.8.8.8".parse().unwrap()) && !local_network("2001:db8::1".parse().unwrap()));
+    }
+
+    #[test]
     fn the_worklist_comes_from_the_appointments_in_plain_capitals() {
         let db = Db::sample(chrono::NaiveDate::from_ymd_opt(2026, 11, 16).unwrap());
         let day = db.appointments.iter().find(|a| a.patient_id.is_some() && !matches!(a.state, ApptState::Anulada | ApptState::Reprogramada | ApptState::NoAcude)).map(|a| a.date).unwrap();
@@ -561,9 +719,11 @@ mod tests {
     fn a_device_checks_the_link_asks_the_worklist_and_sends_an_image() {
         let inbox = std::env::temp_dir().join(format!("vd_dicom_red_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&inbox);
-        let settings = Settings { enabled: true, port: 0, allowed: "TAC-1".into(), ..Default::default() };
+        // sin aparatos en la lista, el servicio no arranca
+        assert!(Service::start(&Settings { enabled: true, port: 0, ..Default::default() }, inbox.clone()).is_err());
+        let settings = Settings { enabled: true, port: 0, allowed: "TAC-1 127.0.0.1\nPANO 10.9.9.9".into(), ..Default::default() };
         let svc = Service::start(&settings, inbox.clone()).unwrap();
-        svc.set_worklist(vec![item("1002", "MARTINEZ SANZ^CARLOS", "20261116"), item("1001", "GARCIA LOPEZ^ANA", "20261117")]);
+        svc.set_worklist(vec![item("1002", "MARTINEZ SANZ^CARLOS", "20261116"), item("1001", "GARCIA LOPEZ^ANA", "20261117")], NaiveDate::from_ymd_opt(2026, 11, 16).unwrap());
         let addr = format!("127.0.0.1:{}", svc.port);
         let ts = "1.2.840.10008.1.2.1";
         let implicit = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
@@ -646,18 +806,46 @@ mod tests {
             DataElement::new(tags::COMMAND_DATA_SET_TYPE, VR::US, us(0x0000)),
             DataElement::new(tags::AFFECTED_SOP_INSTANCE_UID, VR::UI, s("1.2.3.4.5")),
         ]);
-        a.send(&pdata(store_pc, PDataValueType::Command, st)).unwrap();
-        a.send(&pdata(store_pc, PDataValueType::Data, body)).unwrap();
+        // llega en dos trozos, como llega un TAC grande
+        let half = body.len() / 2;
+        a.send(&pdata(store_pc, PDataValueType::Command, st.clone())).unwrap();
+        a.send(&Pdu::PData { data: vec![PDataValue { presentation_context_id: store_pc, value_type: PDataValueType::Data, is_last: false, data: body[..half].to_vec() }] }).unwrap();
+        a.send(&pdata(store_pc, PDataValueType::Data, body[half..].to_vec())).unwrap();
         let Pdu::PData { data } = a.receive().unwrap() else { panic!("sin respuesta al envío") };
         let r = read(&data[0].data);
         assert_eq!((field(&r, tags::COMMAND_FIELD), field(&r, tags::STATUS)), (0x8001, 0));
-        let _ = a.release();
         let saved = inbox.join("1.2.3.4").join("1.2.3.4.5.dcm");
         let h = crate::dicom::read_header(&saved).expect("se guarda como DICOM");
         assert_eq!((h.patient_id.as_str(), h.patient.as_str()), ("1002", "MARTINEZ SANZ CARLOS"));
-        assert_eq!(svc.received(), 1);
+        // la misma imagen otra vez, con otro paciente: no pisa la que había
+        let mut other = vec![];
+        let fake = InMemDicomObject::from_element_iter([
+            DataElement::new(tags::SOP_CLASS_UID, VR::UI, s(uids::CT_IMAGE_STORAGE)),
+            DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, s("1.2.3.4.5")),
+            DataElement::new(tags::PATIENT_ID, VR::LO, s("9999")),
+            DataElement::new(tags::SERIES_INSTANCE_UID, VR::UI, s("1.2.3.4")),
+        ]);
+        fake.write_dataset_with_ts(&mut other, explicit).unwrap();
+        a.send(&pdata(store_pc, PDataValueType::Command, st)).unwrap();
+        a.send(&pdata(store_pc, PDataValueType::Data, other)).unwrap();
+        let _ = a.receive().unwrap();
+        assert_eq!(crate::dicom::read_header(&saved).unwrap().patient_id, "1002", "la primera se queda");
+        let _ = a.release();
+        assert!(std::fs::read_dir(inbox.join(".recibiendo")).map(|d| d.count()).unwrap_or(0) == 0, "no quedan ficheros a medias");
+        assert_eq!(svc.received(), 2);
         // un aparato que no está en la lista no llega a conectarse
         assert!(connect("OTRO").is_err(), "el aparato no admitido se rechaza");
+        // uno de la lista, pero desde otra dirección: se corta
+        if let Ok(mut b) = connect("PANO") {
+            let echo = command(vec![
+                DataElement::new(tags::AFFECTED_SOP_CLASS_UID, VR::UI, s(uids::VERIFICATION)),
+                DataElement::new(tags::COMMAND_FIELD, VR::US, us(0x0030)),
+                DataElement::new(tags::MESSAGE_ID, VR::US, us(9)),
+                DataElement::new(tags::COMMAND_DATA_SET_TYPE, VR::US, us(0x0101)),
+            ]);
+            let _ = b.send(&pdata(1, PDataValueType::Command, echo));
+            assert!(!matches!(b.receive(), Ok(Pdu::PData { .. })), "desde otra dirección no contesta");
+        }
         drop(svc);
         let _ = std::fs::remove_dir_all(&inbox);
     }

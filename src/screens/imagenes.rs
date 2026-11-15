@@ -45,6 +45,9 @@ pub struct ImgState {
     /// Por qué no se ha podido poner en marcha.
     pub net_error: Option<String>,
     net_worklist_at: f64,
+    /// Pacientes para los que se acaba de abrir un aparato: su carpeta se
+    /// vigila un rato y lo que deje el aparato entra solo en su ficha.
+    pub watch: Vec<(u32, std::time::Instant)>,
 }
 
 impl Default for ImgState {
@@ -69,6 +72,7 @@ impl Default for ImgState {
             net: None,
             net_error: None,
             net_worklist_at: f64::NEG_INFINITY,
+            watch: vec![],
         }
     }
 }
@@ -464,6 +468,10 @@ pub fn launch(app: &mut App, cid: u32, pid: u32, action: crate::enlaces::Action)
     let Some(c) = app.db.connectors.iter().find(|c| c.id == cid).cloned() else { return };
     let dir = app.db.patient_image_dir(pid);
     let _ = std::fs::create_dir_all(&dir);
+    // media hora vigilando su carpeta: lo que deje ahí el aparato entra solo en su ficha
+    let started = std::time::Instant::now();
+    app.img.watch.retain(|(p, u)| *p != pid && *u > started);
+    app.img.watch.push((pid, started + std::time::Duration::from_secs(30 * 60)));
     let bp = bridge_path(&c);
     let bridge = bp.display().to_string();
     let args = crate::enlaces::args_for(&app.db, &c, pid, action, &bridge);
@@ -521,14 +529,26 @@ pub fn open_folder(path: &Path) -> Result<(), String> {
 /// Las carpetas donde dejan imágenes los aparatos: las de los enlaces activos
 /// y la de las imágenes de los pacientes (con una subcarpeta por número de historia).
 fn sources(app: &App) -> Vec<crate::entrada::Source> {
-    let mut v: Vec<crate::entrada::Source> =
-        app.db.connectors.iter().filter(|c| c.enabled && !c.image_folder.trim().is_empty()).map(|c| crate::entrada::Source { name: c.name.clone(), kind: c.kind, base: PathBuf::from(c.image_folder.trim()), auto: c.auto_import }).collect();
+    let mut v: Vec<crate::entrada::Source> = app
+        .db
+        .connectors
+        .iter()
+        .filter(|c| c.enabled && !c.image_folder.trim().is_empty())
+        .map(|c| crate::entrada::Source { name: c.name.clone(), kind: c.kind, base: PathBuf::from(c.image_folder.trim()), auto: c.auto_import, patient: None })
+        .collect();
     if let Some(base) = app.db.patient_image_dir(0).parent() {
-        v.push(crate::entrada::Source { name: "Carpeta del paciente".into(), kind: ImageKind::Periapical, base: base.to_path_buf(), auto: false });
+        v.push(crate::entrada::Source { name: "Carpeta del paciente".into(), kind: ImageKind::Periapical, base: base.to_path_buf(), auto: false, patient: None });
+    }
+    // la carpeta de cada paciente para el que se acaba de abrir un aparato
+    let now = std::time::Instant::now();
+    for (pid, until) in &app.img.watch {
+        if *until > now {
+            v.push(crate::entrada::Source { name: "Carpeta del paciente".into(), kind: ImageKind::Periapical, base: app.db.patient_image_dir(*pid), auto: true, patient: Some(*pid) });
+        }
     }
     // lo que mandan los aparatos por la red DICOM, en el ordenador que la atiende
     if let Some(net) = &app.img.net {
-        v.push(crate::entrada::Source { name: "Red DICOM".into(), kind: ImageKind::Tac, base: crate::dicom_red::inbox_dir(net.settings()), auto: true });
+        v.push(crate::entrada::Source { name: "Red DICOM".into(), kind: ImageKind::Tac, base: crate::dicom_red::inbox_dir(net.settings()), auto: true, patient: None });
     }
     v
 }
@@ -566,7 +586,7 @@ fn net_tick(app: &mut App, time: f64) {
     {
         app.img.net_worklist_at = time;
         // de ayer a dentro de dos semanas: el aparato pide normalmente las de hoy
-        net.set_worklist(crate::dicom_red::worklist(&app.db, app.today - chrono::Duration::days(1), app.today + chrono::Duration::days(14)));
+        net.set_worklist(crate::dicom_red::worklist(&app.db, app.today - chrono::Duration::days(1), app.today + chrono::Duration::days(14)), app.today);
     }
 }
 
@@ -680,7 +700,8 @@ fn net_card(app: &mut App, ui: &mut Ui) {
             }
             field(ui, "Nombre DICOM de VeodarDental (AE Title)", &mut s.ae_title, 220.0);
             s.ae_title = s.ae_title.to_uppercase().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').take(16).collect();
-            field(ui, "Aparatos admitidos, por su nombre DICOM (vacío: cualquiera de la red)", &mut s.allowed, 330.0);
+            ui.label(RichText::new("Aparatos admitidos: uno por línea, su nombre DICOM y su dirección IP (sin ninguno no se atiende a nadie)").size(13.5).color(MUTED()));
+            ui.add_sized([330.0, 64.0], egui::TextEdit::multiline(&mut s.allowed).font(egui::TextStyle::Monospace).hint_text("CBCT1 192.168.1.50\nPANO 192.168.1.51"));
             field(ui, "Carpeta de lo recibido (vacío: la de los datos de este ordenador; mejor una compartida)", &mut s.folder, 330.0);
             ui.add_space(4.0);
             match (&app.img.net, &app.img.net_error) {
@@ -700,7 +721,7 @@ fn net_card(app: &mut App, ui: &mut Ui) {
                     muted(ui, "Este ordenador no la atiende.");
                 }
             }
-            muted(ui, "DICOM no cifra ni pide contraseña: úsela solo en la red de la clínica, y si puede, limite los aparatos admitidos.");
+            muted(ui, "DICOM no cifra ni pide contraseña: solo se atiende a los aparatos de la lista y desde la red de la clínica, y la lista de trabajo da solo los citados del día que pide el aparato.");
         }
         if s != app.db.config.dicom_net {
             app.db.config.dicom_net = s;

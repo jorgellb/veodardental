@@ -54,6 +54,9 @@ pub struct Source {
     pub base: PathBuf,
     /// Entra solo lo seguro, sin pulsar «Importar».
     pub auto: bool,
+    /// La carpeta es de este paciente (la suya, después de abrir un aparato
+    /// para él): lo que haya es suyo, salvo que un DICOM diga otra cosa.
+    pub patient: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -161,6 +164,21 @@ pub fn judge(people: &[Who], base: &Path, path: &Path, tags: Option<&Tags>) -> V
     })
 }
 
+/// En la carpeta de un paciente: suyo, salvo que el DICOM sea de otro.
+pub fn judge_in_patient_folder(people: &[Who], pid: u32, tags: Option<&Tags>) -> Verdict {
+    let Some(me) = people.iter().find(|w| w.id == pid) else { return Verdict::Unknown("El paciente ya no está.".into()) };
+    if let Some(t) = tags {
+        let other = t.patient_id.trim().parse::<u32>().ok().and_then(|n| people.iter().find(|w| w.history_no == n)).filter(|w| w.id != pid);
+        if let Some(o) = other {
+            return Verdict::Suggest(pid, format!("Está en la carpeta de {} pero el fichero dice que es de {}", me.name, o.name));
+        }
+        if !t.name.trim().is_empty() && !crate::screens::visor3d::same_person(&t.name, &me.name) {
+            return Verdict::Suggest(pid, format!("Está en la carpeta de {} pero el fichero dice «{}»", me.name, t.name));
+        }
+    }
+    Verdict::Sure(pid)
+}
+
 /// El tipo de imagen: lo que dice el DICOM, luego el nombre del fichero y si no, el del aparato.
 pub fn kind_of(path: &Path, tags: Option<&Tags>, default: ImageKind) -> ImageKind {
     let by_modality = tags.and_then(|t| match t.modality.as_str() {
@@ -264,7 +282,10 @@ pub fn scan(sources: &[Source], people: &[Who], known: &HashSet<String>, now: Sy
                 // en una serie, la cabecera del primer corte
                 let first = if item.is_dir() { std::fs::read_dir(&item).ok().and_then(|rd| rd.flatten().map(|e| e.path()).filter(|p| is_dicom(p)).min()) } else { Some(item.clone()) };
                 let tags = first.filter(|f| is_dicom(f)).and_then(|f| crate::dicom::read_header(&f).ok()).map(|h| Tags::of(&h));
-                let verdict = judge(people, &src.base, &item, tags.as_ref());
+                let verdict = match src.patient {
+                    Some(pid) => judge_in_patient_folder(people, pid, tags.as_ref()),
+                    None => judge(people, &src.base, &item, tags.as_ref()),
+                };
                 let label = tags.as_ref().map(|t| [t.name.trim().to_string(), t.date.map(|d| d.format("%d/%m/%Y").to_string()).unwrap_or_default()].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · ")).unwrap_or_default();
                 out.push(Found { kind: kind_of(&item, tags.as_ref(), src.kind), path: item, source: src.name.clone(), auto: src.auto, verdict, label, date: tags.and_then(|t| t.date) });
             }
@@ -311,6 +332,15 @@ mod tests {
         assert!(matches!(judge(&w, base, Path::new("/aparato/2026-11-15.jpg"), None), Verdict::Unknown(_)));
         assert!(matches!(judge(&w, base, Path::new("/aparato/20261115_1.jpg"), None), Verdict::Unknown(_)));
         assert!(matches!(judge(&w, base, Path::new("/aparato/x.dcm"), Some(&tags("77", "NADIE"))), Verdict::Unknown(_)));
+    }
+
+    #[test]
+    fn in_a_patient_folder_everything_is_theirs_unless_a_dicom_says_otherwise() {
+        let w = people();
+        assert_eq!(judge_in_patient_folder(&w, 101, None), Verdict::Sure(101));
+        assert_eq!(judge_in_patient_folder(&w, 101, Some(&tags("1002", "MARTINEZ SANZ CARLOS"))), Verdict::Sure(101));
+        assert!(matches!(judge_in_patient_folder(&w, 101, Some(&tags("1001", "GARCIA LOPEZ ANA"))), Verdict::Suggest(101, _)));
+        assert!(matches!(judge_in_patient_folder(&w, 101, Some(&tags("", "PEREZ LUIS"))), Verdict::Suggest(101, _)));
     }
 
     #[test]
@@ -367,7 +397,7 @@ mod tests {
         std::fs::write(dir.join("serie").join("1"), dicom("1001", "GARCIA LOPEZ^ANA")).unwrap();
         std::fs::write(dir.join("serie").join("2"), dicom("1001", "GARCIA LOPEZ^ANA")).unwrap();
         std::fs::write(dir.join("notas.txt"), b"no").unwrap();
-        let src = Source { name: "TAC".into(), kind: ImageKind::Periapical, base: dir.clone(), auto: true };
+        let src = Source { name: "TAC".into(), kind: ImageKind::Periapical, base: dir.clone(), auto: true, patient: None };
         // recién escritos: todavía no
         assert!(scan(std::slice::from_ref(&src), &people(), &HashSet::new(), SystemTime::now()).is_empty());
         let later = SystemTime::now() + SETTLE * 2;
