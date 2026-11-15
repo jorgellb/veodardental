@@ -76,9 +76,16 @@ pub struct Dicom {
 
 const SUPPORTED: [&str; 2] = ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"];
 
+/// Compresiones que se descomprimen (con dicom-rs, sin bibliotecas de C): JPEG
+/// (básico, extendido y sin pérdida), JPEG 2000 y RLE. JPEG-LS no: necesitaría
+/// una biblioteca de C++.
+const DECODABLE: [&str; 7] = ["1.2.840.10008.1.2.4.50", "1.2.840.10008.1.2.4.51", "1.2.840.10008.1.2.4.57", "1.2.840.10008.1.2.4.70", "1.2.840.10008.1.2.4.90", "1.2.840.10008.1.2.4.91", "1.2.840.10008.1.2.5"];
+
 fn compressed_name(ts: &str) -> &'static str {
     if ts.starts_with("1.2.840.10008.1.2.4.5") || ts.starts_with("1.2.840.10008.1.2.4.7") {
         "JPEG"
+    } else if ts.starts_with("1.2.840.10008.1.2.4.8") {
+        "JPEG-LS"
     } else if ts.starts_with("1.2.840.10008.1.2.4.9") {
         "JPEG 2000"
     } else if ts == "1.2.840.10008.1.2.5" {
@@ -296,8 +303,11 @@ fn parse_within(bytes: &[u8], budget: usize) -> Result<Dicom, String> {
             ts = text(v);
         }
     }
+    if DECODABLE.contains(&ts.as_str()) {
+        return parse_compressed(bytes, budget, &ts);
+    }
     if !SUPPORTED.contains(&ts.as_str()) {
-        return Err(format!("Compresión {} ({ts}) no admitida: exporte el estudio desde el programa del equipo como DICOM sin comprimir.", compressed_name(&ts)));
+        return Err(format!("Compresión {} ({ts}) no admitida: ábralo con el visor del aparato, o expórtelo sin comprimir.", compressed_name(&ts)));
     }
     let explicit = ts == "1.2.840.10008.1.2.1";
     let mut h = Header { frames: 1, slope: 1.0, samples: 1, photometric: "MONOCHROME2".into(), ..Default::default() };
@@ -355,6 +365,56 @@ fn parse_within(bytes: &[u8], budget: usize) -> Result<Dicom, String> {
         }
     };
     Ok(Dicom { header: h, voxels, rgb })
+}
+
+/// Una imagen comprimida: la cabecera, con la lectura de siempre, y los
+/// píxeles, descomprimidos con dicom-rs. Antes de descomprimir se comprueba
+/// que cabe en `budget`.
+fn parse_compressed(bytes: &[u8], budget: usize, ts: &str) -> Result<Dicom, String> {
+    use dicom_pixeldata::PixelDecoder;
+    let fail = |e: &dyn std::fmt::Display| format!("No se pudo descomprimir la imagen {}: {e}", compressed_name(ts));
+    let mut h = header_of(bytes)?;
+    if h.rows == 0 || h.cols == 0 {
+        return Err("El DICOM no dice el tamaño de la imagen.".into());
+    }
+    let color = h.samples == 3;
+    let n = h.rows.checked_mul(h.cols).and_then(|x| x.checked_mul(h.frames)).ok_or("Imagen demasiado grande.")?;
+    let alloc = n.checked_mul(if color { 7 } else { 4 }).ok_or("Imagen demasiado grande.")?;
+    if alloc > budget {
+        return Err(format!("El estudio necesita {} MB de memoria y el límite es {} MB.", alloc >> 20, budget >> 20));
+    }
+    let obj = dicom_object::OpenFileOptions::new().from_reader(&bytes[128..]).map_err(|e| fail(&e))?;
+    let pd = obj.decode_pixel_data().map_err(|e| fail(&e))?;
+    if pd.rows() as usize != h.rows || pd.columns() as usize != h.cols {
+        return Err("La imagen descomprimida no tiene el tamaño que dice el fichero.".into());
+    }
+    let frames = pd.number_of_frames() as usize;
+    if color {
+        let per = h.rows * h.cols;
+        let mut data = Vec::with_capacity(per * 3 * frames);
+        for f in 0..frames as u32 {
+            let raw = pd.frame_data(f).map_err(|e| fail(&e))?;
+            if raw.len() < per * 3 {
+                return Err("La imagen descomprimida está incompleta.".into());
+            }
+            // por planos (RR…GG…BB…) o entrelazado (RGBRGB…)
+            if pd.planar_configuration() == dicom_pixeldata::PlanarConfiguration::PixelFirst {
+                data.extend_from_slice(&raw[..per * 3]);
+            } else {
+                data.extend((0..per).flat_map(|i| [raw[i], raw[per + i], raw[2 * per + i]]));
+            }
+        }
+        let gray = data.as_chunks::<3>().0.iter().map(|c| (c[0] as i32 + c[1] as i32 + c[2] as i32) / 3).collect();
+        (h.photometric, h.planar, h.bits, h.frames) = ("RGB".into(), false, 8, frames.max(1));
+        return Ok(Dicom { header: h, voxels: gray, rgb: Some(data) });
+    }
+    // con la pendiente y la ordenada del fichero aplicadas, como en las sin comprimir
+    let voxels: Vec<i32> = pd.to_vec::<f64>().map_err(|e| fail(&e))?.into_iter().map(|v| v.round() as i32).collect();
+    if voxels.len() < h.rows * h.cols {
+        return Err("La imagen descomprimida está incompleta.".into());
+    }
+    h.frames = frames.max(1);
+    Ok(Dicom { header: h, voxels, rgb: None })
 }
 
 fn rescale(h: &Header, v: i32) -> i32 {
@@ -612,6 +672,108 @@ pub(crate) mod tests {
         assert!(cor.gray[0] > cor.gray[4 * 4], "arriba el último corte");
         assert_eq!(v.slices(View::Sagital), 4);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un DICOM con la imagen encapsulada (comprimida) en un solo fragmento.
+    fn encapsulated(ts: &str, rows: u16, cols: u16, bits: u16, extra: &[(u16, u16, &str, Vec<u8>)], fragment: &[u8]) -> Vec<u8> {
+        let mut meta = vec![];
+        el(&mut meta, true, 0x0002, 0x0001, "OB", &[0, 1]);
+        el(&mut meta, true, 0x0002, 0x0002, "UI", b"1.2.840.10008.5.1.4.1.1.2");
+        el(&mut meta, true, 0x0002, 0x0003, "UI", b"1.2.3.4");
+        el(&mut meta, true, 0x0002, 0x0010, "UI", ts.as_bytes());
+        el(&mut meta, true, 0x0002, 0x0012, "UI", b"1.2.3");
+        let mut b = vec![0u8; 128];
+        b.extend(b"DICM");
+        el(&mut b, true, 0x0002, 0x0000, "UL", &(meta.len() as u32).to_le_bytes());
+        b.extend(meta);
+        el(&mut b, true, 0x0008, 0x0060, "CS", b"CT");
+        el(&mut b, true, 0x0010, 0x0010, "PN", b"PRUEBA^COMPRIMIDA");
+        el(&mut b, true, 0x0028, 0x0002, "US", &1u16.to_le_bytes());
+        el(&mut b, true, 0x0028, 0x0004, "CS", b"MONOCHROME2");
+        el(&mut b, true, 0x0028, 0x0010, "US", &rows.to_le_bytes());
+        el(&mut b, true, 0x0028, 0x0011, "US", &cols.to_le_bytes());
+        el(&mut b, true, 0x0028, 0x0100, "US", &bits.to_le_bytes());
+        el(&mut b, true, 0x0028, 0x0101, "US", &bits.to_le_bytes());
+        el(&mut b, true, 0x0028, 0x0102, "US", &(bits - 1).to_le_bytes());
+        el(&mut b, true, 0x0028, 0x0103, "US", &0u16.to_le_bytes());
+        for (g, e, vr, v) in extra {
+            el(&mut b, true, *g, *e, vr, v);
+        }
+        // píxeles encapsulados: tabla de posiciones vacía, un fragmento y el fin
+        b.extend(0x7FE0u16.to_le_bytes());
+        b.extend(0x0010u16.to_le_bytes());
+        b.extend(b"OB\0\0");
+        b.extend(u32::MAX.to_le_bytes());
+        let item = |b: &mut Vec<u8>, data: &[u8]| {
+            b.extend(0xFFFEu16.to_le_bytes());
+            b.extend(0xE000u16.to_le_bytes());
+            let mut d = data.to_vec();
+            if d.len() % 2 == 1 {
+                d.push(0);
+            }
+            b.extend((d.len() as u32).to_le_bytes());
+            b.extend(d);
+        };
+        item(&mut b, &[]);
+        item(&mut b, fragment);
+        b.extend(0xFFFEu16.to_le_bytes());
+        b.extend(0xE0DDu16.to_le_bytes());
+        b.extend(0u32.to_le_bytes());
+        b
+    }
+
+    /// RLE de DICOM: una cabecera de 64 bytes y un segmento por byte de cada
+    /// píxel (el más significativo primero), cada uno en PackBits literal.
+    fn rle(values: &[u16]) -> Vec<u8> {
+        let segment = |bytes: Vec<u8>| -> Vec<u8> {
+            let mut out = vec![];
+            for chunk in bytes.chunks(128) {
+                out.push((chunk.len() - 1) as u8);
+                out.extend(chunk);
+            }
+            if out.len() % 2 == 1 {
+                out.push(0x80); // sin efecto en PackBits
+            }
+            out
+        };
+        let hi = segment(values.iter().map(|v| (v >> 8) as u8).collect());
+        let lo = segment(values.iter().map(|v| (v & 0xFF) as u8).collect());
+        let mut head = vec![0u32; 16];
+        head[0] = 2;
+        head[1] = 64;
+        head[2] = 64 + hi.len() as u32;
+        let mut out: Vec<u8> = head.iter().flat_map(|x| x.to_le_bytes()).collect();
+        out.extend(hi);
+        out.extend(lo);
+        out
+    }
+
+    #[test]
+    fn compressed_images_from_the_devices_are_opened_too() {
+        // RLE de 16 bits, con la pendiente y la ordenada del fichero
+        let (rows, cols) = (4u16, 6u16);
+        let values: Vec<u16> = (0..rows as usize * cols as usize).map(|i| (i / cols as usize * 100 + i % cols as usize) as u16).collect();
+        let rescale = [(0x0028, 0x1052, "DS", b"-1000".to_vec()), (0x0028, 0x1053, "DS", b"2".to_vec())];
+        let d = parse(&encapsulated("1.2.840.10008.1.2.5", rows, cols, 16, &rescale, &rle(&values))).unwrap();
+        assert_eq!((d.header.rows, d.header.cols, d.header.patient.as_str()), (4, 6, "PRUEBA COMPRIMIDA"));
+        assert_eq!(d.voxels, values.iter().map(|v| *v as i32 * 2 - 1000).collect::<Vec<_>>());
+        // JPEG básico de 8 bits (con pérdida: casi igual)
+        let (rows, cols) = (16u16, 16u16);
+        let gray: Vec<u8> = (0..256).map(|i| ((i / 16) * 8 + (i % 16) * 4) as u8).collect();
+        let mut jpg = vec![];
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg, 100).encode(&gray, cols as u32, rows as u32, image::ExtendedColorType::L8).unwrap();
+        let d = parse(&encapsulated("1.2.840.10008.1.2.4.50", rows, cols, 8, &[], &jpg)).unwrap();
+        assert_eq!(d.voxels.len(), 256);
+        let worst = d.voxels.iter().zip(&gray).map(|(a, b)| (a - *b as i32).abs()).max().unwrap();
+        assert!(worst <= 4, "diferencia de {worst}");
+        // JPEG-LS no se descomprime: lo dice
+        assert!(parse(&encapsulated("1.2.840.10008.1.2.4.80", 2, 2, 8, &[], &[0; 8])).unwrap_err().contains("JPEG-LS"));
+        // un fragmento que no es lo que dice ser: error, no pánico
+        assert!(parse(&encapsulated("1.2.840.10008.1.2.4.50", 16, 16, 8, &[], &[1, 2, 3, 4])).is_err());
+        assert!(parse(&encapsulated("1.2.840.10008.1.2.5", 4, 6, 16, &[], &[0; 64])).is_err());
+        // una imagen comprimida que dice ser enorme no se intenta descomprimir
+        let huge = [(0x0028, 0x0008, "IS", b"999999".to_vec())];
+        assert!(parse(&encapsulated("1.2.840.10008.1.2.5", 400, 400, 16, &huge, &rle(&values))).unwrap_err().contains("memoria"));
     }
 
     #[test]

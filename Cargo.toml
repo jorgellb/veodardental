@@ -70,6 +70,15 @@ lettre = { version = "0.11", default-features = false, features = ["smtp-transpo
 # su firma HMAC_SHA512_V2 (el HMAC, con ring); ya los usaba p12-keystore
 aes = "0.9"
 cbc = "0.2"
+# DICOM de los aparatos: imágenes comprimidas (JPEG, JPEG sin pérdida, JPEG 2000,
+# RLE; solo decodificadores en Rust, sin bibliotecas de C) y red DICOM (lista de
+# trabajo y recepción de imágenes)
+dicom-object = "0.10"
+dicom-core = "0.10"
+dicom-dictionary-std = "0.10"
+dicom-pixeldata = { version = "0.10", default-features = false, features = ["jpeg", "rle", "openjp2"] }
+dicom-ul = "0.10"
+dicom-transfer-syntax-registry = { version = "0.10", default-features = false, features = ["jpeg", "rle", "openjp2"] }
 
 [profile.dev]
 opt-level = 1
