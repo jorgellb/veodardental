@@ -1,6 +1,6 @@
 [package]
 name = "veodardental"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Gestión de clínicas dentales: pacientes, agenda, odontograma, presupuestos, cobros, facturas y receta electrónica"
 
