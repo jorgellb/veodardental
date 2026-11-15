@@ -1145,6 +1145,47 @@ pub fn default_connectors() -> Vec<Connector> {
     ]
 }
 
+/// Plantillas para añadir un enlace: las de partida y las de los fabricantes
+/// que publican cómo se abre su programa con un paciente. Ninguna está probada
+/// con el aparato real: se ajustan y se prueban en la instalación.
+pub fn connector_presets() -> Vec<Connector> {
+    let mut v = default_connectors();
+    let base = v[0].clone();
+    let mk =
+        |name: &str, vendor: &str, kind: ImageKind, exe: &str, args: &str, notes: &str| Connector { id: 0, name: name.into(), vendor: vendor.into(), kind, exe: exe.into(), args: args.into(), bridge_file: false, notes: notes.into(), ..base.clone() };
+    // Dexis: un fichero de texto con el paciente, que se le pasa con @ (documentado por Open Dental)
+    let mut dexis = mk("Dexis", "Dexis", ImageKind::Periapical, r"C:\DEXIS\DEXIS.EXE", "@[FICHERO]", "Según el puente de Dexis que documenta Open Dental (opendental.com/site/bridgedexis.html). Sin probar con Dexis.");
+    dexis.bridge_file = true;
+    dexis.bridge_template = "[APELPAC], [NOMPAC] [FECNAC:MM/DD/AA] ([NUMPAC])\nPN=[NUMPAC]\nLN=[APELPAC]\nFN=[NOMPAC]\nBD=[FECNAC:MM/DD/AA]\nSX=[SEXO:MF]".into();
+    v.push(dexis);
+    // MyRay iRYS: el paciente por parámetros (documentado por Open Dental)
+    v.push(mk(
+        "MyRay iRYS",
+        "Cefla MyRay",
+        ImageKind::Periapical,
+        "",
+        "/PATID \"[NUMPAC]\" /NAME \"[NOMPAC:SINESPACIOS]\" /SURNAME \"[APELPAC:SINESPACIOS]\" /BDATE \"[FECNAC:DD,MM,AAAA]\" /SEX \"[SEXO:MF]\"",
+        "Según el puente de iRYS que documenta Open Dental (opendental.com/manual/bridgeirys.html). Indique la ruta de iRYS. Sin probar con iRYS.",
+    ));
+    // Captura directa de un sensor o un escáner (TWAIN, WIA, SANE, Apple) con NAPS2, programa libre de escaneo
+    let (exe, args, driver) = if cfg!(target_os = "windows") {
+        (r"C:\Program Files\NAPS2\NAPS2.Console.exe", r#"-o "[CARPETA]\captura_$(YYYY)$(MM)$(DD)_$(hh)$(mm)$(ss).png" --driver twain"#, "twain (o wia)")
+    } else if cfg!(target_os = "macos") {
+        ("/Applications/NAPS2.app/Contents/MacOS/NAPS2", r#"console -o "[CARPETA]/captura_$(YYYY)$(MM)$(DD)_$(hh)$(mm)$(ss).png" --driver apple"#, "apple")
+    } else {
+        ("/usr/bin/naps2", r#"console -o "[CARPETA]/captura_$(YYYY)$(MM)$(DD)_$(hh)$(mm)$(ss).png" --driver sane"#, "sane")
+    };
+    v.push(mk(
+        "Sensor o escáner (TWAIN, con NAPS2)",
+        "NAPS2 (gratuito)",
+        ImageKind::Periapical,
+        exe,
+        args,
+        &format!("Captura del sensor o del escáner sin el programa del fabricante, con NAPS2 (naps2.com), y la deja en la carpeta del paciente, de donde entra sola en su ficha. Controlador: {driver}. Para elegir el aparato, añada --device \"nombre\" (los nombres, con --listdevices --driver twain)."),
+    ));
+    v
+}
+
 /// Texto del paciente para la línea de órdenes de un programa externo: solo
 /// letras, cifras, espacios y los signos de un nombre (punto, apóstrofo, guion
 /// dentro de la palabra, º, ª, paréntesis). Sin comillas, barras, dos puntos

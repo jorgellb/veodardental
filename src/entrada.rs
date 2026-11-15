@@ -261,6 +261,10 @@ pub fn scan(sources: &[Source], people: &[Who], known: &HashSet<String>, now: Sy
             let Ok(rd) = std::fs::read_dir(&dir) else { continue };
             for e in rd.flatten().take(MAX_ENTRIES) {
                 let p = e.path();
+                // las carpetas ocultas (como la de lo que se está recibiendo por la red) no se miran
+                if e.file_name().to_string_lossy().starts_with('.') {
+                    continue;
+                }
                 let item = if p.is_dir() {
                     if is_series(&p) {
                         p
@@ -397,6 +401,10 @@ mod tests {
         std::fs::write(dir.join("serie").join("1"), dicom("1001", "GARCIA LOPEZ^ANA")).unwrap();
         std::fs::write(dir.join("serie").join("2"), dicom("1001", "GARCIA LOPEZ^ANA")).unwrap();
         std::fs::write(dir.join("notas.txt"), b"no").unwrap();
+        // lo que se está recibiendo por la red, aunque parezca un DICOM, no se toma
+        std::fs::create_dir_all(dir.join(".recibiendo")).unwrap();
+        std::fs::write(dir.join(".recibiendo").join("1-0"), dicom("1002", "MARTINEZ SANZ^CARLOS")).unwrap();
+        std::fs::write(dir.join("a_medias.dcm.parcial"), dicom("1002", "MARTINEZ SANZ^CARLOS")).unwrap();
         let src = Source { name: "TAC".into(), kind: ImageKind::Periapical, base: dir.clone(), auto: true, patient: None };
         // recién escritos: todavía no
         assert!(scan(std::slice::from_ref(&src), &people(), &HashSet::new(), SystemTime::now()).is_empty());

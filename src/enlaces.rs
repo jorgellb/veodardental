@@ -310,6 +310,23 @@ mod tests {
     }
 
     #[test]
+    fn the_maker_templates_open_their_program_as_documented() {
+        let db = db();
+        let presets = crate::model::connector_presets();
+        let by = |name: &str| presets.iter().find(|c| c.name.starts_with(name)).unwrap_or_else(|| panic!("falta la plantilla {name}")).clone();
+        // las de partida siguen ahí
+        assert!(presets.iter().any(|c| c.name.starts_with("Sidexis")) && presets.iter().any(|c| c.name.starts_with("Planmeca")));
+        let dexis = by("Dexis");
+        assert_eq!(args_for(&db, &dexis, 101, Action::Capture, "C:\\x\\i.txt"), "@C:\\x\\i.txt");
+        assert!(bridge_text(&db, &dexis, 101, "").starts_with("Martínez Sanz, Carlos 02/02/72 (1002)\r\nPN=1002\r\n"));
+        assert!(args_for(&db, &by("MyRay iRYS"), 101, Action::Capture, "").contains("/BDATE \"02,02,1972\" /SEX \"M\""));
+        // NAPS2 deja la captura en la carpeta del paciente (que se vigila tras abrirlo)
+        let naps = by("Sensor o escáner");
+        let a = args_for(&db, &naps, 101, Action::Capture, "");
+        assert!(a.contains(&db.patient_image_dir(101).display().to_string()) && a.contains("$(YYYY)") && a.contains("--driver"), "{a}");
+    }
+
+    #[test]
     fn patient_data_cannot_break_the_command_or_the_file() {
         let mut db = db();
         let p = db.patient_mut(101).unwrap();

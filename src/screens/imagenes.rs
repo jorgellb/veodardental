@@ -1134,9 +1134,25 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                             app.img.edit_connector = Some(id);
                             app.changed();
                         }
+                        // desde la plantilla de un fabricante
+                        let mut pick: Option<Connector> = None;
+                        crate::theme::combo("con_preset").width(240.0).selected_text("Añadir desde una plantilla…").show_ui(ui, |ui| {
+                            for p in connector_presets() {
+                                if ui.selectable_label(false, format!("{} · {}", p.name, p.vendor)).clicked() {
+                                    pick = Some(p);
+                                }
+                            }
+                        });
+                        if let Some(mut c) = pick {
+                            c.id = app.db.new_id();
+                            c.enabled = true;
+                            app.img.edit_connector = Some(c.id);
+                            app.db.connectors.push(c);
+                            app.changed();
+                        }
                     });
                 });
-                muted(ui, "Al abrir un equipo se escribe el fichero IMCONECT.ini con los datos del paciente (mismo formato que el programa original) y se lanza el programa con sus parámetros.");
+                muted(ui, "Al abrir un equipo se escribe su fichero puente con los datos del paciente (IMCONECT.ini, el mismo formato que el programa original, u otro con plantilla) y se lanza el programa con sus parámetros.");
                 ui.add_space(6.0);
                 let list = app.db.connectors.clone();
                 for c in &list {
@@ -1196,6 +1212,9 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                         }
                     });
                     field(ui, "Programa (ruta del ejecutable)", &mut c.exe, 330.0);
+                    if !cfg!(windows) && c.exe.trim().to_lowercase().ends_with(".exe") {
+                        muted(ui, "Es un programa de Windows: en este ordenador no se puede abrir. Lo que deje en una carpeta compartida sí se trae a la ficha.");
+                    }
                     field(ui, "Parámetros para capturar", &mut c.args, 330.0);
                     field(ui, "Parámetros para ver sus imágenes (vacío: los de capturar)", &mut c.view_args, 330.0);
                     muted(ui, crate::enlaces::WILDCARDS);

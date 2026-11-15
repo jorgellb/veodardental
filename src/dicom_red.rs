@@ -438,7 +438,8 @@ fn serve<S: Read + Write + dicom_ul::association::CloseSocket>(mut assoc: dicom_
                                     if part.is_none() {
                                         std::fs::create_dir_all(&recv).map_err(|e| e.to_string())?;
                                         let n = sh.counter.fetch_add(1, Ordering::Relaxed);
-                                        let f = recv.join(format!("{}-{n}", std::process::id()));
+                                        // con una extensión que la búsqueda nunca toma, en una carpeta que se salta
+                                        let f = recv.join(format!("{}-{n}.parcial", std::process::id()));
                                         let file = std::fs::OpenOptions::new().write(true).create_new(true).open(&f).map_err(|e| e.to_string())?;
                                         part = Some((f, file, 0));
                                     }
