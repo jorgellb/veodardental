@@ -10,6 +10,14 @@ receta electrónica y más.
 No incluye datos de ninguna clínica: al arrancar sin datos ofrece datos de
 ejemplo ficticios.
 
+## Licencia
+
+VeodarDental es gratuito: cualquier clínica lo puede descargar, instalar y usar
+sin pagar y sin límite de puestos ni de pacientes. Venderlo, distribuir versiones
+modificadas o usar su nombre para otra cosa necesita permiso de Veodar S.L. Lo que
+se cobra es el trabajo (instalación, paso de datos, soporte, servidor), no el
+programa. El texto completo está en [`LICENSE`](LICENSE).
+
 ## Nombre anterior
 
 El programa se llamaba **DentaSuite**. La primera vez que se abre con el nombre
