@@ -214,10 +214,14 @@ fn header_buttons(app: &mut App, ui: &mut Ui, pid: u32) {
 fn clinical_buttons(app: &mut App, ui: &mut Ui, pid: u32) {
     crate::screens::fichas::patient_menu(app, ui, pid);
     ui.menu_button("📷 RX / TAC", |ui| {
-        let list: Vec<(u32, String)> = app.db.connectors.iter().filter(|c| c.enabled).map(|c| (c.id, c.name.clone())).collect();
-        for (id, n) in list {
-            if ui.button(n).clicked() {
-                crate::screens::imagenes::launch(app, id, pid);
+        let list: Vec<(u32, String, bool)> = app.db.connectors.iter().filter(|c| c.enabled).map(|c| (c.id, c.name.clone(), !c.view_args.trim().is_empty())).collect();
+        for (id, n, view) in list {
+            if ui.button(format!("Capturar con {n}")).clicked() {
+                crate::screens::imagenes::launch(app, id, pid, crate::enlaces::Action::Capture);
+                ui.close();
+            }
+            if view && ui.button(format!("Ver sus imágenes en {n}")).clicked() {
+                crate::screens::imagenes::launch(app, id, pid, crate::enlaces::Action::View);
                 ui.close();
             }
         }

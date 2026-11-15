@@ -438,21 +438,23 @@ pub fn bridge_path(c: &Connector) -> PathBuf {
     if c.bridge_path.trim().is_empty() { crate::paths::data().join(crate::brand::DIR).join("IMCONECT.ini") } else { PathBuf::from(c.bridge_path.trim()) }
 }
 
-/// Lanza el programa del enlace para el paciente: escribe el fichero puente,
-/// crea su carpeta de imágenes y ejecuta el programa con los parámetros.
-pub fn launch(app: &mut App, cid: u32, pid: u32) {
+/// Lanza el programa del enlace para el paciente (para capturar o para ver lo
+/// que ya tiene): escribe el fichero puente en su codificación, crea su
+/// carpeta de imágenes y ejecuta el programa con los parámetros.
+pub fn launch(app: &mut App, cid: u32, pid: u32, action: crate::enlaces::Action) {
     let Some(c) = app.db.connectors.iter().find(|c| c.id == cid).cloned() else { return };
     let dir = app.db.patient_image_dir(pid);
     let _ = std::fs::create_dir_all(&dir);
-    let args = app.db.expand_args(&c.args, pid);
+    let bp = bridge_path(&c);
+    let bridge = bp.display().to_string();
+    let args = crate::enlaces::args_for(&app.db, &c, pid, action, &bridge);
     let mut msg;
     let mut ok = false;
     if c.bridge_file {
-        let bp = bridge_path(&c);
         if let Some(d) = bp.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        msg = match std::fs::write(&bp, app.db.bridge_ini(pid)) {
+        msg = match std::fs::write(&bp, crate::enlaces::encode(&crate::enlaces::bridge_text(&app.db, &c, pid, &bridge), c.encoding)) {
             Ok(()) => format!("Fichero puente escrito en {}. ", bp.display()),
             Err(e) => format!("No se pudo escribir el fichero puente: {e}. "),
         };
@@ -550,9 +552,14 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         ui.horizontal_wrapped(|ui| {
             section(ui, "Capturar con");
             let list: Vec<(u32, String, ImageKind)> = app.db.connectors.iter().filter(|c| c.enabled).map(|c| (c.id, c.name.clone(), c.kind)).collect();
+            // los que abren distinto para ver las imágenes que ya hay
+            let view: Vec<u32> = app.db.connectors.iter().filter(|c| c.enabled && !c.view_args.trim().is_empty()).map(|c| c.id).collect();
             for (id, n, k) in list {
-                if ui.add(egui::Button::new(RichText::new(format!("{}  {}", kind_icon(k), n))).corner_radius(CornerRadius::same(18))).on_hover_text("Abre el programa del equipo con los datos de este paciente").clicked() {
-                    launch(app, id, pid);
+                if ui.add(egui::Button::new(RichText::new(format!("{}  {}", kind_icon(k), n))).corner_radius(CornerRadius::same(18))).on_hover_text("Abre el programa del equipo con los datos de este paciente, para una toma nueva").clicked() {
+                    launch(app, id, pid, crate::enlaces::Action::Capture);
+                }
+                if view.contains(&id) && ui.small_button("Ver").on_hover_text(format!("Abre las imágenes de este paciente en el programa de {n}")).clicked() {
+                    launch(app, id, pid, crate::enlaces::Action::View);
                 }
             }
             if ui.button("⚙ Configurar enlaces").clicked() {
@@ -821,7 +828,7 @@ fn viewer(app: &mut App, ui: &mut Ui, id: u32) {
         if let Some(k) = open_with {
             let cid = app.db.connectors.iter().find(|c| c.enabled && c.kind == k).or_else(|| app.db.connectors.iter().find(|c| c.kind == ImageKind::Tac)).map(|c| c.id);
             if let Some(cid) = cid {
-                launch(app, cid, img.patient_id);
+                launch(app, cid, img.patient_id, crate::enlaces::Action::View);
             }
         }
     });
@@ -869,9 +876,13 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                                 kind: ImageKind::Periapical,
                                 exe: String::new(),
                                 args: "[NUMPAC]".into(),
+                                view_args: String::new(),
                                 bridge_file: true,
                                 bridge_path: String::new(),
+                                bridge_template: String::new(),
+                                encoding: Default::default(),
                                 image_folder: String::new(),
+                                auto_import: false,
                                 enabled: true,
                                 notes: String::new(),
                             });
@@ -940,13 +951,25 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                         }
                     });
                     field(ui, "Programa (ruta del ejecutable)", &mut c.exe, 330.0);
-                    field(ui, "Parámetros", &mut c.args, 330.0);
-                    muted(ui, "Comodines: [IDPAC] [NUMPAC] [NOMPAC] [APELPAC] [NIF] [FECNAC] [SEXO] [CARPETA]");
-                    ui.checkbox(&mut c.bridge_file, "Escribir fichero puente IMCONECT.ini");
+                    field(ui, "Parámetros para capturar", &mut c.args, 330.0);
+                    field(ui, "Parámetros para ver sus imágenes (vacío: los de capturar)", &mut c.view_args, 330.0);
+                    muted(ui, crate::enlaces::WILDCARDS);
+                    ui.checkbox(&mut c.bridge_file, "Escribir un fichero puente antes de abrirlo");
                     if c.bridge_file {
-                        field(ui, "Ruta del fichero puente (vacío = carpeta de datos)", &mut c.bridge_path, 330.0);
+                        field(ui, "Ruta del fichero puente (vacío = IMCONECT.ini en la carpeta de datos)", &mut c.bridge_path, 330.0);
+                        ui.label(RichText::new("Codificación del fichero puente").size(13.5).color(MUTED()));
+                        crate::theme::combo("con_enc").width(300.0).selected_text(c.encoding.label()).show_ui(ui, |ui| {
+                            for e in crate::enlaces::Encoding::ALL {
+                                ui.selectable_value(&mut c.encoding, e, e.label());
+                            }
+                        });
+                        ui.label(RichText::new("Contenido del fichero puente (vacío = IMCONECT.ini)").size(13.5).color(MUTED()));
+                        ui.add_sized([330.0, 70.0], egui::TextEdit::multiline(&mut c.bridge_template).font(egui::TextStyle::Monospace).hint_text("PN=[NUMPAC]\nLN=[APELPAC]…"));
                     }
                     field(ui, "Carpeta de exportación de imágenes (para importar)", &mut c.image_folder, 330.0);
+                    if !c.image_folder.trim().is_empty() {
+                        ui.checkbox(&mut c.auto_import, "Traer lo nuevo de esa carpeta sin pulsar «Importar»");
+                    }
                     if !c.notes.is_empty() {
                         muted(ui, c.notes.clone());
                     }
@@ -965,7 +988,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                 }
                 if test {
                     match pid {
-                        Some(p) => launch(app, cid, p),
+                        Some(p) => launch(app, cid, p, crate::enlaces::Action::Capture),
                         None => app.warn("Seleccione antes un paciente."),
                     }
                 }
@@ -974,10 +997,16 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
                     app.img.edit_connector = None;
                     app.changed();
                 }
-                if let Some(p) = pid {
+                if let Some(p) = pid
+                    && let Some(c) = app.db.connectors.iter().find(|c| c.id == cid)
+                {
+                    let bp = bridge_path(c).display().to_string();
                     ui.add_space(6.0);
-                    ui.collapsing("Ver el fichero puente que se generará", |ui| {
-                        ui.label(RichText::new(app.db.bridge_ini(p).replace('\r', "")).monospace().size(12.5));
+                    ui.collapsing("Ver lo que se enviará con el paciente activo", |ui| {
+                        ui.label(RichText::new(format!("{} {}", c.exe.trim(), crate::enlaces::args_for(&app.db, c, p, crate::enlaces::Action::Capture, &bp))).monospace().size(12.5));
+                        if c.bridge_file {
+                            ui.label(RichText::new(crate::enlaces::bridge_text(&app.db, c, p, &bp).replace('\r', "")).monospace().size(12.5));
+                        }
                     });
                 }
             });

@@ -25,6 +25,7 @@ mod disco;
 mod doc_link;
 mod docs_tests;
 mod encuestas;
+mod enlaces;
 mod erx;
 mod esterilizacion;
 mod evolucion;

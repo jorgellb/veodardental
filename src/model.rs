@@ -1071,12 +1071,24 @@ pub struct Connector {
     pub vendor: String,
     pub kind: ImageKind,
     pub exe: String,
-    /// Parámetros con comodines: [IDPAC] [NUMPAC] [NOMPAC] [APELPAC] [NIF] [FECNAC] [SEXO] [CARPETA]
+    /// Parámetros para capturar, con comodines (ver [`crate::enlaces::WILDCARDS`]).
     pub args: String,
+    /// Parámetros para ver las imágenes que ya tiene el paciente (vacío: los de capturar).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub view_args: String,
     pub bridge_file: bool,
     pub bridge_path: String,
+    /// Contenido del fichero puente, con comodines (vacío: el IMCONECT.ini de siempre).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bridge_template: String,
+    /// Codificación del fichero puente (ANSI si no se dice otra).
+    #[serde(default)]
+    pub encoding: crate::enlaces::Encoding,
     /// Carpeta donde el programa deja las imágenes exportadas (para importarlas).
     pub image_folder: String,
+    /// Traer solo a la ficha lo nuevo de esa carpeta, sin pulsar «Importar».
+    #[serde(default)]
+    pub auto_import: bool,
     pub enabled: bool,
     pub notes: String,
 }
@@ -1099,9 +1111,13 @@ pub fn default_connectors() -> Vec<Connector> {
         kind,
         exe: exe.into(),
         args: args.into(),
+        view_args: String::new(),
         bridge_file: true,
         bridge_path: String::new(),
+        bridge_template: String::new(),
+        encoding: Default::default(),
         image_folder: String::new(),
+        auto_import: false,
         enabled: false,
         notes: notes.into(),
     };
@@ -1127,13 +1143,13 @@ pub fn default_connectors() -> Vec<Connector> {
 }
 
 /// Texto del paciente para la línea de órdenes de un programa externo: solo
-/// letras, cifras, espacios y los signos de un nombre (punto, coma, apóstrofo,
-/// guion dentro de la palabra, º, ª, paréntesis). Sin comillas, barras ni dos
-/// puntos, y ninguna palabra empieza por guion: un dato no puede añadir
-/// opciones ni rutas al programa.
+/// letras, cifras, espacios y los signos de un nombre (punto, apóstrofo, guion
+/// dentro de la palabra, º, ª, paréntesis). Sin comillas, barras, dos puntos
+/// ni comas (algunos puentes separan los datos con comas), y ninguna palabra
+/// empieza por guion: un dato no puede añadir opciones ni rutas al programa.
 pub fn arg_safe(s: &str) -> String {
-    let kept: String = s.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '.' | ',' | '\'' | '-' | 'º' | 'ª' | '(' | ')') { c } else { ' ' }).collect();
-    kept.split_whitespace().map(|w| w.trim_start_matches(['-', '.', ',', '\''])).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ")
+    let kept: String = s.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '.' | '\'' | '-' | 'º' | 'ª' | '(' | ')') { c } else { ' ' }).collect();
+    kept.split_whitespace().map(|w| w.trim_start_matches(['-', '.', '\''])).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// Texto para una línea del fichero puente: sin saltos de línea ni otros
@@ -1152,17 +1168,9 @@ impl Db {
     /// Sustituye los comodines del enlace por los datos del paciente. Los
     /// textos del paciente (que pueden venir de la cita online) se limpian con
     /// [`arg_safe`] para que no puedan añadir opciones ni rutas al programa.
+    #[cfg(test)]
     pub fn expand_args(&self, template: &str, pid: u32) -> String {
-        let p = self.patient(pid).cloned().unwrap_or_default();
-        template
-            .replace("[IDPAC]", &p.id.to_string())
-            .replace("[NUMPAC]", &p.history_no.to_string())
-            .replace("[NOMPAC]", &arg_safe(&p.first_name))
-            .replace("[APELPAC]", &arg_safe(&p.last_name))
-            .replace("[NIF]", &arg_safe(&p.nif))
-            .replace("[FECNAC]", &p.birth.map(|d| d.format("%d/%m/%Y").to_string()).unwrap_or_default())
-            .replace("[SEXO]", if p.sex == "F" { "M" } else { "H" })
-            .replace("[CARPETA]", &self.patient_image_dir(pid).display().to_string())
+        crate::enlaces::expand(self, template, pid, crate::enlaces::Ctx::Args, "")
     }
 
     /// Contenido del fichero puente IMCONECT.ini (mismo formato que el original).
