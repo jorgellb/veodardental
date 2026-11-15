@@ -100,12 +100,231 @@ pub fn parse(b: &[u8]) -> Result<Mesh, String> {
 /// Tamaño del fichero como mucho: el de [`MAX_TRIANGLES`] en binario.
 pub const MAX_FILE: u64 = 84 + MAX_TRIANGLES as u64 * 50;
 
+/// Lee un modelo 3D: STL, PLY (texto o binario) u OBJ, según su extensión.
 pub fn read(path: &std::path::Path) -> Result<Mesh, String> {
     let len = std::fs::metadata(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?.len();
     if len > MAX_FILE {
         return Err(format!("El fichero ocupa {} MB y el límite es {} MB: expórtelo en STL binario o con menos detalle.", len >> 20, MAX_FILE >> 20));
     }
-    parse(&std::fs::read(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?)
+    let bytes = std::fs::read(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?;
+    match path.extension().map(|x| x.to_string_lossy().to_lowercase()).as_deref() {
+        Some("ply") => parse_ply(&bytes),
+        Some("obj") => parse_obj(&bytes),
+        _ => parse(&bytes),
+    }
+}
+
+/// Une los vértices de cada cara en triángulos (en abanico) y comprueba que
+/// existen y que no pasan del límite.
+fn triangulate(verts: &[[f32; 3]], faces: &[Vec<usize>]) -> Result<Mesh, String> {
+    let mut tris = vec![];
+    for f in faces {
+        if f.iter().any(|&i| i >= verts.len()) {
+            return Err("Una cara usa un vértice que no existe.".into());
+        }
+        for k in 1..f.len().saturating_sub(1) {
+            tris.push([verts[f[0]], verts[f[k]], verts[f[k + 1]]]);
+            if tris.len() > MAX_TRIANGLES {
+                return Err(format!("El modelo pasa de {MAX_TRIANGLES} triángulos."));
+            }
+        }
+    }
+    if tris.is_empty() {
+        return Err("El modelo no tiene caras.".into());
+    }
+    Ok(Mesh { tris })
+}
+
+/// Bytes de un tipo de dato de PLY.
+fn ply_size(t: &str) -> Option<usize> {
+    Some(match t {
+        "char" | "int8" | "uchar" | "uint8" => 1,
+        "short" | "int16" | "ushort" | "uint16" => 2,
+        "int" | "int32" | "uint" | "uint32" | "float" | "float32" => 4,
+        "double" | "float64" => 8,
+        _ => return None,
+    })
+}
+
+/// Un número de PLY binario como f64.
+fn ply_num(b: &[u8], t: &str, big: bool) -> f64 {
+    macro_rules! get {
+        ($ty:ty, $n:expr) => {{
+            let mut a = [0u8; $n];
+            a.copy_from_slice(&b[..$n]);
+            (if big { <$ty>::from_be_bytes(a) } else { <$ty>::from_le_bytes(a) }) as f64
+        }};
+    }
+    match t {
+        "char" | "int8" => b[0] as i8 as f64,
+        "uchar" | "uint8" => b[0] as f64,
+        "short" | "int16" => get!(i16, 2),
+        "ushort" | "uint16" => get!(u16, 2),
+        "int" | "int32" => get!(i32, 4),
+        "uint" | "uint32" => get!(u32, 4),
+        "float" | "float32" => get!(f32, 4),
+        _ => get!(f64, 8),
+    }
+}
+
+/// Lee un PLY (el formato de muchos escáneres intraorales): en texto o en
+/// binario, con los vértices y las caras; el color y lo demás se pasa por alto.
+pub fn parse_ply(b: &[u8]) -> Result<Mesh, String> {
+    let end = b.windows(10).position(|w| w == b"end_header").ok_or("No es un PLY (falta «end_header»).")?;
+    let header = std::str::from_utf8(&b[..end]).map_err(|_| "Cabecera de PLY no válida.".to_string())?;
+    if !header.starts_with("ply") {
+        return Err("No es un PLY (no empieza por «ply»).".into());
+    }
+    // los datos empiezan tras el salto de línea de «end_header»
+    let mut pos = end + 10;
+    while pos < b.len() && (b[pos] == b'\r' || b[pos] == b' ') {
+        pos += 1;
+    }
+    if b.get(pos) == Some(&b'\n') {
+        pos += 1;
+    }
+    struct Element {
+        name: String,
+        count: usize,
+        /// (tipo, nombre) o, en una lista, (tipo del número, tipo de cada dato).
+        props: Vec<(String, String, Option<String>)>,
+    }
+    let mut format = "";
+    let mut elements: Vec<Element> = vec![];
+    for line in header.lines() {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        match w.as_slice() {
+            ["format", f, ..] => format = f,
+            ["element", name, n] => elements.push(Element { name: name.to_string(), count: n.parse().map_err(|_| "Número de elementos no válido en el PLY.".to_string())?, props: vec![] }),
+            ["property", "list", count_t, item_t, name] => elements.last_mut().ok_or("Propiedad sin elemento en el PLY.")?.props.push((count_t.to_string(), name.to_string(), Some(item_t.to_string()))),
+            ["property", t, name] => elements.last_mut().ok_or("Propiedad sin elemento en el PLY.")?.props.push((t.to_string(), name.to_string(), None)),
+            _ => {}
+        }
+    }
+    let vcount = elements.iter().find(|e| e.name == "vertex").map(|e| e.count).unwrap_or(0);
+    if vcount > MAX_TRIANGLES * 3 {
+        return Err(format!("El modelo tiene {vcount} vértices: demasiados."));
+    }
+    let mut verts: Vec<[f32; 3]> = Vec::with_capacity(vcount);
+    let mut faces: Vec<Vec<usize>> = vec![];
+    match format {
+        "ascii" => {
+            let text = std::str::from_utf8(&b[pos..]).map_err(|_| "Datos de PLY no válidos.".to_string())?;
+            let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+            for el in &elements {
+                for _ in 0..el.count {
+                    let line = lines.next().ok_or("El PLY está cortado.")?;
+                    let nums: Vec<f64> = line.split_whitespace().map(|x| x.parse().map_err(|_| format!("Número no válido en el PLY: «{x}»."))).collect::<Result<_, _>>()?;
+                    let mut i = 0;
+                    let (mut xyz, mut face) = ([0f32; 3], vec![]);
+                    for (t, name, item) in &el.props {
+                        let _ = t;
+                        if item.is_some() {
+                            let n = *nums.get(i).ok_or("El PLY está cortado.")? as usize;
+                            face = nums.get(i + 1..i + 1 + n).ok_or("El PLY está cortado.")?.iter().map(|x| *x as usize).collect();
+                            i += 1 + n;
+                        } else {
+                            let v = *nums.get(i).ok_or("El PLY está cortado.")?;
+                            if let Some(k) = ["x", "y", "z"].iter().position(|c| c == name) {
+                                xyz[k] = v as f32;
+                            }
+                            i += 1;
+                        }
+                    }
+                    match el.name.as_str() {
+                        "vertex" => verts.push(xyz),
+                        "face" => faces.push(face),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        "binary_little_endian" | "binary_big_endian" => {
+            let big = format == "binary_big_endian";
+            for el in &elements {
+                // cada registro ocupa al menos un byte: un número mayor que el fichero es mentira
+                if el.props.is_empty() || el.count > b.len() {
+                    if el.count > 0 && !el.props.is_empty() {
+                        return Err("El PLY dice tener más datos de los que tiene.".into());
+                    }
+                    continue;
+                }
+                for _ in 0..el.count {
+                    let (mut xyz, mut face) = ([0f32; 3], vec![]);
+                    for (t, name, item) in &el.props {
+                        let size = ply_size(t).ok_or_else(|| format!("Tipo de dato de PLY desconocido: {t}."))?;
+                        let v = ply_num(b.get(pos..pos + size).ok_or("El PLY está cortado.")?, t, big);
+                        pos += size;
+                        match item {
+                            Some(it) => {
+                                let isz = ply_size(it).ok_or_else(|| format!("Tipo de dato de PLY desconocido: {it}."))?;
+                                let n = v as usize;
+                                if n > 64 {
+                                    return Err("Una cara del PLY tiene demasiados vértices.".into());
+                                }
+                                for _ in 0..n {
+                                    face.push(ply_num(b.get(pos..pos + isz).ok_or("El PLY está cortado.")?, it, big) as usize);
+                                    pos += isz;
+                                }
+                            }
+                            None => {
+                                if let Some(k) = ["x", "y", "z"].iter().position(|c| c == name) {
+                                    xyz[k] = v as f32;
+                                }
+                            }
+                        }
+                    }
+                    match el.name.as_str() {
+                        "vertex" => verts.push(xyz),
+                        "face" => faces.push(face),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        f => return Err(format!("Formato de PLY desconocido: «{f}».")),
+    }
+    if !verts.iter().flatten().all(|x| x.is_finite()) {
+        return Err("El modelo tiene coordenadas no válidas.".into());
+    }
+    triangulate(&verts, &faces)
+}
+
+/// Lee un OBJ: vértices («v x y z») y caras («f 1 2 3», también «1/1/1» e
+/// índices negativos, que cuentan desde el último vértice).
+pub fn parse_obj(b: &[u8]) -> Result<Mesh, String> {
+    let text = String::from_utf8_lossy(b);
+    let mut verts: Vec<[f32; 3]> = vec![];
+    let mut faces: Vec<Vec<usize>> = vec![];
+    for line in text.lines() {
+        let mut w = line.split_whitespace();
+        match w.next() {
+            Some("v") => {
+                let v: Vec<f32> = w.take(3).filter_map(|x| x.parse().ok()).collect();
+                if v.len() != 3 || !v.iter().all(|x| x.is_finite()) {
+                    return Err(format!("Vértice no válido: «{}».", line.trim()));
+                }
+                verts.push([v[0], v[1], v[2]]);
+                if verts.len() > MAX_TRIANGLES * 3 {
+                    return Err("El modelo tiene demasiados vértices.".into());
+                }
+            }
+            Some("f") => {
+                let mut face = vec![];
+                for item in w {
+                    let i: i64 = item.split('/').next().unwrap_or("").parse().map_err(|_| format!("Cara no válida: «{}».", line.trim()))?;
+                    let idx = if i > 0 { i - 1 } else { verts.len() as i64 + i };
+                    if idx < 0 {
+                        return Err("Una cara usa un vértice que no existe.".into());
+                    }
+                    face.push(idx as usize);
+                }
+                faces.push(face);
+            }
+            _ => {}
+        }
+    }
+    triangulate(&verts, &faces)
 }
 
 /// Vista sombreada (gris, RGBA de `size`×`size`), girada `yaw` y `pitch`
@@ -186,6 +405,53 @@ pub(crate) mod tests {
         let e = read(&p).unwrap_err();
         let _ = std::fs::remove_file(&p);
         assert!(e.contains("límite"), "{e}");
+    }
+
+    #[test]
+    fn ply_and_obj_from_intraoral_scanners_are_read_too() {
+        // PLY en texto: un cuadrado de 10 mm (una cara de 4 vértices = 2 triángulos), con color
+        let ascii = b"ply\nformat ascii 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n0 0 0 255 0 0\n10 0 0 255 0 0\n10 10 0 255 0 0\n0 10 0 255 0 0\n4 0 1 2 3\n";
+        let m = parse_ply(ascii).unwrap();
+        assert_eq!(m.tris.len(), 2);
+        assert_eq!(m.size(), [10.0, 10.0, 0.0]);
+        // el mismo en binario (little endian), como lo exportan Medit o 3Shape
+        let mut bin = b"ply\nformat binary_little_endian 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nelement face 1\nproperty list uchar uint vertex_indices\nend_header\n".to_vec();
+        for v in [[0f32, 0., 0.], [10., 0., 0.], [10., 10., 0.], [0., 10., 0.]] {
+            for x in v {
+                bin.extend(x.to_le_bytes());
+            }
+            bin.push(200);
+        }
+        bin.push(4);
+        for i in [0u32, 1, 2, 3] {
+            bin.extend(i.to_le_bytes());
+        }
+        assert_eq!(parse_ply(&bin).unwrap(), m);
+        // cortado o con índices que no existen: error, no pánico
+        assert!(parse_ply(&bin[..bin.len() - 3]).is_err());
+        assert!(parse_ply(b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n0 0 0\n3 0 1 2\n").is_err());
+        // OBJ, con «v/vt/vn» e índices negativos
+        let obj = b"# cuadrado\nv 0 0 0\nv 10 0 0\nv 10 10 0\nv 0 10 0\nvn 0 0 1\nf 1//1 2//1 3//1\nf -4 -2 -1\n";
+        let o = parse_obj(obj).unwrap();
+        assert_eq!(o.tris.len(), 2);
+        assert_eq!(o.size(), [10.0, 10.0, 0.0]);
+        assert!(parse_obj(b"v 0 0 0\nf 1 2 3\n").is_err());
+        // bytes al azar: nunca un pánico
+        let mut seed = 7u32;
+        for _ in 0..200 {
+            let junk: Vec<u8> = (0..200)
+                .map(|_| {
+                    seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                    (seed >> 16) as u8
+                })
+                .collect();
+            let mut with_header = b"ply\nformat binary_little_endian 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n".to_vec();
+            with_header.extend(&junk);
+            let _ = parse_ply(&with_header);
+            let _ = parse_obj(&junk);
+        }
+        // un elemento sin datos que dice tener miles de millones de registros no cuelga el programa
+        assert!(parse_ply(b"ply\nformat binary_little_endian 1.0\nelement nada 4000000000\nelement vertex 4000000000\nproperty float x\nend_header\n").is_err());
     }
 
     /// Un cubo de `l` mm (12 triángulos).

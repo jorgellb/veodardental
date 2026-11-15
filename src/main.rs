@@ -324,7 +324,7 @@ fn main() -> eframe::Result<()> {
                 && let Some(path) = arg("--estudio")
                 && let Some(pid) = a.patient
             {
-                let kind = if path.to_lowercase().ends_with(".stl") { model::ImageKind::Escaneo3D } else { model::ImageKind::Tac };
+                let kind = if [".stl", ".ply", ".obj"].iter().any(|e| path.to_lowercase().ends_with(e)) { model::ImageKind::Escaneo3D } else { model::ImageKind::Tac };
                 let source = a.db.connectors.iter().find(|c| c.kind == kind).map(|c| c.name.clone()).unwrap_or_else(|| "Importada".into());
                 let teeth = arg("--pieza").and_then(|s| s.parse::<u8>().ok()).into_iter().collect();
                 let id = a.db.new_id();

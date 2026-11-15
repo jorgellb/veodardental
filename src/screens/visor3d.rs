@@ -55,7 +55,7 @@ impl Default for V3d {
 
 fn is_3d(path: &str) -> Option<bool> {
     let l = path.to_lowercase();
-    if l.ends_with(".stl") {
+    if l.ends_with(".stl") || l.ends_with(".ply") || l.ends_with(".obj") {
         Some(true)
     } else if l.ends_with(".dcm") || l.ends_with(".dicom") || std::path::Path::new(path).is_dir() {
         Some(false)
