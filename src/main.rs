@@ -249,6 +249,7 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
     let shot = arg("--screenshot").map(PathBuf::from);
+    let shot_mode = shot.is_some();
     // Aviso de llamada desde la centralita: si VeodarDental ya está abierto en
     // este ordenador se le pasa el número y no se abre otra ventana.
     let call_arg = arg("--llamada");
@@ -313,6 +314,40 @@ fn main() -> eframe::Result<()> {
             if let Some(k) = arg("--imagen") {
                 let k = model::fold(&k);
                 a.img.selected = a.db.images.iter().find(|i| Some(i.patient_id) == a.patient && model::fold(i.kind.label()).starts_with(&k)).map(|i| i.id);
+            }
+            // Un estudio DICOM/CBCT (fichero o carpeta) o un modelo STL en la ficha del
+            // paciente, solo en las capturas (que no guardan nada): «--estudio ruta»,
+            // con «--pieza N» y «--vista sagital:0.3» (vista y corte, de 0 a 1).
+            if shot_mode
+                && let Some(path) = arg("--estudio")
+                && let Some(pid) = a.patient
+            {
+                let kind = if path.to_lowercase().ends_with(".stl") { model::ImageKind::Escaneo3D } else { model::ImageKind::Tac };
+                let source = a.db.connectors.iter().find(|c| c.kind == kind).map(|c| c.name.clone()).unwrap_or_else(|| "Importada".into());
+                let teeth = arg("--pieza").and_then(|s| s.parse::<u8>().ok()).into_iter().collect();
+                let id = a.db.new_id();
+                a.db.images.push(model::PatientImage { id, patient_id: pid, kind, date: a.today, teeth, path, source, notes: String::new(), demo: false });
+                a.img.selected = Some(id);
+            }
+            // el enlace con un aparato abierto en «Imágenes y enlaces» («--enlace 3»)
+            if let Some(n) = arg("--enlace").and_then(|s| s.parse::<u32>().ok()) {
+                a.img.edit_connector = Some(n);
+            }
+            if let Some(v) = arg("--vista") {
+                let (name, at) = v.split_once(':').unwrap_or((&v, "0.5"));
+                let view = match model::fold(name).as_str() {
+                    "coronal" => Some(dicom::View::Coronal),
+                    "sagital" => Some(dicom::View::Sagital),
+                    "axial" => Some(dicom::View::Axial),
+                    _ => None,
+                };
+                a.img.v3d.start = view.map(|v| (v, at.parse().unwrap_or(0.5)));
+            }
+            // la imagen elegida al lado de otra del mismo tipo y del mismo paciente
+            if std::env::args().any(|x| x == "--comparar")
+                && let Some(sel) = a.img.selected.and_then(|s| a.db.images.iter().find(|i| i.id == s)).cloned()
+            {
+                a.img.compare = a.db.images.iter().find(|i| i.patient_id == sel.patient_id && i.id != sel.id && i.kind == sel.kind).map(|i| i.id);
             }
             if let Some(n) = arg("--agente").and_then(|s| s.parse::<u32>().ok()) {
                 a.ia.edit = Some(n);

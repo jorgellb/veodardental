@@ -2335,3 +2335,24 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 577 pasan (575 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-089 Capturas del visor de imagen para la web, y «1 día» en la comparación
+
+- **Para qué:** la ficha de VeodarDental en veodar.com enseña cómo se conectan los aparatos de imagen (radiovisiógrafo, ortopantomógrafo, TAC, cámara, escáner) con capturas del programa de verdad.
+- **Opciones nuevas, solo para las capturas automáticas** (`--screenshot`, que no guardan nada):
+  - `--estudio <ruta>`: un estudio DICOM/CBCT (fichero o carpeta) o un modelo STL en la ficha del paciente elegido, con `--pieza N`. Sin `--screenshot` no hace nada.
+  - `--vista axial|coronal|sagital[:corte]`: la vista y el corte (de 0 a 1) con los que se abre el estudio. El visor la aplica al terminar de cargarlo (`V3d::start`), y uno de un solo corte se queda en axial.
+  - `--comparar`: la imagen elegida al lado de otra del mismo tipo y del mismo paciente.
+  - `--enlace N`: el enlace con un aparato abierto en «Imágenes y enlaces».
+- **Fallo corregido:** la comparación decía «1 días entre una y otra». Ahora dice «1 día», y «Del mismo día» si no hay ninguno (prueba `days_between_two_images`).
+- **TAC de ejemplo:** `tools/cbct_ejemplo.py` (con numpy) escribe un CBCT inventado como DICOM sin comprimir:
+  - los dos maxilares y sus dientes, conductos, conducto dentario, paladar y senos;
+  - un implante en el 46 y el hueco del 36, como el paciente de ejemplo.
+  - El visor lo abre en las tres vistas, con orientación, escala y el paciente y la fecha del fichero. La misma orden da el mismo fichero byte a byte.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --check` | 0 | — |
+| `cargo clippy --all-targets --locked -- -D warnings` | 0 | — |
+| `tools/aislado.sh cargo test --locked` | 0 | 578 pasan (576 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

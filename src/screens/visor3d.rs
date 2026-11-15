@@ -40,13 +40,16 @@ pub struct V3d {
     pub window: (f64, f64),
     pub yaw: f32,
     pub pitch: f32,
+    /// Vista y corte (fracción de los cortes, de 0 a 1) con los que se abre el
+    /// próximo estudio: para las capturas automáticas (`--vista`).
+    pub start: Option<(View, f32)>,
     tex: Option<Tex>,
     render: Option<(Key, Receiver<(ColorImage, f32)>)>,
 }
 
 impl Default for V3d {
     fn default() -> Self {
-        V3d { for_image: None, job: None, data: None, error: None, view: View::Axial, index: 0, window: (0.0, 1.0), yaw: 30.0, pitch: -20.0, tex: None, render: None }
+        V3d { for_image: None, job: None, data: None, error: None, view: View::Axial, index: 0, window: (0.0, 1.0), yaw: 30.0, pitch: -20.0, start: None, tex: None, render: None }
     }
 }
 
@@ -76,7 +79,7 @@ impl V3d {
         if self.for_image == Some(img.id) {
             return;
         }
-        *self = V3d { for_image: Some(img.id), ..Default::default() };
+        *self = V3d { for_image: Some(img.id), start: self.start.take(), ..Default::default() };
         let path = std::path::PathBuf::from(&img.path);
         let mesh = is_3d(&img.path) == Some(true);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -94,6 +97,14 @@ impl V3d {
                     if let Loaded::Dicom(x) = &d {
                         self.window = x.default_window();
                         self.index = x.slices(View::Axial) / 2;
+                        // un estudio de un solo corte solo tiene la vista axial
+                        if let Some((v, f)) = self.start.take()
+                            && (x.header.frames > 1 || v == View::Axial)
+                        {
+                            let n = x.slices(v);
+                            self.view = v;
+                            self.index = ((n as f32 * f.clamp(0.0, 1.0)) as usize).min(n.saturating_sub(1));
+                        }
                     }
                     self.data = Some(d);
                     self.job = None;
@@ -279,6 +290,15 @@ pub fn controls(st: &mut V3d, ui: &mut Ui) {
 }
 
 /// Comparación de dos imágenes planas del mismo paciente.
+/// Lo que separa dos imágenes, en días («1 día», no «1 días»).
+fn days_between(n: i64) -> String {
+    match n {
+        0 => "Del mismo día".into(),
+        1 => "1 día entre una y otra".into(),
+        n => format!("{n} días entre una y otra"),
+    }
+}
+
 pub fn compare(app: &mut crate::app::App, ui: &mut Ui, a: u32, b: u32) {
     let (Some(x), Some(y)) = (app.db.images.iter().find(|i| i.id == a).cloned(), app.db.images.iter().find(|i| i.id == b).cloned()) else { return };
     if x.patient_id != y.patient_id {
@@ -291,7 +311,7 @@ pub fn compare(app: &mut crate::app::App, ui: &mut Ui, a: u32, b: u32) {
         ui.set_width(ui.available_width());
         ui.horizontal_wrapped(|ui| {
             section(ui, &format!("Comparación · {name}"));
-            pill(ui, &format!("{} días entre una y otra", (new.date - old.date).num_days()), INFO);
+            pill(ui, &days_between((new.date - old.date).num_days()), INFO);
             right_aligned(ui, |ui| {
                 if ui.button("Cerrar la comparación").clicked() {
                     app.img.compare = None;
@@ -390,5 +410,12 @@ mod tests {
         assert!(same_person("Garcia Ana", "Ana García López"));
         assert!(!same_person("MARTINEZ PEDRO", "Ana García López"));
         assert!(!same_person("", "Ana García López"));
+    }
+
+    #[test]
+    fn days_between_two_images() {
+        assert_eq!(days_between(0), "Del mismo día");
+        assert_eq!(days_between(1), "1 día entre una y otra");
+        assert_eq!(days_between(30), "30 días entre una y otra");
     }
 }
