@@ -371,27 +371,39 @@ fn parse_within(bytes: &[u8], budget: usize) -> Result<Dicom, String> {
 /// píxeles, descomprimidos con dicom-rs. Antes de descomprimir se comprueba
 /// que cabe en `budget`.
 fn parse_compressed(bytes: &[u8], budget: usize, ts: &str) -> Result<Dicom, String> {
+    use dicom_dictionary_std::tags;
     use dicom_pixeldata::PixelDecoder;
     let fail = |e: &dyn std::fmt::Display| format!("No se pudo descomprimir la imagen {}: {e}", compressed_name(ts));
     let mut h = header_of(bytes)?;
-    if h.rows == 0 || h.cols == 0 {
-        return Err("El DICOM no dice el tamaño de la imagen.".into());
+    let obj = dicom_object::OpenFileOptions::new().from_reader(&bytes[128..]).map_err(|e| fail(&e))?;
+    // el tamaño, el que leerá dicom-rs al descomprimir (no el de la lectura propia)
+    let num = |tag, default: usize| -> Result<usize, String> {
+        match obj.element_opt(tag).map_err(|e| fail(&e))? {
+            Some(e) => e.to_int::<i64>().ok().and_then(|v| usize::try_from(v).ok()).ok_or_else(|| "Tamaño de imagen no válido.".to_string()),
+            None => Ok(default),
+        }
+    };
+    let (rows, cols, frames, samples, bits) = (num(tags::ROWS, 0)?, num(tags::COLUMNS, 0)?, num(tags::NUMBER_OF_FRAMES, 1)?.max(1), num(tags::SAMPLES_PER_PIXEL, 1)?, num(tags::BITS_ALLOCATED, 16)?);
+    if (rows, cols, frames, samples) != (h.rows, h.cols, h.frames, h.samples as usize) || rows == 0 || cols == 0 {
+        return Err("El tamaño de la imagen no es coherente en el fichero.".into());
     }
-    let color = h.samples == 3;
-    let n = h.rows.checked_mul(h.cols).and_then(|x| x.checked_mul(h.frames)).ok_or("Imagen demasiado grande.")?;
-    let alloc = n.checked_mul(if color { 7 } else { 4 }).ok_or("Imagen demasiado grande.")?;
+    if !matches!((samples, bits), (1, 8) | (1, 16) | (3, 8)) {
+        return Err(format!("Formato de píxel no admitido ({bits} bits, {samples} muestras)."));
+    }
+    let color = samples == 3;
+    let n = rows.checked_mul(cols).and_then(|x| x.checked_mul(frames)).ok_or("Imagen demasiado grande.")?;
+    // lo que se reserva: lo descomprimido (hasta 8 bytes por muestra en la conversión) y lo propio
+    let alloc = n.checked_mul(if color { 3 + 3 + 4 } else { 8 + 4 }).ok_or("Imagen demasiado grande.")?;
     if alloc > budget {
         return Err(format!("El estudio necesita {} MB de memoria y el límite es {} MB.", alloc >> 20, budget >> 20));
     }
-    let obj = dicom_object::OpenFileOptions::new().from_reader(&bytes[128..]).map_err(|e| fail(&e))?;
     let pd = obj.decode_pixel_data().map_err(|e| fail(&e))?;
-    if pd.rows() as usize != h.rows || pd.columns() as usize != h.cols {
+    if (pd.rows() as usize, pd.columns() as usize, pd.number_of_frames() as usize, pd.samples_per_pixel() as usize) != (rows, cols, frames, samples) {
         return Err("La imagen descomprimida no tiene el tamaño que dice el fichero.".into());
     }
-    let frames = pd.number_of_frames() as usize;
+    let per = rows * cols;
     if color {
-        let per = h.rows * h.cols;
-        let mut data = Vec::with_capacity(per * 3 * frames);
+        let mut data = Vec::with_capacity(n.checked_mul(3).ok_or("Imagen demasiado grande.")?);
         for f in 0..frames as u32 {
             let raw = pd.frame_data(f).map_err(|e| fail(&e))?;
             if raw.len() < per * 3 {
@@ -405,15 +417,14 @@ fn parse_compressed(bytes: &[u8], budget: usize, ts: &str) -> Result<Dicom, Stri
             }
         }
         let gray = data.as_chunks::<3>().0.iter().map(|c| (c[0] as i32 + c[1] as i32 + c[2] as i32) / 3).collect();
-        (h.photometric, h.planar, h.bits, h.frames) = ("RGB".into(), false, 8, frames.max(1));
+        (h.photometric, h.planar, h.bits) = ("RGB".into(), false, 8);
         return Ok(Dicom { header: h, voxels: gray, rgb: Some(data) });
     }
     // con la pendiente y la ordenada del fichero aplicadas, como en las sin comprimir
     let voxels: Vec<i32> = pd.to_vec::<f64>().map_err(|e| fail(&e))?.into_iter().map(|v| v.round() as i32).collect();
-    if voxels.len() < h.rows * h.cols {
-        return Err("La imagen descomprimida está incompleta.".into());
+    if voxels.len() != n {
+        return Err("La imagen descomprimida no tiene el tamaño que dice el fichero.".into());
     }
-    h.frames = frames.max(1);
     Ok(Dicom { header: h, voxels, rgb: None })
 }
 
@@ -771,6 +782,9 @@ pub(crate) mod tests {
         // un fragmento que no es lo que dice ser: error, no pánico
         assert!(parse(&encapsulated("1.2.840.10008.1.2.4.50", 16, 16, 8, &[], &[1, 2, 3, 4])).is_err());
         assert!(parse(&encapsulated("1.2.840.10008.1.2.5", 4, 6, 16, &[], &[0; 64])).is_err());
+        // dos tamaños en el mismo fichero (la lectura propia ve uno y dicom-rs otro): no se descomprime
+        let twice = [(0x0028, 0x0008, "IS", b"1".to_vec()), (0x0028, 0x0008, "IS", b"99999".to_vec())];
+        assert!(parse(&encapsulated("1.2.840.10008.1.2.5", 4, 6, 16, &twice, &rle(&values))).is_err());
         // una imagen comprimida que dice ser enorme no se intenta descomprimir
         let huge = [(0x0028, 0x0008, "IS", b"999999".to_vec())];
         assert!(parse(&encapsulated("1.2.840.10008.1.2.5", 400, 400, 16, &huge, &rle(&values))).unwrap_err().contains("memoria"));
