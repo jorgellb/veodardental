@@ -2357,3 +2357,43 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 578 pasan (576 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-090 Integración con los aparatos de imagen: enlaces, carpetas, DICOM comprimido, red DICOM y TWAIN
+
+Pedido: que cada clínica pueda conectar sus aparatos (TAC, ortopantomógrafo, sensores, cámaras, escáneres), cada uno con el programa de su fabricante. El detalle, lo probado y lo que falta están en `docs/integraciones_imagen.md`.
+
+- **Enlaces** (`src/enlaces.rs`):
+  - comodines con formato de fecha, sexo y nombres;
+  - fichero puente con plantilla propia y codificación ANSI (por defecto), UTF-8 o UTF-16;
+  - parámetros para «Ver» aparte de los de «Capturar»;
+  - sin comas del paciente en los parámetros;
+  - plantillas de Dexis e iRYS, según lo que documenta Open Dental, y de NAPS2 para capturar por TWAIN, WIA, SANE o Apple.
+- **Lo que dejan los aparatos** (`src/entrada.rs`):
+  - lo seguro entra solo en su ficha; lo dudoso queda «por asignar», con el porqué;
+  - la carpeta del paciente se vigila media hora tras abrir un aparato;
+  - lo que se está escribiendo se espera;
+  - un TAC en carpeta de cortes es una imagen.
+- **Visor:**
+  - DICOM comprimido (JPEG, JPEG sin pérdida, JPEG 2000 y RLE) con dicom-rs, solo con decodificadores en Rust;
+  - modelos PLY y OBJ.
+- **Red DICOM** (`src/dicom_red.rs`):
+  - lista de trabajo, recepción y verificación;
+  - solo los aparatos de la lista, por nombre DICOM e IP, y desde la red de la clínica;
+  - lo recibido, a disco según llega, sin pisar nada.
+- **Hallazgos de la revisión automática, corregidos:**
+  - un PLY con recuentos enormes o negativos;
+  - el límite de memoria del DICOM comprimido, que ahora sale del tamaño que lee dicom-rs;
+  - la red DICOM abierta sin lista de aparatos;
+  - comandos sin tope;
+  - reenvíos que pisaban;
+  - ficheros a medias al alcance de la búsqueda.
+- **Fallo previo corregido:** la prueba del modo tableta fallaba a veces. Cada ventana creada en las pruebas devolvía a su valor el contraste, que es global, mientras otra prueba lo comprobaba. Ahora esas ventanas no lo tocan.
+- **Sin probar con aparatos reales:** ningún enlace, ninguna plantilla, la red DICOM con un TAC de verdad, ni NAPS2 con un sensor.
+- **VDDS-media:** pendiente de la especificación, que la VDDS entrega con un formulario.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 596 pasan (594 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

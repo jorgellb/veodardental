@@ -235,7 +235,11 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<PathBuf>, start: Option<Screen>, patient: Option<u32>, tab: Option<PatTab>) -> Self {
         // con el ajuste de pantalla de este puesto (tableta, contraste)
         let display = theme::load_display();
-        theme::apply_display(&cc.egui_ctx, display);
+        if cfg!(test) {
+            theme::apply_style(&cc.egui_ctx, display);
+        } else {
+            theme::apply_display(&cc.egui_ctx, display);
+        }
         let live = shot.is_none();
         let mut persist = shot.is_none();
         // un solo ordenador: los datos se bloquean para esta ventana (otra

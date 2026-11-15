@@ -2,82 +2,77 @@
 
 Cada clínica tiene sus aparatos (sensores, ortopantomógrafo, TAC, cámara, escáner intraoral) y cada uno trae el programa de su fabricante. Ese programa hace las tomas, guarda los estudios y los enseña con su visor profesional. VeodarDental no lo sustituye: lo abre con el paciente correcto, recoge lo que captura y lo vuelve a abrir cuando hace falta.
 
-Este documento dice qué hace hoy el programa y qué le falta para poder integrarse con cualquier aparato del mercado. Revisado el 15/11/2026.
+Este documento dice cómo se conecta cada aparato, qué está probado y qué falta. Revisado el 15/11/2026.
 
-## Lo que hay hoy
+## Las formas de conectar un aparato
 
-- **Enlaces** («Imágenes y enlaces»). Cada aparato tiene:
-  - el programa que se abre;
-  - sus parámetros, con comodines: `[IDPAC] [NUMPAC] [NOMPAC] [APELPAC] [NIF] [FECNAC] [SEXO] [CARPETA]`;
-  - un fichero puente opcional (`IMCONECT.ini`, con los datos del paciente);
-  - la carpeta donde el programa del aparato deja lo que exporta.
-- **Enlaces de partida:**
-  - Carestream: RVG, panorámica y CS 3D Imaging;
-  - Acteon: Sopro y AIS;
-  - Planmeca Romexis;
-  - Dentsply Sirona: Sidexis;
-  - un visor DICOM;
-  - un escáner (STL).
-  - **Ninguno se ha probado con un aparato real.**
-- **En la ficha:**
-  - «Capturar con» abre el programa del aparato.
-  - «Abrir en visor 3D» abre el estudio en el programa del fabricante.
-  - «Importar de la carpeta del paciente» recoge lo exportado.
-- **Visor rápido de VeodarDental:**
-  - radiografías;
-  - DICOM sin comprimir, con el TAC en sus tres planos;
-  - modelos STL;
-  - comparación de dos imágenes y análisis con IA como borrador.
+1. **Abrir su programa con el paciente** («Imágenes y enlaces», un enlace por aparato).
+   - **Parámetros** para capturar y, aparte si hace falta, para ver las imágenes que ya tiene el paciente («Capturar» y «Ver»).
+   - **Comodines:** `[IDPAC] [NUMPAC] [NOMPAC] [APELPAC] [NOMBRE] [NIF] [FECNAC] [SEXO] [CARPETA] [FICHERO]`.
+   - **Formatos:**
+     - la fecha como la pida el programa: `[FECNAC:AAAAMMDD]`, `[FECNAC:DD.MM.AAAA]`, `[FECNAC:DD,MM,AAAA]`…;
+     - el sexo con sus letras: `[SEXO:MF]`;
+     - los nombres en mayúsculas o sin espacios: `[APELPAC:MAYUS+SINESPACIOS]`.
+     - Las comas del paciente no llegan a los parámetros.
+   - **Fichero puente:** el `IMCONECT.ini` de siempre o uno con plantilla propia. Se escribe en ANSI (Windows-1252), que es como lo leen los programas de Windows, o en UTF-8 o UTF-16 si el programa lo pide.
+   - **Plantillas** («Añadir desde una plantilla»):
+     - las de partida: Carestream, CS 3D, Sopro, AIS, Romexis, Sidexis, un visor DICOM y un escáner;
+     - Dexis e iRYS, con el formato que documenta Open Dental;
+     - la captura directa con NAPS2 (abajo).
+2. **Recoger lo que deja en una carpeta.**
+   - **Tras abrir un aparato** para un paciente, su carpeta se vigila media hora, y lo que deje ahí entra solo en su ficha.
+   - **Carpeta de exportación del enlace:** con «Traer lo nuevo sin pulsar Importar», lo seguro entra solo. Es seguro si está en la subcarpeta con su número de historia, o si es un DICOM con su número de historia y su nombre.
+   - **Lo dudoso queda «por asignar»,** con el porqué, para que alguien lo confirme. Son tres casos:
+     - solo coincide el nombre del fichero;
+     - solo coinciden el nombre y la fecha de nacimiento;
+     - la carpeta y el fichero no dicen lo mismo.
+   - **Lo que aún se está escribiendo** se deja para la siguiente pasada.
+   - **Un TAC** que llega como carpeta de cortes es una sola imagen.
+3. **DICOM en red** (sección «Red DICOM» de «Imágenes y enlaces»). Lo atiende un ordenador de la clínica, con su puerto y su AE Title.
+   - **Lista de trabajo** (Modality Worklist): el aparato pide los citados y nadie los teclea. Se entregan sin tildes y solo del día que se pide (hoy si no se dice).
+   - **Recepción** (Storage): el aparato manda lo que captura, que entra en la ficha como en el punto 2.
+   - **Verificación** (C-ECHO), para que el técnico pruebe la conexión.
+   - **Protección,** porque DICOM no cifra ni pide contraseña:
+     - solo se atiende a los aparatos de la lista, con su nombre DICOM y su IP, y sin lista no arranca;
+     - solo desde direcciones de la red de la clínica;
+     - las imágenes se escriben en disco según llegan, con un tope, y un reenvío no pisa la que había.
+4. **Captura directa de un sensor o un escáner, sin el programa del fabricante,** con NAPS2, un programa libre de escaneo. NAPS2 habla TWAIN o WIA en Windows, SANE en Linux y Apple en macOS, y deja la imagen en la carpeta del paciente.
 
-## Lo que falta
+## El visor rápido de VeodarDental
 
-### Arreglos pequeños que abren muchos aparatos
+- **Radiografías** con zoom, brillo, contraste, negativo y giro, y la comparación de dos imágenes.
+- **DICOM:**
+  - sin comprimir o comprimido en JPEG, JPEG sin pérdida, JPEG 2000 y RLE;
+  - el TAC en vista axial, coronal y sagital, con su escala, su orientación y el paciente que dice el fichero.
+  - JPEG-LS no se admite (necesitaría una biblioteca de C++): el aviso lo dice y queda para el visor del fabricante.
+- **Modelos 3D** en STL, PLY y OBJ.
+- **Análisis con IA** como borrador.
 
-1. **Codificación del fichero puente** (probable fallo).
-   - `IMCONECT.ini` se escribe en UTF-8.
-   - Los programas de Windows que leen ficheros `.ini` suelen leerlos en ANSI (Windows-1252). Un apellido con tilde llegaría mal: «MARTÃNEZ».
-   - Hay que poder elegir la codificación por enlace, con ANSI por defecto, y comprobarlo con un aparato real.
-2. **Ficheros puente con plantilla.** Hoy solo existe el formato de `IMCONECT.ini`. Algunos fabricantes leen el paciente de un fichero de texto con su propio formato; Dexis, por ejemplo. Por enlace habría que poder fijar:
-   - la ruta del fichero;
-   - su contenido, con comodines;
-   - su codificación.
-3. **Formatos de los comodines.**
-   - La fecha sale siempre como `dd/mm/aaaa` y el sexo como `H`/`M`.
-   - Otros puentes los piden de otra manera: iRYS, por ejemplo, `dd,MM,yyyy` y `M`/`F`.
-   - Faltan comodines con formato (`[FECNAC:AAAAMMDD]`, `[SEXO:MF]`…) y uno para el nombre completo.
-   - Hay que revisar la coma: `[APELPAC]` y `[NOMPAC]` la dejan pasar, y en algunos puentes rompe los parámetros.
-4. **Dos acciones por aparato: «Capturar» y «Ver imágenes».** Muchos programas tienen parámetros distintos para una toma nueva y para abrir las que ya hay. Hoy cada enlace tiene un solo juego de parámetros.
-5. **Importación automática y por paciente.**
-   - Hoy hay que pulsar «Importar», y solo mira la subcarpeta con el número de historia.
-   - Falta vigilar las carpetas de exportación.
-   - Falta reconocer al paciente por el nombre del fichero o, en DICOM, por `PatientID` y nombre, avisando si no cuadra con la ficha.
-6. **PLY y OBJ.** Se importan como modelos 3D, pero el visor solo abre STL. Los escáneres de Medit y 3Shape exportan PLY, que lleva color.
+## Lo que está probado y lo que no
 
-### Estándares, para no depender de un enlace por fabricante
+- **Probado aquí, con pruebas automáticas:**
+  - los formatos de los comodines y la codificación del fichero puente;
+  - las plantillas de Dexis e iRYS frente a su formato documentado;
+  - qué se mete solo en una ficha y qué queda por asignar;
+  - la carpeta vigilada;
+  - el DICOM comprimido, con un RLE y un JPEG reales;
+  - PLY y OBJ;
+  - la red DICOM con un cliente DICOM de verdad por la red: verificación, lista de trabajo, envío de una imagen en trozos, reenvío y aparatos no admitidos.
+- **Sin probar con aparatos reales:** ningún enlace, ninguna plantilla, la red DICOM con un TAC o un ortopantomógrafo de verdad, ni NAPS2 con un sensor. Se prueban en la instalación de cada clínica, y cada prueba buena se apunta aquí con la versión del programa del fabricante.
+- **JPEG 2000:** el decodificador está incluido, pero no tiene una prueba propia con una imagen real.
 
-7. **VDDS-media.**
-   - Es el estándar de la asociación alemana de software dental (VDDS e.V.) para intercambiar el paciente y sus imágenes entre el programa de gestión y el de imagen.
-   - Lo usan, por ejemplo, Dürr VistaSoft/DBSWIN y 3Shape.
-   - Es el que más aparatos cubre de una vez en Europa.
-8. **DICOM en red.**
-   - **Modality Worklist:** el TAC o el ortopantomógrafo recogen de VeodarDental la lista de pacientes citados, y nadie tiene que teclear el paciente en el aparato.
-   - **Storage:** el aparato envía las imágenes a VeodarDental, sin carpetas de por medio.
-   - VistaSoft, por ejemplo, admite las dos.
-9. **DICOM comprimido** (JPEG, JPEG 2000, JPEG-LS, RLE) en el visor rápido. Hoy se rechaza con un aviso y queda para el visor del fabricante.
-10. **TWAIN.** Capturar directamente de un sensor o de un escáner de placas sin abrir el programa del fabricante. Solo en Windows. Le sirve a la clínica que solo tiene sensores.
+## Lo que falta y por qué
 
-### Fuera del código
+- **VDDS-media,** el estándar de la asociación alemana de software dental para cambiar pacientes e imágenes con los programas de imagen.
+  - La especificación es gratuita, pero la VDDS solo la entrega tras rellenar un formulario con los datos de la empresa: https://www.vdds.de/schnittstellen/vdds-media/
+  - Sin ella no se programa: habría que inventarse el formato.
+  - Mientras, los programas que lo usan suelen admitir también parámetros, carpetas o DICOM.
+- **Sidexis (Dentsply Sirona):** su fichero de comunicación (secciones U, N y A) no tiene publicado el formato de los campos. Queda el enlace de partida por parámetros, que hay que comprobar con Sidexis.
+- **Escáneres en la nube** (3Shape, Medit, iTero): enviar los modelos sin pasar por una carpeta necesita su API y un acuerdo con cada uno. Mientras, sus programas exportan STL o PLY a una carpeta.
+- **Windows:** los programas de los fabricantes son casi siempre de Windows. En un Mac o un Linux, VeodarDental trae lo que dejan en una carpeta compartida, pero no puede abrirlos (el programa lo avisa al configurarlo).
 
-11. **Enlaces probados por fabricante.** Cada enlace de partida necesita probarse con su programa real y apuntar la versión y los parámetros que funcionan. En el mercado español conviene cubrir al menos:
-    - Carestream (CS Imaging, CS 3D Imaging), Dentsply Sirona (Sidexis 4), Planmeca (Romexis), Vatech (EzDent-i), Dürr (VistaSoft), Acteon (AIS, Sopro);
-    - Owandy (QuickVision), MyRay (iRYS), NewTom, Morita (i-Dixel), Dexis y KaVo;
-    - y los escáneres 3Shape, Medit, iTero y Primescan.
-12. **Windows.** Los programas de los fabricantes son casi siempre de Windows. En un Mac o un Linux, VeodarDental enseña lo importado pero no puede abrir el programa del aparato.
-13. **Escáneres en la nube.** 3Shape, Medit e iTero envían los modelos por sus plataformas de internet. Recibirlos sin pasar por una carpeta necesita su API y un acuerdo con cada uno.
+## Orden para cada clínica
 
-## Orden propuesto
-
-1. Puntos 1 a 6, que son pequeños y abren muchos aparatos con lo que ya hay.
-2. VDDS-media (punto 7).
-3. DICOM Worklist y Storage (punto 8).
-4. En paralelo, probar los enlaces con aparatos reales (punto 11), empezando por los de las primeras clínicas.
+1. Hacer la lista de sus aparatos y de sus programas, con la versión de cada uno.
+2. Elegir para cada aparato la forma de conectarlo. Si habla DICOM en red, mejor esa.
+3. Configurarlo desde su plantilla, probar «Capturar» y «Ver» con un paciente de prueba y apuntar aquí lo que funciona.

@@ -258,6 +258,13 @@ pub const TOUCH: Vec2 = vec2(52.0, 48.0);
 /// El estilo con el ajuste de pantalla de este puesto.
 pub fn apply_display(ctx: &egui::Context, d: Display) {
     set_high_contrast(d.high_contrast);
+    apply_style(ctx, d);
+}
+
+/// El estilo de un ajuste de pantalla, sin tocar el contraste (que es de todo
+/// el programa). Lo usa también la ventana que se crea en las pruebas, que
+/// corren a la vez: así no deshacen el contraste que otra prueba comprueba.
+pub fn apply_style(ctx: &egui::Context, d: Display) {
     apply(ctx);
     let mut style = (*ctx.global_style()).clone();
     if d.tablet {
