@@ -202,6 +202,7 @@ impl Db {
                 vat_exemption: Default::default(),
                 mig_profiles: vec![],
                 support_email: String::new(),
+                dicom_net: Default::default(),
                 iae_epigrafe: String::new(),
                 actividad_tipo: String::new(),
                 kpi_goals: Default::default(),

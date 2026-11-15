@@ -737,6 +737,9 @@ pub struct ClinicConfig {
     /// Correo de soporte para enviar el informe de errores (vacío: no se envía).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub support_email: String,
+    /// Red DICOM con los aparatos: lista de trabajo y recepción de imágenes.
+    #[serde(default, skip_serializing_if = "crate::dicom_red::Settings::is_default")]
+    pub dicom_net: crate::dicom_red::Settings,
     /// Perfiles de columnas de la migración (ver `migracion::Profile`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mig_profiles: Vec<crate::migracion::Profile>,

@@ -5074,6 +5074,7 @@ dependencies = [
  "datamatrix",
  "dicom-core",
  "dicom-dictionary-std",
+ "dicom-encoding",
  "dicom-object",
  "dicom-pixeldata",
  "dicom-transfer-syntax-registry",

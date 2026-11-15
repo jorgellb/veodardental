@@ -40,6 +40,11 @@ pub struct ImgState {
     /// La búsqueda en las carpetas de los aparatos, en otro hilo.
     scan: Option<std::sync::mpsc::Receiver<Vec<crate::entrada::Found>>>,
     last_scan: f64,
+    /// La red DICOM, si la atiende este ordenador.
+    pub net: Option<crate::dicom_red::Service>,
+    /// Por qué no se ha podido poner en marcha.
+    pub net_error: Option<String>,
+    net_worklist_at: f64,
 }
 
 impl Default for ImgState {
@@ -61,6 +66,9 @@ impl Default for ImgState {
             dismissed: Default::default(),
             scan: None,
             last_scan: f64::NEG_INFINITY,
+            net: None,
+            net_error: None,
+            net_worklist_at: f64::NEG_INFINITY,
         }
     }
 }
@@ -518,7 +526,48 @@ fn sources(app: &App) -> Vec<crate::entrada::Source> {
     if let Some(base) = app.db.patient_image_dir(0).parent() {
         v.push(crate::entrada::Source { name: "Carpeta del paciente".into(), kind: ImageKind::Periapical, base: base.to_path_buf(), auto: false });
     }
+    // lo que mandan los aparatos por la red DICOM, en el ordenador que la atiende
+    if let Some(net) = &app.img.net {
+        v.push(crate::entrada::Source { name: "Red DICOM".into(), kind: ImageKind::Tac, base: crate::dicom_red::inbox_dir(net.settings()), auto: true });
+    }
     v
+}
+
+/// ¿Atiende este ordenador la red DICOM?
+fn net_here(app: &App) -> bool {
+    let s = &app.db.config.dicom_net;
+    s.enabled && !s.machine.trim().is_empty() && fold(s.machine.trim()) == fold(&crate::shared::machine_name())
+}
+
+/// Pone en marcha, cambia o para la red DICOM según la configuración, y
+/// renueva la lista de citados que ven los aparatos.
+fn net_tick(app: &mut App, time: f64) {
+    let want = net_here(app);
+    let settings = app.db.config.dicom_net.clone();
+    let stale = app.img.net.as_ref().is_some_and(|n| *n.settings() != settings);
+    if !want || stale {
+        app.img.net = None;
+    }
+    if want && app.img.net.is_none() && app.img.net_error.as_ref().is_none_or(|_| time - app.img.net_worklist_at > 60.0) {
+        match crate::dicom_red::Service::start(&settings, crate::dicom_red::inbox_dir(&settings)) {
+            Ok(s) => {
+                app.img.net = Some(s);
+                app.img.net_error = None;
+                app.img.net_worklist_at = f64::NEG_INFINITY;
+            }
+            Err(e) => {
+                app.img.net_error = Some(e);
+                app.img.net_worklist_at = time;
+            }
+        }
+    }
+    if let Some(net) = &app.img.net
+        && time - app.img.net_worklist_at > 30.0
+    {
+        app.img.net_worklist_at = time;
+        // de ayer a dentro de dos semanas: el aparato pide normalmente las de hoy
+        net.set_worklist(crate::dicom_red::worklist(&app.db, app.today - chrono::Duration::days(1), app.today + chrono::Duration::days(14)));
+    }
 }
 
 fn known_paths(app: &App) -> std::collections::HashSet<String> {
@@ -564,6 +613,7 @@ pub fn tick(app: &mut App, time: f64) {
     if !app.persist || app.user_id.is_none() || app.screenshot.is_some() {
         return;
     }
+    net_tick(app, time);
     if let Some(rx) = &app.img.scan {
         let Ok(found) = rx.try_recv() else { return };
         app.img.scan = None;
@@ -602,6 +652,62 @@ pub fn tick(app: &mut App, time: f64) {
         let _ = tx.send(crate::entrada::scan(&srcs, &people, &known, std::time::SystemTime::now()));
     });
     app.img.scan = Some(rx);
+}
+
+/// La red DICOM: qué ordenador la atiende, con qué nombre y puerto, y lo que
+/// hay que poner en los aparatos.
+fn net_card(app: &mut App, ui: &mut Ui) {
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, "Red DICOM: lista de trabajo y recepción de imágenes");
+        muted(ui, "Para los aparatos que hablan DICOM en red (TAC, ortopantomógrafos y sensores con red): piden a VeodarDental los pacientes citados y le mandan lo que capturan, que entra en la ficha por el número de historia y el nombre.");
+        ui.add_space(4.0);
+        let here = crate::shared::machine_name();
+        let mut s = app.db.config.dicom_net.clone();
+        ui.checkbox(&mut s.enabled, "Activar la red DICOM");
+        if s.enabled {
+            ui.horizontal_wrapped(|ui| {
+                let who = if s.machine.trim().is_empty() { "ningún ordenador todavía".to_string() } else { s.machine.clone() };
+                ui.label(format!("La atiende: {who}"));
+                if fold(s.machine.trim()) != fold(&here) && ui.button(format!("Que la atienda este ordenador ({here})")).clicked() {
+                    s.machine = here.clone();
+                }
+            });
+            let mut port = s.port.to_string();
+            field(ui, "Puerto", &mut port, 120.0);
+            if let Ok(p) = port.trim().parse::<u16>() {
+                s.port = p;
+            }
+            field(ui, "Nombre DICOM de VeodarDental (AE Title)", &mut s.ae_title, 220.0);
+            s.ae_title = s.ae_title.to_uppercase().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').take(16).collect();
+            field(ui, "Aparatos admitidos, por su nombre DICOM (vacío: cualquiera de la red)", &mut s.allowed, 330.0);
+            field(ui, "Carpeta de lo recibido (vacío: la de los datos de este ordenador; mejor una compartida)", &mut s.folder, 330.0);
+            ui.add_space(4.0);
+            match (&app.img.net, &app.img.net_error) {
+                (Some(n), _) => {
+                    let ip = crate::dicom_red::local_ip().unwrap_or_else(|| "la dirección de este ordenador".into());
+                    ui.label(
+                        RichText::new(format!("Atendiendo. En cada aparato: servidor de lista de trabajo y de almacenamiento {ip}, puerto {}, AE Title {}. Recibidas desde que se abrió: {}.", n.port, n.settings().ae_title, n.received())).color(OK),
+                    );
+                }
+                (None, Some(e)) => {
+                    ui.label(RichText::new(format!("No se ha podido poner en marcha: {e}")).color(DANGER));
+                }
+                _ if fold(s.machine.trim()) == fold(&here) => {
+                    ui.label(RichText::new("Arrancando…").color(MUTED()));
+                }
+                _ => {
+                    muted(ui, "Este ordenador no la atiende.");
+                }
+            }
+            muted(ui, "DICOM no cifra ni pide contraseña: úsela solo en la red de la clínica, y si puede, limite los aparatos admitidos.");
+        }
+        if s != app.db.config.dicom_net {
+            app.db.config.dicom_net = s;
+            app.img.net_error = None;
+            app.changed();
+        }
+    });
 }
 
 /// Las imágenes por asignar: de quién podrían ser y por qué, con los botones
@@ -1130,6 +1236,8 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
             });
         });
     });
+    ui.add_space(10.0);
+    net_card(app, ui);
     ui.add_space(10.0);
     card(ui, |ui| {
         ui.set_width(ui.available_width());

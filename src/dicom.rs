@@ -749,7 +749,7 @@ pub(crate) mod tests {
         };
         let hi = segment(values.iter().map(|v| (v >> 8) as u8).collect());
         let lo = segment(values.iter().map(|v| (v & 0xFF) as u8).collect());
-        let mut head = vec![0u32; 16];
+        let mut head = [0u32; 16];
         head[0] = 2;
         head[1] = 64;
         head[2] = 64 + hi.len() as u32;

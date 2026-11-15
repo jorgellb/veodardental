@@ -21,6 +21,7 @@ mod cuadro;
 mod datafono;
 mod datos_cifrados;
 mod dicom;
+mod dicom_red;
 mod disco;
 mod doc_link;
 mod docs_tests;
