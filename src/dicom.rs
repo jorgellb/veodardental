@@ -53,6 +53,15 @@ pub struct Header {
     pub date: String,
     pub modality: String,
     pub instance: i64,
+    /// Identificador del paciente en el aparato (`PatientID`): el número de
+    /// historia, si el enlace se lo pasó.
+    pub patient_id: String,
+    /// Fecha de nacimiento (AAAAMMDD) y sexo (M, F, O) que dice el fichero.
+    pub birth: String,
+    pub sex: String,
+    /// Serie y estudio a los que pertenece la imagen.
+    pub series: String,
+    pub study: String,
 }
 
 /// Una imagen (o un estudio de varios cortes) leída.
@@ -182,6 +191,91 @@ fn u16_of(v: &[u8]) -> Option<u16> {
     v.get(..2).map(|s| u16::from_le_bytes([s[0], s[1]]))
 }
 
+/// Un dato de la cabecera al sitio que le toca en [`Header`].
+fn apply(h: &mut Header, g: u16, e: u16, v: &[u8]) {
+    match (g, e) {
+        (0x0008, 0x0020) => h.date = text(v),
+        (0x0008, 0x0060) => h.modality = text(v),
+        (0x0010, 0x0010) => h.patient = text(v).replace('^', " ").trim().to_string(),
+        (0x0018, 0x0050) => h.thickness = numbers(v).first().copied(),
+        (0x0020, 0x0013) => h.instance = numbers(v).first().copied().unwrap_or(0.0) as i64,
+        (0x0020, 0x0032) => h.position = <[f64; 3]>::try_from(numbers(v)).ok(),
+        (0x0020, 0x0037) => h.orientation = <[f64; 6]>::try_from(numbers(v)).ok(),
+        (0x0028, 0x0002) => h.samples = u16_of(v).unwrap_or(1),
+        (0x0028, 0x0004) => h.photometric = text(v),
+        (0x0028, 0x0006) => h.planar = u16_of(v) == Some(1),
+        (0x0028, 0x0008) => h.frames = numbers(v).first().copied().unwrap_or(1.0).max(1.0) as usize,
+        (0x0028, 0x0010) => h.rows = u16_of(v).unwrap_or(0) as usize,
+        (0x0028, 0x0011) => h.cols = u16_of(v).unwrap_or(0) as usize,
+        (0x0028, 0x0030) => h.spacing = numbers(v).get(..2).map(|s| (s[0], s[1])),
+        (0x0028, 0x0100) => h.bits = u16_of(v).unwrap_or(0),
+        (0x0028, 0x0103) => h.signed = u16_of(v) == Some(1),
+        (0x0028, 0x1050) => {
+            if let Some(c) = numbers(v).first() {
+                h.window = Some((*c, h.window.map(|w| w.1).unwrap_or(0.0)));
+            }
+        }
+        (0x0028, 0x1051) => {
+            if let Some(w) = numbers(v).first() {
+                h.window = Some((h.window.map(|c| c.0).unwrap_or(0.0), *w));
+            }
+        }
+        (0x0028, 0x1052) => h.intercept = numbers(v).first().copied().unwrap_or(0.0),
+        (0x0028, 0x1053) => h.slope = numbers(v).first().copied().unwrap_or(1.0),
+        (0x0010, 0x0020) => h.patient_id = text(v),
+        (0x0010, 0x0030) => h.birth = text(v),
+        (0x0010, 0x0040) => h.sex = text(v),
+        (0x0020, 0x000D) => h.study = text(v),
+        (0x0020, 0x000E) => h.series = text(v),
+        _ => {}
+    }
+}
+
+/// Lo que se lee de un fichero para saber de quién es: la cabecera, sin la
+/// imagen, también si la imagen va comprimida.
+pub const HEADER_BYTES: usize = 8 << 20;
+
+/// Solo la cabecera de un DICOM (paciente, fecha, modalidad, serie…), sin
+/// leer la imagen. Admite cualquier compresión de la imagen.
+pub fn header_of(bytes: &[u8]) -> Result<Header, String> {
+    if bytes.len() < 132 || &bytes[128..132] != b"DICM" {
+        return Err("No es un fichero DICOM (falta la marca «DICM»).".into());
+    }
+    let mut r = Reader { b: bytes, pos: 132 };
+    let mut ts = String::new();
+    while r.pos + 4 <= bytes.len() && u16::from_le_bytes([bytes[r.pos], bytes[r.pos + 1]]) == 0x0002 {
+        let (_, e, v) = element(&mut r, true, 0)?;
+        if e == 0x0010 {
+            ts = text(v);
+        }
+    }
+    // comprimido entero (deflate) o al revés (big endian): la cabecera no se puede leer así
+    if ts == "1.2.840.10008.1.2.1.99" || ts == "1.2.840.10008.1.2.2" {
+        return Err(format!("Sintaxis de transferencia {ts} no admitida."));
+    }
+    let explicit = ts != "1.2.840.10008.1.2";
+    let mut h = Header { frames: 1, slope: 1.0, samples: 1, photometric: "MONOCHROME2".into(), ..Default::default() };
+    while r.pos + 4 <= bytes.len() {
+        let tag = (u16::from_le_bytes([bytes[r.pos], bytes[r.pos + 1]]), u16::from_le_bytes([bytes[r.pos + 2], bytes[r.pos + 3]]));
+        if tag == (0x7FE0, 0x0010) {
+            break;
+        }
+        // un fichero cortado (solo se leen los primeros megas): vale lo leído
+        let Ok((g, e, v)) = element(&mut r, explicit, 0) else { break };
+        apply(&mut h, g, e, v);
+    }
+    Ok(h)
+}
+
+/// La cabecera de un fichero DICOM, leyendo como mucho [`HEADER_BYTES`].
+pub fn read_header(path: &Path) -> Result<Header, String> {
+    use std::io::Read;
+    let f = std::fs::File::open(path).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?;
+    let mut bytes = Vec::new();
+    f.take(HEADER_BYTES as u64).read_to_end(&mut bytes).map_err(|e| format!("No se puede leer {}: {e}", path.display()))?;
+    header_of(&bytes)
+}
+
 /// Lee un fichero DICOM ya cargado (en el programa se lee con [`read`]).
 #[cfg(test)]
 pub fn parse(bytes: &[u8]) -> Result<Dicom, String> {
@@ -211,36 +305,8 @@ fn parse_within(bytes: &[u8], budget: usize) -> Result<Dicom, String> {
     while r.pos < bytes.len() {
         let (g, e, v) = element(&mut r, explicit, 0)?;
         match (g, e) {
-            (0x0008, 0x0020) => h.date = text(v),
-            (0x0008, 0x0060) => h.modality = text(v),
-            (0x0010, 0x0010) => h.patient = text(v).replace('^', " ").trim().to_string(),
-            (0x0018, 0x0050) => h.thickness = numbers(v).first().copied(),
-            (0x0020, 0x0013) => h.instance = numbers(v).first().copied().unwrap_or(0.0) as i64,
-            (0x0020, 0x0032) => h.position = <[f64; 3]>::try_from(numbers(v)).ok(),
-            (0x0020, 0x0037) => h.orientation = <[f64; 6]>::try_from(numbers(v)).ok(),
-            (0x0028, 0x0002) => h.samples = u16_of(v).unwrap_or(1),
-            (0x0028, 0x0004) => h.photometric = text(v),
-            (0x0028, 0x0006) => h.planar = u16_of(v) == Some(1),
-            (0x0028, 0x0008) => h.frames = numbers(v).first().copied().unwrap_or(1.0).max(1.0) as usize,
-            (0x0028, 0x0010) => h.rows = u16_of(v).unwrap_or(0) as usize,
-            (0x0028, 0x0011) => h.cols = u16_of(v).unwrap_or(0) as usize,
-            (0x0028, 0x0030) => h.spacing = numbers(v).get(..2).map(|s| (s[0], s[1])),
-            (0x0028, 0x0100) => h.bits = u16_of(v).unwrap_or(0),
-            (0x0028, 0x0103) => h.signed = u16_of(v) == Some(1),
-            (0x0028, 0x1050) => {
-                if let Some(c) = numbers(v).first() {
-                    h.window = Some((*c, h.window.map(|w| w.1).unwrap_or(0.0)));
-                }
-            }
-            (0x0028, 0x1051) => {
-                if let Some(w) = numbers(v).first() {
-                    h.window = Some((h.window.map(|c| c.0).unwrap_or(0.0), *w));
-                }
-            }
-            (0x0028, 0x1052) => h.intercept = numbers(v).first().copied().unwrap_or(0.0),
-            (0x0028, 0x1053) => h.slope = numbers(v).first().copied().unwrap_or(1.0),
             (0x7FE0, 0x0010) => pixels = Some(v),
-            _ => {}
+            _ => apply(&mut h, g, e, v),
         }
     }
     let px = pixels.ok_or("El DICOM no tiene imagen.")?;

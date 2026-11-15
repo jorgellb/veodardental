@@ -3684,3 +3684,52 @@ fn a_patient_is_found_and_opened_with_the_keyboard() {
     assert_eq!(a.patient, crate::screens::pacientes::search(&a.db, &name, 1).first().copied().or(Some(pid)));
     assert!(a.search.is_empty());
 }
+
+/// Las imágenes que dejan los aparatos: lo que es seguro de un paciente entra
+/// en su ficha; lo dudoso queda «por asignar», con el porqué, hasta que alguien
+/// lo pone en una ficha.
+#[test]
+fn device_images_go_to_the_right_record_or_wait_for_someone() {
+    let dir = std::env::temp_dir().join(format!("ds_entrada_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("1002")).unwrap();
+    std::fs::write(dir.join("1002").join("control.jpg"), b"jpg").unwrap();
+    std::fs::write(dir.join("1001_pano.jpg"), b"jpg").unwrap();
+    // un DICOM con el número de historia de Carlos pero el nombre de otra persona
+    let id = (0x0010, 0x0020, "LO", b"1002".to_vec());
+    std::fs::write(dir.join("otro.dcm"), crate::dicom::tests::synth(true, 4, 4, 0.0, 1, |_, _| 0, "1.2.840.10008.1.2.1", &[id])).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1440.0, 1400.0)).with_accessibility_check(false).allow_missing_glyphs().build_eframe(|cc| {
+        let mut a = App::new(cc, Some(std::env::temp_dir().join("veodardental_test.png")), None, None, None);
+        a.screenshot = None;
+        a
+    });
+    let n = {
+        let a = h.state_mut();
+        a.user_id = a.db.users.iter().find(|u| u.name.starts_with("Dir")).map(|u| u.id);
+        let c = a.db.connectors.iter_mut().find(|c| c.id == 1).unwrap();
+        (c.enabled, c.image_folder) = (true, dir.display().to_string());
+        crate::screens::imagenes::import_folder(a, 101)
+    };
+    assert_eq!(n, 1, "solo lo seguro de Carlos");
+    let a = h.state();
+    let jpg = dir.join("1002").join("control.jpg").display().to_string();
+    assert!(a.db.images.iter().any(|i| i.patient_id == 101 && i.path == jpg && i.source == "Radiovisiógrafo (RVG)"));
+    let waiting: Vec<(String, Option<u32>)> = a.img.inbox.iter().map(|f| (f.path.file_name().unwrap().to_string_lossy().to_string(), f.verdict.patient())).collect();
+    assert!(waiting.contains(&("1001_pano.jpg".into(), Some(100))), "{waiting:?}");
+    assert!(waiting.contains(&("otro.dcm".into(), Some(101))), "{waiting:?}");
+    // en la ficha de Carlos se ve lo que podría ser suyo, con el porqué
+    h.state_mut().open_patient(101, crate::app::PatTab::Imagenes);
+    for _ in 0..4 {
+        h.step();
+    }
+    h.get_by_label("Imágenes de los aparatos por asignar (1)");
+    h.query_all_by_label_contains("PRUEBA SINTETICA").next().expect("lo que dice el fichero");
+    h.get_by_label_contains("Poner en la ficha de").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    let dcm = dir.join("otro.dcm").display().to_string();
+    assert!(h.state().db.images.iter().any(|i| i.patient_id == 101 && i.path == dcm && i.kind == crate::model::ImageKind::Tac));
+    assert!(!h.state().img.inbox.iter().any(|f| f.path.ends_with("otro.dcm")));
+    let _ = std::fs::remove_dir_all(&dir);
+}

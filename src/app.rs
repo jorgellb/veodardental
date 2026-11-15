@@ -2171,6 +2171,8 @@ impl eframe::App for App {
         screens::llamadas::popups(self, &ctx);
         // los análisis con IA terminan aunque se haya cambiado de pantalla
         screens::ia::poll(self);
+        // lo nuevo de las carpetas de los aparatos de imagen
+        screens::imagenes::tick(self, time);
         // envíos por correo (órdenes de laboratorio y correo de prueba)
         screens::laboratorio::poll(self, &ctx);
         screens::correo::poll(self, &ctx);

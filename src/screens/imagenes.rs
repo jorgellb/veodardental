@@ -33,6 +33,13 @@ pub struct ImgState {
     pub v3d: crate::screens::visor3d::V3d,
     /// Imagen con la que se compara la elegida.
     pub compare: Option<u32>,
+    /// Imágenes de los aparatos que esperan a que alguien diga de quién son.
+    pub inbox: Vec<crate::entrada::Found>,
+    /// Las que se han descartado (hasta cerrar el programa).
+    pub dismissed: std::collections::HashSet<PathBuf>,
+    /// La búsqueda en las carpetas de los aparatos, en otro hilo.
+    scan: Option<std::sync::mpsc::Receiver<Vec<crate::entrada::Found>>>,
+    last_scan: f64,
 }
 
 impl Default for ImgState {
@@ -50,6 +57,10 @@ impl Default for ImgState {
             edit_connector: Some(1),
             v3d: Default::default(),
             compare: None,
+            inbox: vec![],
+            dismissed: Default::default(),
+            scan: None,
+            last_scan: f64::NEG_INFINITY,
         }
     }
 }
@@ -499,48 +510,147 @@ pub fn open_folder(path: &Path) -> Result<(), String> {
     r.map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// Importa a la galería los ficheros nuevos de la carpeta del paciente y de
-/// las carpetas de exportación de los enlaces.
-pub fn import_folder(app: &mut App, pid: u32) -> usize {
-    let mut dirs_: Vec<PathBuf> = vec![app.db.patient_image_dir(pid)];
-    let num = app.db.patient(pid).map(|p| p.history_no.to_string()).unwrap_or_default();
-    for c in app.db.connectors.iter().filter(|c| c.enabled && !c.image_folder.trim().is_empty()) {
-        let base = PathBuf::from(c.image_folder.trim());
-        dirs_.push(base.join(&num));
+/// Las carpetas donde dejan imágenes los aparatos: las de los enlaces activos
+/// y la de las imágenes de los pacientes (con una subcarpeta por número de historia).
+fn sources(app: &App) -> Vec<crate::entrada::Source> {
+    let mut v: Vec<crate::entrada::Source> =
+        app.db.connectors.iter().filter(|c| c.enabled && !c.image_folder.trim().is_empty()).map(|c| crate::entrada::Source { name: c.name.clone(), kind: c.kind, base: PathBuf::from(c.image_folder.trim()), auto: c.auto_import }).collect();
+    if let Some(base) = app.db.patient_image_dir(0).parent() {
+        v.push(crate::entrada::Source { name: "Carpeta del paciente".into(), kind: ImageKind::Periapical, base: base.to_path_buf(), auto: false });
     }
+    v
+}
+
+fn known_paths(app: &App) -> std::collections::HashSet<String> {
+    app.db.images.iter().map(|i| i.path.clone()).filter(|p| !p.is_empty()).collect()
+}
+
+/// Pone una imagen encontrada en la galería de un paciente.
+pub fn assign(app: &mut App, f: &crate::entrada::Found, pid: u32) {
+    let path = f.path.display().to_string();
+    app.img.inbox.retain(|x| x.path != f.path);
+    if app.db.images.iter().any(|i| i.path == path) {
+        return;
+    }
+    let id = app.db.new_id();
+    app.db.images.push(PatientImage { id, patient_id: pid, kind: f.kind, date: f.date.unwrap_or(app.today), teeth: vec![], path, source: f.source.clone(), notes: String::new(), demo: false });
+    app.changed();
+}
+
+/// Importa a la galería del paciente lo suyo que hayan dejado los aparatos: en
+/// su carpeta y en las de los enlaces. Lo que podría ser suyo pero no es seguro
+/// queda en «Por asignar», en «Imágenes y enlaces».
+pub fn import_folder(app: &mut App, pid: u32) -> usize {
+    // al pulsar «Importar» no se espera a que los ficheros lleven un rato sin cambiar
+    let found = crate::entrada::scan(&sources(app), &crate::entrada::people(&app.db), &known_paths(app), std::time::SystemTime::now() + crate::entrada::SETTLE);
     let mut added = 0;
-    for d in dirs_ {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
-        for e in rd.flatten() {
-            let p = e.path();
-            let s = p.display().to_string();
-            let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
-            let kind = match ext.as_str() {
-                "png" | "jpg" | "jpeg" | "bmp" | "tif" | "tiff" => ImageKind::Periapical,
-                "dcm" => ImageKind::Tac,
-                "stl" | "ply" | "obj" => ImageKind::Escaneo3D,
-                _ if p.is_dir() => ImageKind::Tac,
-                _ => continue,
-            };
-            if app.db.images.iter().any(|i| i.path == s) {
-                continue;
+    for f in found {
+        match f.verdict {
+            crate::entrada::Verdict::Sure(p) if p == pid => {
+                assign(app, &f, pid);
+                added += 1;
             }
-            let kind = if fold(&s).contains("pano") || fold(&s).contains("opg") {
-                ImageKind::Panoramica
-            } else if fold(&s).contains("foto") || fold(&s).contains("intra") {
-                ImageKind::FotoIntraoral
-            } else {
-                kind
-            };
-            let id = app.db.new_id();
-            app.db.images.push(PatientImage { id, patient_id: pid, kind, date: app.today, teeth: vec![], path: s, source: "Importada".into(), notes: String::new(), demo: false });
-            added += 1;
+            _ if !app.img.inbox.iter().any(|x| x.path == f.path) && !app.img.dismissed.contains(&f.path) => app.img.inbox.push(f),
+            _ => {}
         }
     }
-    if added > 0 {
-        app.changed();
-    }
     added
+}
+
+/// Cada poco, lo nuevo de las carpetas de los aparatos: lo seguro de los
+/// enlaces que traen lo nuevo solos entra en su ficha, y lo demás queda en
+/// «Por asignar». La búsqueda va en otro hilo (las carpetas pueden ser de red).
+pub fn tick(app: &mut App, time: f64) {
+    if !app.persist || app.user_id.is_none() || app.screenshot.is_some() {
+        return;
+    }
+    if let Some(rx) = &app.img.scan {
+        let Ok(found) = rx.try_recv() else { return };
+        app.img.scan = None;
+        let mut added = 0;
+        for f in found {
+            if app.img.dismissed.contains(&f.path) || app.db.images.iter().any(|i| i.path == f.path.display().to_string()) {
+                continue;
+            }
+            match f.verdict {
+                crate::entrada::Verdict::Sure(pid) if f.auto => {
+                    assign(app, &f, pid);
+                    added += 1;
+                }
+                _ => {
+                    app.img.inbox.retain(|x| x.path != f.path);
+                    app.img.inbox.push(f);
+                }
+            }
+        }
+        if added > 0 {
+            app.notify(format!("{added} imágenes nuevas de los aparatos, ya en sus fichas."));
+        }
+        return;
+    }
+    if time - app.img.last_scan < 15.0 {
+        return;
+    }
+    app.img.last_scan = time;
+    let srcs: Vec<crate::entrada::Source> = sources(app).into_iter().filter(|s| s.auto).collect();
+    if srcs.is_empty() {
+        return;
+    }
+    let (people, known) = (crate::entrada::people(&app.db), known_paths(app));
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::entrada::scan(&srcs, &people, &known, std::time::SystemTime::now()));
+    });
+    app.img.scan = Some(rx);
+}
+
+/// Las imágenes por asignar: de quién podrían ser y por qué, con los botones
+/// para ponerlas en una ficha. `only` = solo las propuestas para ese paciente.
+pub fn inbox_card(app: &mut App, ui: &mut Ui, only: Option<u32>) {
+    let items: Vec<crate::entrada::Found> = app.img.inbox.iter().filter(|f| only.is_none_or(|p| f.verdict.patient() == Some(p))).cloned().collect();
+    if items.is_empty() {
+        return;
+    }
+    card(ui, |ui| {
+        ui.set_width(ui.available_width());
+        section(ui, &format!("Imágenes de los aparatos por asignar ({})", items.len()));
+        muted(ui, "No se sabe con seguridad de quién son: compruébelo antes de ponerlas en una ficha.");
+        ui.add_space(4.0);
+        let active = app.patient;
+        for f in items.iter().take(30) {
+            ui.horizontal_wrapped(|ui| {
+                let name = f.path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                ui.label(RichText::new(format!("{}  {}", kind_icon(f.kind), name)).family(sb()));
+                ui.label(RichText::new(format!("{} · {}", f.kind.short(), f.source)).size(13.0).color(MUTED()));
+                if !f.label.is_empty() {
+                    ui.label(RichText::new(format!("El fichero dice: {}", f.label)).size(13.0).color(MUTED()));
+                }
+            });
+            let why = match &f.verdict {
+                crate::entrada::Verdict::Suggest(_, why) | crate::entrada::Verdict::Unknown(why) => why.clone(),
+                crate::entrada::Verdict::Sure(_) => "Es de este paciente; el enlace no trae lo nuevo solo.".into(),
+            };
+            ui.label(RichText::new(why).size(13.0).color(WARN));
+            ui.horizontal_wrapped(|ui| {
+                if let Some(p) = f.verdict.patient()
+                    && ui.button(format!("Poner en la ficha de {}", app.db.patient_name(p))).clicked()
+                {
+                    assign(app, f, p);
+                }
+                if let Some(p) = active.filter(|p| Some(*p) != f.verdict.patient())
+                    && ui.button(format!("Poner en la del paciente activo ({})", app.db.patient_name(p))).clicked()
+                {
+                    assign(app, f, p);
+                }
+                if ui.button("Descartar").on_hover_text("No se pone en ninguna ficha (el fichero no se borra)").clicked() {
+                    app.img.dismissed.insert(f.path.clone());
+                    app.img.inbox.retain(|x| x.path != f.path);
+                }
+            });
+            ui.add_space(6.0);
+        }
+    });
+    ui.add_space(10.0);
 }
 
 // ───────────────────────────── pestaña del paciente ─────────────────────────────
@@ -569,7 +679,12 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         ui.horizontal_wrapped(|ui| {
             if ui.button("⬇ Importar de la carpeta del paciente").clicked() {
                 let n = import_folder(app, pid);
-                if n == 0 { app.notify("No hay imágenes nuevas en la carpeta del paciente.") } else { app.notify(format!("{n} imágenes importadas.")) }
+                let waiting = app.img.inbox.iter().filter(|f| f.verdict.patient() == Some(pid)).count();
+                match (n, waiting) {
+                    (0, 0) => app.notify("No hay imágenes nuevas de este paciente."),
+                    (n, 0) => app.notify(format!("{n} imágenes importadas.")),
+                    (n, w) => app.notify(format!("{n} imágenes importadas; {w} podrían ser suyas: compruébelas abajo.")),
+                }
             }
             if ui.button("📂 Abrir carpeta del paciente").clicked() {
                 let d = app.db.patient_image_dir(pid);
@@ -603,6 +718,8 @@ pub fn patient_tab(app: &mut App, ui: &mut Ui, pid: u32) {
         });
     });
     ui.add_space(10.0);
+    // lo que ha llegado de los aparatos y podría ser de este paciente
+    inbox_card(app, ui, Some(pid));
     let mut list: Vec<PatientImage> = app.db.images.iter().filter(|i| i.patient_id == pid && app.img.filter.map(|f| i.kind == f).unwrap_or(true)).cloned().collect();
     list.sort_by_key(|i| std::cmp::Reverse((i.date, i.id)));
     if app.img.selected.map(|s| !list.iter().any(|i| i.id == s)).unwrap_or(true) {
@@ -858,6 +975,7 @@ pub fn screen(app: &mut App, ui: &mut Ui) {
         kpi(ui, w, "Enlaces activos", &active.to_string(), &format!("de {} configurados", app.db.connectors.len()), OK);
     });
     ui.add_space(10.0);
+    inbox_card(app, ui, None);
     let avail = ui.available_width().min(ui.clip_rect().max.x - ui.cursor().min.x - 6.0);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
