@@ -167,6 +167,15 @@ fn ply_num(b: &[u8], t: &str, big: bool) -> f64 {
     }
 }
 
+/// Un número de PLY que tiene que ser un entero entre 0 y `max` (vértices de
+/// una cara, o un índice).
+fn ply_index(v: f64, max: usize) -> Result<usize, String> {
+    if v.fract() != 0.0 || v < 0.0 || v > max as f64 {
+        return Err(format!("Número no válido en una cara del PLY: {v}."));
+    }
+    Ok(v as usize)
+}
+
 /// Lee un PLY (el formato de muchos escáneres intraorales): en texto o en
 /// binario, con los vértices y las caras; el color y lo demás se pasa por alto.
 pub fn parse_ply(b: &[u8]) -> Result<Mesh, String> {
@@ -220,8 +229,8 @@ pub fn parse_ply(b: &[u8]) -> Result<Mesh, String> {
                     for (t, name, item) in &el.props {
                         let _ = t;
                         if item.is_some() {
-                            let n = *nums.get(i).ok_or("El PLY está cortado.")? as usize;
-                            face = nums.get(i + 1..i + 1 + n).ok_or("El PLY está cortado.")?.iter().map(|x| *x as usize).collect();
+                            let n = ply_index(*nums.get(i).ok_or("El PLY está cortado.")?, 64)?;
+                            face = nums.get(i + 1..i + 1 + n).ok_or("El PLY está cortado.")?.iter().map(|x| ply_index(*x, u32::MAX as usize)).collect::<Result<_, _>>()?;
                             i += 1 + n;
                         } else {
                             let v = *nums.get(i).ok_or("El PLY está cortado.")?;
@@ -258,12 +267,9 @@ pub fn parse_ply(b: &[u8]) -> Result<Mesh, String> {
                         match item {
                             Some(it) => {
                                 let isz = ply_size(it).ok_or_else(|| format!("Tipo de dato de PLY desconocido: {it}."))?;
-                                let n = v as usize;
-                                if n > 64 {
-                                    return Err("Una cara del PLY tiene demasiados vértices.".into());
-                                }
+                                let n = ply_index(v, 64)?;
                                 for _ in 0..n {
-                                    face.push(ply_num(b.get(pos..pos + isz).ok_or("El PLY está cortado.")?, it, big) as usize);
+                                    face.push(ply_index(ply_num(b.get(pos..pos + isz).ok_or("El PLY está cortado.")?, it, big), u32::MAX as usize)?);
                                     pos += isz;
                                 }
                             }
@@ -450,6 +456,13 @@ pub(crate) mod tests {
             let _ = parse_ply(&with_header);
             let _ = parse_obj(&junk);
         }
+        // una cara con un número de vértices enorme, negativo o con decimales: error, no pánico
+        for bad in ["1e30", "-1", "2.5", "18446744073709551615"] {
+            let ply = format!("ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n0 0 0\n1 0 0\n0 1 0\n{bad} 0 1 2\n");
+            assert!(parse_ply(ply.as_bytes()).is_err(), "{bad}");
+        }
+        let neg = b"ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n0 0 0\n1 0 0\n0 1 0\n3 0 -1 2\n";
+        assert!(parse_ply(neg).is_err(), "un índice negativo no es el vértice 0");
         // un elemento sin datos que dice tener miles de millones de registros no cuelga el programa
         assert!(parse_ply(b"ply\nformat binary_little_endian 1.0\nelement nada 4000000000\nelement vertex 4000000000\nproperty float x\nend_header\n").is_err());
     }
