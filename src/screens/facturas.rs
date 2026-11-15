@@ -244,7 +244,7 @@ pub fn invoice_dialog(app: &mut App, ctx: &egui::Context, id: u32) -> Dialog {
                     egui::Frame::new().fill(tint(c, 0.08)).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(16, 8)).show(ui, |ui| {
                         ui.horizontal(|ui| {
                             // el diseño va de derecha a izquierda: primero el importe
-                            ui.label(RichText::new(money(f.total())).font(crate::theme::bf(24.0)).color(c));
+                            ui.label(RichText::new(money(f.total())).font(crate::theme::df(24.0)).color(c));
                             ui.label(RichText::new("TOTAL").font(crate::theme::sbf(12.5)).color(mix(c, MUTED(), 0.4)));
                         });
                     });

@@ -171,7 +171,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
-                    ui.label(RichText::new(tab.label()).font(bf(22.0)).color(HEADING));
+                    ui.label(RichText::new(tab.label()).font(crate::theme::df(23.0)).color(HEADING));
                     ui.label(RichText::new(tab.desc()).font(mdf(13.5)).color(MUTED()));
                 });
             });

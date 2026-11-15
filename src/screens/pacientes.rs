@@ -71,30 +71,37 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     app.note_access(pid, part);
     history_log(app, ui, pid);
     ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        let tabs: Vec<(PatTab, &str)> = PatTab::ALL.iter().copied().filter(|(tab, _)| tab_allowed(app, *tab)).collect();
-        // si las pestañas no caben (ventana estrecha) se aprietan: letra y márgenes algo menores
-        let natural: f32 = tabs.iter().map(|(_, n)| ui.fonts_mut(|f| f.layout_no_wrap(n.to_string(), FontId::proportional(14.5), TEXT).size().x) + 24.0).sum();
-        let (fs, pad) = if natural <= ui.available_width() { (14.5, 22.0) } else { (13.2, 12.0) };
-        let lang = app.db.config.ui_lang;
-        for (tab, name) in tabs {
-            let name = crate::i18n::t(lang, name);
-            let sel = app.pat_tab == tab;
-            let (rect, resp) = ui.allocate_exact_size(vec2(ui.fonts_mut(|f| f.layout_no_wrap(name.into(), FontId::proportional(fs), TEXT).size().x) + pad, 42.0), Sense::click());
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Tab, true, name));
-            if sel {
-                ui.painter().rect_filled(rect, CornerRadius::same(8), CARD);
-                ui.painter().rect_filled(egui::Rect::from_min_size(rect.left_bottom() - vec2(0.0, 3.0), vec2(rect.width(), 3.0)), CornerRadius::same(2), ACCENT);
-            } else if resp.hovered() {
-                ui.painter().rect_filled(rect, CornerRadius::same(8), Color32::from_rgb(232, 238, 244));
+    // las pestañas van en una bandeja (un carril del esmalte, algo más hondo) y
+    // la abierta sube como una pieza blanca en relieve
+    let track = ui.painter().add(egui::Shape::Noop);
+    let tabs_rect = ui
+        .horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            let tabs: Vec<(PatTab, &str)> = PatTab::ALL.iter().copied().filter(|(tab, _)| tab_allowed(app, *tab)).collect();
+            // si las pestañas no caben (ventana estrecha) se aprietan: letra y márgenes algo menores
+            let natural: f32 = tabs.iter().map(|(_, n)| ui.fonts_mut(|f| f.layout_no_wrap(n.to_string(), FontId::proportional(14.5), TEXT).size().x) + 24.0).sum();
+            let (fs, pad) = if natural <= ui.available_width() { (14.5, 22.0) } else { (13.2, 12.0) };
+            let lang = app.db.config.ui_lang;
+            for (tab, name) in tabs {
+                let name = crate::i18n::t(lang, name);
+                let sel = app.pat_tab == tab;
+                let (rect, resp) = ui.allocate_exact_size(vec2(ui.fonts_mut(|f| f.layout_no_wrap(name.into(), FontId::proportional(fs), TEXT).size().x) + pad, 40.0), Sense::click());
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Tab, true, name));
+                let piece = rect.shrink(3.0);
+                if sel {
+                    crate::theme::tile(ui.painter(), piece, 9);
+                } else if resp.hovered() {
+                    ui.painter().rect_filled(piece, CornerRadius::same(9), Color32::from_rgba_unmultiplied(255, 255, 255, 140));
+                }
+                ui.painter().text(rect.center(), Align2::CENTER_CENTER, name, if sel { crate::theme::sbf(fs) } else { crate::theme::mdf(fs) }, if sel { HEADING } else { MUTED() });
+                if resp.clicked() {
+                    app.pat_tab = tab;
+                }
             }
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, name, if sel { crate::theme::sbf(fs) } else { FontId::proportional(fs) }, if sel { TEXT } else { MUTED() });
-            if resp.clicked() {
-                app.pat_tab = tab;
-            }
-        }
-    });
+        })
+        .response
+        .rect;
+    ui.painter().set(track, egui::Shape::rect_filled(tabs_rect.expand(3.0), CornerRadius::same(12), crate::theme::SIDEBAR));
     ui.add_space(8.0);
     let mut sa = egui::ScrollArea::vertical().id_salt("pat_scroll").auto_shrink([false, false]);
     if let Some(y) = app.lists.scroll_to.take() {
@@ -259,7 +266,7 @@ fn header(app: &mut App, ui: &mut Ui, pid: u32) {
             ui.add_space(6.0);
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(p.full_name()).size(23.5).family(crate::theme::sb()));
+                    ui.label(RichText::new(p.full_name()).font(crate::theme::df(25.0)).color(HEADING));
                     pill(ui, &format!("Nº historial {}", p.history_no), INFO);
                     if !p.active {
                         pill(ui, "Inactivo", MUTED());

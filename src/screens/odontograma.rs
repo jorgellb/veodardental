@@ -224,7 +224,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pid: u32) {
                 // cabecera: fecha de la visita, estado y navegación por la evolución
                 ui.horizontal(|ui| {
                     let d = app.odg.until.unwrap_or(today);
-                    ui.label(RichText::new(format!("{}", chrono::Datelike::day(&d))).font(crate::theme::bf(34.0)).color(sk.text));
+                    ui.label(RichText::new(format!("{}", chrono::Datelike::day(&d))).font(crate::theme::df(34.0)).color(sk.text));
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.add_space(3.0);

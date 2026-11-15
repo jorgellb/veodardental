@@ -2397,3 +2397,28 @@ Pedido: que cada clínica pueda conectar sus aparatos (TAC, ortopantomógrafo, s
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 596 pasan (594 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-091 Estilo «gabinete claro»: un aspecto más moderno
+
+Pedido: que la interfaz se vea más moderna y más estética. El estilo vive en `src/theme.rs`, así que el cambio llega a todas las pantallas.
+
+- **Fondo:** blanco esmalte con un punto de verde. El menú lateral, el mismo esmalte un tono más hondo, en lugar del azul noche.
+- **Lo elegido sube en relieve:** el apartado abierto del menú y la pestaña abierta de la ficha son una pieza blanca con sombra corta. Las pestañas de la ficha van en una bandeja.
+- **Acento verde quirófano** (`ACCENT`, 10·117·100). Con letra blanca encima el contraste es 5,6. Antes era 3,7 y no llegaba al mínimo AA de 4,5.
+- **Contadores del menú:** ámbar y violeta hondos, con la cifra blanca legible.
+- **Letra:** títulos, nombre del paciente y cifras de los indicadores en Bricolage Grotesque, con licencia OFL. Es una instancia estática de tamaño óptico 28 y peso 600, en `assets/fonts` con su licencia. El resto sigue en Inter.
+- **Barras de arriba y de estado:** sobre el esmalte, con una línea finísima, sin caja blanca ni sombra.
+- **Pantallas oscuras** (entrada, sin conexión, pizarra): verde casi negro, con la luz de la lámpara arriba a la izquierda.
+- **Prueba nueva:** la letra blanca sobre el verde, el ámbar, el violeta y el oscuro llega a 4,5, y el texto del menú se lee sobre su esmalte.
+- **Sin cambiar:**
+  - los colores de los doctores en la agenda;
+  - el odontograma;
+  - las subpestañas de otras pantallas (Facturas, Cobros…), que siguen con el relleno verde suave de egui;
+  - el contraste alto y el modo tableta, que solo oscurecen los colores y agrandan los controles.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 597 pasan (595 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

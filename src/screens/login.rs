@@ -112,12 +112,12 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                             ui.add_space(4.0);
                             ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = 1.0;
-                                ui.label(RichText::new("VeodarDental").font(bf(22.0)).color(HEADING));
+                                ui.label(RichText::new("VeodarDental").font(crate::theme::df(22.0)).color(HEADING));
                                 ui.label(RichText::new(&app.db.config.name).font(mdf(13.0)).color(MUTED()));
                             });
                         });
                         ui.add_space(26.0);
-                        ui.label(RichText::new("Bienvenido de nuevo").font(bf(25.0)).color(HEADING));
+                        ui.label(RichText::new("Bienvenido de nuevo").font(crate::theme::df(27.0)).color(HEADING));
                         ui.add_space(2.0);
                         ui.label(RichText::new("Elija su usuario e introduzca la contraseña para entrar.").font(mdf(14.0)).color(MUTED()));
                         ui.add_space(18.0);
@@ -174,7 +174,7 @@ pub fn login_screen(app: &mut App, ui: &mut Ui) {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing = vec2(kgap, kgap);
                             for k in keys {
-                                let b = egui::Button::new(RichText::new(k).font(sbf(16.0)).color(TEXT)).fill(Color32::from_rgb(246, 248, 251)).stroke(Stroke::new(1.0, HAIRLINE())).min_size(vec2(kw, 42.0)).corner_radius(CornerRadius::same(10));
+                                let b = egui::Button::new(RichText::new(k).font(sbf(16.0)).color(TEXT)).fill(crate::theme::WASH).stroke(Stroke::new(1.0, HAIRLINE())).min_size(vec2(kw, 42.0)).corner_radius(CornerRadius::same(10));
                                 if ui.add(b).clicked() {
                                     let (t, max) = if coding { (&mut app.login.code, 6) } else { (&mut app.login.pin, 32) };
                                     if k == "⌫" {
@@ -238,7 +238,7 @@ fn user_tile(ui: &mut Ui, app: &App, u: &User, w: f32) -> bool {
     let (fill, stroke) = if sel {
         (ACCENT_SOFT, Stroke::new(1.5, ACCENT))
     } else if resp.hovered() {
-        (Color32::from_rgb(248, 250, 252), Stroke::new(1.0, mix(BORDER(), ACCENT, 0.35)))
+        (crate::theme::WASH, Stroke::new(1.0, mix(BORDER(), ACCENT, 0.35)))
     } else {
         (CARD, Stroke::new(1.0, BORDER()))
     };

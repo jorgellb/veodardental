@@ -1671,7 +1671,7 @@ impl App {
             ("Gestión", &[Screen::Almacen, Screen::Tarifas, Screen::Colaboradores, Screen::Informes]),
             ("Sistema", &[Screen::Config, Screen::Modulos]),
         ];
-        let soft = Color32::from_rgb(170, 186, 208);
+        let soft = Color32::from_rgb(70, 86, 81);
         ui.spacing_mut().item_spacing.y = 2.0;
         ui.add_space(20.0);
         ui.horizontal(|ui| {
@@ -1681,9 +1681,9 @@ impl App {
             ui.add_space(2.0);
             ui.vertical(|ui| {
                 ui.add_space(1.0);
-                ui.label(RichText::new("VeodarDental").color(Color32::WHITE).font(theme::bf(18.5)));
-                ui.add_space(-1.0);
-                ui.label(RichText::new(crate::i18n::t(self.db.config.ui_lang, "Gestión de clínica dental")).color(Color32::from_rgb(110, 214, 198)).font(theme::mdf(12.0)));
+                ui.label(RichText::new("VeodarDental").color(HEADING).font(theme::df(20.0)));
+                ui.add_space(-2.0);
+                ui.label(RichText::new(crate::i18n::t(self.db.config.ui_lang, "Gestión de clínica dental")).color(ACCENT_DARK).font(theme::mdf(12.0)));
             });
         });
         ui.add_space(16.0);
@@ -1696,7 +1696,7 @@ impl App {
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
-                    ui.label(RichText::new(crate::i18n::t(self.db.config.ui_lang, group).to_uppercase()).font(theme::sbf(10.8)).color(Color32::from_rgb(98, 118, 146)));
+                    ui.label(RichText::new(crate::i18n::t(self.db.config.ui_lang, group).to_uppercase()).font(theme::sbf(10.8)).color(MUTED()));
                 });
                 ui.add_space(2.0);
             }
@@ -1707,21 +1707,14 @@ impl App {
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
                 let r = rect.shrink2(vec2(12.0, 1.5));
                 let p = ui.painter();
+                // el apartado abierto, como una pieza blanca en relieve
                 if sel {
-                    p.rect_filled(r, CornerRadius::same(10), Color32::from_rgba_unmultiplied(45, 212, 191, 30));
-                    p.rect_stroke(r, CornerRadius::same(10), Stroke::new(1.0, Color32::from_rgba_unmultiplied(45, 212, 191, 46)), egui::StrokeKind::Inside);
-                    p.rect_filled(egui::Rect::from_min_size(r.min + vec2(0.0, 9.0), vec2(3.0, r.height() - 18.0)), CornerRadius::same(2), Color32::from_rgb(45, 212, 191));
+                    theme::tile(p, r, 10);
                 } else if resp.hovered() {
-                    p.rect_filled(r, CornerRadius::same(10), Color32::from_rgba_unmultiplied(255, 255, 255, 12));
+                    p.rect_filled(r, CornerRadius::same(10), Color32::from_rgba_unmultiplied(255, 255, 255, 120));
                 }
-                let col = if sel {
-                    Color32::WHITE
-                } else if resp.hovered() {
-                    Color32::from_rgb(222, 230, 241)
-                } else {
-                    soft
-                };
-                crate::icons::nav_icon(p, scr, r.min + vec2(24.0, r.height() / 2.0), if sel { Color32::from_rgb(94, 234, 212) } else { col });
+                let col = if sel || resp.hovered() { HEADING } else { soft };
+                crate::icons::nav_icon(p, scr, r.min + vec2(24.0, r.height() / 2.0), if sel { ACCENT } else { col });
                 p.text(r.min + vec2(46.0, r.height() / 2.0), Align2::LEFT_CENTER, name, if sel { theme::sbf(14.5) } else { theme::mdf(14.5) }, col);
                 // contador
                 let badge = match scr {
@@ -1735,7 +1728,8 @@ impl App {
                     let txt = badge.to_string();
                     let bw = 12.0 + 7.5 * txt.len() as f32;
                     let br = egui::Rect::from_center_size(egui::pos2(right - bw.max(22.0) / 2.0, r.center().y), vec2(bw.max(22.0), 20.0));
-                    let bc = if scr == Screen::Agenda { Color32::from_rgb(245, 158, 11) } else { Color32::from_rgb(20, 184, 166) };
+                    // colores hondos: la cifra blanca se lee (contraste de 4,5 o más)
+                    let bc = if scr == Screen::Agenda { BADGE_WAIT } else { ACCENT };
                     p.rect_filled(br, CornerRadius::same(10), bc);
                     p.text(br.center(), Align2::CENTER_CENTER, txt, theme::sbf(11.5), Color32::WHITE);
                     right = br.min.x - 5.0;
@@ -1746,7 +1740,7 @@ impl App {
                     let txt = online.to_string();
                     let bw = (12.0 + 7.5 * txt.len() as f32).max(22.0);
                     let br = egui::Rect::from_center_size(egui::pos2(right - bw / 2.0, r.center().y), vec2(bw, 20.0));
-                    p.rect_filled(br, CornerRadius::same(10), Color32::from_rgb(139, 92, 246));
+                    p.rect_filled(br, CornerRadius::same(10), VIOLET);
                     p.text(br.center(), Align2::CENTER_CENTER, txt, theme::sbf(11.5), Color32::WHITE);
                 }
                 if resp.clicked() {
@@ -1764,10 +1758,11 @@ impl App {
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
             let r = rect.shrink2(vec2(12.0, 4.0));
             let p = ui.painter();
-            p.rect_filled(r, CornerRadius::same(12), Color32::from_rgba_unmultiplied(255, 255, 255, 10));
-            theme::avatar(p, r.left_center() + vec2(24.0, 0.0), 16.0, &u.name, Color32::from_rgb(94, 234, 212));
-            p.text(r.left_center() + vec2(48.0, -9.0), Align2::LEFT_CENTER, &u.name, theme::sbf(13.5), Color32::WHITE);
-            p.text(r.left_center() + vec2(48.0, 9.0), Align2::LEFT_CENTER, u.profile.label(), theme::mdf(11.8), soft);
+            p.rect_filled(r, CornerRadius::same(12), Color32::from_rgba_unmultiplied(255, 255, 255, 150));
+            p.rect_stroke(r, CornerRadius::same(12), Stroke::new(1.0, BORDER()), egui::StrokeKind::Inside);
+            theme::avatar(p, r.left_center() + vec2(24.0, 0.0), 16.0, &u.name, ACCENT);
+            p.text(r.left_center() + vec2(48.0, -9.0), Align2::LEFT_CENTER, &u.name, theme::sbf(13.5), HEADING);
+            p.text(r.left_center() + vec2(48.0, 9.0), Align2::LEFT_CENTER, u.profile.label(), theme::mdf(11.8), MUTED());
         }
         ui.add_space(12.0);
     }
@@ -1812,8 +1807,8 @@ impl App {
             ui.add_space(if tier == 2 { 6.0 } else { 14.0 });
             // Búsqueda global de pacientes (píldora con lupa)
             let resp = Frame::new()
-                .fill(Color32::from_rgb(241, 244, 248))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(229, 234, 241)))
+                .fill(CARD)
+                .stroke(Stroke::new(1.0, CONTROL))
                 .corner_radius(CornerRadius::same(20))
                 .inner_margin(Margin { left: 36, right: 12, top: 0, bottom: 0 })
                 .show(ui, |ui| {
@@ -2082,20 +2077,21 @@ impl eframe::App for App {
             self.start_services(&ctx);
         }
         if self.offline.is_some() {
-            egui::CentralPanel::default().frame(Frame::new().fill(SIDEBAR)).show(ui, |ui| screens::puestos::offline_screen(self, ui));
+            egui::CentralPanel::default().frame(Frame::new().fill(DEEP)).show(ui, |ui| screens::puestos::offline_screen(self, ui));
             self.toast(&ctx);
             self.handle_screenshot(&ctx);
             return;
         }
         if self.user_id.is_none() {
-            egui::CentralPanel::default().frame(Frame::new().fill(SIDEBAR)).show(ui, |ui| {
-                // fondo con degradado y dos brillos suaves de color
+            egui::CentralPanel::default().frame(Frame::new().fill(DEEP)).show(ui, |ui| {
+                // fondo verde casi negro, con la luz de la lámpara del gabinete
+                // arriba a la izquierda y un reflejo frío abajo
                 let r = ui.max_rect();
-                theme::vgradient(ui.painter(), r, Color32::from_rgb(17, 38, 66), Color32::from_rgb(8, 17, 31));
+                theme::vgradient(ui.painter(), r, DEEP_TOP, DEEP);
                 let p = ui.painter();
-                theme::radial_glow(p, r.left_top() + vec2(r.width() * 0.16, r.height() * 0.12), r.width() * 0.42, Color32::from_rgb(20, 184, 166), 0.16);
-                theme::radial_glow(p, r.right_bottom() - vec2(r.width() * 0.1, r.height() * 0.08), r.width() * 0.34, Color32::from_rgb(59, 130, 246), 0.12);
-                p.text(r.center_bottom() - vec2(0.0, 26.0), Align2::CENTER_CENTER, "VeodarDental · gestión de clínica dental", theme::mdf(12.5), Color32::from_rgb(110, 132, 160));
+                theme::radial_glow(p, r.left_top() + vec2(r.width() * 0.18, r.height() * 0.10), r.width() * 0.46, Color32::from_rgb(44, 190, 156), 0.17);
+                theme::radial_glow(p, r.right_bottom() - vec2(r.width() * 0.1, r.height() * 0.08), r.width() * 0.34, Color32::from_rgb(52, 120, 150), 0.11);
+                p.text(r.center_bottom() - vec2(0.0, 26.0), Align2::CENTER_CENTER, "VeodarDental · gestión de clínica dental", theme::mdf(12.5), Color32::from_rgb(122, 152, 144));
                 screens::login::login_screen(self, ui)
             });
             // con la pantalla bloqueada (y los datos ya cargados) los servicios siguen
@@ -2123,7 +2119,7 @@ impl eframe::App for App {
         }
         ctx.request_repaint_after(std::time::Duration::from_secs(30));
         if self.screen == Screen::Pizarra && self.tools.board_full {
-            egui::CentralPanel::default().frame(Frame::new().fill(egui::Color32::from_rgb(12, 26, 44)).inner_margin(Margin::same(28))).show(ui, |ui| screens::herramientas::pizarra(self, ui));
+            egui::CentralPanel::default().frame(Frame::new().fill(DEEP).inner_margin(Margin::same(28))).show(ui, |ui| screens::herramientas::pizarra(self, ui));
             screens::whatsapp::tick(self, time);
             screens::cita_online::tick(self, &ctx, time);
             screens::comunicaciones::outbox_tick(self, &ctx);
@@ -2132,16 +2128,23 @@ impl eframe::App for App {
             self.handle_screenshot(&ctx);
             return;
         }
+        // el menú, sobre el esmalte un tono más hondo; la barra de arriba y la de
+        // estado, sobre el mismo esmalte que la página, con una línea finísima
         egui::Panel::left("nav").exact_size(258.0).resizable(false).frame(Frame::new().fill(SIDEBAR)).show(ui, |ui| {
             let r = ui.max_rect();
-            theme::vgradient(ui.painter(), r, SIDEBAR_TOP, SIDEBAR);
+            ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, BORDER()));
             egui::ScrollArea::vertical().id_salt("nav_scroll").show(ui, |ui| self.sidebar(ui));
         });
-        egui::Panel::top("top")
-            .exact_size(66.0)
-            .frame(Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER())).inner_margin(Margin::symmetric(20, 0)).shadow(egui::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 8) }))
-            .show(ui, |ui| self.topbar(ui));
-        egui::Panel::bottom("status").exact_size(32.0).frame(Frame::new().fill(Color32::from_rgb(250, 251, 253)).stroke(Stroke::new(1.0, BORDER())).inner_margin(Margin::symmetric(14, 0))).show(ui, |ui| self.statusbar(ui));
+        egui::Panel::top("top").exact_size(66.0).frame(Frame::new().fill(BG).inner_margin(Margin::symmetric(20, 0))).show(ui, |ui| {
+            let r = ui.max_rect().expand2(vec2(20.0, 0.0));
+            ui.painter().hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, BORDER()));
+            self.topbar(ui)
+        });
+        egui::Panel::bottom("status").exact_size(32.0).frame(Frame::new().fill(BG).inner_margin(Margin::symmetric(14, 0))).show(ui, |ui| {
+            let r = ui.max_rect().expand2(vec2(14.0, 0.0));
+            ui.painter().hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, BORDER()));
+            self.statusbar(ui)
+        });
         egui::CentralPanel::default().frame(Frame::new().fill(BG).inner_margin(Margin::symmetric(26, 22))).show(ui, |ui| match self.screen {
             Screen::Inicio | Screen::Caja | Screen::Tarifas | Screen::Colaboradores | Screen::Modulos | Screen::Imagenes | Screen::Almacen | Screen::Laboratorio | Screen::Gastos | Screen::Ortodoncia | Screen::Listin | Screen::Bancos => {
                 let mut sa = egui::ScrollArea::vertical().id_salt(("page", self.screen as u8)).auto_shrink([false, false]);

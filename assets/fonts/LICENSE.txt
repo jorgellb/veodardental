@@ -1,3 +1,10 @@
 Open Sans (OpenSans-Regular.ttf, OpenSans-Semibold.ttf)
 Copyright 2010-2011 Google Corporation. Designed by Steve Matteson.
 Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+Inter (Inter-*.ttf)
+Copyright the Inter Project Authors. SIL Open Font License 1.1: Inter-LICENSE.txt
+
+Bricolage Grotesque (BricolageGrotesque-SemiBold.ttf: instancia estática, tamaño óptico 28, peso 600)
+Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)
+SIL Open Font License 1.1: BricolageGrotesque-OFL.txt

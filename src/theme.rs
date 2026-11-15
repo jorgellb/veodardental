@@ -1,22 +1,30 @@
 //! Estilo visual y pequeños componentes reutilizables.
 //!
-//! Línea visual: tipografía Inter, fondo gris azulado muy claro, tarjetas
-//! blancas con esquinas amplias, bordes finos y sombras suaves; menú lateral
-//! azul noche con degradado; acento verde azulado. Todas las pantallas usan
-//! estas piezas, así que cambiar aquí cambia todo el programa.
+//! Línea visual «gabinete claro»: el programa se apoya en un fondo blanco
+//! esmalte con un punto de verde, y encima van las tarjetas, blancas como la
+//! porcelana. Lo elegido (el apartado del menú, la pestaña) sube como una
+//! pieza blanca en relieve. Acento verde quirófano. Títulos y cifras en
+//! Bricolage Grotesque; el resto, en Inter. Todas las pantallas usan estas
+//! piezas, así que cambiar aquí cambia todo el programa.
 
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, Mesh, Painter, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 // ── paleta ──
-pub const BG: Color32 = Color32::from_rgb(244, 246, 250);
+/// Esmalte: el fondo de las páginas.
+pub const BG: Color32 = Color32::from_rgb(240, 244, 242);
+/// Porcelana: las tarjetas.
 pub const CARD: Color32 = Color32::WHITE;
-pub const SIDEBAR: Color32 = Color32::from_rgb(12, 25, 43);
-pub const SIDEBAR_TOP: Color32 = Color32::from_rgb(16, 34, 58);
-pub const ACCENT: Color32 = Color32::from_rgb(13, 148, 136);
-pub const ACCENT_DARK: Color32 = Color32::from_rgb(15, 118, 110);
-pub const ACCENT_SOFT: Color32 = Color32::from_rgb(230, 246, 244);
-pub const HEADING: Color32 = Color32::from_rgb(11, 19, 36);
-pub const TEXT: Color32 = Color32::from_rgb(30, 41, 59);
+/// El menú lateral: el esmalte, un tono más hondo.
+pub const SIDEBAR: Color32 = Color32::from_rgb(230, 236, 233);
+/// Las pantallas oscuras (entrada, sin conexión, pizarra): verde casi negro.
+pub const DEEP: Color32 = Color32::from_rgb(7, 21, 19);
+pub const DEEP_TOP: Color32 = Color32::from_rgb(15, 43, 38);
+/// Verde quirófano: con letra blanca encima se lee bien (contraste 5,6).
+pub const ACCENT: Color32 = Color32::from_rgb(10, 117, 100);
+pub const ACCENT_DARK: Color32 = Color32::from_rgb(7, 90, 77);
+pub const ACCENT_SOFT: Color32 = Color32::from_rgb(222, 240, 234);
+pub const HEADING: Color32 = Color32::from_rgb(15, 30, 27);
+pub const TEXT: Color32 = Color32::from_rgb(38, 52, 49);
 /// Muted (más oscuro con el contraste alto: ver [`set_high_contrast`]).
 #[allow(non_snake_case)]
 pub fn MUTED() -> Color32 {
@@ -42,8 +50,15 @@ pub const WARN: Color32 = Color32::from_rgb(217, 119, 6);
 pub const OK: Color32 = Color32::from_rgb(5, 150, 105);
 pub const INFO: Color32 = Color32::from_rgb(37, 99, 235);
 pub const VIOLET: Color32 = Color32::from_rgb(124, 58, 237);
-pub const ROW_ALT: Color32 = Color32::from_rgb(249, 250, 252);
-pub const ROW_HOVER: Color32 = Color32::from_rgb(243, 248, 250);
+/// Ámbar hondo de los contadores (sala de espera): la cifra blanca se lee.
+pub const BADGE_WAIT: Color32 = Color32::from_rgb(180, 83, 9);
+pub const ROW_ALT: Color32 = Color32::from_rgb(248, 250, 249);
+pub const ROW_HOVER: Color32 = Color32::from_rgb(241, 247, 244);
+/// Fondo de los botones al pasar por encima y de las cabeceras de tabla.
+pub const WASH: Color32 = Color32::from_rgb(243, 247, 245);
+/// Borde de los botones (algo más marcado que el de las tarjetas).
+pub const CONTROL: Color32 = Color32::from_rgb(210, 220, 216);
+pub const CONTROL_HOVER: Color32 = Color32::from_rgb(170, 189, 182);
 
 static HIGH_CONTRAST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -66,9 +81,9 @@ pub struct Palette {
 
 pub fn palette(high: bool) -> Palette {
     if high {
-        Palette { muted: Color32::from_rgb(55, 65, 81), subtle: Color32::from_rgb(68, 77, 92), border: Color32::from_rgb(107, 114, 128), hairline: Color32::from_rgb(156, 163, 175) }
+        Palette { muted: Color32::from_rgb(50, 64, 60), subtle: Color32::from_rgb(62, 76, 72), border: Color32::from_rgb(102, 116, 111), hairline: Color32::from_rgb(152, 165, 160) }
     } else {
-        Palette { muted: Color32::from_rgb(100, 113, 135), subtle: Color32::from_rgb(139, 151, 170), border: Color32::from_rgb(228, 232, 239), hairline: Color32::from_rgb(238, 241, 246) }
+        Palette { muted: Color32::from_rgb(88, 104, 99), subtle: Color32::from_rgb(132, 148, 143), border: Color32::from_rgb(221, 228, 225), hairline: Color32::from_rgb(232, 238, 235) }
     }
 }
 
@@ -102,7 +117,15 @@ pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
 }
 
-// ── tipografía (Inter) ──
+// ── tipografía (Inter; títulos y cifras grandes, Bricolage Grotesque) ──
+
+/// Títulos y cifras grandes (de 18 px para arriba).
+pub fn display() -> egui::FontFamily {
+    egui::FontFamily::Name("display".into())
+}
+pub fn df(size: f32) -> FontId {
+    FontId::new(size, display())
+}
 
 /// Seminegrita.
 pub fn sb() -> egui::FontFamily {
@@ -127,9 +150,21 @@ pub fn bf(size: f32) -> FontId {
     FontId::new(size, bold())
 }
 
-/// Sombra de las tarjetas: amplia y muy suave.
+/// Sombra de las tarjetas: amplia, muy suave y teñida de verde.
 pub fn shadow() -> egui::Shadow {
-    egui::Shadow { offset: [0, 4], blur: 20, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 14) }
+    egui::Shadow { offset: [0, 3], blur: 16, spread: 0, color: Color32::from_rgba_unmultiplied(16, 44, 37, 15) }
+}
+
+/// Sombra de una pieza elegida (menú, pestañas): corta, para que parezca en relieve.
+pub fn lift() -> egui::Shadow {
+    egui::Shadow { offset: [0, 1], blur: 5, spread: 0, color: Color32::from_rgba_unmultiplied(16, 44, 37, 30) }
+}
+
+/// Pieza elegida: blanca, en relieve, con un borde finísimo.
+pub fn tile(p: &Painter, r: Rect, radius: u8) {
+    let cr = CornerRadius::same(radius);
+    p.add(lift().as_shape(r, cr));
+    p.rect(r, cr, CARD, Stroke::new(1.0, Color32::from_rgba_unmultiplied(16, 44, 37, 18)), StrokeKind::Inside);
 }
 
 fn fonts(ctx: &egui::Context) {
@@ -142,11 +177,12 @@ fn fonts(ctx: &egui::Context) {
     add(&mut f, "inter_md", include_bytes!("../assets/fonts/Inter-Medium.ttf"));
     add(&mut f, "inter_sb", include_bytes!("../assets/fonts/Inter-SemiBold.ttf"));
     add(&mut f, "inter_b", include_bytes!("../assets/fonts/Inter-Bold.ttf"));
+    add(&mut f, "bricolage", include_bytes!("../assets/fonts/BricolageGrotesque-SemiBold.ttf"));
     let prop = f.families.entry(egui::FontFamily::Proportional).or_default();
     prop.insert(0, "inter".into());
     // los iconos y emojis siguen saliendo de las fuentes de reserva de egui
     let fallback: Vec<String> = prop.iter().skip(1).cloned().collect();
-    for (fam, key) in [(sb(), "inter_sb"), (md(), "inter_md"), (bold(), "inter_b")] {
+    for (fam, key) in [(sb(), "inter_sb"), (md(), "inter_md"), (bold(), "inter_b"), (display(), "bricolage")] {
         let mut v = vec![key.to_string()];
         v.extend(fallback.clone());
         f.families.insert(fam, v);
@@ -161,18 +197,18 @@ pub fn apply(ctx: &egui::Context) {
     let v = &mut style.visuals;
     v.panel_fill = BG;
     v.window_fill = CARD;
-    v.extreme_bg_color = Color32::from_rgb(252, 253, 254);
+    v.extreme_bg_color = Color32::from_rgb(252, 253, 253);
     v.faint_bg_color = ROW_ALT;
-    v.code_bg_color = Color32::from_rgb(241, 245, 249);
+    v.code_bg_color = WASH;
     v.override_text_color = Some(TEXT);
-    v.selection.bg_fill = Color32::from_rgb(204, 235, 231);
+    v.selection.bg_fill = Color32::from_rgb(206, 234, 225);
     v.selection.stroke = Stroke::new(1.5, ACCENT);
     v.hyperlink_color = ACCENT_DARK;
     v.window_stroke = Stroke::new(1.0, BORDER());
     v.window_corner_radius = CornerRadius::same(18);
     v.menu_corner_radius = CornerRadius::same(12);
-    v.popup_shadow = egui::Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 26) };
-    v.window_shadow = egui::Shadow { offset: [0, 18], blur: 60, spread: 0, color: Color32::from_rgba_unmultiplied(10, 20, 40, 48) };
+    v.popup_shadow = egui::Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_rgba_unmultiplied(12, 36, 30, 28) };
+    v.window_shadow = egui::Shadow { offset: [0, 18], blur: 60, spread: 0, color: Color32::from_rgba_unmultiplied(7, 21, 19, 50) };
     let radius = CornerRadius::same(10);
     let w = &mut v.widgets;
     // separadores y bordes de tarjetas
@@ -181,24 +217,24 @@ pub fn apply(ctx: &egui::Context) {
     w.noninteractive.corner_radius = radius;
     // botones normales: blancos con borde fino
     w.inactive.weak_bg_fill = CARD;
-    w.inactive.bg_fill = Color32::from_rgb(236, 240, 245);
-    w.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(218, 224, 233));
+    w.inactive.bg_fill = Color32::from_rgb(229, 236, 233);
+    w.inactive.bg_stroke = Stroke::new(1.0, CONTROL);
     w.inactive.fg_stroke = Stroke::new(1.0, TEXT);
     w.inactive.corner_radius = radius;
     w.inactive.expansion = 0.0;
-    w.hovered.weak_bg_fill = Color32::from_rgb(247, 249, 252);
-    w.hovered.bg_fill = Color32::from_rgb(228, 236, 243);
-    w.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(178, 192, 210));
+    w.hovered.weak_bg_fill = WASH;
+    w.hovered.bg_fill = Color32::from_rgb(220, 231, 226);
+    w.hovered.bg_stroke = Stroke::new(1.0, CONTROL_HOVER);
     w.hovered.fg_stroke = Stroke::new(1.5, HEADING);
     w.hovered.corner_radius = radius;
     w.hovered.expansion = 0.0;
     w.active.weak_bg_fill = ACCENT_SOFT;
-    w.active.bg_fill = Color32::from_rgb(204, 235, 231);
+    w.active.bg_fill = Color32::from_rgb(206, 234, 225);
     w.active.bg_stroke = Stroke::new(1.0, ACCENT);
     w.active.fg_stroke = Stroke::new(1.5, ACCENT_DARK);
     w.active.corner_radius = radius;
     w.active.expansion = 0.0;
-    w.open.weak_bg_fill = Color32::from_rgb(247, 249, 252);
+    w.open.weak_bg_fill = WASH;
     w.open.bg_stroke = Stroke::new(1.0, ACCENT);
     w.open.corner_radius = radius;
     style.spacing.item_spacing = vec2(10.0, 9.0);
@@ -214,7 +250,7 @@ pub fn apply(ctx: &egui::Context) {
     style.text_styles.insert(Body, FontId::proportional(15.0));
     style.text_styles.insert(Button, mdf(14.5));
     style.text_styles.insert(Small, FontId::proportional(12.5));
-    style.text_styles.insert(Heading, bf(26.0));
+    style.text_styles.insert(Heading, df(26.0));
     style.text_styles.insert(Monospace, FontId::monospace(13.5));
     ctx.set_global_style(style);
 }
@@ -293,9 +329,9 @@ pub fn apply_style(ctx: &egui::Context, d: Display) {
         v.window_stroke = Stroke::new(1.5, BORDER());
         let w = &mut v.widgets;
         w.noninteractive.bg_stroke = Stroke::new(1.5, BORDER());
-        w.inactive.bg_stroke = Stroke::new(1.5, Color32::from_rgb(75, 85, 99));
+        w.inactive.bg_stroke = Stroke::new(1.5, Color32::from_rgb(70, 86, 81));
         w.inactive.fg_stroke = Stroke::new(1.5, Color32::from_rgb(10, 15, 25));
-        w.hovered.bg_stroke = Stroke::new(2.0, Color32::from_rgb(17, 24, 39));
+        w.hovered.bg_stroke = Stroke::new(2.0, HEADING);
         w.active.bg_stroke = Stroke::new(2.0, ACCENT_DARK);
     }
     ctx.set_global_style(style);
@@ -342,7 +378,7 @@ pub fn arrow_button(ui: &mut Ui, left: bool, hint: &str) -> egui::Response {
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, hint));
     let p = ui.painter();
     let hov = resp.hovered();
-    p.rect(r, CornerRadius::same(10), if hov { Color32::from_rgb(247, 249, 252) } else { CARD }, Stroke::new(1.0, if hov { Color32::from_rgb(178, 192, 210) } else { Color32::from_rgb(218, 224, 233) }), StrokeKind::Inside);
+    p.rect(r, CornerRadius::same(10), if hov { WASH } else { CARD }, Stroke::new(1.0, if hov { CONTROL_HOVER } else { CONTROL }), StrokeKind::Inside);
     let c = r.center();
     let d = if left { 1.0 } else { -1.0 };
     let col = if hov { ACCENT_DARK } else { TEXT };
@@ -361,13 +397,13 @@ pub fn combo(id: impl egui::AsIdSalt) -> egui::ComboBox<'static> {
 /// Diálogo modal con márgenes amplios, esquinas redondeadas y sombra profunda.
 pub fn modal(id: &str) -> egui::Modal {
     egui::Modal::new(egui::Id::unique(id))
-        .frame(Frame::new().fill(CARD).corner_radius(CornerRadius::same(20)).inner_margin(Margin::symmetric(30, 26)).stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(15, 30, 60, 16))).shadow(egui::Shadow {
+        .frame(Frame::new().fill(CARD).corner_radius(CornerRadius::same(20)).inner_margin(Margin::symmetric(30, 26)).stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(16, 44, 37, 18))).shadow(egui::Shadow {
             offset: [0, 24],
             blur: 64,
             spread: 0,
-            color: Color32::from_rgba_unmultiplied(8, 17, 31, 60),
+            color: Color32::from_rgba_unmultiplied(7, 21, 19, 62),
         }))
-        .backdrop_color(Color32::from_rgba_unmultiplied(8, 17, 31, 110))
+        .backdrop_color(Color32::from_rgba_unmultiplied(7, 21, 19, 112))
 }
 
 /// Brillo radial suave: color en el centro que se desvanece hasta el borde,
@@ -403,7 +439,7 @@ pub fn radial_glow(p: &Painter, center: egui::Pos2, radius: f32, color: Color32,
 }
 
 pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER())).corner_radius(CornerRadius::same(16)).inner_margin(Margin::symmetric(22, 20)).shadow(shadow()).show(ui, add).inner
+    Frame::new().fill(CARD).stroke(Stroke::new(1.0, BORDER())).corner_radius(CornerRadius::same(18)).inner_margin(Margin::symmetric(22, 20)).shadow(shadow()).show(ui, add).inner
 }
 
 /// Título de pantalla con subtítulo.
@@ -413,7 +449,7 @@ pub fn title(ui: &mut Ui, text: &str, sub: &str) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 3.0;
         ui.add_space(2.0);
-        ui.label(RichText::new(text).font(bf(27.0)).color(HEADING));
+        ui.label(RichText::new(text).font(df(28.0)).color(HEADING));
         if !sub.is_empty() {
             ui.label(RichText::new(sub).font(mdf(14.0)).color(MUTED()));
         }
@@ -463,7 +499,7 @@ pub fn kpi(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, color: 
 pub fn kpi_icon(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, color: Color32, icon: Option<crate::app::Screen>) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, 118.0), Sense::hover());
     let p = ui.painter();
-    let r = CornerRadius::same(16);
+    let r = CornerRadius::same(18);
     p.add(shadow().as_shape(rect, r));
     p.rect_filled(rect, r, CARD);
     p.rect_stroke(rect, r, Stroke::new(1.0, BORDER()), StrokeKind::Inside);
@@ -487,10 +523,10 @@ pub fn kpi_icon(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, co
     // el importe se reduce para que quepa entero en la tarjeta
     let room = rect.width() - x - 16.0;
     let mut size = 26.0;
-    while size > 17.0 && p.layout_no_wrap(value.to_string(), bf(size), HEADING).size().x > room {
+    while size > 17.0 && p.layout_no_wrap(value.to_string(), df(size), HEADING).size().x > room {
         size -= 1.0;
     }
-    clip.text(rect.min + vec2(x, 38.0 + (26.0 - size) * 0.6), Align2::LEFT_TOP, value, bf(size), HEADING);
+    clip.text(rect.min + vec2(x, 37.0 + (26.0 - size) * 0.6), Align2::LEFT_TOP, value, df(size), HEADING);
     if !sub.is_empty() {
         let sub_pos = rect.min + vec2(20.0, 88.0);
         clip.circle_filled(sub_pos + vec2(3.0, 8.0), 3.0, color);
@@ -499,7 +535,10 @@ pub fn kpi_icon(ui: &mut Ui, width: f32, label: &str, value: &str, sub: &str, co
 }
 
 pub fn primary(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add(egui::Button::new(RichText::new(text).color(Color32::WHITE).font(sbf(14.5))).fill(ACCENT).stroke(Stroke::new(1.0, ACCENT_DARK)).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 38.0)))
+    // al pasar por encima, un verde algo más hondo (egui da lo del fotograma anterior)
+    let hov = ui.is_enabled() && ui.ctx().read_response(ui.next_auto_id()).is_some_and(|r| r.hovered());
+    let fill = if hov { ACCENT_DARK } else { ACCENT };
+    ui.add(egui::Button::new(RichText::new(text).color(Color32::WHITE).font(sbf(14.5))).fill(fill).stroke(Stroke::new(1.0, fill)).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 38.0)))
 }
 
 /// Botón secundario: blanco con borde.
@@ -586,7 +625,7 @@ impl<'a> Table<'a> {
         let w: f32 = self.cols.iter().map(|c| c.1).sum::<f32>() * k;
         let (rect, _) = ui.allocate_exact_size(vec2(w.max(visible_width(ui)), 34.0), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(rect, CornerRadius::same(8), Color32::from_rgb(246, 248, 251));
+        p.rect_filled(rect, CornerRadius::same(8), WASH);
         let mut x = rect.min.x + 14.0;
         for (name, cw) in &self.cols {
             let clip = Rect::from_min_size(pos2(x, rect.min.y), vec2(cw * k - 6.0, rect.height()));
@@ -644,8 +683,8 @@ pub fn empty_state(ui: &mut Ui, text: &str) {
     ui.add_space(22.0);
     ui.vertical_centered(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(44.0, 44.0), Sense::hover());
-        ui.painter().circle_filled(r.center(), 22.0, Color32::from_rgb(240, 244, 248));
-        ui.painter().circle_stroke(r.center(), 9.0, Stroke::new(2.0, SUBTLE()));
+        ui.painter().circle_filled(r.center(), 22.0, ACCENT_SOFT);
+        ui.painter().circle_stroke(r.center(), 9.0, Stroke::new(2.0, mix(ACCENT, SUBTLE(), 0.4)));
         ui.add_space(6.0);
         ui.label(RichText::new(text).color(MUTED()).size(14.5));
     });
@@ -655,7 +694,7 @@ pub fn empty_state(ui: &mut Ui, text: &str) {
 /// Barra horizontal de progreso simple.
 pub fn bar(ui: &mut Ui, width: f32, frac: f32, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 8.0), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(235, 239, 245));
+    ui.painter().rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(226, 233, 230));
     let mut r = rect;
     r.set_width(rect.width() * frac.clamp(0.0, 1.0));
     ui.painter().rect_filled(r, CornerRadius::same(4), color);
@@ -699,5 +738,17 @@ mod tests {
             assert!(contrast_ratio(h.hairline, bg) > contrast_ratio(n.hairline, bg));
         }
         assert!((contrast_ratio(Color32::BLACK, Color32::WHITE) - 21.0).abs() < 0.01);
+    }
+
+    /// La letra blanca de los botones verdes y de los contadores del menú se
+    /// lee (AA: 4,5), y el texto secundario del menú, sobre su esmalte, también.
+    #[test]
+    fn white_text_reads_on_the_green_buttons_and_the_menu_counters() {
+        for (name, c) in [("verde", ACCENT), ("verde hondo", ACCENT_DARK), ("ámbar", BADGE_WAIT), ("violeta", VIOLET), ("oscuro", DEEP)] {
+            let k = contrast_ratio(Color32::WHITE, c);
+            assert!(k >= 4.5, "letra blanca sobre {name}: {k:.2}");
+        }
+        assert!(contrast_ratio(palette(false).muted, SIDEBAR) >= 4.5);
+        assert!(contrast_ratio(HEADING, SIDEBAR) >= 7.0);
     }
 }
