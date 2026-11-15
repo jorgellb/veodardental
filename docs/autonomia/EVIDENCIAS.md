@@ -2349,10 +2349,11 @@ Todo con **datos sintéticos** (inventados y señalados así en cada prueba), si
   - los dos maxilares y sus dientes, conductos, conducto dentario, paladar y senos;
   - un implante en el 46 y el hueco del 36, como el paciente de ejemplo.
   - El visor lo abre en las tres vistas, con orientación, escala y el paciente y la fecha del fichero. La misma orden da el mismo fichero byte a byte.
+- **Fallo propio:** la primera versión de esta entrada apuntaba otras órdenes, y la etiqueta `v0.1.0` (ejecución 43696420488) se paró en las pruebas por `docs_tests`, sin publicar nada. Esta entrada se escribió después de pasar la batería, y la batería no se repitió. Ahora sí: corregida y pasada otra vez.
 - **Batería:**
 
 | Orden | Código de salida | Resultado |
 |---|---|---|
-| `cargo fmt --check` | 0 | — |
-| `cargo clippy --all-targets --locked -- -D warnings` | 0 | — |
-| `tools/aislado.sh cargo test --locked` | 0 | 578 pasan (576 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 578 pasan (576 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
