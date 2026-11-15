@@ -2422,3 +2422,20 @@ Pedido: que la interfaz se vea más moderna y más estética. El estilo vive en 
 | `cargo fmt --all -- --check` | 0 | — |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
 | `cargo test --workspace --all-targets --locked` | 0 | 597 pasan (595 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |
+
+## E-092 Capturas para la web sin datos con forma de reales, y la pizarra con el estilo nuevo
+
+Pedido: renovar la web de VeodarDental con capturas de casi todo el programa.
+
+- **Zonas privadas** (`src/captura.rs`). Con `--screenshot … --zonas-privadas`, un complemento de egui revisa todo el texto que se va a dibujar. Junto a la captura deja `captura.png.zonas.json`, con los recuadros en píxeles de todo lo que tiene forma de teléfono, DNI, NIE, CIF o IBAN. Esas zonas se difuminan después.
+  - Los datos de ejemplo son inventados, pero tienen la forma de los reales.
+  - La prueba nueva comprueba los formatos, y que no se marcan fechas, horas, importes, números de factura, huellas ni sondajes.
+- **Pizarra de la sala de espera:** fondo verde casi negro (`DEEP`) y paciente llamado en verde quirófano, como el resto del estilo «gabinete claro».
+- **Otros restos de los colores anteriores:** la guía del odontograma y dos sombras de la agenda y el periodontograma.
+- **Batería:**
+
+| Orden | Código de salida | Resultado |
+|---|---|---|
+| `cargo fmt --all -- --check` | 0 | — |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | — |
+| `cargo test --workspace --all-targets --locked` | 0 | 598 pasan (596 + 2 del ensayo en la nube), 0 fallan, 10 ignoradas |

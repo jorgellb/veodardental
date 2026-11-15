@@ -61,7 +61,7 @@ pub fn skin(dark: bool) -> Skin {
             sel_cell: Color32::from_rgb(236, 248, 246),
             sel_line: Color32::from_rgb(94, 196, 184),
             hover_cell: Color32::from_rgb(246, 249, 251),
-            guide: Color32::from_rgba_unmultiplied(13, 148, 136, 200),
+            guide: Color32::from_rgba_unmultiplied(10, 117, 100, 200),
         }
     }
 }

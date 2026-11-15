@@ -1652,7 +1652,9 @@ impl App {
                     let _ = std::fs::create_dir_all(dir);
                 }
                 let ok = image::save_buffer(&path, &buf, w as u32, h as u32, image::ColorType::Rgba8).is_ok();
-                if !ok {
+                if ok {
+                    crate::captura::save_next_to(&path);
+                } else {
                     eprintln!("No se pudo guardar la captura en {}", path.display());
                 }
                 flag.store(if ok { 2 } else { 3 }, Ordering::SeqCst);

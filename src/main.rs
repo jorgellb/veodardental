@@ -11,6 +11,7 @@ mod booking;
 mod brand;
 mod budget_link;
 mod campanas;
+mod captura;
 mod cents;
 mod chat;
 mod cifrado;
@@ -288,6 +289,10 @@ fn main() -> eframe::Result<()> {
         "VeodarDental",
         options,
         Box::new(move |cc| {
+            // capturas para la web: dónde quedan los teléfonos y DNI de ejemplo, para difuminarlos
+            if shot_mode && std::env::args().any(|x| x == "--zonas-privadas") {
+                cc.egui_ctx.add_plugin(captura::Zones);
+            }
             let mut a = app::App::new(cc, shot, screen, patient, tab);
             if login_flag {
                 a.user_id = None;

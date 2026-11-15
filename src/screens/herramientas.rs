@@ -485,7 +485,7 @@ fn display_name(app: &App, a: &Appointment) -> String {
 pub fn pizarra(app: &mut App, ui: &mut Ui) {
     let today = app.today;
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect.expand(18.0), 0.0, Color32::from_rgb(12, 26, 44));
+    ui.painter().rect_filled(rect.expand(18.0), 0.0, crate::theme::DEEP);
     ui.horizontal(|ui| {
         let title = if app.db.multi_center() { app.db.center_name(app.db.config.current_center) } else { app.db.config.name.clone() };
         ui.label(RichText::new(title).family(sb()).size(30.0).color(Color32::WHITE));
@@ -502,7 +502,7 @@ pub fn pizarra(app: &mut App, ui: &mut Ui) {
                 app.db.config.board_initials = ini;
                 app.changed();
             }
-            ui.label(RichText::new(chrono::Local::now().format("%H:%M").to_string()).size(34.0).family(sb()).color(Color32::from_rgb(120, 220, 200)));
+            ui.label(RichText::new(chrono::Local::now().format("%H:%M").to_string()).size(34.0).family(sb()).color(Color32::from_rgb(126, 224, 195)));
         });
     });
     ui.add_space(14.0);
@@ -513,22 +513,22 @@ pub fn pizarra(app: &mut App, ui: &mut Ui) {
     let w = ui.available_width();
     ui.columns(2, |cols| {
         let ui = &mut cols[0];
-        ui.label(RichText::new("PASE A CONSULTA").size(20.0).family(sb()).color(Color32::from_rgb(120, 220, 200)));
+        ui.label(RichText::new("PASE A CONSULTA").size(20.0).family(sb()).color(Color32::from_rgb(126, 224, 195)));
         ui.add_space(8.0);
         if called.is_empty() {
-            ui.label(RichText::new("—").size(40.0).color(Color32::from_rgb(90, 110, 140)));
+            ui.label(RichText::new("—").size(40.0).color(Color32::from_rgb(98, 130, 121)));
         }
         for (i, a) in called.iter().take(4).enumerate() {
             let big = i == 0;
             let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), if big { 150.0 } else { 80.0 }), Sense::hover());
             let p = ui.painter();
-            p.rect_filled(r, CornerRadius::same(18), if big { Color32::from_rgb(14, 150, 136) } else { Color32::from_rgb(24, 44, 70) });
+            p.rect_filled(r, CornerRadius::same(18), if big { crate::theme::ACCENT } else { Color32::from_rgb(19, 47, 41) });
             p.text(r.left_center() + vec2(26.0, if big { -18.0 } else { 0.0 }), Align2::LEFT_CENTER, display_name(app, a), sbf(if big { 46.0 } else { 26.0 }), Color32::WHITE);
             let gab = app.db.box_name(a.box_id);
             if big {
                 p.text(r.left_center() + vec2(26.0, 38.0), Align2::LEFT_CENTER, format!("→ {}  ·  {}", gab, app.db.doctor_alias(a.doctor_id)), FontId::proportional(26.0), Color32::from_rgb(220, 255, 248));
             } else {
-                p.text(r.right_center() - vec2(26.0, 0.0), Align2::RIGHT_CENTER, gab, FontId::proportional(22.0), Color32::from_rgb(170, 200, 230));
+                p.text(r.right_center() - vec2(26.0, 0.0), Align2::RIGHT_CENTER, gab, FontId::proportional(22.0), Color32::from_rgb(170, 212, 199));
             }
             ui.add_space(10.0);
         }
@@ -536,14 +536,14 @@ pub fn pizarra(app: &mut App, ui: &mut Ui) {
         ui.label(RichText::new("EN SALA DE ESPERA").size(20.0).family(sb()).color(Color32::from_rgb(255, 196, 90)));
         ui.add_space(8.0);
         if waiting.is_empty() {
-            ui.label(RichText::new("Nadie esperando").size(26.0).color(Color32::from_rgb(90, 110, 140)));
+            ui.label(RichText::new("Nadie esperando").size(26.0).color(Color32::from_rgb(98, 130, 121)));
         }
         for a in waiting.iter().take(9) {
             let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
             let p = ui.painter();
-            p.rect_filled(r, CornerRadius::same(14), Color32::from_rgb(24, 44, 70));
+            p.rect_filled(r, CornerRadius::same(14), Color32::from_rgb(19, 47, 41));
             p.text(r.left_center() + vec2(22.0, 0.0), Align2::LEFT_CENTER, display_name(app, a), sbf(24.0), Color32::WHITE);
-            p.text(r.right_center() - vec2(22.0, 0.0), Align2::RIGHT_CENTER, format!("cita {}", a.start.format("%H:%M")), FontId::proportional(20.0), Color32::from_rgb(170, 190, 215));
+            p.text(r.right_center() - vec2(22.0, 0.0), Align2::RIGHT_CENTER, format!("cita {}", a.start.format("%H:%M")), FontId::proportional(20.0), Color32::from_rgb(168, 200, 190));
             ui.add_space(8.0);
         }
     });

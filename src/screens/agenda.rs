@@ -466,7 +466,7 @@ fn grid(app: &mut App, ui: &mut Ui) {
         let fill = if cancelled { Color32::from_rgb(245, 246, 248) } else { tint(doc_col, 0.12) };
         let sel_or_hover = app.agenda.selected == Some(a.id) || resp.hovered();
         if sel_or_hover && !cancelled {
-            p.add(egui::Shadow { offset: [0, 3], blur: 10, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 30) }.as_shape(r, CornerRadius::same(8)));
+            p.add(egui::Shadow { offset: [0, 3], blur: 10, spread: 0, color: Color32::from_rgba_unmultiplied(16, 44, 37, 30) }.as_shape(r, CornerRadius::same(8)));
         }
         p.rect_filled(r, CornerRadius::same(8), fill);
         p.rect_stroke(r, CornerRadius::same(8), Stroke::new(if sel_or_hover { 1.5 } else { 1.0 }, if sel_or_hover { doc_col } else { tint(doc_col, 0.32) }), StrokeKind::Inside);

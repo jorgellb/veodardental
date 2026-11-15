@@ -551,7 +551,7 @@ fn editor_popover(app: &mut App, ui: &mut Ui, sel: u32, t: u8, col: Rect) {
             .stroke(Stroke::new(1.0, BORDER()))
             .corner_radius(CornerRadius::same(16))
             .inner_margin(egui::Margin::symmetric(18, 16))
-            .shadow(egui::Shadow { offset: [0, 14], blur: 40, spread: 0, color: Color32::from_rgba_unmultiplied(15, 30, 60, 46) })
+            .shadow(egui::Shadow { offset: [0, 14], blur: 40, spread: 0, color: Color32::from_rgba_unmultiplied(16, 44, 37, 46) })
             .show(ui, |ui| {
                 ui.set_width(w - 36.0);
                 let Some(chart) = app.db.perio.iter_mut().find(|c| c.id == sel) else { return };
